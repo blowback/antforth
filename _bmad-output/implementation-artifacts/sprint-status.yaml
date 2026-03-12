@@ -1,0 +1,73 @@
+# generated: 2026-03-12
+# project: antforth
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-12
+project: antforth
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: in-progress
+  1-1-project-scaffolding-and-build-toolchain: ready-for-dev
+  1-2-inner-interpreter-and-threading: backlog
+  1-3-stack-and-memory-primitives: backlog
+  1-4-arithmetic-logic-and-comparison: backlog
+  1-5-console-io-primitives: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-dictionary-and-hash-table: backlog
+  2-2-outer-interpreter-and-repl-loop: backlog
+  2-3-number-formatting-and-stack-inspection: backlog
+  2-4-error-handling-and-recovery: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-colon-definitions-and-compiler: backlog
+  3-2-variables-constants-and-create-does: backlog
+  3-3-conditionals-and-indefinite-loops: backlog
+  3-4-counted-loops-and-recurse: backlog
+  3-5-immediate-postpone-string-literals-and-words: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-code-word-framework-and-basic-instructions: backlog
+  4-2-full-z80-instruction-set-and-addressing-modes: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-marker-snapshot-and-restore: backlog
+  epic-5-retrospective: optional
