@@ -1,2 +1,4 @@
 theme: minima
 title: AntForth dev diary
+baseurl: "/antforth"
+url: "https://blowback.github.io"
