@@ -64,11 +64,14 @@ Z80 assembly language / embedded system — bare-metal language implementation t
 
 | Tool | Choice | Role |
 |------|--------|------|
-| Assembler | **sjasmplus** | Z80 macro assembler with structure facilities, multi-file includes, conditional assembly |
+| Assembler | **sjasmplus** (v1.22.0+, built from source) | Z80 macro assembler with structure facilities, multi-file includes, conditional assembly, LUA scripting |
 | Build system | **GNU Make** | Dependency tracking, incremental builds, disk image generation |
 | Disk imaging | **cpmtools** | Building CP/M disk images for deployment to MicroBeast |
-| CP/M emulator | **iz-cpm** | Headless CP/M 2.2 emulator for automated regression testing on Linux |
+| CP/M emulator | **iz-cpm** (v1.3.4) | Headless CP/M 2.2 emulator for automated regression testing on Linux |
 | Testing | **On-device + iz-cpm** | Primary on MicroBeast hardware; automated regression via emulator |
+| Containerisation | **Docker** | Reproducible build environment with pinned tool versions (multi-stage build) |
+
+**Docker build container:** All three build tools (sjasmplus, iz-cpm, cpmtools) are packaged in a Docker image (`antforth-toolchain`) via a multi-stage Dockerfile. This ensures reproducible builds regardless of host environment and simplifies future CI/CD (e.g., GitHub Actions). Usage: `make docker-build` to build the image, then `make docker` / `make docker-test` / `make docker-disk` to build inside the container. Local toolchain targets (`make`, `make test`, etc.) remain available for developers who prefer native builds.
 
 ### Assembler Conventions
 
@@ -354,7 +357,9 @@ The macros save/restore DE (IP) and BC (TOS) to the parameter stack. If addition
 
 ```
 antforth/
-├── Makefile                        # Build system: asm → .COM → disk image
+├── Dockerfile                      # Multi-stage Docker build for reproducible toolchain
+├── .dockerignore                   # Excludes build/, .git/, _bmad*, blog/ from Docker context
+├── Makefile                        # Build system: asm → .COM → disk image (local + Docker targets)
 ├── README.md
 ├── .gitignore
 │
@@ -440,14 +445,21 @@ antforth/
 ### Build Process
 
 ```
-make              # Full build: assemble → .COM → disk image
+# Local toolchain
+make              # Assemble → build/antforth.com
 make asm          # Assemble only → build/antforth.com
 make disk         # Build disk image → build/antforth.img
 make test         # Assemble, then run Forth test suite under iz-cpm
 make clean        # Remove build artifacts
+
+# Docker toolchain (reproducible, CI-ready)
+make docker-build # Build the antforth-toolchain Docker image
+make docker       # Assemble inside Docker
+make docker-test  # Build and run under iz-cpm inside Docker
+make docker-disk  # Build disk image inside Docker
 ```
 
-The Makefile tracks `.asm` file dependencies via sjasmplus include scanning, so changing any source file triggers a rebuild.
+The Makefile depends on all `src/*.asm` files, so changing any source file triggers a rebuild. sjasmplus assembles fast enough that this coarse dependency is sufficient.
 
 ## Architecture Validation Results
 

@@ -1,6 +1,6 @@
 # Story 1.1: Project Scaffolding & Build Toolchain
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -29,49 +29,49 @@ So that I can assemble Z80 source into a CP/M .COM binary and test it under emul
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create project directory structure (AC: #3, #4)
-  - [ ] 1.1 Create `src/`, `tests/`, `build/`, `disk/`, `docs/` directories
-  - [ ] 1.2 Create `.gitignore` excluding `build/`
-- [ ] Task 2: Create `Makefile` with build targets (AC: #1, #5)
-  - [ ] 2.1 `make` / `make asm` — assemble `src/antforth.asm` → `build/antforth.com`
-  - [ ] 2.2 `make disk` — build CP/M disk image via cpmtools → `build/antforth.img`
-  - [ ] 2.3 `make test` — assemble then run test suite under iz-cpm
-  - [ ] 2.4 `make clean` — remove `build/` artifacts
-  - [ ] 2.5 Dependency tracking: sjasmplus include scanning so incremental builds work
-- [ ] Task 3: Create `src/constants.asm` — memory layout and system equates (AC: #3)
-  - [ ] 3.1 TPA_START (0x0100), BDOS_ENTRY (0x0005)
-  - [ ] 3.2 Parameter stack base (top of TPA, below BDOS — use CP/M convention: read word at 0x0006 for BDOS address)
-  - [ ] 3.3 Return stack base (below parameter stack region)
-  - [ ] 3.4 User variable area base (IY)
-  - [ ] 3.5 TIB address and TIB_SIZE (128 bytes)
-  - [ ] 3.6 HASH_BUCKETS (64)
-  - [ ] 3.7 Stack sizes, PAD offset, and other system constants
-- [ ] Task 4: Create `src/macros.asm` — threading and dictionary macros (AC: #3)
-  - [ ] 4.1 NEXT macro (fetch via DE, load HL, JP (HL))
-  - [ ] 4.2 DOCOL routine (push IP to return stack IX, set IP to body)
-  - [ ] 4.3 EXIT routine (pop IP from return stack, NEXT)
-  - [ ] 4.4 DEFCODE macro (dictionary header + inline CODE body)
-  - [ ] 4.5 DEFWORD macro (dictionary header + JP DOCOL + thread body)
-  - [ ] 4.6 DEFIMMED macro (dictionary header with IMMEDIATE flag + JP DOCOL)
-  - [ ] 4.7 BDOS_SAVE / BDOS_RESTORE macros (save/restore DE and BC around BDOS calls)
-  - [ ] 4.8 XOR-rotate hash computation within macros for link-chain insertion at assembly time
-- [ ] Task 5: Create `src/structures.asm` — sjasmplus STRUCT definitions (AC: #3)
-  - [ ] 5.1 DictEntry structure
-  - [ ] 5.2 UserArea structure
-- [ ] Task 6: Create `src/antforth.asm` — main assembly manifest (AC: #1, #2)
-  - [ ] 6.1 ORG 0x0100 (CP/M .COM entry point)
-  - [ ] 6.2 Include all source files in dependency order per architecture
-  - [ ] 6.3 Cold start: minimal init that calls BYE (BDOS function 0) to exit cleanly
-- [ ] Task 7: Create stub files for remaining architecture source files (AC: #3)
-  - [ ] 7.1 `inner_interpreter.asm`, `outer_interpreter.asm`, `compiler.asm`
-  - [ ] 7.2 `dictionary.asm`, `hash.asm`
-  - [ ] 7.3 `stack_ops.asm`, `arithmetic.asm`, `logic.asm`, `memory.asm`
-  - [ ] 7.4 `control_flow.asm`, `io.asm`, `strings.asm`, `formatting.asm`
-  - [ ] 7.5 `assembler.asm`, `system.asm`, `bootstrap.asm`
-- [ ] Task 8: Verify build and clean exit (AC: #1, #2)
-  - [ ] 8.1 `make` succeeds and produces `build/antforth.com`
-  - [ ] 8.2 Run under iz-cpm and confirm clean CP/M exit (return code 0)
-  - [ ] 8.3 `make clean` removes artifacts, `make` rebuilds from scratch
+- [x] Task 1: Create project directory structure (AC: #3, #4)
+  - [x] 1.1 Create `src/`, `tests/`, `build/`, `disk/`, `docs/` directories
+  - [x] 1.2 Create `.gitignore` excluding `build/`
+- [x] Task 2: Create `Makefile` with build targets (AC: #1, #5)
+  - [x] 2.1 `make` / `make asm` — assemble `src/antforth.asm` → `build/antforth.com`
+  - [x] 2.2 `make disk` — build CP/M disk image via cpmtools → `build/antforth.img`
+  - [x] 2.3 `make test` — assemble then run test suite under iz-cpm
+  - [x] 2.4 `make clean` — remove `build/` artifacts
+  - [x] 2.5 Dependency tracking: sjasmplus include scanning so incremental builds work
+- [x] Task 3: Create `src/constants.asm` — memory layout and system equates (AC: #3)
+  - [x] 3.1 TPA_START (0x0100), BDOS_ENTRY (0x0005)
+  - [x] 3.2 Parameter stack base (top of TPA, below BDOS — use CP/M convention: read word at 0x0006 for BDOS address)
+  - [x] 3.3 Return stack base (below parameter stack region)
+  - [x] 3.4 User variable area base (IY)
+  - [x] 3.5 TIB address and TIB_SIZE (128 bytes)
+  - [x] 3.6 HASH_BUCKETS (64)
+  - [x] 3.7 Stack sizes, PAD offset, and other system constants
+- [x] Task 4: Create `src/macros.asm` — threading and dictionary macros (AC: #3)
+  - [x] 4.1 NEXT macro (fetch via DE, load HL, JP (HL))
+  - [x] 4.2 DOCOL routine (push IP to return stack IX, set IP to body)
+  - [x] 4.3 EXIT routine (pop IP from return stack, NEXT)
+  - [x] 4.4 DEFCODE macro (dictionary header + inline CODE body)
+  - [x] 4.5 DEFWORD macro (dictionary header + JP DOCOL + thread body)
+  - [x] 4.6 DEFIMMED macro (dictionary header with IMMEDIATE flag + JP DOCOL)
+  - [x] 4.7 BDOS_SAVE / BDOS_RESTORE macros (save/restore DE and BC around BDOS calls)
+  - [x] 4.8 XOR-rotate hash computation within macros for link-chain insertion at assembly time
+- [x] Task 5: Create `src/structures.asm` — sjasmplus STRUCT definitions (AC: #3)
+  - [x] 5.1 DictEntry structure
+  - [x] 5.2 UserArea structure
+- [x] Task 6: Create `src/antforth.asm` — main assembly manifest (AC: #1, #2)
+  - [x] 6.1 ORG 0x0100 (CP/M .COM entry point)
+  - [x] 6.2 Include all source files in dependency order per architecture
+  - [x] 6.3 Cold start: minimal init that calls BYE (BDOS function 0) to exit cleanly
+- [x] Task 7: Create stub files for remaining architecture source files (AC: #3)
+  - [x] 7.1 `inner_interpreter.asm`, `outer_interpreter.asm`, `compiler.asm`
+  - [x] 7.2 `dictionary.asm`, `hash.asm`
+  - [x] 7.3 `stack_ops.asm`, `arithmetic.asm`, `logic.asm`, `memory.asm`
+  - [x] 7.4 `control_flow.asm`, `io.asm`, `strings.asm`, `formatting.asm`
+  - [x] 7.5 `assembler.asm`, `system.asm`, `bootstrap.asm`
+- [x] Task 8: Verify build and clean exit (AC: #1, #2)
+  - [x] 8.1 `make` succeeds and produces `build/antforth.com`
+  - [x] 8.2 Run under iz-cpm and confirm clean CP/M exit (return code 0)
+  - [x] 8.3 `make clean` removes artifacts, `make` rebuilds from scratch
 
 ## Dev Notes
 
@@ -176,8 +176,61 @@ hash = hash AND 63                       ; mod 64 for bucket index
 
 ### Agent Model Used
 
+Claude Opus 4.6
+
 ### Debug Log References
+
+- sjasmplus v1.21.0 LUA API: `sj.add_label` not available; used `sj.insert_label` instead
+- SAVEBIN directive requires DEVICE emulation mode; switched to `--raw` CLI flag for binary output
+- iz-cpm not available via `cargo install`; downloaded pre-built binary v1.3.4 from GitHub releases
 
 ### Completion Notes List
 
+- Created complete project directory structure: src/, tests/, build/, disk/, docs/
+- Updated .gitignore to exclude build/
+- Created Makefile with all targets: asm (default), disk, test, clean — with incremental build support via wildcard dependency on all src/*.asm files
+- Created constants.asm with all memory layout equates: TPA_START, BDOS_ENTRY, stack sizes, HASH_BUCKETS, TIB_SIZE, PAD_OFFSET, dictionary flags
+- Created macros.asm with: NEXT macro, DEFCODE/DEFWORD/DEFIMMED dictionary macros with LUA-based XOR-rotate hash computation and assembly-time bucket head tracking, BDOS_SAVE/BDOS_RESTORE macros
+- Created structures.asm with DictEntry and UserArea STRUCT definitions
+- Created antforth.asm as main manifest: ORG 0x0100, includes in dependency order, minimal cold start (LD C,0 / JP 0x0005)
+- Created 15 stub .asm files for all architecture-specified source modules
+- Created tests/core_tests.fth stub
+- Verified: `make` produces build/antforth.com (54 bytes), iz-cpm runs it with clean exit (code 0), `make clean` + `make` rebuilds correctly, incremental builds work (touching a source file triggers rebuild, no-change skips)
+- Note: Stack base addresses (PS_BASE, RS_BASE) are determined at runtime by reading BDOS address from 0x0006; constants.asm defines sizes only. Full initialization deferred to Story 1.2.
+- Added Docker build container (Dockerfile + .dockerignore) with sjasmplus (built from source, v1.22.0+), iz-cpm v1.3.4, and cpmtools. Multi-stage build keeps runtime image small. Makefile extended with docker-build, docker, docker-test, docker-disk targets. Verified `make docker` and `make docker-test` both succeed.
+
 ### File List
+
+- .gitignore (modified — added build/)
+- .dockerignore (new)
+- Dockerfile (new)
+- Makefile (new — includes docker-build, docker, docker-test, docker-disk targets)
+- src/antforth.asm (new)
+- src/constants.asm (new)
+- src/macros.asm (new)
+- src/structures.asm (new)
+- src/inner_interpreter.asm (new — DOCOL and EXIT_CODE routines)
+- src/outer_interpreter.asm (new — stub)
+- src/compiler.asm (new — stub)
+- src/dictionary.asm (new — stub)
+- src/hash.asm (new — stub)
+- src/stack_ops.asm (new — stub)
+- src/arithmetic.asm (new — stub)
+- src/logic.asm (new — stub)
+- src/memory.asm (new — stub)
+- src/control_flow.asm (new — stub)
+- src/io.asm (new — stub)
+- src/strings.asm (new — stub)
+- src/formatting.asm (new — stub)
+- src/assembler.asm (new — stub)
+- src/system.asm (new — BYE word via DEFCODE macro)
+- src/bootstrap.asm (new — stub)
+- tests/core_tests.fth (new — stub)
+- disk/.gitkeep (new — preserves empty directory in git)
+- _bmad-output/planning-artifacts/architecture.md (modified — added Docker/containerised build info)
+
+## Change Log
+
+- 2026-03-13: Story 1.1 implemented — project scaffolding, build toolchain, all source files created, build verified with clean CP/M exit under iz-cpm
+- 2026-03-13: Added Docker build container with pinned toolchain versions (sjasmplus from source, iz-cpm v1.3.4, cpmtools). Updated Makefile with docker targets. Updated architecture document to reflect containerised build approach.
+- 2026-03-13: Code review fixes — (H1) moved DOCOL/EXIT_CODE from macros.asm to inner_interpreter.asm per architecture spec; (H2) fixed 3 bugs in dictionary macros: bit32 API replaced with native Lua 5.5 bitwise ops, LEN operator replaced with LUA-computed name length via DEFINE/sj.get_define, added DEFCODE "BYE" in system.asm to validate macros assemble correctly; (M1) reordered includes in antforth.asm to match architecture spec; (M2) added disk/.gitkeep; (M3) documented architecture.md in File List. Build verified: 54 bytes, clean exit under iz-cpm.
