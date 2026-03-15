@@ -43,7 +43,15 @@ disk: $(TARGET)
 	cpmcp -f ibm-3740 $(DISKIMG) $(TARGET) 0:antforth.com
 
 test: $(TARGET)
-	$(IZCPM) $(TARGET)
+	@echo "Running antforth under iz-cpm..."
+	@OUTPUT=$$($(IZCPM) $(TARGET)) && \
+	EXPECTED="ABCDE" && \
+	if [ "$$OUTPUT" = "$$EXPECTED" ]; then \
+		echo "PASS: Output '$$OUTPUT' matches expected '$$EXPECTED'"; \
+	else \
+		echo "FAIL: Expected '$$EXPECTED', got '$$OUTPUT'"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

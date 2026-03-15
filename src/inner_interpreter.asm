@@ -1,9 +1,8 @@
 ; inner_interpreter.asm — Inner interpreter core routines
 ; AntForth — A Forth for CP/M on Z80
 ;
-; Contains: DOCOL, EXIT_CODE
+; Contains: DOCOL, EXIT_CODE, LIT, BRANCH, ?BRANCH, EXECUTE
 ; NEXT macro is defined in macros.asm
-; LIT, BRANCH, ?BRANCH, EXECUTE to be added in later stories
 
 ; === DOCOL — Enter colon definition ===
 ; Push IP (DE) onto return stack (IX), set IP to body (following JP DOCOL)
@@ -28,3 +27,71 @@ EXIT_CODE:
         INC     IX
         INC     IX
         NEXT
+
+; -----------------------------------------------
+; LIT ( -- x )
+;   Push inline literal from thread to parameter stack
+; -----------------------------------------------
+w_LIT:
+        DEFCODE "LIT", 0
+w_LIT_cf:
+        PUSH    BC              ; Push current TOS to parameter stack
+        EX      DE, HL          ; HL = IP
+        LD      C, (HL)
+        INC     HL
+        LD      B, (HL)
+        INC     HL              ; HL = IP past literal
+        NEXTHL                  ; Use HL directly as IP
+
+; -----------------------------------------------
+; BRANCH ( -- )
+;   Unconditional branch: add inline offset to IP
+;   Offset is relative to the address of the offset cell itself
+; -----------------------------------------------
+w_BRANCH:
+        DEFCODE "BRANCH", 0
+w_BRANCH_cf:
+        EX      DE, HL          ; HL = IP (points to offset cell)
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)         ; DE = offset
+        DEC     HL              ; HL = IP (back to start of offset)
+        ADD     HL, DE          ; HL = IP + offset (new IP)
+        NEXTHL
+
+; -----------------------------------------------
+; ?BRANCH ( flag -- )
+;   Conditional branch: if flag is 0 (FALSE), branch; else fall through
+; -----------------------------------------------
+w_QBRANCH:
+        DEFCODE "?BRANCH", 0
+w_QBRANCH_cf:
+        LD      A, B
+        OR      C               ; Test if BC (TOS) is zero
+        POP     BC              ; Pop new TOS from stack regardless
+        EX      DE, HL          ; HL = IP
+        JR      Z, .do_branch   ; If flag was 0, take the branch
+        ; Fall through: skip the offset
+        INC     HL
+        INC     HL              ; IP past the offset
+        NEXTHL
+.do_branch:
+        ; Take the branch: add inline offset to IP
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        DEC     HL
+        ADD     HL, DE          ; HL = IP + offset
+        NEXTHL
+
+; -----------------------------------------------
+; EXECUTE ( xt -- )
+;   Execute the word whose execution token is on the stack
+; -----------------------------------------------
+w_EXECUTE:
+        DEFCODE "EXECUTE", 0
+w_EXECUTE_cf:
+        LD      H, B
+        LD      L, C            ; HL = xt (code field address)
+        POP     BC              ; Pop new TOS
+        JP      (HL)            ; Jump to code field

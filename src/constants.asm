@@ -8,6 +8,7 @@ TPA_START       EQU     0x0100          ; .COM entry point / start of TPA
 
 ; === BDOS Function Numbers ===
 P_TERMCPM       EQU     0               ; BDOS function 0: terminate program
+C_WRITE         EQU     2               ; BDOS function 2: console output (E = char)
 
 ; === Stack Sizes ===
 PS_SIZE         EQU     256             ; Parameter stack: 128 cells (256 bytes)

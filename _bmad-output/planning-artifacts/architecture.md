@@ -276,20 +276,22 @@ DEFCODE "DUP", 0           ; name, flags
 **DEFWORD** — colon definitions (body is a thread):
 ```
 DEFWORD "NEGATE", 0         ; name, flags
-    DW w_LIT, 0
-    DW w_SWAP
-    DW w_MINUS
-    DW w_EXIT
+    DW w_LIT_cf, 0
+    DW w_SWAP_cf
+    DW w_MINUS_cf
+    DW w_EXIT_cf
 ```
 
 **DEFIMMED** — IMMEDIATE colon definitions:
 ```
 DEFIMMED "IF", 0
-    DW w_COMPILE_QBRANCH
-    DW w_HERE, w_FETCH
-    DW w_LIT, 0, w_COMMA
-    DW w_EXIT
+    DW w_COMPILE_QBRANCH_cf
+    DW w_HERE_cf, w_FETCH_cf
+    DW w_LIT_cf, 0, w_COMMA_cf
+    DW w_EXIT_cf
 ```
+
+**Note:** Thread bodies reference `w_NAME_cf` labels (the code field address), not the `w_NAME` label (which points to the dictionary header). The `_cf` suffix is required because sjasmplus local labels (`.code_field`) inside DEFCODE/DEFWORD macros are not accessible externally. Each word definition must include both a `w_NAME:` label before the DEFCODE/DEFWORD macro and a `w_NAME_cf:` label immediately after it.
 
 Macros handle: hash computation, hash-link chain insertion, count byte + flags + name emission, code field emission (`JP DOCOL` for DEFWORD/DEFIMMED, inline body for DEFCODE).
 

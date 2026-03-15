@@ -5,7 +5,9 @@
 ; BYE ( -- )
 ;   Exit to CP/M (terminate via BDOS function 0)
 ; -----------------------------------------------
+w_BYE:
         DEFCODE "BYE", 0
+w_BYE_cf:
         LD      C, P_TERMCPM
         JP      BDOS_ENTRY
         ; No NEXT — BYE never returns
