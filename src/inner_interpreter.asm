@@ -17,8 +17,8 @@ DOCOL:
         INC     HL
         INC     HL
         INC     HL
-        EX      DE, HL          ; DE = IP = body address
-        NEXT
+        ; HL = body address = new IP, use NEXTHL to avoid redundant EX DE, HL
+        NEXTHL
 
 ; === EXIT — Return from colon definition ===
 EXIT_CODE:

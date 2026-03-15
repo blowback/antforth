@@ -13,6 +13,12 @@
 ; DE = IP, fetch [DE] into HL, advance DE by 2, JP (HL)
     MACRO NEXT
         EX      DE, HL          ; HL = IP
+        NEXTHL
+    ENDM
+
+; === NEXTHL — NEXT when HL already holds IP ===
+; Use when HL = IP, skipping the initial EX DE, HL
+    MACRO NEXTHL
         LD      E, (HL)
         INC     HL
         LD      D, (HL)
