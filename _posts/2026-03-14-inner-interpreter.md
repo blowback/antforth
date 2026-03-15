@@ -1,7 +1,7 @@
 --- 
 layout: post
 title: "Inner interpreter"
-date: 2026-03-14
+date: 2026-03-15
 --- 
 
 On to the next BMAD task: 1.2 - inner interpreter and threading.
