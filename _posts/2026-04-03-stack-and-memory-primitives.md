@@ -30,7 +30,10 @@ Let's begin! We `/bmad-bmm-create-story 1-3`, review the story, then
 Code review throws up this:
 
 ```
- Summary: The implementations look correct based on manual code tracing (DUP through FILL, plus ROLL for u=0,1,2). The main problem is that 10+ primitives are claimed as tested (tasks marked [x]) but have no test threads. The highest risk is MOVE and ROLL — both are complex, both are untested.
+ Summary: The implementations look correct based on manual code tracing (DUP through 
+FILL, plus ROLL for u=0,1,2). The main problem is that 10+ primitives are claimed 
+as tested (tasks marked [x]) but have no test threads. The highest risk is 
+MOVE and ROLL — both are complex, both are untested.
 ```
 
 Shirking tests is a vibe-coding classic, particularly with Claude. BMM's multi-layer approach is a good 
@@ -43,7 +46,7 @@ an *extension*. Furthermore, Forth purists consider these words to be bad practi
 Neither CamelForth nor JonesForth implement them.
 
 Tracing back through or BMAD docs I see these were included early on in FR17 of our Product Requirements 
-Document, so this is a mild human oversight. We don't technically need them at this stage, 
+Document, so this is a mild *human* oversight. We don't technically need them at this stage, 
 but it doesn't *hurt* to have these implemented now so I'm not going to take any 
 further action beyond scrutinizing this most complex primitive and making sure it's 
 well covered by testing later on (when we've got a proper interpreter and complicated 
@@ -51,7 +54,7 @@ tests are easier to write).
 
 ## stack_ops.asm 
 
-Before we look at the `ROLL` implementation, let#s appreciate some of the other stack 
+Before we look at the `ROLL` implementation, let's appreciate some of the other stack 
 primitives:
 
 ![basic stack operations](/antforth/assets/images/2026-04-03/stackops.png)
@@ -98,9 +101,9 @@ the stack *after* the call (that's the right hand bit, after the `--`).
 
 On each side, the rightmost item is the top-of-stack. 
 
-So here was can see that on etry `u` is on the top of the stack followed u+1 
-other values that we're calling `xu`, `xu-1`, `xu-2`, `x0` etc. and 
-on exit `xu` is on the top of the stack, `u` is no longer to be seen, 
+So here was can see that *on entry* `u` is on the top of the stack followed byte
+u+1 other values that we're calling `xu`, `xu-1`, `xu-2`, `x0` etc. and 
+*on exit* `xu` is on the top of the stack, `u` is no longer to be seen, 
 and everything else has shuffled UP one place into the gap that 
 was `xu`'s previous location.
 
@@ -186,102 +189,6 @@ returning "everything's OK, honest!"
 
 
 
-
-
-There are a couple of minor issues which we elect to fix automatically.
-
-Finally, we've got an actual working test:
-
-![First test](/antforth/assets/images/2026-03-15_01-03.png)
-
-But how's that actually doing anything? We don't have an interpreter yet!
-
-## inner_interpreter.asm
-
-In Forth, the thing that executes "programs" is called the *outer interpreter*, and 
-while we don't have that yet we do have a bare bones *inner* interpreter: this is 
-the code that can execute sequences of Forth *words*.
-
-A Forth *word* is either z80 machine code that gets executed directly, or it's 
-a very specific bit of machine code called `DOCOL` that knows how to execute 
- sequences of other Forth words. So you build Forth words from other Forth 
-words, and some of those words might be machine code primitives.
-
-In our barebones inner interpreter, we've now got some basic primitives like `LIT`:
-
-
-![LIT](/antforth/assets/images/2026-04-03/lit.png)
-
-Here `w_LIT` is the header for the word (the header permits it to be linked 
-into the dictionary of all Forth words), and `w_LIT_cf` is the actual code 
-that gets implemented when `LIT` is used (the '_cf' means "code field").
-
-`LIT` is what compiles a literal (like the `2` in `: DOUBLE 2 * `) into a 
-word. It does this by taking the next argument after the `LIT`, let's say 
-`2`, and sticking that on the top of the parameter stack, adjusting IP 
-to move past the `2`. 
-
-The code might look a little weird, but this is because we are using an 
-optimisation and keeping our `TOS` (*Top of Stack*) in register BC, while 
-the z80 stack holds the rest of the parameter stack. So that first 
-`PUSH BC` moves TOS onto the z80 stack, and then we fetch a new value into 
-BC, or into the new Top-of-Stack in other words.
-
-We also have this definition for `EXECUTE`:
-
-![EXECUTE](/antforth/assets/images/2026-04-03/execute.png)
-
-This takes an "xt" (eXecution Token - a pointer to a function) from the 
-parameter stack and executes it. We now know that the top of our parameter 
-stack is in BC, so all we need to do is move BC into HL so that we can 
-jump to it.
-
-There are a couple of other new definitions (`BRANCH`, `?BRANCH`) which 
-we'll gloss over for now: they implement unconditional and conditional 
-branching respectively.
-
-## io.asm 
-
-We now also have the rather exciting primitive `EMIT`:
-
-![EMIT](/antforth/assets/images/2026-04-03/emit.png)
-
-Which takes a byte from the TOS (BC register again) and uses CP/M's 
-BDOS to output it to the terminal. This routine is mostly register 
-juggling to get the character we want to emit in the E register and 
-the value `C_WRITE` into the C register before we call the BDOS.
-
-Note that the call to BDOS is wrapped with `BDOS_SAVE` and `BDOS_RESTORE` 
-to protect our registers from any corruption by BDOS.
-
-## antforth.asm 
-
-Now we can see how the test is actually implemented:
-
-![test 1](/antforth/assets/images/2026-04-03/test1.png)
-
-Here we're hardcoding a `thread` which is basically `LIT 'A' EMIT` and 
-then executing it. 
-
-We've also got a test of `DOCOL`:
-
-![test 2](/antforth/assets/images/2026-04-03/test2.png)
-
-whose definition looks like:
-
-![test DOCOL](/antforth/assets/images/2026-04-03/test_docol.png)
-
-Which is basically the same as test 1, but this time wrapped in a 
-`DOCOL` - i.e. it's a simulation of a Forth word definition.
-
-There are a few more tests to do with branching, and then one last 
-one to test `EXECUTE`:
-
-![test 6](/antforth/assets/images/2026-04-03/test6.png)
-
-Rather than just call `BYE` directly, we're taking its address, 
-pushing that onto the parameter stack, and then using `EXECUTE` to 
-call it. 
 
 
 
