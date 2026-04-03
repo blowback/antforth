@@ -6,7 +6,19 @@ date: 2026-03-15
 
 On to the next BMAD task: 1.2 - inner interpreter and threading.
 
-We `/bmad-bmm-dev-story 1-2`, review the story, then `/bmad-bmm-dev-story 1-2`, followed by `/bmad-bmm-code-review 1-2`.
+We `/bmad-bmm-create-story 1-2` to create the next story that will guide Claude's 
+development. We got story 1-2 for free last time as part of the initial planning 
+process, but from here on in we generate stories on-demand just before we need them. 
+This helps the overall development workflow adapt to changes in direction caused by 
+discoveries and pivots in ongoing development. It's preferable to trying to nail 
+all the stories down in one go at the outset, as not all developmental challenges 
+can be anticipated.
+
+This produces a document in `_bmad-output/implementation-artificats/1-2-inner-interpreter-and-threading.md` 
+which will be Claude's development plan. We must review the story carefully, and manually 
+address any problems. Once we're happy we can kick off the development with  `/bmad-bmm-dev-story 1-2`
+and once that is complete we will `/reset/` Claude to get a fresh context and start a 
+code review with `/bmad-bmm-code-review 1-2`.
 
 There are a couple of minor issues which we elect to fix automatically.
 
@@ -36,7 +48,7 @@ Here `w_LIT` is the header for the word (the header permits it to be linked
 into the dictionary of all Forth words), and `w_LIT_cf` is the actual code 
 that gets implemented when `LIT` is used (the '_cf' means "code field").
 
-`LIT` is what compiles a literal (like the `2` in `: DOUBLE 2 * '`) into a 
+`LIT` is what compiles a literal (like the `2` in `: DOUBLE 2 * `) into a 
 word. It does this by taking the next argument after the `LIT`, let's say 
 `2`, and sticking that on the top of the parameter stack, adjusting IP 
 to move past the `2`. 
