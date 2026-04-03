@@ -30,7 +30,7 @@ words, and some of those words might be machine code primitives.
 In our barebones inner interpreter, we've now got some basic primitives like `LIT`:
 
 
-![LIT](/antforth/assets/images/2026-04-01/lit.png)
+![LIT](/antforth/assets/images/2026-04-03/lit.png)
 
 Here `w_LIT` is the header for the word (the header permits it to be linked 
 into the dictionary of all Forth words), and `w_LIT_cf` is the actual code 
@@ -49,7 +49,7 @@ BC, or into the new Top-of-Stack in other words.
 
 We also have this definition for `EXECUTE`:
 
-![EXECUTE](/antforth/assets/images/2026-04-01/execute.png)
+![EXECUTE](/antforth/assets/images/2026-04-03/execute.png)
 
 This takes an "xt" (eXecution Token - a pointer to a function) from the 
 parameter stack and executes it. We now know that the top of our parameter 
@@ -64,7 +64,7 @@ branching respectively.
 
 We now also have the rather exciting primitive `EMIT`:
 
-![EMIT](/antforth/assets/images/2026-04-01/emit.png)
+![EMIT](/antforth/assets/images/2026-04-03/emit.png)
 
 Which takes a byte from the TOS (BC register again) and uses CP/M's 
 BDOS to output it to the terminal. This routine is mostly register 
@@ -78,18 +78,18 @@ to protect our registers from any corruption by BDOS.
 
 Now we can see how the test is actually implemented:
 
-![test 1](/antforth/assets/images/2026-04-01/test1.png)
+![test 1](/antforth/assets/images/2026-04-03/test1.png)
 
 Here we're hardcoding a `thread` which is basically `LIT 'A' EMIT` and 
 then executing it. 
 
 We've also got a test of `DOCOL`:
 
-![test 2](/antforth/assets/images/2026-04-01/test2.png)
+![test 2](/antforth/assets/images/2026-04-03/test2.png)
 
 whose definition looks like:
 
-![test DOCOL](/antforth/assets/images/2026-04-01/test_docol.png)
+![test DOCOL](/antforth/assets/images/2026-04-03/test_docol.png)
 
 Which is basically the same as test 1, but this time wrapped in a 
 `DOCOL` - i.e. it's a simulation of a Forth word definition.
@@ -97,7 +97,7 @@ Which is basically the same as test 1, but this time wrapped in a
 There are a few more tests to do with branching, and then one last 
 one to test `EXECUTE`:
 
-![test 6](/antforth/assets/images/2026-04-01/test6.png)
+![test 6](/antforth/assets/images/2026-04-03/test6.png)
 
 Rather than just call `BYE` directly, we're taking its address, 
 pushing that onto the parameter stack, and then using `EXECUTE` to 
