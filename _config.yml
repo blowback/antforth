@@ -6,3 +6,4 @@ url: "https://blowback.github.io"
 # plugins:
 #   - jekyll-remote-theme
 theme: minima
+future: true
