@@ -86,7 +86,7 @@ HL = 1111 = 15
 ```
 
 
-Note that this works for signed and unsigned 16 bit numbers, becasue we're discarding the top 16 bits of the result.
+Note that this works for signed and unsigned 16 bit numbers, because we're discarding the top 16 bits of the result.
 
 
 ### Division
@@ -98,7 +98,7 @@ division-related word definitions:
 
 This is unsigned 16-bit division of HL by BC, producing quotient in HL and remainder in DE.
 
-It's another z80 classic, the  "restoring division algorithm"" — the same long division you do by hand, but in binary.
+It's another z80 classic, the  "restoring division algorithm" — the same long division you do by hand, but in binary.
 
 1. Setup: DE (remainder) = 0, A (bit counter) = 16
 2. Main loop (one iteration per bit of the dividend):
@@ -115,8 +115,8 @@ It's another z80 classic, the  "restoring division algorithm"" — the same long
 
   d. Does the divisor fit?
 
-    - Yes (no carry): The subtraction is kept. Swap back (`EX DE, HL`), then `SET 0, L` sets the lowest bit of the quotient to 1
-    - No (carry set): The divisor was too large. Restore the remainder with `ADD HL, BC`` (undoing the subtraction — this is what makes it "restoring" division). Swap back. The quotient bit stays 0
+  - Yes (no carry): The subtraction is kept. Swap back (`EX DE, HL`), then `SET 0, L` sets the lowest bit of the quotient to 1
+  - No (carry set): The divisor was too large. Restore the remainder with `ADD HL, BC`` (undoing the subtraction — this is what makes it "restoring" division). Swap back. The quotient bit stays 0
 
   e. Loop: Decrement counter, repeat
 
@@ -173,11 +173,11 @@ The truth table for restoring "signedness" is:
 
 
 |Dividend|Divisor|Quotient|Remainder|
-|--------|-------|--------|---------|
-| +        | +       | +        | +         |
-| -        | +       | -        | -         |
-| +        | -       | -        | +         |
-| -        | -       | +        | -         |
+|------------|----------|------------|---------------|
+| +            | +          | +            | +               |
+| -             | +          | -            | -                |
+| +            | -           | -            | +               |
+| -             | -           | +           | -                |
 
 
 
@@ -212,7 +212,7 @@ More simple wrapper functions, nothing particularly worth talking about in here.
 
 Once again we perform our solemn "Human In The Loop" duty, and scrutinise the test results:
 
-![running unit tests](/antforth/assets/images/2026-04-04/test_1_4.png)
+![running unit tests](/antforth/assets/images/2026-04-04/tests_1_4.png)
 
 That's a lot of tests! The built in test thread is starting to get a bit cumbersome. Notice 
 this though:
