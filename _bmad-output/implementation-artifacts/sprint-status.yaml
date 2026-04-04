@@ -44,7 +44,7 @@ development_status:
   1-1-project-scaffolding-and-build-toolchain: done
   1-2-inner-interpreter-and-threading: done
   1-3-stack-and-memory-primitives: done
-  1-4-arithmetic-logic-and-comparison: backlog
+  1-4-arithmetic-logic-and-comparison: done
   1-5-console-io-primitives: backlog
   epic-1-retrospective: optional
 
