@@ -52,7 +52,7 @@ disk: $(TARGET) $(TESTKEY)
 test: $(TARGET)
 	@echo "Running antforth under iz-cpm..."
 	@OUTPUT=$$($(IZCPM) $(TARGET)) && \
-	EXPECTED=$$(printf 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstu\r\nv w  xyz{|') && \
+	EXPECTED=$$(printf 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstu\r\nv w  xyz{|}~#$$%%&') && \
 	if [ "$$OUTPUT" = "$$EXPECTED" ]; then \
 		echo "PASS: Output matches expected"; \
 	else \

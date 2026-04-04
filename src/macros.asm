@@ -1,13 +1,27 @@
 ; macros.asm — Threading, dictionary, and BDOS macros
 ; AntForth — A Forth for CP/M on Z80
 
-; === Hash Bucket Heads (assembly-time variables) ===
-; One variable per bucket, initialized to 0 (no previous entry)
+; === Hash Bucket Heads (assembly-time LUA table) ===
+; Pure LUA global table for bucket heads — avoids sj.insert_label/sj.get_label
+; timing issues across assembler passes
     LUA ALLPASS
+        _hash_buckets = {}
         for i = 0, 63 do
-            sj.insert_label("_hash_bucket_" .. i, 0)
+            _hash_buckets[i] = 0
         end
     ENDLUA
+
+; === UPPER — Convert ASCII character in A to uppercase ===
+; If A is 'a'-'z', subtracts 0x20. Otherwise leaves A unchanged.
+; Clobbers: F
+    MACRO UPPER
+        CP      'a'
+        JR      C, .not_lower
+        CP      'z' + 1
+        JR      NC, .not_lower
+        SUB     0x20
+.not_lower:
+    ENDM
 
 ; === NEXT — Inner interpreter fetch-decode-execute ===
 ; DE = IP, fetch [DE] into HL, advance DE by 2, JP (HL)
@@ -46,30 +60,34 @@
 ;   ... Z80 code body ...
 ;   NEXT
     MACRO DEFCODE name?, flags?
-        ; Pass name to LUA via DEFINE (macro params aren't directly accessible as strings in LUA)
+        ; Pass name to LUA via DEFINE
         DEFINE _CURRENT_NAME name?
-        ; Compute hash, name length, and get previous bucket head via LUA
-        LUA ALLPASS
-            local name = sj.get_define("_CURRENT_NAME")
-            local bucket = forth_hash(name)
-            local prev = sj.get_label("_hash_bucket_" .. bucket)
-            sj.insert_label("_hash_prev_link", prev)
-            sj.insert_label("_hash_bucket_idx", bucket)
-            sj.insert_label("_hash_name_len", #name)
-        ENDLUA
-        UNDEFINE _CURRENT_NAME
+        DEFINE _CURRENT_FLAGS flags?
 
-        ; Dictionary header
+        ; Dictionary header: emit hash_link and count_flags from LUA,
+        ; then name from assembler. Uses _pc() to avoid sj.insert_label
+        ; timing issues across assembler passes.
 .dict_entry:
-        DW      _hash_prev_link         ; Hash link: previous entry in same bucket
-        DB      (flags?) | _hash_name_len ; Count + flags byte
+        LUA ALLPASS
+            local raw = sj.get_define("_CURRENT_NAME")
+            local name = raw:sub(2, -2)
+            local flags = sj.calc(sj.get_define("_CURRENT_FLAGS"))
+            _current_bucket = forth_hash(name)
+            local prev = _hash_buckets[_current_bucket]
+            -- Emit hash_link (2 bytes, little-endian)
+            _pc(string.format("DW 0x%04X", prev))
+            -- Emit count_flags byte (flags | name_length)
+            _pc(string.format("DB 0x%02X", flags | #name))
+        ENDLUA
         DB      name?                   ; Name string
 
         ; Update bucket head to this entry
         LUA ALLPASS
-            local bucket = sj.get_label("_hash_bucket_idx")
-            sj.insert_label("_hash_bucket_" .. bucket, sj.get_label(".dict_entry"))
+            _hash_buckets[_current_bucket] = sj.get_label(".dict_entry")
         ENDLUA
+
+        UNDEFINE _CURRENT_NAME
+        UNDEFINE _CURRENT_FLAGS
 
         ; Code field — body follows inline
 .code_field:
@@ -81,26 +99,26 @@
 ;   DW EXIT_CODE_ADDR
     MACRO DEFWORD name?, flags?
         DEFINE _CURRENT_NAME name?
-        LUA ALLPASS
-            local name = sj.get_define("_CURRENT_NAME")
-            local bucket = forth_hash(name)
-            local prev = sj.get_label("_hash_bucket_" .. bucket)
-            sj.insert_label("_hash_prev_link", prev)
-            sj.insert_label("_hash_bucket_idx", bucket)
-            sj.insert_label("_hash_name_len", #name)
-        ENDLUA
-        UNDEFINE _CURRENT_NAME
+        DEFINE _CURRENT_FLAGS flags?
 
-        ; Dictionary header
 .dict_entry:
-        DW      _hash_prev_link         ; Hash link
-        DB      (flags?) | _hash_name_len ; Count + flags
+        LUA ALLPASS
+            local raw = sj.get_define("_CURRENT_NAME")
+            local name = raw:sub(2, -2)
+            local flags = sj.calc(sj.get_define("_CURRENT_FLAGS"))
+            _current_bucket = forth_hash(name)
+            local prev = _hash_buckets[_current_bucket]
+            _pc(string.format("DW 0x%04X", prev))
+            _pc(string.format("DB 0x%02X", flags | #name))
+        ENDLUA
         DB      name?                   ; Name string
 
         LUA ALLPASS
-            local bucket = sj.get_label("_hash_bucket_idx")
-            sj.insert_label("_hash_bucket_" .. bucket, sj.get_label(".dict_entry"))
+            _hash_buckets[_current_bucket] = sj.get_label(".dict_entry")
         ENDLUA
+
+        UNDEFINE _CURRENT_NAME
+        UNDEFINE _CURRENT_FLAGS
 
         ; Code field — JP DOCOL, then thread body follows
 .code_field:
