@@ -16,6 +16,7 @@ BUILDDIR = build
 DISKDIR  = disk
 
 TARGET   = $(BUILDDIR)/antforth.com
+TESTKEY  = $(BUILDDIR)/test_key.com
 DISKIMG  = $(BUILDDIR)/antforth.img
 
 # All .asm files — sjasmplus assembles fast, depend on all of them
@@ -25,7 +26,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test clean docker-build docker docker-test docker-disk
+.PHONY: all asm disk test test_key clean docker-build docker docker-test docker-disk
 
 all: asm
 
@@ -37,19 +38,27 @@ $(TARGET): $(SRCS) | $(BUILDDIR)
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
-disk: $(TARGET)
+test_key: $(TESTKEY)
+
+$(TESTKEY): $(SRCS) | $(BUILDDIR)
+	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) test_key.asm --raw=../$(TESTKEY)
+
+disk: $(TARGET) $(TESTKEY)
 	@echo "Building CP/M disk image..."
 	mkfs.cpm -f ibm-3740 $(DISKIMG)
 	cpmcp -f ibm-3740 $(DISKIMG) $(TARGET) 0:antforth.com
+	cpmcp -f ibm-3740 $(DISKIMG) $(TESTKEY) 0:test_key.com
 
 test: $(TARGET)
 	@echo "Running antforth under iz-cpm..."
 	@OUTPUT=$$($(IZCPM) $(TARGET)) && \
-	EXPECTED="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqr" && \
+	EXPECTED=$$(printf 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstu\r\nv w  xyz{|') && \
 	if [ "$$OUTPUT" = "$$EXPECTED" ]; then \
-		echo "PASS: Output '$$OUTPUT' matches expected '$$EXPECTED'"; \
+		echo "PASS: Output matches expected"; \
 	else \
-		echo "FAIL: Expected '$$EXPECTED', got '$$OUTPUT'"; \
+		echo "FAIL:"; \
+		echo "  Expected: $$(echo -n "$$EXPECTED" | xxd)"; \
+		echo "  Got:      $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 

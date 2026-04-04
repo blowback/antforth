@@ -846,6 +846,58 @@ test_thread:
         DW      w_EMIT_cf
 .tr_end:
 
+        ; --- Story 1.5: Console I/O primitive tests ---
+
+        ; Test 's': TYPE — output 's' via TYPE (1 char from test_str_s)
+        DW      w_LIT_cf, test_str_s    ; c-addr
+        DW      w_LIT_cf, 1             ; u = 1
+        DW      w_TYPE_cf               ; Should output 's'
+
+        ; Test 't': TYPE — output "t" via TYPE (1 char from test_str_t)
+        DW      w_LIT_cf, test_str_t    ; c-addr
+        DW      w_LIT_cf, 1             ; u = 1
+        DW      w_TYPE_cf               ; Should output 't'
+
+        ; Test 'u': TYPE with length 0 — should output nothing, then emit 'u'
+        DW      w_LIT_cf, test_str_s    ; c-addr (doesn't matter)
+        DW      w_LIT_cf, 0             ; u = 0
+        DW      w_TYPE_cf               ; Should output nothing
+        DW      w_LIT_cf, 'u'
+        DW      w_EMIT_cf
+
+        ; Test 'v': CR — output CR+LF, then emit 'v'
+        DW      w_CR_cf
+        DW      w_LIT_cf, 'v'
+        DW      w_EMIT_cf
+
+        ; Test 'w': SPACE — output ' ', then emit 'w'
+        DW      w_SPACE_cf              ; Outputs ' '
+        DW      w_LIT_cf, 'w'
+        DW      w_EMIT_cf
+
+        ; Test 'x': SPACES — output 2 spaces, then emit 'x'
+        DW      w_LIT_cf, 2
+        DW      w_SPACES_cf             ; Outputs '  '
+        DW      w_LIT_cf, 'x'
+        DW      w_EMIT_cf
+
+        ; Test 'y': SPACES with 0 — should output nothing, then emit 'y'
+        DW      w_LIT_cf, 0
+        DW      w_SPACES_cf             ; Should output nothing
+        DW      w_LIT_cf, 'y'
+        DW      w_EMIT_cf
+
+        ; Test 'z{': TYPE with multi-char string — output "z{" (2 chars)
+        DW      w_LIT_cf, test_str_multi ; c-addr
+        DW      w_LIT_cf, 2             ; u = 2
+        DW      w_TYPE_cf               ; Should output "z{"
+
+        ; Test '|': SPACES with -1 — should be no-op, then emit '|'
+        DW      w_LIT_cf, 0xFFFF        ; -1 (negative count)
+        DW      w_SPACES_cf             ; Should output nothing
+        DW      w_LIT_cf, '|'
+        DW      w_EMIT_cf
+
         ; Done — exit via EXECUTE of BYE
         DW      w_LIT_cf, w_BYE_cf
         DW      w_EXECUTE_cf
@@ -873,6 +925,9 @@ hash_table:
 sp_base:        DW      0               ; Initial SP value, set during cold start (for DEPTH)
 test_cell:      DW      0               ; Scratch cell for test threads
 test_cell2:     DW      0               ; Scratch cell for test threads
+test_str_s:     DB      's'             ; Test string for TYPE test
+test_str_t:     DB      't'             ; Test string for TYPE test
+test_str_multi: DB      'z', '{'        ; Multi-char test string for TYPE loop test
 
 user_area:      DS      UserArea        ; User variable area (IY points here)
 tib_buffer:     DS      TIB_SIZE        ; Terminal input buffer
