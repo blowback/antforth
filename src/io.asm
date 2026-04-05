@@ -119,6 +119,53 @@ w_SPACES_cf:
         NEXT
 
 ; -----------------------------------------------
+; ACCEPT ( c-addr +n1 -- +n2 )
+;   Read a line of input from the co:nsole via BDOS function 10
+;   c-addr is technically ignored — BDOS always writes to tib_buffer
+;   +n1 = max chars, +n2 = actual chars read
+; -----------------------------------------------
+w_ACCEPT:
+        DEFCODE "ACCEPT", 0
+w_ACCEPT_cf:
+        ; BC = +n1 (max chars, TOS)
+        ; (SP) = c-addr (ignored — BDOS writes to bdos_input_buf+2 = tib_buffer)
+
+        ; Save DE (IP) to return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+
+        ; Set max_len in BDOS input buffer header
+        LD      A, C
+        LD      (bdos_input_buf), A
+
+        ; Pop and discard c-addr (second argument)
+        POP     HL              ; HL = c-addr (discarded)
+
+        ; Call BDOS function 10: read console buffer
+        LD      DE, bdos_input_buf
+        LD      C, C_READSTR
+        CALL    BDOS_ENTRY
+
+        ; BDOS 10 echoes CR when Enter pressed — emit LF ourselves
+        LD      E, 0x0A
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+
+        ; Read actual character count
+        LD      A, (bdos_input_len)
+        LD      C, A
+        LD      B, 0            ; BC = +n2 (actual chars read, new TOS)
+
+        ; Restore DE (IP) from return stack
+        LD      E, (IX+0)
+        LD      D, (IX+1)
+        INC     IX
+        INC     IX
+        NEXT
+
+; -----------------------------------------------
 ; KEY ( -- char )
 ;   Blocking console read via BDOS function 1
 ; -----------------------------------------------

@@ -11,6 +11,7 @@ P_TERMCPM       EQU     0               ; BDOS function 0: terminate program
 C_READ          EQU     1               ; BDOS function 1: console input (blocking, echoes)
 C_WRITE         EQU     2               ; BDOS function 2: console output (E = char)
 C_STATUS        EQU     11              ; BDOS function 11: console status (non-blocking)
+C_READSTR       EQU     10              ; BDOS function 10: read console buffer
 
 ; === Stack Sizes ===
 PS_SIZE         EQU     256             ; Parameter stack: 128 cells (256 bytes)
@@ -24,6 +25,9 @@ TIB_SIZE        EQU     128             ; TIB size in bytes
 
 ; === PAD ===
 PAD_OFFSET      EQU     84              ; PAD is 84 bytes above HERE
+
+; === Number Formatting Buffer ===
+NUM_BUF_SIZE    EQU     18              ; Max 16 binary digits + sign + safety
 
 ; === Dictionary Entry Flags ===
 F_IMMEDIATE     EQU     0x80            ; Bit 7: IMMEDIATE flag

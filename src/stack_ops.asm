@@ -165,12 +165,15 @@ w_ROLL_cf:
 w_DEPTH:
         DEFCODE "DEPTH", 0
 w_DEPTH_cf:
-        PUSH    BC              ; Save TOS — full stack now on SP
-        LD      HL, (sp_base)   ; HL = initial SP value
+        ; Compute depth BEFORE push — depth = (S0 - SP) / 2
+        ; Counts cells on SP only; TOS in BC is not counted.
+        ; Empty stack: SP == sp_base → depth = 0
+        LD      HL, (sp_base)   ; HL = S0
         OR      A               ; Clear carry
-        SBC     HL, SP          ; HL = sp_base - SP (bytes used)
+        SBC     HL, SP          ; HL = S0 - SP (bytes on stack)
         SRL     H
-        RR      L               ; HL = HL / 2 (number of cells)
+        RR      L               ; HL = cells on stack
+        PUSH    BC              ; Save old TOS
         LD      B, H
         LD      C, L            ; BC = depth (new TOS)
         NEXT
