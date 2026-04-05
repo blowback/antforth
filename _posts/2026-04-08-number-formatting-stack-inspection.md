@@ -91,7 +91,7 @@ encountered this issue in Forth's 50 year history and found an elegant solution.
 I discovered the answer, appropriately enough, in `comp.lang.forth` in a relatively 
 recent post from 2015:
 
-![comp.lang.forth post](/antforth/assets/images/2026-04-08/comp_lang_forth.png)
+![comp.lang.forth post](/antforth/assets/images/2026-04-08/complangforth.png)
 
 In other words, when you push the first item, you push the garbave BC value onto 
 the stack, then load BC with the new value. The depth formula is then simply 
