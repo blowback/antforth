@@ -17,6 +17,7 @@
 w_AND:
     DEFCODE "AND", 0
 w_AND_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = x1
     LD      A, H
     AND     B
@@ -33,6 +34,7 @@ w_AND_cf:
 w_OR:
     DEFCODE "OR", 0
 w_OR_cf:
+    CALL    check_underflow_2
     POP     HL
     LD      A, H
     OR      B
@@ -49,6 +51,7 @@ w_OR_cf:
 w_XOR:
     DEFCODE "XOR", 0
 w_XOR_cf:
+    CALL    check_underflow_2
     POP     HL
     LD      A, H
     XOR     B
@@ -80,6 +83,7 @@ w_INVERT_cf:
 w_LSHIFT:
     DEFCODE "LSHIFT", 0
 w_LSHIFT_cf:
+    CALL    check_underflow_2
     LD      A, C            ; A = shift count (low byte, max useful = 16)
     POP     HL              ; HL = x1
     OR      A
@@ -100,6 +104,7 @@ w_LSHIFT_cf:
 w_RSHIFT:
     DEFCODE "RSHIFT", 0
 w_RSHIFT_cf:
+    CALL    check_underflow_2
     LD      A, C            ; A = shift count
     POP     HL              ; HL = x1
     OR      A
@@ -121,6 +126,7 @@ w_RSHIFT_cf:
 w_EQUALS:
     DEFCODE "=", 0
 w_EQUALS_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = x1
     OR      A               ; Clear carry
     SBC     HL, BC          ; HL = x1 - x2
@@ -140,6 +146,7 @@ w_EQUALS_cf:
 w_LESS:
     DEFCODE "<", 0
 w_LESS_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1
     OR      A
     SBC     HL, BC          ; HL = n1 - n2, sets S and P/V flags
@@ -164,6 +171,7 @@ w_LESS_cf:
 w_GREATER:
     DEFCODE ">", 0
 w_GREATER_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1
     ; Swap HL and BC via register moves (faster than PUSH/POP)
     LD      A, H
@@ -222,6 +230,7 @@ w_ZERO_LESS_cf:
 w_U_LESS:
     DEFCODE "U<", 0
 w_U_LESS_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = u1
     OR      A               ; Clear carry
     SBC     HL, BC          ; HL = u1 - u2

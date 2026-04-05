@@ -1328,6 +1328,8 @@ sp_base:        DW      0               ; Initial SP value, set during cold star
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
 str_ok:         DB      " ok"
 STR_OK_LEN      EQU     3
+str_underflow:  DB      "? Stack underflow"
+STR_UNDERFLOW_LEN EQU  17
 test_cell:      DW      0               ; Scratch cell for test threads
 test_cell2:     DW      0               ; Scratch cell for test threads
 test_find_dup:    DB      3, "DUP"        ; Counted string for FIND test

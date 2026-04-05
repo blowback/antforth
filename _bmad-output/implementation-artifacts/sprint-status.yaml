@@ -52,7 +52,7 @@ development_status:
   2-1-dictionary-and-hash-table: done
   2-2-outer-interpreter-and-repl-loop: done
   2-3-number-formatting-and-stack-inspection: done
-  2-4-error-handling-and-recovery: backlog
+  2-4-error-handling-and-recovery: done
   epic-2-retrospective: optional
 
   epic-3: backlog

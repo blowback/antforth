@@ -12,6 +12,7 @@
 w_PLUS:
     DEFCODE "+", 0
 w_PLUS_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1
     ADD     HL, BC          ; HL = n1 + n2
     LD      B, H
@@ -25,6 +26,7 @@ w_PLUS_cf:
 w_MINUS:
     DEFCODE "-", 0
 w_MINUS_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1
     OR      A               ; Clear carry
     SBC     HL, BC          ; HL = n1 - n2
@@ -41,6 +43,7 @@ w_MINUS_cf:
 w_STAR:
     DEFCODE "*", 0
 w_STAR_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1
     PUSH    DE              ; Save IP
     EX      DE, HL          ; DE = n1 (multiplicand)
@@ -173,6 +176,7 @@ sdivmod:
 w_SLASH_MOD:
     DEFCODE "/MOD", 0
 w_SLASH_MOD_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1 (dividend)
     PUSH    DE              ; Save IP
     CALL    sdivmod         ; HL = quotient, DE = remainder
@@ -193,6 +197,7 @@ w_SLASH_MOD_cf:
 w_SLASH:
     DEFCODE "/", 0
 w_SLASH_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1 (dividend)
     PUSH    DE              ; Save IP
     CALL    sdivmod         ; HL = quotient, DE = remainder (ignored)
@@ -208,6 +213,7 @@ w_SLASH_cf:
 w_MOD:
     DEFCODE "MOD", 0
 w_MOD_cf:
+    CALL    check_underflow_2
     POP     HL              ; HL = n1 (dividend)
     PUSH    DE              ; Save IP
     CALL    sdivmod         ; HL = quotient (ignored), DE = remainder

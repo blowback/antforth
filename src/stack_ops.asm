@@ -22,6 +22,7 @@ w_DUP_cf:
 w_DROP:
         DEFCODE "DROP", 0
 w_DROP_cf:
+        CALL    check_underflow
         POP     BC              ; Load new TOS from parameter stack
         NEXT
 
@@ -32,6 +33,7 @@ w_DROP_cf:
 w_SWAP:
         DEFCODE "SWAP", 0
 w_SWAP_cf:
+        CALL    check_underflow_2
         POP     HL              ; HL = x1 (second on stack)
         PUSH    BC              ; Push x2 (old TOS) to stack
         LD      B, H
@@ -45,6 +47,7 @@ w_SWAP_cf:
 w_OVER:
         DEFCODE "OVER", 0
 w_OVER_cf:
+        CALL    check_underflow_2
         POP     HL              ; HL = x1
         PUSH    HL              ; Restore x1 on stack
         PUSH    BC              ; Push x2 (old TOS)
@@ -59,6 +62,7 @@ w_OVER_cf:
 w_ROT:
         DEFCODE "ROT", 0
 w_ROT_cf:
+        CALL    check_underflow_2 ; Catches DEPTH 0-1; DEPTH=2 (only 2 items) not caught
         ; BC = x3 (TOS), (SP) = x2, (SP+2) = x1
         POP     HL              ; HL = x2
         EX      (SP), HL        ; HL = x1, (SP) = x2
@@ -235,7 +239,7 @@ w_RP_STORE_cf:
 ; -----------------------------------------------
 w_TO_R:
         DEFCODE ">R", 0
-w_TO_R_cf:
+w_TO_R_cf:                              ; No underflow check — used internally in colon defs
         DEC     IX
         DEC     IX
         LD      (IX+1), B       ; Store high byte

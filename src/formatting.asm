@@ -115,6 +115,7 @@ emit_unsigned:
 w_DOT:
         DEFCODE ".", 0
 w_DOT_cf:
+        CALL    check_underflow
         ; Save DE (IP) to return stack
         DEC     IX
         DEC     IX
@@ -154,6 +155,7 @@ w_DOT_cf:
 w_U_DOT:
         DEFCODE "U.", 0
 w_U_DOT_cf:
+        CALL    check_underflow
         ; Save DE (IP) to return stack
         DEC     IX
         DEC     IX
@@ -177,6 +179,7 @@ w_U_DOT_cf:
 w_DOT_R:
         DEFCODE ".R", 0
 w_DOT_R_cf:
+        CALL    check_underflow_2
         ; BC = width (TOS), (SP) = n
         ; Save DE (IP) to return stack
         DEC     IX

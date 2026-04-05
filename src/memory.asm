@@ -26,6 +26,7 @@ w_FETCH_cf:
 w_STORE:
         DEFCODE "!", 0
 w_STORE_cf:
+        CALL    check_underflow_2
         LD      H, B
         LD      L, C            ; HL = addr (TOS)
         POP     BC              ; BC = x (value to store)
@@ -55,6 +56,7 @@ w_C_FETCH_cf:
 w_C_STORE:
         DEFCODE "C!", 0
 w_C_STORE_cf:
+        CALL    check_underflow_2
         LD      H, B
         LD      L, C            ; HL = addr
         POP     BC              ; BC = char
@@ -69,6 +71,7 @@ w_C_STORE_cf:
 w_PLUS_STORE:
         DEFCODE "+!", 0
 w_PLUS_STORE_cf:
+        CALL    check_underflow_2
         LD      H, B
         LD      L, C            ; HL = addr
         POP     BC              ; BC = n
@@ -100,7 +103,7 @@ w_HERE_cf:
 ; -----------------------------------------------
 w_ALLOT:
         DEFCODE "ALLOT", 0
-w_ALLOT_cf:
+w_ALLOT_cf:                             ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = current HERE
         ADD     HL, BC                     ; HL = HERE + n
@@ -115,7 +118,7 @@ w_ALLOT_cf:
 ; -----------------------------------------------
 w_COMMA:
         DEFCODE ",", 0
-w_COMMA_cf:
+w_COMMA_cf:                             ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = HERE
         LD      (HL), C
@@ -133,7 +136,7 @@ w_COMMA_cf:
 ; -----------------------------------------------
 w_C_COMMA:
         DEFCODE "C,", 0
-w_C_COMMA_cf:
+w_C_COMMA_cf:                           ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
         LD      (HL), C         ; Store byte
@@ -179,7 +182,7 @@ w_ALIGNED_cf:
 ; -----------------------------------------------
 w_FILL:
         DEFCODE "FILL", 0
-w_FILL_cf:
+w_FILL_cf:                              ; No underflow check — low-risk bulk op
         ; BC = char (TOS), (SP) = u, (SP+2) = addr
         ; Save IP (DE) to return stack — LDIR uses DE
         DEC     IX
@@ -224,7 +227,7 @@ w_FILL_cf:
 ; -----------------------------------------------
 w_MOVE:
         DEFCODE "MOVE", 0
-w_MOVE_cf:
+w_MOVE_cf:                              ; No underflow check — low-risk bulk op
         ; BC = u (TOS), (SP) = addr2, (SP+2) = addr1
         ; Save IP (DE) to return stack — LDIR/LDDR use DE
         DEC     IX
