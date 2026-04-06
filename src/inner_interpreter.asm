@@ -28,6 +28,56 @@ EXIT_CODE:
         INC     IX
         NEXT
 
+; === DOVAR — Push variable body address ===
+; HL points to code field (JP DOVAR)
+; Body = HL+5 (skips 3-byte JP + 2-byte does-addr slot)
+; ( -- addr )
+DOVAR:
+        PUSH    BC              ; Save old TOS
+        LD      BC, 5
+        ADD     HL, BC          ; HL = body address (cf+5)
+        LD      B, H
+        LD      C, L            ; BC = body address (new TOS)
+        NEXT
+
+; === DOCON — Push constant value ===
+; HL points to code field (JP DOCON)
+; Value = HL+3 (no does-addr slot for constants)
+; ( -- x )
+DOCON:
+        PUSH    BC              ; Save old TOS
+        INC     HL
+        INC     HL
+        INC     HL              ; HL = body address (cf+3)
+        LD      C, (HL)
+        INC     HL
+        LD      B, (HL)         ; BC = value at body (new TOS)
+        NEXT
+
+; === DODOES — Enter DOES> definition, push body address ===
+; HL points to code field (JP DODOES)
+; cf+3 = does-addr, cf+5 = body
+; ( -- addr )
+DODOES:
+        ; Save IP to return stack (entering a colon-like definition)
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+        ; Read does-addr at HL+3
+        INC     HL
+        INC     HL
+        INC     HL              ; HL = &does-addr
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)         ; DE = does-addr (new IP)
+        INC     HL              ; HL = body address (cf+5)
+        ; Push body address as new TOS
+        PUSH    BC              ; Save old TOS
+        LD      B, H
+        LD      C, L            ; BC = body address (new TOS)
+        NEXT
+
 ; -----------------------------------------------
 ; LIT ( -- x )
 ;   Push inline literal from thread to parameter stack

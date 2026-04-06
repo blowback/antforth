@@ -272,6 +272,86 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf 'VARIABLE X  42 X !  X @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+		echo "PASS: REPL test 25 — VARIABLE: 'VARIABLE X  42 X !  X @ .' outputs '42'"; \
+	else \
+		echo "FAIL: REPL test 25 — expected '42' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '99 CONSTANT LIMIT  LIMIT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '99 '; then \
+		echo "PASS: REPL test 26 — CONSTANT: '99 CONSTANT LIMIT  LIMIT .' outputs '99'"; \
+	else \
+		echo "FAIL: REPL test 26 — expected '99' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CREATE BUF 10 ALLOT  42 BUF !  BUF @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+		echo "PASS: REPL test 27 — CREATE+ALLOT: 'CREATE BUF 10 ALLOT  42 BUF !  BUF @ .' outputs '42'"; \
+	else \
+		echo "FAIL: REPL test 27 — expected '42' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '5 CELLS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '10 '; then \
+		echo "PASS: REPL test 28 — CELLS: '5 CELLS .' outputs '10'"; \
+	else \
+		echo "FAIL: REPL test 28 — expected '10' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ; 10 ARRAY MD  42 3 MD !  3 MD @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+		echo "PASS: REPL test 29 — CREATE/DOES> ARRAY: '42 3 MD !  3 MD @ .' outputs '42'"; \
+	else \
+		echo "FAIL: REPL test 29 — expected '42' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '99 CONSTANT LIM\r\n: CHKLIM LIM + ; 1 CHKLIM .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '100 '; then \
+		echo "PASS: REPL test 30 — CONSTANT in colon def: '1 CHKLIM .' outputs '100'"; \
+	else \
+		echo "FAIL: REPL test 30 — expected '100' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'VARIABLE A VARIABLE B  10 A !  20 B !  A @ B @ + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '30 '; then \
+		echo "PASS: REPL test 31 — multiple VARIABLEs: 'A @ B @ + .' outputs '30'"; \
+	else \
+		echo "FAIL: REPL test 31 — expected '30' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'VARIABLE X\r\n: SETX 42 X ! ; SETX X @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+		echo "PASS: REPL test 32 — VARIABLE in colon def: 'SETX X @ .' outputs '42'"; \
+	else \
+		echo "FAIL: REPL test 32 — expected '42' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ;\r\n5 ARRAY AA 3 ARRAY BB  42 0 AA !  99 0 BB !  0 AA @ .  0 BB @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 .*99 '; then \
+		echo "PASS: REPL test 33 — multiple DOES> children: AA and BB independent"; \
+	else \
+		echo "FAIL: REPL test 33 — expected '42' and '99' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'VARIABLE X  42 X !  99 X !  X @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '99 '; then \
+		echo "PASS: REPL test 34 — VARIABLE overwrite: store 42 then 99, read back 99"; \
+	else \
+		echo "FAIL: REPL test 34 — expected '99' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

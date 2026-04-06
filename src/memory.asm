@@ -177,6 +177,17 @@ w_ALIGNED_cf:
         NEXT
 
 ; -----------------------------------------------
+; CELLS ( n -- n*2 )
+;   Multiply TOS by cell size (2 bytes)
+; -----------------------------------------------
+w_CELLS:
+        DEFCODE "CELLS", 0
+w_CELLS_cf:
+        SLA     C
+        RL      B               ; BC = BC * 2
+        NEXT
+
+; -----------------------------------------------
 ; FILL ( addr u char -- )
 ;   Fill u bytes starting at addr with char
 ; -----------------------------------------------

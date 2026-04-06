@@ -65,3 +65,16 @@ w_MAX_cf EQU w_MAX_body - 3
 .max_done:
     DW w_DROP_cf
     DW EXIT_CODE
+
+; -----------------------------------------------
+; VARIABLE ( "<spaces>name" -- )
+;   Create a variable: CREATE 0 ,
+; -----------------------------------------------
+w_VARIABLE:
+    DEFWORD "VARIABLE", 0
+w_VARIABLE_body:
+w_VARIABLE_cf EQU w_VARIABLE_body - 3
+    DW w_CREATE_cf
+    DW w_LIT_cf, 0
+    DW w_COMMA_cf
+    DW EXIT_CODE
