@@ -20,7 +20,7 @@ TESTKEY  = $(BUILDDIR)/test_key.com
 DISKIMG  = $(BUILDDIR)/antforth.img
 
 # All .asm files — sjasmplus assembles fast, depend on all of them
-SRCS     = $(wildcard $(SRCDIR)/*.asm)
+SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 
 # Docker
 DOCKER_IMAGE = antforth-toolchain
@@ -52,6 +52,13 @@ disk: $(TARGET) $(TESTKEY)
 test: $(SRCS) | $(BUILDDIR)
 	@echo "Running regression tests..."
 	@cd $(SRCDIR) && $(ASM) $(ASMFLAGS) -DTEST_MODE antforth.asm --raw=../$(BUILDDIR)/antforth_test.com
+	@# EXPECTED output by test group (note: \r\n = literal CR LF):
+	@#   Group 1 (inner):      ABCDE
+	@#   Group 2 (stack):      FGHIJKLMNOPQRSTUVWXYZ
+	@#   Group 3 (arithmetic): 0123456789abcdefghijklmnopqr
+	@#   Group 4 (io):         stu<CR><LF>v w  xyz{|
+	@#   Group 5 (dictionary): }~#$$%%&
+	@#   Group 6 (outer):      ()*42 0 -1 -32768 65535     42<3> 1 2 3 FF A
 	@OUTPUT=$$($(IZCPM) $(BUILDDIR)/antforth_test.com) && \
 	EXPECTED=$$(printf 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstu\r\nv w  xyz{|}~#$$%%&()*42 0 -1 -32768 65535     42<3> 1 2 3 FF A') && \
 	if [ "$$OUTPUT" = "$$EXPECTED" ]; then \

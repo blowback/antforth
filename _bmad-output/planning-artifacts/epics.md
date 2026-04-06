@@ -561,6 +561,25 @@ So that mistakes don't crash the system and I can continue working.
 
 Add the compiler and control flow. User can define new words, use conditionals and loops, and build layered abstractions — the self-extending language moment.
 
+### Story 3.0: Test Thread Modularisation
+
+As a developer,
+I want the monolithic test thread broken into multiple smaller independent test groups,
+So that a failure in one group doesn't block all subsequent tests and test maintenance is manageable.
+
+**Acceptance Criteria:**
+
+**Given** the current single test_thread in antforth.asm with 62+ sequential test characters
+**When** the test infrastructure is modularised
+**Then** tests are split into logical groups (e.g., per-module or per-epic)
+**And** each group can fail independently without blocking others
+**And** `make test` still runs all groups and reports pass/fail
+**And** all existing tests continue to pass
+
+**Given** the REPL test infrastructure from Epic 2
+**When** new tests are considered
+**Then** REPL-piped Forth scripts are the preferred approach for new word testing going forward
+
 ### Story 3.1: Colon Definitions & Compiler
 
 As a Forth user,
