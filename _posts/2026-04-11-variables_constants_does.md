@@ -207,9 +207,9 @@ Let's return to our example:
 
 #### Level 1: compiling the defining word 
 
-When `: ARRAY ... DOES> ... ;`` is compiled, `DOES>` fires immediately
+When `: ARRAY ... DOES> ... ;` is compiled, `DOES>` fires immediately
 and simply compiles `(DOES>)`  (the parens are part of its name) into 
-`ARRAY`'s thread. The words after `DOES> — SWAP CELLS +``  are compiled 
+`ARRAY`'s thread. The words after `DOES> — SWAP CELLS +`  are compiled 
 normally into the thread after it (and their address is `does-addr` 
 below). `;` appends `EXIT`.
 
@@ -219,8 +219,8 @@ as a token sitting there waiting.
 #### Level 2: running the defining word
 
 When we run `10 ARRAY MYDATA`,  `ARRAY`'s thread executes. 
-`CREATE` builds `MYDATA`'s dictionary entry with `JP DOVAR`` in its 
-CFA and zeroes in its `does-addr` slot. `CELLS ALLOT``` populates the body. 
+`CREATE` builds `MYDATA`'s dictionary entry with `JP DOVAR` in its 
+CFA and zeroes in its `does-addr` slot. `CELLS ALLOT` populates the body. 
 Then `(DOES>)` executes:
 
 - At this moment DE (IP) points to `SWAP` — the first token of the 
@@ -361,3 +361,5 @@ so let's get straight into the AntForth interpreter:
 
 
 ![Testing in the interpreter](/antforth/assets/images/2026-04-11/interpreter.png)
+
+Marvellous.
