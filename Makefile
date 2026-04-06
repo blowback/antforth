@@ -200,6 +200,70 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf ': SQUARE DUP * ; 7 SQUARE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '49 '; then \
+		echo "PASS: REPL test 17 — colon definition: ': SQUARE DUP * ; 7 SQUARE .' outputs '49'"; \
+	else \
+		echo "FAIL: REPL test 17 — expected '49' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': SQUARE DUP * ; : CUBE DUP SQUARE * ; 3 CUBE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '27 '; then \
+		echo "PASS: REPL test 18 — nested definitions: '3 CUBE .' outputs '27'"; \
+	else \
+		echo "FAIL: REPL test 18 — expected '27' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '5 NEGATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-5 '; then \
+		echo "PASS: REPL test 19 — NEGATE: '5 NEGATE .' outputs '-5'"; \
+	else \
+		echo "FAIL: REPL test 19 — expected '-5' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': BAD XYZZY ;\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'XYZZY ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 20 — compilation error recovery: XYZZY ? then 2 3 + . outputs 5"; \
+	else \
+		echo "FAIL: REPL test 20 — expected 'XYZZY ?' and '5' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': ADD5 5 + ; 10 ADD5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '15 '; then \
+		echo "PASS: REPL test 21 — LIT compilation: ': ADD5 5 + ; 10 ADD5 .' outputs '15'"; \
+	else \
+		echo "FAIL: REPL test 21 — expected '15' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': MAGIC [ 2 3 + ] LITERAL * ; 10 MAGIC .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '50 '; then \
+		echo "PASS: REPL test 22 — [ ] LITERAL: ': MAGIC [ 2 3 + ] LITERAL * ; 10 MAGIC .' outputs '50'"; \
+	else \
+		echo "FAIL: REPL test 22 — expected '50' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '-7 ABS .' '7 ABS .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 .*7 '; then \
+		echo "PASS: REPL test 23 — ABS: '-7 ABS .' and '7 ABS .' both output '7'"; \
+	else \
+		echo "FAIL: REPL test 23 — expected '7' from both ABS calls"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '3 5 MIN .\r\n3 5 MAX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '3 .*5 '; then \
+		echo "PASS: REPL test 24 — MIN/MAX: '3 5 MIN .' outputs '3', '3 5 MAX .' outputs '5'"; \
+	else \
+		echo "FAIL: REPL test 24 — expected '3' and '5' from MIN/MAX"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

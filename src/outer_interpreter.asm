@@ -161,7 +161,30 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_DUP_cf                ; ( ... x -- ... x x )
         DW      w_QBRANCH_cf            ; if flag=0 (not found), try number
         DW      .try_number - $
-        ; Found: ( xt flag ) — drop flag, execute
+        ; Found: ( xt flag )
+        ; Check STATE: if interpreting OR flag=1 (IMMEDIATE), execute
+        DW      w_STATE_cf              ; ( xt flag -- xt flag state-addr )
+        DW      w_FETCH_cf              ; ( xt flag state-addr -- xt flag state )
+        DW      w_QBRANCH_cf            ; if STATE=0 (interpreting), go execute
+        DW      .interp_execute - $
+        ; STATE != 0 (compiling)
+        ; Check if flag=1 (IMMEDIATE) — immediate words execute even in compile mode
+        ; flag is on stack: ( xt flag ) — flag=1 means IMMEDIATE, flag=-1 means normal
+        DW      w_LIT_cf, 1
+        DW      w_EQUALS_cf             ; ( xt flag 1 -- xt flag=1? )
+        DW      w_QBRANCH_cf            ; if not IMMEDIATE, compile
+        DW      .compile_word - $
+        ; IMMEDIATE word in compile mode: execute it
+        DW      w_EXECUTE_cf            ; ( xt -- )
+        DW      w_BRANCH_cf
+        DW      .interp_loop - $
+.compile_word:
+        ; Non-immediate word in compile mode: compile xt via COMMA
+        DW      w_COMMA_cf              ; ( xt -- ) compile xt at HERE
+        DW      w_BRANCH_cf
+        DW      .interp_loop - $
+.interp_execute:
+        ; Interpret mode: ( xt flag ) — drop flag, execute
         DW      w_DROP_cf               ; ( xt flag -- xt )
         DW      w_EXECUTE_cf            ; execute the word
         DW      w_BRANCH_cf             ; loop back
@@ -172,11 +195,27 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_NUMBER_Q_cf           ; ( c-addr -- n true | c-addr false )
         DW      w_QBRANCH_cf            ; if false, error
         DW      .not_number - $
-        ; Valid number on stack, continue
+        ; Valid number — check STATE
+        DW      w_STATE_cf              ; ( n -- n state-addr )
+        DW      w_FETCH_cf              ; ( n state-addr -- n state )
+        DW      w_QBRANCH_cf            ; if STATE=0, leave number on stack
+        DW      .interp_loop - $        ; interpreting: n stays on stack, loop
+        ; Compiling: compile LIT n
+        DW      w_LIT_cf, w_LIT_cf      ; ( n -- n lit-xt )
+        DW      w_COMMA_cf              ; ( n lit-xt -- n ) compile LIT address
+        DW      w_COMMA_cf              ; ( n -- ) compile the number value
         DW      w_BRANCH_cf
         DW      .interp_loop - $
 .not_number:
         ; Stack: ( c-addr ) — not a word, not a number
+        ; Check STATE — if compiling, do error recovery
+        DW      w_STATE_cf              ; ( c-addr -- c-addr state-addr )
+        DW      w_FETCH_cf              ; ( c-addr state-addr -- c-addr state )
+        DW      w_QBRANCH_cf            ; if STATE=0, normal error
+        DW      .interp_error - $
+        ; Compilation error: restore HERE and unlink hash entry
+        DW      w_COMP_ERROR_cf         ; ( c-addr -- ) never returns (calls ABORT)
+.interp_error:
         DW      w_COUNT_cf              ; ( c-addr -- addr len )
         DW      w_TYPE_cf               ; print the unknown word
         DW      w_LIT_cf, ' '
@@ -214,7 +253,15 @@ w_QUIT_cf:
         DW      w_QUERY_cf
         ; Interpret the line
         DW      w_INTERPRET_cf
-        ; Print " ok" and newline
+        ; Only print " ok" when STATE=0 (interpret mode)
+        DW      w_STATE_cf              ; ( -- state-addr )
+        DW      w_FETCH_cf              ; ( state-addr -- state )
+        DW      w_QBRANCH_cf            ; if STATE=0, print ok
+        DW      .quit_ok - $
+        ; STATE != 0 (compiling), skip ok prompt
+        DW      w_BRANCH_cf
+        DW      .quit_loop - $
+.quit_ok:
         DW      w_LIT_cf, str_ok        ; ( -- addr )
         DW      w_LIT_cf, STR_OK_LEN    ; ( addr -- addr len )
         DW      w_TYPE_cf               ; print " ok"
