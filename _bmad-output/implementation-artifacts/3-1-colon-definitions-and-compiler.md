@@ -1,6 +1,6 @@
 # Story 3.1: Colon Definitions & Compiler
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -405,3 +405,28 @@ Claude Opus 4.6 (1M context)
 ### Change Log
 
 - 2026-04-06: Implemented Story 3.1 — Colon definitions & compiler. Added `:`, `;`, `[`, `]`, LITERAL, compilation error recovery, NEGATE, ABS, MIN, MAX. Modified INTERPRET for compile mode and QUIT for "ok" suppression. 8 new REPL tests.
+- 2026-04-06: Code review fixes — [H1] Added STATE guard to `;` preventing crash when used outside definition. [H2] Added name length clamping in `:` to prevent count_flags corruption for names >31 chars. [M2] Added REPL test 19b for `-3 NEGATE . → 3` (AC #8 coverage).
+
+## Senior Developer Review (AI)
+
+**Review Date:** 2026-04-06
+**Reviewer:** Claude Opus 4.6 (1M context)
+**Outcome:** Approve (after fixes)
+
+### Findings Summary
+
+| # | Severity | Description | Status |
+|---|----------|-------------|--------|
+| H1 | HIGH | `;` crashes outside colon definition — writes to addr 0 via uninitialised `colon_smudge_addr` | ✅ Fixed — STATE guard added |
+| H2 | HIGH | No name length validation — names >31 chars corrupt count_flags byte | ✅ Fixed — clamped to F_LENMASK |
+| M1 | MEDIUM | COMP-ERROR uses direct BDOS without BDOS_SAVE/RESTORE | Accepted — abort-only path, same pattern as do_underflow_error |
+| M2 | MEDIUM | Missing test for `-3 NEGATE . → 3` (AC #8 partial coverage) | ✅ Fixed — test 19b added |
+| M3 | MEDIUM | `: ;` shadows real `;`, trapping in compile mode | Accepted — standard Forth doesn't protect against this |
+| L1 | LOW | Compiler scratch variables in code segment | Accepted — flat memory, no impact |
+| L2 | LOW | COLON duplicates WORD parsing logic (~100 lines) | Accepted — self-contained CODE word, works correctly |
+
+### Action Items
+
+- [x] [H1] Add STATE guard to `;` — abort if STATE=0
+- [x] [H2] Clamp name length to 31 in `:` before storing count_flags
+- [x] [M2] Add REPL test for `-3 NEGATE .` → `3`

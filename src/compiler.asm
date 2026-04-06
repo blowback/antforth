@@ -134,8 +134,12 @@ w_COLON_cf:
         POP     HL
 
 .colon_scan_done:
-        ; D = name length
+        ; D = name length — clamp to F_LENMASK (31) max
         LD      A, D
+        CP      F_LENMASK + 1
+        JR      C, .colon_len_ok
+        LD      A, F_LENMASK            ; Clamp to 31
+.colon_len_ok:
         LD      (.colon_name_len), A
 
         ; --- 1.2 already done above ---
@@ -318,6 +322,16 @@ w_COMP_ERROR_cf:
 w_SEMICOLON:
         DEFCODE ";", F_IMMEDIATE
 w_SEMICOLON_cf:
+        ; Guard: `;` is only valid in compile mode
+        LD      A, (IY+UserArea.state)
+        OR      A
+        JR      NZ, .semi_ok
+        LD      A, (IY+UserArea.state+1)
+        OR      A
+        JR      NZ, .semi_ok
+        ; STATE=0 — `;` used outside definition, abort
+        JP      w_ABORT_cf
+.semi_ok:
         ; --- 3.1: Compile EXIT_CODE into the definition ---
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
