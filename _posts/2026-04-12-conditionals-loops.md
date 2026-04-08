@@ -38,7 +38,7 @@ In this file we have `IF`, `ELSE` and `THEN`:
 
 ### IF / THEN / ELSE
 
-![IF implementation](/antforth/assets/images/2026-04-11/if.png)
+![IF implementation](/antforth/assets/images/2026-04-12/if.png)
 
 `IF` is an **immediate word** `DEFIMMED "IF"`: it's used at compile time to 
 help compile a new word, but it executes its own definition
@@ -48,7 +48,7 @@ executed at compile time.
 
 Here's the dilemna that `IF` faces:
 
-![IF dilemna](/antforth/assets/images/2026-04-11/forth_if.png)
+![IF dilemna](/antforth/assets/images/2026-04-12/forth_if.png)
 
 When Forth is compiling a word and it hits an `IF` then if the value 
 in TOS is TRUE the execution path is obvious: execute the following 
@@ -93,7 +93,7 @@ Why's it on the stack? Because that provides an easy way to nest
 The first `THEN` pops the stack, which is guaranteed to be the address 
 of the placeholder for the matching `IF`.
 
-![THEN implementation](/antforth/assets/images/2026-04-11/then.png)
+![THEN implementation](/antforth/assets/images/2026-04-12/then.png)
 
 THEN resolves IF's forward reference. It calculates 
 `offset = HERE - fwd-ref` and writes it back into the placeholder 
@@ -110,12 +110,12 @@ cell and computes:
 So the branch lands at whatever was compiled after `THEN`.
 
 
-![ELSE implementation](/antforth/assets/images/2026-04-11/else.png)
+![ELSE implementation](/antforth/assets/images/2026-04-12/else.png)
 
 `ELSE` is a combination of the two, and has the same problem two 
 times over:
 
-![ELSE dilemna](/antforth/assets/images/2026-04-11/forth_else.png)
+![ELSE dilemna](/antforth/assets/images/2026-04-12/forth_else.png)
 
 `ELSE` does two things in one word:
 
@@ -133,13 +133,13 @@ In the same file we have `BEGIN`, `UNTIL`, `WHILE` and `REPEAT`.
 
 `BEGIN` is the easy one:
 
-![BEGIN implementation](/antforth/assets/images/2026-04-11/begin.png)
+![BEGIN implementation](/antforth/assets/images/2026-04-12/begin.png)
 
 It's just marking a backwards jump target by pushing HERE into TOS.
 It just remembers where we are in the dictionary so that `UNTIL` or
 `REPEAT` can jump back here.
 
-![UNTIL implementation](/antforth/assets/images/2026-04-11/until.png)
+![UNTIL implementation](/antforth/assets/images/2026-04-12/until.png)
 
 `UNTIL` compiles a `?BRANCH` which will branch if TOS is false. To 
 do that it pushes its own HERE address, subtracts from the (earlier) 
@@ -200,7 +200,7 @@ anywhere in the loop body that you like. Crazy stuff.
 `WHILE` looks like this:
 
 
-![WHILE implementation](/antforth/assets/images/2026-04-11/while.png)
+![WHILE implementation](/antforth/assets/images/2026-04-12/while.png)
 
 Like `IF`, it compiles ``?BRANCH`` with a placeholder — but this 
 forward reference will be patched by `REPEAT`, not `THEN`.
@@ -211,7 +211,7 @@ can grab it first for the backward jump. The stack ends up as
 
 `REPEAT` looks like this:
 
-![REPEAT implementation](/antforth/assets/images/2026-04-11/repeat.png)
+![REPEAT implementation](/antforth/assets/images/2026-04-12/repeat.png)
 
 `REPEAT` does two things — the backward jump and the forward patch.
 
