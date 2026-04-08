@@ -280,6 +280,20 @@ exist and `>BODY` == CFA+3. For `DOES>` patched words
 its in.
 ```
 
+Incidentally, the reason for the `>` in `DOES>` is because 
+pre-ANS Forth `CREATE` was known as `<BUILDS`, so you got 
+matching opening and closing chevrons, which got lost when 
+ANS standardised it.
+
+More recently, modern Forths which 
+use flash-based dictionaries (and which are therefore 
+unable to overwrite `JP DOVAR` with `JP DODOES`) have co-opted 
+it to mean any kind of mechanism where the toolchain can be 
+made to perform a similar sort of late binding before the 
+code is flashed. Every implementation does this differently 
+and it doesn't affect our z80 port, so I won't digress any 
+further.
+
 That was a big old slab of Forth theory: let's have a look at 
 the code.
 
