@@ -115,7 +115,7 @@ So the branch lands at whatever was compiled after `THEN`.
 `ELSE` is a combination of the two, and has the same problem two 
 times over:
 
-![ELSE dilemna](/antforth/assets/images/2026-04-12/forth_else.png)
+![ELSE dilemna](/antforth/assets/images/2026-04-12/forth_if_else.png)
 
 `ELSE` does two things in one word:
 
