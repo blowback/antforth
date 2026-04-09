@@ -125,14 +125,14 @@ Here's `LOOP`:
 
 ![LOOP implementation](/antforth/assets/images/2026-04-13/loop.png)
 
-`LOOP` is compiling `PAREN_LOOP` (aka `(LOOP)` into the thread). `(LOOP)` 
-is the runtime counterpart of `LOOP`. Then it compiles a backwards 
+`LOOP` is compiling `PAREN_LOOP` (aka `(LOOP)`) into the thread. [ `(LOOP)` 
+is the runtime counterpart of `LOOP` ]. Then it compiles a backwards 
 branch to `do_addr`. Then it walks the "leave_chain" and patches every
 `LEAVE` placeholder to point forward to the address right after the 
 branch, i.e. the natural exit. Finally it restores `leave_chain_head`
 from the saved `old_lc`, so the outer loop's chain (if any) is back in scope.
 
-Vy now you're probably wondering what on earth all this "leave chain" 
+By now you're probably wondering what on earth all this "leave chain" 
 nonsense is all about, but let's defer that conversation until we 
 discuss the `LEAVE` word...
 
@@ -143,10 +143,11 @@ discuss the `LEAVE` word...
 `(LOOP)` incrementsthe index at IX+0/1, compares the new index to the 
 limit at IX+2/3, and if they're equal it drops the loop frame (IX += 4), 
 skips past the inline offset cell (DE += 2), and continues with the 
-next instruction. Then the loop is done. If the new index doesn't equal
-the limit, it takes the backward branch — reading  the offset cell, 
-adding it to its own address to compute the new IP, and jumping there. 
-We're back at the top of the loop body.
+next instruction. Then the loop is done. 
+
+If the new index doesn't equal the limit, it takes the backward branch — 
+reading  the offset cell,  adding it to its own address to compute 
+the new IP, and jumping there. We're back at the top of the loop body.
 
 Incidentally, what do you think happens if the limit and the initial 
 index are the same size?
@@ -189,10 +190,10 @@ Then when `LOOP` finally runs, it walks the chain:
 ```
 
 For each cell, it overwrites the link with the forward branch offset
-from that cell to `HERE`` (the address after the loop). 
+from that cell to `HERE` (the address after the loop). 
 
 After the walk, those cells no longer hold chain links — they hold 
-real branch targets, and the runtime `BRANCH`` instructions will 
+real branch targets, and the runtime `BRANCH` instructions will 
 jump straight to the loop exit when executed.
 
 We can't keep the chain head on the stack alongside `do_addr` because 
@@ -228,7 +229,7 @@ an existing word, you get the *old* definition of that word until the
 final `;`. So you can redefine a word in terms of the previous version 
 of the same name, if you see what I mean.
 
-This presents a problem: a word can't call itself by name (we';; either 
+This presents a problem: a word can't call itself by name (we'll either 
 get an error, or call the previous version of the word). This is where 
 `RECURSE` comes in. 
 
