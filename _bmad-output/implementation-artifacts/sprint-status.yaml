@@ -59,8 +59,8 @@ development_status:
   3-0-test-thread-modularisation: done
   3-1-colon-definitions-and-compiler: done
   3-2-variables-constants-and-create-does: done
-  3-3-conditionals-and-indefinite-loops: backlog
-  3-4-counted-loops-and-recurse: backlog
+  3-3-conditionals-and-indefinite-loops: done
+  3-4-counted-loops-and-recurse: ready-for-dev
   3-5-immediate-postpone-string-literals-and-words: backlog
   epic-3-retrospective: optional
 

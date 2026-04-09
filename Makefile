@@ -352,6 +352,134 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf ': TPOS DUP 0 > IF NEGATE THEN ; 5 TPOS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-5 '; then \
+		echo "PASS: REPL test 35 — IF/THEN taken: '5 TPOS .' outputs '-5'"; \
+	else \
+		echo "FAIL: REPL test 35 — expected '-5' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TPOS DUP 0 > IF NEGATE THEN ;\r\n-3 TPOS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-3 '; then \
+		echo "PASS: REPL test 36 — IF/THEN skipped: '-3 TPOS .' outputs '-3'"; \
+	else \
+		echo "FAIL: REPL test 36 — expected '-3' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TSIGN 0< IF -1 ELSE 1 THEN ; -5 TSIGN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-1 '; then \
+		echo "PASS: REPL test 37 — IF/ELSE/THEN true: '-5 TSIGN .' outputs '-1'"; \
+	else \
+		echo "FAIL: REPL test 37 — expected '-1' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TSIGN 0< IF -1 ELSE 1 THEN ;\r\n5 TSIGN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1 '; then \
+		echo "PASS: REPL test 38 — IF/ELSE/THEN false: '5 TSIGN .' outputs '1'"; \
+	else \
+		echo "FAIL: REPL test 38 — expected '1' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TNEST DUP 0 > IF DUP 10 > IF 2 ELSE 1 THEN ELSE 0 THEN ; 15 TNEST . 5 TNEST . -1 TNEST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '2 .*1 .*0 '; then \
+		echo "PASS: REPL test 39 — nested IF: '15 TNEST . 5 TNEST . -1 TNEST .' outputs '2 1 0'"; \
+	else \
+		echo "FAIL: REPL test 39 — expected '2 1 0' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TCNT 0 BEGIN 1 + DUP 5 = UNTIL ; TCNT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 40 — BEGIN/UNTIL: 'TCNT .' outputs '5'"; \
+	else \
+		echo "FAIL: REPL test 40 — expected '5' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TSUM 0 5 BEGIN DUP 0 > WHILE SWAP OVER + SWAP 1 - REPEAT DROP ; TSUM .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '15 '; then \
+		echo "PASS: REPL test 41 — BEGIN/WHILE/REPEAT: 'TSUM .' outputs '15'"; \
+	else \
+		echo "FAIL: REPL test 41 — expected '15' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TWH BEGIN DUP 0 > WHILE 1 - REPEAT ; 3 TWH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
+		echo "PASS: REPL test 42 — WHILE countdown: '3 TWH .' outputs '0'"; \
+	else \
+		echo "FAIL: REPL test 42 — expected '0' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'IF\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 43 — compile-only guard: IF in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 43 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'THEN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 44 — compile-only guard: THEN in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 44 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BEGIN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 45 — compile-only guard: BEGIN in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 45 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'ELSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 46 — compile-only guard: ELSE in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 46 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'WHILE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 47 — compile-only guard: WHILE in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 47 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'REPEAT\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 48 — compile-only guard: REPEAT in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 48 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'UNTIL\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 49 — compile-only guard: UNTIL in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 49 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TWH BEGIN DUP 0 > WHILE 1 - REPEAT ; 0 TWH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
+		echo "PASS: REPL test 50 — WHILE false on entry: '0 TWH .' outputs '0'"; \
+	else \
+		echo "FAIL: REPL test 50 — expected '0' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
