@@ -480,6 +480,118 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf ': TENS 10 0 DO I . LOOP ; TENS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 1 2 3 4 5 6 7 8 9 '; then \
+		echo "PASS: REPL test 51 — DO/LOOP: 'TENS' outputs '0 1 2 3 4 5 6 7 8 9'"; \
+	else \
+		echo "FAIL: REPL test 51 — expected '0 1 2 3 4 5 6 7 8 9' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': EVENS 10 0 DO I . 2 +LOOP ; EVENS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 2 4 6 8 '; then \
+		echo "PASS: REPL test 52 — DO/+LOOP: 'EVENS' outputs '0 2 4 6 8'"; \
+	else \
+		echo "FAIL: REPL test 52 — expected '0 2 4 6 8' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': FIND5 10 0 DO I 5 = IF I . LEAVE THEN LOOP ; FIND5\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r' | grep -q '^5  ok$$' && ! echo "$$OUTPUT" | tr -d '\r' | grep -q '^5 6'; then \
+		echo "PASS: REPL test 53 — DO/LOOP/LEAVE: 'FIND5' outputs '5' and exits early"; \
+	else \
+		echo "FAIL: REPL test 53 — expected '5' only (no subsequent iterations)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': NEST 3 0 DO 3 0 DO J . I . LOOP LOOP ; NEST\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 0 0 1 0 2 1 0 1 1 1 2 2 0 2 1 2 2 '; then \
+		echo "PASS: REPL test 54 — nested DO/LOOP with I and J: 'NEST' outputs correct sequence"; \
+	else \
+		echo "FAIL: REPL test 54 — expected '0 0 0 1 0 2 1 0 1 1 1 2 2 0 2 1 2 2' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': FACT DUP 1 > IF DUP 1 - RECURSE * THEN ; 5 FACT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r' | grep -q '^120  ok$$'; then \
+		echo "PASS: REPL test 55 — RECURSE: '5 FACT .' outputs '120'"; \
+	else \
+		echo "FAIL: REPL test 55 — expected '120' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': FACT7 DUP 1 > IF DUP 1 - RECURSE * THEN ; 7 FACT7 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r' | grep -q '^5040  ok$$'; then \
+		echo "PASS: REPL test 56 — RECURSE: '7 FACT7 .' outputs '5040'"; \
+	else \
+		echo "FAIL: REPL test 56 — expected '5040' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DO\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 57 — compile-only guard: DO in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 57 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 58 — compile-only guard: LOOP in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 58 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '+LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 59 — compile-only guard: +LOOP in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 59 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'LEAVE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 60 — compile-only guard: LEAVE in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 60 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'RECURSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 61 — compile-only guard: RECURSE in interpret mode shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 61 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': ONE 1 0 DO 42 . LOOP ; ONE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+		echo "PASS: REPL test 62 — single-iteration DO/LOOP: 'ONE' outputs '42'"; \
+	else \
+		echo "FAIL: REPL test 62 — expected '42' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': TWOL 10 0 DO I 3 = IF LEAVE THEN I 7 = IF LEAVE THEN LOOP 99 . ; TWOL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '99 '; then \
+		echo "PASS: REPL test 63 — multiple LEAVEs in one loop: 'TWOL' outputs '99'"; \
+	else \
+		echo "FAIL: REPL test 63 — expected '99' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': DN 0 10 DO I . -1 +LOOP ; DN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '10 9 8 7 6 5 4 3 2 1 0 '; then \
+		echo "PASS: REPL test 64 — countdown with -1 +LOOP: 'DN' outputs '10 9 8 7 6 5 4 3 2 1 0'"; \
+	else \
+		echo "FAIL: REPL test 64 — expected '10 9 8 7 6 5 4 3 2 1 0' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
