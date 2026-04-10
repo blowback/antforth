@@ -4,6 +4,8 @@ A modern Forth for the [Feersum Technology MicroBeast](https://feersumbeasts.com
 
 (And by "modern" I means ANS Forth standard circa 1997!)
 
+![AntForth Logo](images/ant_forth2.png)
+
 Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
