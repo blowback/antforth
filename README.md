@@ -22,3 +22,8 @@ how I implemented it](https://blowback.github.io/antforth/) using state-of-the-a
 
 
 ![antforth venn diagram](images/venn.svg)
+
+There's still plenty to do if you're the Human in the Loop tho:
+
+![forth books](images/books.jpg)
+
