@@ -712,6 +712,42 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'AntForth v1.00'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v1.00'"; \
+	else \
+		echo "FAIL: REPL test 80 — expected 'AntForth v1.00' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '[0-9]+ bytes free'; then \
+		echo "PASS: REPL test 81 — Banner free memory: output contains numeric value before 'bytes free'"; \
+	else \
+		echo "FAIL: REPL test 81 — expected '<number> bytes free' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -q 'MicroBeast'; then \
+		echo "PASS: REPL test 82 — Banner platform: output contains 'MicroBeast'"; \
+	else \
+		echo "FAIL: REPL test 82 — expected 'MicroBeast' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi && \
+	if ! echo "$$OUTPUT" | grep -qE -- '-[0-9]+ bytes free'; then \
+		echo "PASS: REPL test 83 — Banner free memory unsigned: no negative sign before 'bytes free'"; \
+	else \
+		echo "FAIL: REPL test 83 — free memory should be unsigned, got negative"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -q 'Type BYE to exit'; then \
+		echo "PASS: REPL test 84 — Banner exit hint: output contains 'Type BYE to exit'"; \
+	else \
+		echo "FAIL: REPL test 84 — expected 'Type BYE to exit' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

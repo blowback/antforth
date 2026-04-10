@@ -76,9 +76,39 @@ cold_start:
             LD      DE, test_group_inner
             NEXT
         ELSE
-            ; Normal mode: enter QUIT (interactive REPL)
+            ; Normal mode: print startup banner then enter QUIT
             LD      BC, 0           ; Clean TOS
-            JP      w_QUIT_cf       ; Enter QUIT directly
+            LD      DE, cold_thread
+            NEXT                    ; Enter banner thread
+cold_thread:
+        ; Line 1: "AntForth v1.00 (C) ant.org 2026"
+        DW      w_LIT_cf, str_banner1
+        DW      w_LIT_cf, STR_BANNER1_LEN
+        DW      w_TYPE_cf
+        DW      w_CR_cf
+        ; Line 2: "MicroBeast - XXXX bytes free"
+        DW      w_LIT_cf, str_banner2
+        DW      w_LIT_cf, STR_BANNER2_LEN
+        DW      w_TYPE_cf
+        ; Calculate free bytes: (sp_base - PS_SIZE - RS_SIZE) - HERE
+        DW      w_LIT_cf, sp_base
+        DW      w_FETCH_cf              ; ( sp_base_value )
+        DW      w_LIT_cf, PS_SIZE + RS_SIZE
+        DW      w_MINUS_cf              ; ( sp_base - 512 = bottom of stack area )
+        DW      w_HERE_cf               ; ( stack_bottom here )
+        DW      w_MINUS_cf              ; ( free_bytes )
+        DW      w_U_DOT_cf              ; print unsigned number + space
+        DW      w_LIT_cf, str_banner3
+        DW      w_LIT_cf, STR_BANNER3_LEN
+        DW      w_TYPE_cf
+        DW      w_CR_cf
+        ; Line 3: "Type BYE to exit"
+        DW      w_LIT_cf, str_banner4
+        DW      w_LIT_cf, STR_BANNER4_LEN
+        DW      w_TYPE_cf
+        DW      w_CR_cf
+        ; Enter QUIT (CODE word — NEXT will JP to its assembly directly)
+        DW      w_QUIT_cf
         ENDIF
 
 ; === Inner interpreter (DOCOL, EXIT, LIT, BRANCH, ?BRANCH, EXECUTE) ===
@@ -161,6 +191,14 @@ hash_table:
 
 sp_base:        DW      0               ; Initial SP value, set during cold start (for DEPTH)
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
+str_banner1:    DB      "AntForth v1.00 (C) ant.org 2026"
+STR_BANNER1_LEN EQU     31
+str_banner2:    DB      "MicroBeast - "
+STR_BANNER2_LEN EQU     13
+str_banner3:    DB      "bytes free"
+STR_BANNER3_LEN EQU     10
+str_banner4:    DB      "Type BYE to exit"
+STR_BANNER4_LEN EQU     16
 str_ok:         DB      " ok"
 STR_OK_LEN      EQU     3
 str_underflow:  DB      "? Stack underflow"

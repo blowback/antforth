@@ -1,6 +1,6 @@
 # Story 4.0: Startup Banner
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -14,8 +14,9 @@ so that I know which version I'm running and how much memory is available for de
 
 1. **Given** the user starts antforth in normal mode (not TEST_MODE) **When** the cold start completes **Then** a banner is displayed before the first `ok` prompt showing:
    ```
-   AntForth v1.00 (c) ant.org 2026
+   AntForth v1.00 (C) ant.org 2026
    MicroBeast - xxxx bytes free
+   Type BYE to exit
    ```
    **And** `xxxx` is the actual number of free dictionary bytes available
 
@@ -23,39 +24,43 @@ so that I know which version I'm running and how much memory is available for de
 
 3. **Given** the system is built in TEST_MODE (`make test`) **When** the test binary runs **Then** no banner is displayed **And** all 73 regression tests produce identical output **And** the EXPECTED string is unchanged
 
-4. **Given** all 79 existing REPL tests **When** `make test-repl` runs **Then** all 79 tests still pass (banner text appears in output but does not affect test matching)
+4. **Given** all 79 existing REPL tests **When** `make test-repl` runs **Then** all 84 tests pass (79 existing + 5 new banner tests; banner text appears in output but does not affect test matching)
 
 5. **Given** the free memory value displayed in the banner **When** compared to the actual dictionary space **Then** the value accurately reflects the bytes available between HERE and the bottom of the stack area (accounting for both parameter and return stack reservations)
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Define banner strings in antforth.asm data area (AC: #1)
-  - [ ] 1.1 Add `str_banner1` — `"AntForth v1.00 (c) ant.org 2026"` and its length EQU
-  - [ ] 1.2 Add `str_banner2` — `"MicroBeast - "` and its length EQU
-  - [ ] 1.3 Add `str_banner3` — `" bytes free"` and its length EQU
-  - [ ] 1.4 Place near existing `str_ok` and `str_underflow` in the data area (after `rp_base`)
+- [x] Task 1: Define banner strings in antforth.asm data area (AC: #1)
+  - [x] 1.1 Add `str_banner1` — `"AntForth v1.00 (C) ant.org 2026"` and its length EQU
+  - [x] 1.2 Add `str_banner2` — `"MicroBeast - "` and its length EQU
+  - [x] 1.3 Add `str_banner3` — `"bytes free"` and its length EQU
+  - [x] 1.4 Add `str_banner4` — `"Type BYE to exit"` and its length EQU
+  - [x] 1.5 Place near existing `str_ok` and `str_underflow` in the data area (after `rp_base`)
 
-- [ ] Task 2: Create banner thread and modify cold start (AC: #1, #2, #3)
-  - [ ] 2.1 Create a `cold_thread` — a short threaded code sequence that prints the banner then enters QUIT
-  - [ ] 2.2 Modify the normal-mode cold start path (antforth.asm:78-81) to execute `cold_thread` via NEXT instead of `JP w_QUIT_cf`
-  - [ ] 2.3 The cold_thread must:
+- [x] Task 2: Create banner thread and modify cold start (AC: #1, #2, #3)
+  - [x] 2.1 Create a `cold_thread` — a short threaded code sequence that prints the banner then enters QUIT
+  - [x] 2.2 Modify the normal-mode cold start path (antforth.asm:78-81) to execute `cold_thread` via NEXT instead of `JP w_QUIT_cf`
+  - [x] 2.3 The cold_thread must:
     - Print `str_banner1` + CR (version line)
     - Print `str_banner2` (platform prefix)
     - Calculate and print free bytes (see Dev Notes for calculation)
     - Print `str_banner3` + CR (suffix)
-    - Enter QUIT (via `w_QUIT_cf` word or JP directly — QUIT resets return stack and STATE, so it's safe to call)
-  - [ ] 2.4 TEST_MODE path (antforth.asm:74-77) must remain unchanged — banner is normal-mode only
+    - Print `str_banner4` + CR (exit hint)
+    - Enter QUIT (via `w_QUIT_cf` — CODE word, NEXT JPs directly to its assembly)
+  - [x] 2.4 TEST_MODE path (antforth.asm:74-77) must remain unchanged — banner is normal-mode only
 
-- [ ] Task 3: Add REPL tests (AC: #1, #4, #5)
-  - [ ] 3.1 Test 80: Banner version string — start antforth, check output contains `AntForth v1.00`
-  - [ ] 3.2 Test 81: Banner free memory — start antforth, check output contains `bytes free`
-  - [ ] 3.3 Test 82: Banner platform — start antforth, check output contains `MicroBeast`
+- [x] Task 3: Add REPL tests (AC: #1, #4, #5)
+  - [x] 3.1 Test 80: Banner version string — start antforth, check output contains `AntForth v1.00`
+  - [x] 3.2 Test 81: Banner free memory — start antforth, check output contains numeric value before `bytes free`
+  - [x] 3.3 Test 82: Banner platform — start antforth, check output contains `MicroBeast`
+  - [x] 3.4 Test 83: Banner unsigned guard — verify no negative sign before `bytes free`
+  - [x] 3.5 Test 84: Banner exit hint — check output contains `Type BYE to exit`
 
-- [ ] Task 4: Verify no regressions (AC: #2, #3, #4)
-  - [ ] 4.1 `make test` — all 73 regression tests pass, EXPECTED string unchanged
-  - [ ] 4.2 `make test-repl` — all 79 existing REPL tests pass (banner in output doesn't break grep patterns)
-  - [ ] 4.3 `make` — normal REPL build succeeds
-  - [ ] 4.4 Verify existing REPL test grep patterns still work — banner text appears before the first `ok` but existing tests grep for specific output patterns that won't match banner strings
+- [x] Task 4: Verify no regressions (AC: #2, #3, #4)
+  - [x] 4.1 `make test` — all 73 regression tests pass, EXPECTED string unchanged
+  - [x] 4.2 `make test-repl` — all 84 REPL tests pass (79 existing + 5 new; banner in output doesn't break grep patterns)
+  - [x] 4.3 `make` — normal REPL build succeeds
+  - [x] 4.4 Verify existing REPL test grep patterns still work — banner text appears before the first `ok` but existing tests grep for specific output patterns that won't match banner strings
 
 ## Dev Notes
 
@@ -98,45 +103,31 @@ STR_UNDERFLOW_LEN EQU  17
 Instead of `JP w_QUIT_cf`, the cold start will `LD DE, cold_thread` then `NEXT` into a short thread that prints the banner and then enters QUIT.
 
 ```z80
-; Modified normal mode (antforth.asm):
+; Modified normal mode (antforth.asm, inside ELSE branch):
         LD      BC, 0           ; Clean TOS
         LD      DE, cold_thread
         NEXT                    ; Enter banner thread
-
 cold_thread:
-        ; Line 1: "AntForth v1.00 (c) ant.org 2026"
-        DW      w_LIT_cf, str_banner1
+        DW      w_LIT_cf, str_banner1       ; "AntForth v1.00 (C) ant.org 2026"
         DW      w_LIT_cf, STR_BANNER1_LEN
-        DW      w_TYPE_cf
-        DW      w_CR_cf
-        ; Line 2: "MicroBeast - XXXX bytes free"
-        DW      w_LIT_cf, str_banner2
+        DW      w_TYPE_cf, w_CR_cf
+        DW      w_LIT_cf, str_banner2       ; "MicroBeast - "
         DW      w_LIT_cf, STR_BANNER2_LEN
         DW      w_TYPE_cf
-        ; Calculate free bytes: (sp_base - PS_SIZE - RS_SIZE) - HERE
-        DW      w_LIT_cf, sp_base
-        DW      w_FETCH_cf              ; ( sp_base_value )
+        DW      w_LIT_cf, sp_base           ; Calculate free bytes
+        DW      w_FETCH_cf
         DW      w_LIT_cf, PS_SIZE + RS_SIZE
-        DW      w_MINUS_cf              ; ( sp_base - 512 = bottom of stack area )
-        DW      w_HERE_cf               ; ( stack_bottom here )
-        DW      w_MINUS_cf              ; ( free_bytes )
-        DW      w_DOT_cf                ; print number + space
-        DW      w_LIT_cf, str_banner3
+        DW      w_MINUS_cf
+        DW      w_HERE_cf
+        DW      w_MINUS_cf
+        DW      w_U_DOT_cf                  ; print unsigned
+        DW      w_LIT_cf, str_banner3       ; "bytes free"
         DW      w_LIT_cf, STR_BANNER3_LEN
-        DW      w_TYPE_cf
-        DW      w_CR_cf
-        ; Enter QUIT
-        DW      w_LIT_cf, w_QUIT_cf
-        DW      w_EXECUTE_cf
-```
-
-**Note on entering QUIT:** QUIT is a CODE word — we can't use `DW w_QUIT_cf` directly in the thread (that would try to interpret the address as an xt, but QUIT's code field contains Z80 machine code, not a `JP DOCOL`). The correct pattern is `w_LIT_cf, w_QUIT_cf, w_EXECUTE_cf` which pushes the xt and executes it. Alternatively, the cold_thread could end with a direct `JP w_QUIT_cf` in assembly, but that breaks the threading model. The EXECUTE approach is cleaner.
-
-**Actually — simpler:** QUIT is a CODE word, so its cf label IS its xt. `DW w_QUIT_cf` in a thread IS valid — NEXT fetches the cell at (DE), loads it into HL, then `JP (HL)`. Since w_QUIT_cf points to CODE (starts with assembly), `JP (HL)` lands directly in the assembly code. This is how all CODE words work in threads. So `DW w_QUIT_cf` at the end of cold_thread is correct and simplest.
-
-```z80
-        ; Enter QUIT (CODE word — NEXT will JP to its assembly directly)
-        DW      w_QUIT_cf
+        DW      w_TYPE_cf, w_CR_cf
+        DW      w_LIT_cf, str_banner4       ; "Type BYE to exit"
+        DW      w_LIT_cf, STR_BANNER4_LEN
+        DW      w_TYPE_cf, w_CR_cf
+        DW      w_QUIT_cf                   ; CODE word — NEXT JPs directly
 ```
 
 ### Free Memory Calculation
@@ -155,9 +146,7 @@ On a typical CP/M system with BDOS at ~0xDC00, kernel_end around ~0x1B00:
 
 ### Where to Place the Cold Thread
 
-The `cold_thread` DW sequence should be placed in the normal-mode section of antforth.asm, after the cold start assembly code but before the INCLUDEs. It only needs to be in the non-TEST_MODE build — but since it references word labels defined in included files, it should go AFTER those includes or rely on sjasmplus multi-pass resolution (which handles forward references to `w_XXX_cf` labels — the existing test threads at line 119+ already do this).
-
-**Recommended placement:** Right after the cold start code (line 82), inside an `IFNDEF TEST_MODE` block (or the existing ELSE branch). Since sjasmplus resolves forward DW references on second pass, the thread can reference any `w_XXX_cf` label.
+The `cold_thread` DW sequence is placed inside the ELSE branch of the `IFDEF TEST_MODE` block, immediately after the `NEXT` macro. Execution never falls through to the DW data because NEXT ends with `JP (HL)`. sjasmplus multi-pass resolution handles forward references to `w_XXX_cf` labels.
 
 ### REPL Test Considerations
 
@@ -234,10 +223,29 @@ New tests continue from test 80 onwards in Makefile's `test-repl` target.
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6 (1M context)
 
 ### Debug Log References
 
+- Initial implementation used `w_DOT_cf` (signed `.`) for free memory — produced negative values on systems with >32KB free dictionary space. Fixed by switching to `w_U_DOT_cf` (unsigned `U.`).
+- `str_banner3` initially had leading space `" bytes free"` — caused double space after `U.` trailing space. Removed leading space.
+
 ### Completion Notes List
 
+- Added 4 banner strings (str_banner1-4) with length EQUs in antforth.asm data area
+- Created `cold_thread` threaded code sequence inside ELSE branch that prints version line, platform + free memory line, exit hint, then enters QUIT
+- Modified normal-mode cold start to `LD DE, cold_thread` / `NEXT` instead of `JP w_QUIT_cf`
+- Free memory calculated as `(sp_base_value - PS_SIZE - RS_SIZE) - HERE` using threaded Forth words
+- Used `U.` instead of `.` for unsigned display of free bytes (can exceed 32767)
+- Added REPL tests 80-84: banner version, numeric free memory, platform, unsigned guard, exit hint (single emulator launch)
+- All 73 regression tests pass (EXPECTED unchanged), all 84 REPL tests pass
+
+### Change Log
+
+- 2026-04-10: Implemented startup banner (Story 4.0) — banner strings, cold_thread, cold start modification, 3 new REPL tests
+- 2026-04-10: Code review fixes — consolidated IFNDEF into ELSE branch (M1), combined REPL tests into single launch (M2), strengthened free memory grep to require numeric value (M3), added unsigned guard test 83 (L2), added "Type BYE to exit" banner line + test 84, changed (c) to (C) (L1), cleaned up stale dev notes (L3)
+
 ### File List
+
+- src/antforth.asm — Added banner strings, cold_thread, modified cold start
+- Makefile — Added REPL tests 80-82

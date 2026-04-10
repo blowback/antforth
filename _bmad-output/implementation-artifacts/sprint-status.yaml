@@ -65,7 +65,7 @@ development_status:
   epic-3-retrospective: done
 
   epic-4: in-progress
-  4-0-startup-banner: ready-for-dev
+  4-0-startup-banner: done
   4-1-code-word-framework-and-basic-instructions: backlog
   4-2-labels-and-data-definition-words: backlog
   4-3-basic-z80-opcodes: backlog
