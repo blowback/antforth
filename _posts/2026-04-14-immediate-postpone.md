@@ -34,9 +34,9 @@ flag bit.
 
 Next up we have `POSTPONE`, which is one of the trickier words to understand.
 `POSTPONE` is an immediate word (runs at compile time) and it is always 
-followed by another word e.g. `POSTPONE later_word` and  its behaviour is 
-*"when the word I'm currently defining runs (at compile time),  compile 
-the effect of the named word (later_word) rather than executing it now".
+followed by another word e.g. `POSTPONE later_word` and  its behaviour is *"when
+the word I'm currently defining runs (at compile time),  compile 
+the effect of the named word (later_word) rather than executing it now"*.
 
 In other words (ho ho!), it defers compilation one level deeper. 
 
@@ -51,7 +51,9 @@ Normally an immediate word encountered inside a `:` definition executes
 IMMEDIATELY (obvs) at compilation time. `POSTPONE` suppresses that. 
 It makes the immediate word's compilation behaviour happen *later*, 
 when the word being defined is itself used in the future as a defining 
-word to define a new word. Is that meta enough?!
+word to define a new word.
+
+Is that meta enough?!
 
 For example:
 
@@ -90,12 +92,14 @@ So for non-immediate words, **`POSTPONE` compiles code that will
 compile the named word.**
 
 `POSTPONE` always shifts the named word's effect **one compilation 
-level later: **
+level later: **.
+
 
 |Word type|Without `POSTPONE`|With `POSTPONE`|
 |---------|----------------|---------------|
 |Immediate|execute *now* (compile time of current def)|execute *later* (when current word runs)|
 |Non-immediate|compiled into current def|comilation is deferred to when current word runs|
+
 
 In both cases `POSTPONE` is saying "don't do the thing right now, arrange 
 for it to happen later".
@@ -134,7 +138,7 @@ the string is immediately echoed to the display.
 
 Fun BMM aside: the LLM originally implemented `."` as a compile-time ONLY 
 word, having followed the ANS spec a bit too literally (*"interpretation 
-semantics for this word are undefined"*) but failed to see *"an imlementation 
+semantics for this word are undefined"*) but failed to see *"an implementation 
 may define interpretation semantics for `."` if desired"*. Every Forth 
 I've used (which is, er, 5 including AntForth) and every Forth book I've 
 read (7 so far!) permits `."` at interpretation time - indeed that's 
@@ -153,7 +157,7 @@ defined words, be they system-defined or user-defined.
 
 Here's the current tally of AntForth's powers:
 
-![All AntForth words](/antforth/assets/images/2026-04-12/antforth_words.png)
+![All AntForth words](/antforth/assets/images/2026-04-14/antforth_words.png)
 
 Not a bad haul!  But we're about to get a *lot* more...
 
