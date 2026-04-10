@@ -61,7 +61,7 @@ development_status:
   3-2-variables-constants-and-create-does: done
   3-3-conditionals-and-indefinite-loops: done
   3-4-counted-loops-and-recurse: done
-  3-5-immediate-postpone-string-literals-and-words: backlog
+  3-5-immediate-postpone-string-literals-and-words: done
   epic-3-retrospective: optional
 
   epic-4: backlog

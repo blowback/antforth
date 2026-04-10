@@ -201,6 +201,86 @@ build_header:
         RET
 
 ; -----------------------------------------------
+; POSTPONE ( "<spaces>name" -- ) IMMEDIATE, compile-only
+;   If name is non-IMMEDIATE: compile its xt directly (deferred compilation)
+;   If name is IMMEDIATE: compile [LIT xt COMPILE,] to defer its execution
+; -----------------------------------------------
+w_POSTPONE:
+        DEFIMMED "POSTPONE"
+w_POSTPONE_body:
+w_POSTPONE_cf EQU w_POSTPONE_body - 3
+        DW w_QCOMP_cf                ; compile-only guard
+        DW w_BL_cf                   ; ( -- 32 )
+        DW w_WORD_cf                 ; ( 32 -- c-addr )
+        DW w_FIND_cf                 ; ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+        DW w_DUP_cf                  ; ( ... flag -- ... flag flag )
+        DW w_QBRANCH_cf              ; if flag=0, not found
+        DW .postpone_notfound - $
+        ; Found: ( xt flag )
+        DW w_LIT_cf, 1
+        DW w_EQUALS_cf               ; ( xt flag==1? )
+        DW w_QBRANCH_cf              ; if not IMMEDIATE, defer compilation
+        DW .postpone_defer - $
+        ; IMMEDIATE word: compile xt directly (its compilation semantics = execute)
+        DW w_COMMA_cf                ; compile xt at HERE
+        DW w_BRANCH_cf
+        DW .postpone_done - $
+.postpone_defer:
+        ; Non-IMMEDIATE word: compile [LIT xt COMPILE,] to defer compilation
+        DW w_LIT_cf, w_LIT_cf
+        DW w_COMMA_cf                ; compile LIT
+        DW w_COMMA_cf                ; compile xt
+        DW w_LIT_cf, w_COMPILE_COMMA_cf
+        DW w_COMMA_cf                ; compile COMPILE,
+        DW w_BRANCH_cf
+        DW .postpone_done - $
+.postpone_notfound:
+        ; ( c-addr 0 ) — word not found
+        DW w_DROP_cf                 ; drop 0 flag, leaving c-addr as TOS
+        DW w_COMP_ERROR_cf           ; proper cleanup + error message + abort
+.postpone_done:
+        DW EXIT_CODE
+
+; -----------------------------------------------
+; COMPILE, ( xt -- )
+;   Compile execution token into the current definition at HERE
+;   Functionally identical to , for direct-threaded Forth but
+;   semantically distinct per ANS standard
+; -----------------------------------------------
+w_COMPILE_COMMA:
+        DEFCODE "COMPILE,", 0
+w_COMPILE_COMMA_cf:
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (HL), C
+        INC     HL
+        LD      (HL), B
+        INC     HL
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+        POP     BC              ; New TOS
+        NEXT
+
+; -----------------------------------------------
+; IMMEDIATE ( -- )
+;   Set the IMMEDIATE flag (bit 7) on the most recently defined word
+; -----------------------------------------------
+w_IMMEDIATE:
+        DEFCODE "IMMEDIATE", 0
+w_IMMEDIATE_cf:
+        ; Load LATEST pointer
+        LD      L, (IY+UserArea.latest)
+        LD      H, (IY+UserArea.latest+1)
+        ; Skip hash_link (2 bytes) to reach count_flags
+        INC     HL
+        INC     HL
+        ; Set F_IMMEDIATE bit
+        LD      A, (HL)
+        OR      F_IMMEDIATE
+        LD      (HL), A
+        NEXT
+
+; -----------------------------------------------
 ; : (COLON) ( "<spaces>name" -- )
 ;   Begin a new colon definition. Parse name, create dictionary header
 ;   at HERE with SMUDGE set, emit JP DOCOL, enter compile mode.

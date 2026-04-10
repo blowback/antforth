@@ -151,3 +151,101 @@ w_FIND_cf:
 .find_len:      DB      0       ; Search name length
 .find_name:     DW      0       ; Search name address
 .find_cf_byte:  DB      0       ; Count/flags byte of current entry
+
+; -----------------------------------------------
+; WORDS ( -- )
+;   List all words in the dictionary by traversing all 64 hash buckets
+; -----------------------------------------------
+w_WORDS:
+        DEFCODE "WORDS", 0
+w_WORDS_cf:
+        ; Save DE (IP) — we'll use all registers as scratch
+        LD      (words_saved_ip), DE
+        PUSH    BC              ; save TOS
+
+        LD      HL, hash_table
+        LD      A, HASH_BUCKETS         ; 64
+.words_bucket:
+        LD      (words_bucket_count), A
+        LD      (words_bucket_ptr), HL
+        ; Load bucket head
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)         ; DE = chain head
+
+.words_chain:
+        LD      A, D
+        OR      E
+        JR      Z, .words_next_bucket   ; end of chain
+
+        ; DE = entry address
+        LD      (words_entry), DE
+        ; entry+2 = count_flags
+        INC     DE
+        INC     DE
+        LD      A, (DE)         ; A = count_flags
+
+        ; Skip smudged entries
+        BIT     6, A            ; F_SMUDGE
+        JR      NZ, .words_skip
+
+        AND     F_LENMASK       ; A = name length
+        INC     DE              ; DE = first name char
+        LD      B, A            ; B = char count
+        OR      A
+        JR      Z, .words_skip  ; zero length, skip
+
+        ; Print B characters starting at DE
+.words_print:
+        PUSH    BC
+        PUSH    DE
+        LD      A, (DE)
+        LD      E, A
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     DE
+        POP     BC
+        INC     DE
+        DJNZ    .words_print
+
+        ; Print a space
+        PUSH    DE
+        LD      E, ' '
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     DE
+
+.words_skip:
+        ; Follow hash_link: entry+0,1
+        LD      HL, (words_entry)
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)         ; DE = next entry
+        JR      .words_chain
+
+.words_next_bucket:
+        LD      HL, (words_bucket_ptr)
+        INC     HL
+        INC     HL              ; next bucket
+        LD      A, (words_bucket_count)
+        DEC     A
+        JR      NZ, .words_bucket
+
+        ; Print CR/LF
+        LD      E, 0x0D
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        LD      E, 0x0A
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+
+        ; Restore TOS and IP
+        POP     BC
+        LD      DE, (words_saved_ip)
+        NEXT
+
+; WORDS scratch storage
+words_saved_ip:     DW 0
+words_bucket_count: DB 0
+words_bucket_ptr:   DW 0
+words_entry:        DW 0

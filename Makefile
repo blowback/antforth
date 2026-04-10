@@ -592,6 +592,126 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf ': FOO ; IMMEDIATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 65 — IMMEDIATE: define word and mark IMMEDIATE, no crash"; \
+	else \
+		echo "FAIL: REPL test 65 — expected 'ok' after IMMEDIATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': COMP-DUP POSTPONE DUP ; IMMEDIATE : DOUBLE COMP-DUP * ; 7 DOUBLE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '49 '; then \
+		echo "PASS: REPL test 66 — POSTPONE non-IMMEDIATE word: 7 DOUBLE outputs 49"; \
+	else \
+		echo "FAIL: REPL test 66 — expected '49' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': COMP-IF POSTPONE IF ; IMMEDIATE : TEST 1 COMP-IF 42 THEN . ; TEST\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+		echo "PASS: REPL test 67 — POSTPONE IMMEDIATE word: TEST outputs 42"; \
+	else \
+		echo "FAIL: REPL test 67 — expected '42' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': GREET S" Hello" TYPE ; GREET\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'Hello'; then \
+		echo "PASS: REPL test 68 — S\" in compile mode: GREET outputs Hello"; \
+	else \
+		echo "FAIL: REPL test 68 — expected 'Hello' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': HI ." Hello World" ; HI\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'Hello World'; then \
+		echo "PASS: REPL test 69 — .\" in compile mode: HI outputs Hello World"; \
+	else \
+		echo "FAIL: REPL test 69 — expected 'Hello World' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" test" TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'test'; then \
+		echo "PASS: REPL test 70 — S\" in interpret mode: outputs test"; \
+	else \
+		echo "FAIL: REPL test 70 — expected 'test' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': LEN S" abcde" SWAP DROP . ; LEN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 71 — S\" string length: LEN outputs 5"; \
+	else \
+		echo "FAIL: REPL test 71 — expected '5' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'WORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'DUP' && echo "$$OUTPUT" | grep -q 'DROP' && echo "$$OUTPUT" | grep -q 'SWAP'; then \
+		echo "PASS: REPL test 72 — WORDS lists known words (DUP, DROP, SWAP found)"; \
+	else \
+		echo "FAIL: REPL test 72 — expected DUP, DROP, SWAP in WORDS output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'POSTPONE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 73 — POSTPONE in interpret mode shows compile-only error and recovers"; \
+	else \
+		echo "FAIL: REPL test 73 — expected '? compile only' and recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '." hello"\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'hello'; then \
+		echo "PASS: REPL test 74 — .\" in interpret mode: prints hello"; \
+	else \
+		echo "FAIL: REPL test 74 — expected 'hello' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': GREET2 ." Hi " ." There" ; GREET2\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'Hi There'; then \
+		echo "PASS: REPL test 75 — multiple .\" in one definition: GREET2 outputs Hi There"; \
+	else \
+		echo "FAIL: REPL test 75 — expected 'Hi There' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': EMPTY S" " SWAP DROP . ; EMPTY\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
+		echo "PASS: REPL test 76 — empty S\" string: SWAP DROP . outputs 0"; \
+	else \
+		echo "FAIL: REPL test 76 — expected '0' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': LONG S" ABCDEFGHIJKLMNOPQRSTUVWXYZ" TYPE ; LONG\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; then \
+		echo "PASS: REPL test 77 — long S\" string: outputs full alphabet"; \
+	else \
+		echo "FAIL: REPL test 77 — expected 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': BAD POSTPONE XYZZY ;\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'XYZZY ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+		echo "PASS: REPL test 78 — POSTPONE undefined word: shows error and recovers"; \
+	else \
+		echo "FAIL: REPL test 78 — expected 'XYZZY ?' error and recovery to '5'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': COMP-SWAP POSTPONE SWAP ; IMMEDIATE : REV COMP-SWAP . . ; 1 2 REV\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1 2 '; then \
+		echo "PASS: REPL test 79 — COMPILE, via POSTPONE non-IMMEDIATE: 1 2 REV outputs 1 2"; \
+	else \
+		echo "FAIL: REPL test 79 — expected '1 2' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

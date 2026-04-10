@@ -388,3 +388,366 @@ w_NUMBER_Q_cf:
         NEXT
 
 .numq_negate:   DB      0
+
+; -----------------------------------------------
+; (S") ( -- c-addr u ) runtime
+;   Push address and length of inline counted string from thread.
+;   IP (DE) points to count byte; advances IP past string + alignment.
+; -----------------------------------------------
+w_PAREN_S_QUOTE:
+        DEFCODE '(S")', 0
+w_PAREN_S_QUOTE_cf:
+        ; Save old TOS
+        PUSH    BC
+        ; DE = IP, points to count byte
+        LD      A, (DE)         ; A = count
+        LD      C, A
+        LD      B, 0            ; BC = u (new TOS)
+        ; c-addr = DE + 1
+        INC     DE
+        PUSH    DE              ; push c-addr (second on stack)
+        ; Advance IP past string: DE = DE + count
+        ADD     A, E
+        LD      E, A
+        JR      NC, .sq_rt_nc
+        INC     D
+.sq_rt_nc:
+        ; Cell-align: if DE is odd, increment by 1
+        BIT     0, E
+        JR      Z, .sq_rt_aligned
+        INC     DE
+.sq_rt_aligned:
+        ; DE = new IP
+        NEXT
+
+; -----------------------------------------------
+; compile_string — Internal subroutine shared by S" and ."
+;   Compiles (S") xt + inline counted string at HERE.
+;   Reads characters from TIB at >IN until closing '"'.
+;   Skips one leading space per ANS S" spec.
+;   Input:  IP saved by caller; IY = user area
+;   Output: HERE updated past string + alignment
+;   Clobbers: A, HL, BC, DE (caller saves IP)
+; -----------------------------------------------
+compile_string:
+        ; Compile (S") xt at HERE
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (HL), LOW w_PAREN_S_QUOTE_cf
+        INC     HL
+        LD      (HL), HIGH w_PAREN_S_QUOTE_cf
+        INC     HL
+        ; HL = address for count byte
+        PUSH    HL              ; save count_addr
+        INC     HL              ; HL = first char destination
+
+        ; Compute source pointer: TIB + >IN
+        LD      E, (IY+UserArea.tib_in)
+        LD      D, (IY+UserArea.tib_in+1)   ; DE = >IN
+        PUSH    HL              ; save dest
+        LD      L, (IY+UserArea.tib_addr)
+        LD      H, (IY+UserArea.tib_addr+1)  ; HL = tib_addr
+        ADD     HL, DE          ; HL = source = tib_addr + >IN
+        ; Save source in scratch, get dest back
+        LD      (cs_src), HL
+        POP     HL              ; HL = dest
+
+        ; Skip one leading space (per ANS S" spec)
+        PUSH    HL              ; save dest
+        LD      HL, (cs_src)
+        LD      A, (HL)
+        CP      ' '
+        JR      NZ, .cs_no_skip
+        INC     HL
+        LD      (cs_src), HL
+        ; Advance >IN by 1
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+.cs_no_skip:
+        POP     HL              ; HL = dest
+
+        ; Compute remaining = tib_len - >IN (16-bit safe)
+        LD      A, (IY+UserArea.tib_len)
+        SUB     (IY+UserArea.tib_in)
+        LD      C, A
+        LD      A, (IY+UserArea.tib_len+1)
+        SBC     A, (IY+UserArea.tib_in+1)
+        ; A:C = remaining (16-bit); use C (low byte) as counter
+        ; If high byte non-zero, clamp C to 255 (max practical TIB)
+        OR      A
+        JR      Z, .cs_rem_ok
+        LD      C, 255
+.cs_rem_ok:
+        LD      B, 0            ; B = char count
+
+        ; Copy loop: source in (cs_src), dest in HL, remaining in C, count in B
+.cs_copy:
+        LD      A, C
+        OR      A
+        JR      Z, .cs_done     ; end of input
+        PUSH    HL              ; save dest
+        LD      HL, (cs_src)
+        LD      A, (HL)
+        INC     HL
+        LD      (cs_src), HL
+        POP     HL              ; restore dest
+        DEC     C               ; remaining--
+        ; Advance >IN
+        PUSH    HL
+        PUSH    AF
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     AF
+        POP     HL
+        CP      '"'
+        JR      Z, .cs_done     ; closing quote found
+        ; Copy character
+        LD      (HL), A
+        INC     HL
+        INC     B               ; count++
+        JR      .cs_copy
+
+.cs_done:
+        ; B = string length, HL = past last char
+        ; Write count byte
+        POP     DE              ; DE = count_addr (saved earlier)
+        LD      A, B
+        LD      (DE), A         ; store count byte
+
+        ; Cell-align HL: if odd, pad with 0 and advance
+        BIT     0, L
+        JR      Z, .cs_aligned
+        LD      (HL), 0         ; padding byte
+        INC     HL
+.cs_aligned:
+        ; Update HERE
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+        RET
+
+; compile_string scratch
+cs_src:         DW 0
+
+; -----------------------------------------------
+; S" ( -- c-addr u ) IMMEDIATE
+;   Compile mode: compile (S") + inline string
+;   Interpret mode: copy string to transient buffer, push c-addr u
+; -----------------------------------------------
+w_S_QUOTE:
+        DEFCODE 'S"', F_IMMEDIATE
+w_S_QUOTE_cf:
+        ; Save DE (IP) to scratch cell
+        LD      (sq_saved_ip), DE
+
+        ; Check STATE
+        LD      A, (IY+UserArea.state)
+        OR      (IY+UserArea.state+1)
+        JR      Z, .sq_interpret
+
+        ; === Compile mode ===
+        PUSH    BC              ; save TOS (not used, but must preserve)
+        CALL    compile_string
+        POP     BC              ; restore TOS
+        ; Restore IP
+        LD      DE, (sq_saved_ip)
+        NEXT
+
+.sq_interpret:
+        ; === Interpret mode ===
+        ; Parse string to transient buffer (s_quote_buf)
+        PUSH    BC              ; save old TOS
+
+        ; Compute source: TIB + >IN
+        LD      E, (IY+UserArea.tib_in)
+        LD      D, (IY+UserArea.tib_in+1)
+        LD      L, (IY+UserArea.tib_addr)
+        LD      H, (IY+UserArea.tib_addr+1)
+        ADD     HL, DE          ; HL = source
+
+        ; Skip one leading space
+        LD      A, (HL)
+        CP      ' '
+        JR      NZ, .sq_i_no_skip
+        INC     HL
+        ; Advance >IN
+        PUSH    HL
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     HL
+.sq_i_no_skip:
+        ; HL = source, DE = dest (s_quote_buf)
+        LD      DE, s_quote_buf
+        ; Compute remaining = tib_len - >IN (16-bit safe)
+        LD      A, (IY+UserArea.tib_len)
+        SUB     (IY+UserArea.tib_in)
+        LD      C, A
+        LD      A, (IY+UserArea.tib_len+1)
+        SBC     A, (IY+UserArea.tib_in+1)
+        ; Clamp to 255 if high byte non-zero
+        OR      A
+        JR      Z, .sq_i_rem_ok
+        LD      C, 255
+.sq_i_rem_ok:
+        LD      B, 0            ; B = char count
+
+.sq_i_copy:
+        LD      A, C
+        OR      A
+        JR      Z, .sq_i_done
+        LD      A, (HL)
+        INC     HL
+        DEC     C
+        ; Advance >IN
+        PUSH    HL
+        PUSH    AF
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     AF
+        POP     HL
+        CP      '"'
+        JR      Z, .sq_i_done
+        ; Bounds check: B < 255 to prevent buffer overrun
+        PUSH    AF
+        LD      A, B
+        CP      255
+        JR      NC, .sq_i_done_pop
+        POP     AF
+        LD      (DE), A
+        INC     DE
+        INC     B
+        JR      .sq_i_copy
+
+.sq_i_done_pop:
+        POP     AF              ; discard saved char
+.sq_i_done:
+        ; Push c-addr (s_quote_buf) and u (count)
+        LD      HL, s_quote_buf
+        PUSH    HL              ; push c-addr (under TOS)
+        LD      C, B
+        LD      B, 0            ; BC = u (new TOS)
+
+        ; Restore IP
+        LD      DE, (sq_saved_ip)
+        NEXT
+
+; S" scratch storage
+sq_saved_ip:    DW 0
+s_quote_buf:    DS 258          ; transient buffer for interpret mode (256 chars + safety)
+
+; -----------------------------------------------
+; ." ( -- ) IMMEDIATE
+;   Compile mode: compile (S") + inline string + TYPE
+;   Interpret mode: parse and print string immediately
+; -----------------------------------------------
+w_DOT_QUOTE:
+        DEFCODE '."', F_IMMEDIATE
+w_DOT_QUOTE_cf:
+        ; Save DE (IP) to scratch cell
+        LD      (dq_saved_ip), DE
+
+        ; Check STATE
+        LD      A, (IY+UserArea.state)
+        OR      (IY+UserArea.state+1)
+        JR      Z, .dq_interpret
+
+        ; === Compile mode ===
+        PUSH    BC              ; save TOS
+        CALL    compile_string
+        ; Compile TYPE xt after the string
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (HL), LOW w_TYPE_cf
+        INC     HL
+        LD      (HL), HIGH w_TYPE_cf
+        INC     HL
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+        POP     BC              ; restore TOS
+
+        ; Restore IP
+        LD      DE, (dq_saved_ip)
+        NEXT
+
+.dq_interpret:
+        ; === Interpret mode: parse string and print directly ===
+        ; Compute source: TIB + >IN
+        LD      E, (IY+UserArea.tib_in)
+        LD      D, (IY+UserArea.tib_in+1)
+        LD      L, (IY+UserArea.tib_addr)
+        LD      H, (IY+UserArea.tib_addr+1)
+        ADD     HL, DE          ; HL = source
+
+        ; Skip one leading space
+        LD      A, (HL)
+        CP      ' '
+        JR      NZ, .dq_i_no_skip
+        INC     HL
+        PUSH    HL
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     HL
+.dq_i_no_skip:
+        ; Compute remaining = tib_len - >IN (16-bit safe)
+        LD      A, (IY+UserArea.tib_len)
+        SUB     (IY+UserArea.tib_in)
+        LD      C, A
+        LD      A, (IY+UserArea.tib_len+1)
+        SBC     A, (IY+UserArea.tib_in+1)
+        OR      A
+        JR      Z, .dq_i_rem_ok
+        LD      C, 255
+.dq_i_rem_ok:
+        ; HL = source, C = remaining
+.dq_i_loop:
+        LD      A, C
+        OR      A
+        JR      Z, .dq_i_end
+        LD      A, (HL)
+        INC     HL
+        DEC     C
+        ; Advance >IN
+        PUSH    HL
+        PUSH    AF
+        PUSH    BC
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     BC
+        POP     AF
+        POP     HL
+        CP      '"'
+        JR      Z, .dq_i_end
+        ; Print character via BDOS
+        PUSH    HL
+        PUSH    BC
+        LD      E, A
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     BC
+        POP     HL
+        JR      .dq_i_loop
+
+.dq_i_end:
+        ; Restore IP
+        LD      DE, (dq_saved_ip)
+        NEXT
+
+; ." scratch storage
+dq_saved_ip:    DW 0
