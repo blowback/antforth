@@ -17,8 +17,8 @@ use development tools, particularly during their genesis, and
 this is the niche that Forth was born for!
 
 And if you're thinking "there's not much modern about a 56 year 
-old language on a 50 year old processor" then wait til you see 
-how I implemented it using state-of-the-art agentic LLMs...
+old language on a 50 year old processor" then [wait til you see 
+how I implemented it](https://blowback.github.io/antforth/) using state-of-the-art agentic LLMs...
 
 
 ![antforth venn diagram](images/venn.svg)
