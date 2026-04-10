@@ -209,7 +209,7 @@ Add the compiler and control flow. User can define new words (colon definitions,
 **FRs covered:** FR6, FR7, FR9, FR11, FR12, FR13, FR14, FR20 (partial: NEGATE, ABS, MIN, MAX), FR27, FR28, FR29, FR30, FR37, FR47
 
 ### Epic 4: Built-in Z80 Assembler
-Add the reverse-polish Z80 assembler. User can define CODE words from within Forth, writing performance-critical routines at the machine level and mixing assembler with Forth development.
+Add the reverse-polish Z80 assembler with labels and data definition support. User can define CODE words from within Forth, writing performance-critical routines at the machine level with proper labels (including forward references), data definitions, and the full Z80 instruction set.
 **FRs covered:** FR10, FR38, FR39, FR40
 
 ### Epic 5: Safe Experimentation & System Maturity
@@ -773,7 +773,24 @@ So that I can write sophisticated macros and use strings in my programs.
 
 ## Epic 4: Built-in Z80 Assembler
 
-Add the reverse-polish Z80 assembler. User can define CODE words from within Forth, writing performance-critical routines at the machine level.
+Add the reverse-polish Z80 assembler with labels and data definition support. User can define CODE words from within Forth, writing performance-critical routines at the machine level with proper labels (including forward references), data definitions, and the full Z80 instruction set.
+
+### Story 4.0: Startup Banner
+
+As a Forth user,
+I want to see a startup banner when the system boots,
+So that I know which version I'm running and how much memory is available.
+
+**Acceptance Criteria:**
+
+**Given** the user starts antforth (either on iz-cpm or MicroBeast hardware)
+**When** the cold start completes
+**Then** a banner is displayed before the first `ok` prompt:
+```
+AntForth v1.00 (c) ant.org 2026
+MicroBeast - xxxx bytes available
+```
+**And** `xxxx` shows the actual number of free bytes (dictionary space between HERE and the stack area)
 
 ### Story 4.1: CODE Word Framework & Basic Instructions
 
@@ -825,11 +842,43 @@ END-CODE
 **When** it executes
 **Then** behaviour is undefined (this is the user's responsibility, matching standard Forth assembler conventions)
 
-### Story 4.2: Full Z80 Instruction Set & Addressing Modes
+### Story 4.2: Labels & Data Definition Words
 
 As a Forth user,
-I want the complete Z80 instruction set available in the assembler,
-So that I can write any Z80 routine as a CODE word for hardware interaction and performance.
+I want labels (including forward references) and data definition words in the assembler,
+So that I can write readable assembly code without manually counting bytes for jump offsets, and embed data tables in CODE words.
+
+**Acceptance Criteria:**
+
+**Given** a CODE definition using a backward label
+**When** e.g., `L: LOOP-START` defines a label and `LOOP-START JR,` jumps back to it
+**Then** the correct signed displacement is calculated and assembled
+
+**Given** a CODE definition using a forward label
+**When** e.g., `SKIP JR,` references a label before it is defined, and `L: SKIP` later defines it
+**Then** the forward reference is resolved and the correct displacement is patched in
+
+**Given** a CODE definition using `DB`
+**When** e.g., `0x42 DB,` is typed
+**Then** the byte 0x42 is assembled at HERE and HERE advances by 1
+
+**Given** a CODE definition using `DW`
+**When** e.g., `0x1234 DW,` is typed
+**Then** the 16-bit value 0x1234 is assembled at HERE (little-endian) and HERE advances by 2
+
+**Given** a CODE definition using `DS`
+**When** e.g., `10 DS,` is typed
+**Then** 10 bytes of space are reserved at HERE (filled with 0) and HERE advances by 10
+
+**Given** the user uses `EQU` to define a named constant
+**When** e.g., `0x42 EQU PORT-A`
+**Then** PORT-A is available as a constant value in subsequent assembler expressions
+
+### Story 4.3: Basic Z80 Opcodes
+
+As a Forth user,
+I want the core Z80 instruction set available in the assembler,
+So that I can write most common CODE words with loads, arithmetic, jumps, and calls.
 
 **Acceptance Criteria:**
 
@@ -840,27 +889,14 @@ So that I can write any Z80 routine as a CODE word for hardware interaction and 
 **Given** a CODE definition using indirect addressing
 **When** e.g., `(HL) A LD,` (LD A, (HL)), `A (HL) LD,` (LD (HL), A) are typed
 **Then** the correct opcodes for indirect memory access are assembled
-**And** IX and IY indexed addressing with displacement works: `(IX) 5 +D A LD,` (LD A, (IX+5))
 
 **Given** a CODE definition using jumps and calls
 **When** e.g., `0x1234 JP,`, `NZ 0x1234 JP,` (conditional JP NZ), `0x1234 CALL,`, `RET,`, `Z RET,` (conditional RET) are typed
 **Then** the correct opcode sequences are assembled for each
 
 **Given** a CODE definition using relative jumps
-**When** e.g., forward and backward `JR,` instructions are used
+**When** e.g., forward and backward `JR,` instructions are used with labels
 **Then** the correct signed displacement byte is calculated and assembled
-
-**Given** a CODE definition using bit operations
-**When** `3 A BIT,` (BIT 3, A), `5 B SET,` (SET 5, B), `7 C RES,` (RES 7, C) are typed
-**Then** the correct CB-prefixed opcodes are assembled
-
-**Given** a CODE definition using rotates and shifts
-**When** `A RLC,`, `B RRC,`, `C RL,`, `D RR,`, `E SLA,`, `H SRA,`, `L SRL,` are typed
-**Then** the correct opcodes are assembled
-
-**Given** a CODE definition using I/O instructions
-**When** `(C) A IN,` (IN A, (C)), `(C) A OUT,` (OUT (C), A), `0x42 # A IN,` (IN A, (0x42)) are typed
-**Then** the correct opcodes are assembled for port I/O
 
 **Given** a CODE definition using immediate operands
 **When** `0x42 # A LD,` (LD A, 0x42), `0x0F # AND,` (AND 0x0F) are typed
@@ -886,6 +922,34 @@ END-CODE
 **Given** the user is in a normal Forth session (not inside CODE)
 **When** they use assembler words alongside Forth words
 **Then** the assembler vocabulary is only active inside CODE/END-CODE and does not interfere with normal Forth interpretation
+
+### Story 4.4: Extended Z80 Opcodes
+
+As a Forth user,
+I want the extended Z80 instruction set (CB/DD/FD-prefixed) available in the assembler,
+So that I can use bit operations, rotates/shifts, and IX/IY indexed addressing in CODE words.
+
+**Acceptance Criteria:**
+
+**Given** a CODE definition using IX/IY indexed addressing with displacement
+**When** e.g., `(IX) 5 +D A LD,` (LD A, (IX+5)) is typed
+**Then** the correct DD-prefixed opcode with displacement byte is assembled
+
+**Given** a CODE definition using bit operations
+**When** `3 A BIT,` (BIT 3, A), `5 B SET,` (SET 5, B), `7 C RES,` (RES 7, C) are typed
+**Then** the correct CB-prefixed opcodes are assembled
+
+**Given** a CODE definition using rotates and shifts
+**When** `A RLC,`, `B RRC,`, `C RL,`, `D RR,`, `E SLA,`, `H SRA,`, `L SRL,` are typed
+**Then** the correct CB-prefixed opcodes are assembled
+
+**Given** a CODE definition using I/O instructions
+**When** `(C) A IN,` (IN A, (C)), `(C) A OUT,` (OUT (C), A), `0x42 # A IN,` (IN A, (0x42)) are typed
+**Then** the correct opcodes are assembled for port I/O
+
+**Given** a CODE definition using block transfer and search instructions
+**When** `LDIR,`, `LDDR,`, `CPIR,`, `CPDR,` are typed
+**Then** the correct ED-prefixed opcodes are assembled
 
 ## Epic 5: Safe Experimentation & System Maturity
 

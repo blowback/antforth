@@ -55,18 +55,21 @@ development_status:
   2-4-error-handling-and-recovery: done
   epic-2-retrospective: done
 
-  epic-3: in-progress
+  epic-3: done
   3-0-test-thread-modularisation: done
   3-1-colon-definitions-and-compiler: done
   3-2-variables-constants-and-create-does: done
   3-3-conditionals-and-indefinite-loops: done
   3-4-counted-loops-and-recurse: done
   3-5-immediate-postpone-string-literals-and-words: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
-  epic-4: backlog
+  epic-4: in-progress
+  4-0-startup-banner: ready-for-dev
   4-1-code-word-framework-and-basic-instructions: backlog
-  4-2-full-z80-instruction-set-and-addressing-modes: backlog
+  4-2-labels-and-data-definition-words: backlog
+  4-3-basic-z80-opcodes: backlog
+  4-4-extended-z80-opcodes: backlog
   epic-4-retrospective: optional
 
   epic-5: backlog
