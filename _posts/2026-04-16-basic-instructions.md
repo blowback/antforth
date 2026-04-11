@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "CODE word framework and basic instructions"
-date: 2026-04-14
+date: 2026-04-16
 ---
 
 Many original Forths included an inline assembler for their host platform 
