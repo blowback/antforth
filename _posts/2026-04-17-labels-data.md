@@ -226,3 +226,7 @@ labels faced, but here we can solve it by simply moving EQUs
 don't need all the intricate side-dictionary/fixup mechanisms 
 that labels required.
 
+The interpreter will warn you if you forget the rules:
+
+![EQU error](/antforth/assets/images/2026-04-17/equ_error.png)
+
