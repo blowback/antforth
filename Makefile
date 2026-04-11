@@ -788,6 +788,172 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE BL1 LABEL TOP TOP FIX A A LD, TOP JR, NEXT, END-CODE\r\nXT BL1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 '; then \
+		echo "PASS: REPL test 90 — backward JR encoding: displacement byte = 0xFD = 253"; \
+	else \
+		echo "FAIL: REPL test 90 — expected '253 ' (0xFD displacement) in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE FW1 LABEL SKIP SKIP JR, 255 DB, SKIP FIX NEXT, END-CODE\r\nXT FW1 0 + C@ . XT FW1 1 + C@ . XT FW1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '24 1 255 '; then \
+		echo "PASS: REPL test 91 — forward JR encoding: opcode 24, disp +1, DB byte 255"; \
+	else \
+		echo "FAIL: REPL test 91 — expected '24 1 255 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE DATAW 170 DB, 4660 DW, 3 DS, NEXT, END-CODE\r\nXT DATAW 0 + C@ . XT DATAW 1 + C@ . XT DATAW 2 + C@ . XT DATAW 3 + C@ . XT DATAW 4 + C@ . XT DATAW 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '170 52 18 0 0 0 '; then \
+		echo "PASS: REPL test 92 — DB,/DW,/DS, encoding: 170 52 18 0 0 0"; \
+	else \
+		echo "FAIL: REPL test 92 — expected '170 52 18 0 0 0 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\n66 EQU PORT-A\r\nPORT-A .\r\nCODE EUSE PORT-A DB, NEXT, END-CODE\r\nXT EUSE C@ .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	N66=$$(echo "$$OUTPUT" | grep -oE '66 ' | wc -l) && \
+	if [ "$$N66" -ge 2 ] && echo "$$OUTPUT" | grep -q 'PORT-A' && echo "$$OUTPUT" | grep -q 'EUSE'; then \
+		echo "PASS: REPL test 93 — EQU end-to-end: PORT-A prints 66, used in CODE, listed in WORDS"; \
+	else \
+		echo "FAIL: REPL test 93 — expected '66' twice and PORT-A/EUSE in WORDS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE DW1 LABEL TGT TGT DW, TGT FIX NEXT, END-CODE\r\nXT DW1 @ XT DW1 2 + = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-1 '; then \
+		echo "PASS: REPL test 94 — DW, with label: stored value equals xt+2"; \
+	else \
+		echo "FAIL: REPL test 94 — expected '-1 ' (true) from address comparison"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD LABEL X X JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'unresolved label X ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^X$$'; then \
+		echo "PASS: REPL test 95 — unresolved fixup: error, clean recovery, BAD and X not leaked"; \
+	else \
+		echo "FAIL: REPL test 95 — expected 'unresolved label X ?', '3', and BAD/X absent from WORDS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD2 LABEL Y Y FIX A A LD, Y FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'already fixed: Y ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD2$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^Y$$'; then \
+		echo "PASS: REPL test 96 — FIX already fixed: error, recovery, BAD2 and Y not leaked"; \
+	else \
+		echo "FAIL: REPL test 96 — expected 'already fixed: Y ?', '3', BAD2/Y absent from WORDS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD3 A A LD, LABEL Z NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'LABEL must precede opcodes ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD3$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^Z$$'; then \
+		echo "PASS: REPL test 97 — LABEL after opcodes: error, recovery, BAD3 and Z not leaked"; \
+	else \
+		echo "FAIL: REPL test 97 — expected 'LABEL must precede opcodes ?', '3', BAD3/Z absent"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD4 LABEL TGT TGT FIX 130 DS, TGT JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'JR out of range ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD4$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^TGT$$'; then \
+		echo "PASS: REPL test 98 — out-of-range JR: error, recovery, BAD4 and TGT not leaked"; \
+	else \
+		echo "FAIL: REPL test 98 — expected 'JR out of range ?', '3', BAD4/TGT absent"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD5 LABEL OK PUHS, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'PUHS, ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD5$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^OK$$'; then \
+		echo "PASS: REPL test 99 — typo guard: PUHS, error, recovery, BAD5 and OK not leaked"; \
+	else \
+		echo "FAIL: REPL test 99 — expected 'PUHS, ?', '3', BAD5/OK absent from WORDS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'LABEL FOO\r\n1 2 + .\r\n0 FIX\r\n1 2 + .\r\n66 DB,\r\n1 2 + .\r\n4660 DW,\r\n1 2 + .\r\n1 DS,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	NCOUNT=$$(echo "$$OUTPUT" | grep -c 'not in CODE ?') && \
+	NREC=$$(echo "$$OUTPUT" | tr -d '\r\n' | grep -oE '3 ' | wc -l) && \
+	if [ "$$NCOUNT" -ge 5 ] && [ "$$NREC" -ge 5 ]; then \
+		echo "PASS: REPL test 100 — LABEL/FIX/DB,/DW,/DS, outside CODE: 5 errors, 5 clean recoveries"; \
+	else \
+		echo "FAIL: REPL test 100 — expected 5x 'not in CODE ?' and 5x recovery (got $$NCOUNT errors, $$NREC '3 ')"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD6 1 EQU FOO NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'EQU outside CODE only ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD6$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^FOO$$'; then \
+		echo "PASS: REPL test 101 — EQU inside CODE: error, recovery, BAD6 and FOO not leaked"; \
+	else \
+		echo "FAIL: REPL test 101 — expected 'EQU outside CODE only ?', '3', BAD6/FOO absent"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE A1 LABEL LBL LBL FIX A A LD, NEXT, END-CODE\r\nCODE A2 LABEL LBL LBL FIX B B LD, NEXT, END-CODE\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'A1' && echo "$$OUTPUT" | grep -q 'A2' && ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^LBL$$'; then \
+		echo "PASS: REPL test 102 — label scoping across CODE words: A1, A2 in WORDS, LBL not"; \
+	else \
+		echo "FAIL: REPL test 102 — expected A1, A2 in WORDS but no LBL"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BIG LABEL L1 LABEL L2 LABEL L3 LABEL L4 LABEL L5 LABEL L6 LABEL L7 LABEL L8 LABEL L9 LABEL L10 LABEL L11 LABEL L12 LABEL L13 LABEL L14 LABEL L15 LABEL L16 LABEL L17 NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'too many labels ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BIG$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^L1$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^L16$$'; then \
+		echo "PASS: REPL test 103 — label-pool overflow: error, recovery, BIG and L1..L16 not leaked"; \
+	else \
+		echo "FAIL: REPL test 103 — expected 'too many labels ?', '3', BIG/L1/L16 absent"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MYDUP BC PUSH, NEXT, END-CODE\r\n5 MYDUP . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '5 5 '; then \
+		echo "PASS: REPL test 104 — Story 4.1 regression spot-check: '5 MYDUP . .' outputs '5 5'"; \
+	else \
+		echo "FAIL: REPL test 104 — Story 4.1 regression broken"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@JRS=$$(yes 'F JR,' | head -33 | tr '\n' ' '); \
+	OUTPUT=$$(printf 'CODE FXOF LABEL F %sF FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' "$$JRS" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
+	if echo "$$OUTPUT" | grep -q 'too many fixups ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^FXOF$$' && \
+	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^F$$'; then \
+		echo "PASS: REPL test 105 — fixup-pool overflow: 33 forward JRs hit 'too many fixups ?'"; \
+	else \
+		echo "FAIL: REPL test 105 — expected 'too many fixups ?', '3', FXOF/F absent from WORDS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE LIT4 HERE 5 + JR, NEXT, END-CODE\r\nXT LIT4 C@ . XT LIT4 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '24 3 '; then \
+		echo "PASS: REPL test 106 — literal-address JR,: opcode 24, disp +3 (HERE+5 - HERE-2)"; \
+	else \
+		echo "FAIL: REPL test 106 — expected '24 3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

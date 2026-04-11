@@ -46,12 +46,71 @@
 ; Assembler state / error-recovery scratch
 ; =====================================================================
 asm_mode:          DB 0   ; 1 while inside CODE..END-CODE
-asm_saved_here:    DW 0   ; HERE at CODE entry
+asm_saved_here:    DW 0   ; HERE at CODE entry (entry start, for restore)
+asm_body_start:    DW 0   ; HERE at the start of the CODE word body
+                          ; (= code field address; for LABEL "no opcodes" check)
 asm_saved_bucket:  DB 0   ; hash bucket for new word
 asm_saved_head:    DW 0   ; previous bucket head (for unlink)
 asm_smudge_addr:   DW 0   ; count_flags address (for END-CODE)
 asm_tmp:           DB 0   ; 1-byte spill slot shared by LD, / PUSH, /
                           ; POP, / arith-word helpers (never nested)
+asm_tmp2:          DW 0   ; 2-byte spill slot for label/fixup helpers
+asm_ip_save:       DW 0   ; spill slot for DE (IP) across helper calls in
+                          ; FIX/JR,/DW, that clobber DE
+asm_resolve_target: DW 0  ; cached target address for asm_resolve_slot's
+                          ; fixup-walk loop (loaded once at FIX time and
+                          ; reloaded into DE before each apply call)
+
+; =====================================================================
+; Per-CODE label and fixup pools (Story 4.2)
+; =====================================================================
+; LABEL declares a per-CODE forward/back-reference target. Each LABEL
+; allocates one slot in asm_label_pool and builds a normal Forth dict
+; entry in the side area asm_label_dict (NOT at HERE — HERE is busy
+; assembling native machine code into the in-progress CODE word body).
+;
+; Slot record (8 bytes):
+;   +0  resolved flag (0 = unresolved, 1 = resolved)
+;   +1  target address (2 bytes; valid only when resolved=1)
+;   +3  hash bucket index (set by LABEL after build_header)
+;   +4  saved bucket head (2 bytes; for unlink at END-CODE/cleanup)
+;   +6  count_flags ptr (2 bytes; points at the dict entry's count_flags
+;       byte — name length follows in low 5 bits, name bytes follow)
+;
+; Fixup record (4 bytes):
+;   +0  patch address (2 bytes — the placeholder byte/word in CODE body)
+;   +2  fixup kind (0 = JR-disp, 1 = DW-absolute)
+;   +3  label slot index
+;
+; Label tag encoding: TOS = 0xFFnn where nn = slot index 0..15. The high
+; byte 0xFF is well above any realistic HERE on iz-cpm/MicroBeast (BDOS
+; base ~0xE400) and disjoint from register tags (high byte 0). Decoder:
+; `if BC.high == 0xFF then label tag, slot = BC.low`.
+;
+; Cleanup (asm_unlink_labels) walks slots in reverse insertion order and
+; restores each bucket's head from the saved old_head. LIFO undo of the
+; prepend-to-head dictionary discipline correctly handles bucket-collision
+; cases (worked example in story Dev Notes).
+ASM_LABEL_POOL_SIZE  EQU 16
+ASM_LABEL_REC_SIZE   EQU 8
+ASM_FIXUP_POOL_SIZE  EQU 32
+ASM_FIXUP_REC_SIZE   EQU 4
+; Worst case per label entry: 2 (link) + 1 (count_flags) + 31 (max name,
+; F_LENMASK = 0x1F) + 5 (LD L,n / JP asm_push_label_tag body) = 39 bytes.
+; With ASM_LABEL_POOL_SIZE = 16 the upper bound is 16 * 39 = 624 bytes.
+; 768 leaves comfortable headroom and is bounded by the slot pool size,
+; so no runtime overflow check is required.
+ASM_LABEL_DICT_SIZE  EQU 768
+ASM_FIXUP_KIND_JR    EQU 0
+ASM_FIXUP_KIND_DW    EQU 1
+ASM_LABEL_TAG_HI     EQU 0xFF
+
+asm_label_count:   DB 0
+asm_fixup_count:   DB 0
+asm_label_dict_ptr: DW 0
+asm_label_pool:    DS ASM_LABEL_POOL_SIZE * ASM_LABEL_REC_SIZE
+asm_fixup_pool:    DS ASM_FIXUP_POOL_SIZE * ASM_FIXUP_REC_SIZE
+asm_label_dict:    DS ASM_LABEL_DICT_SIZE
 
 ; =====================================================================
 ; Error message strings (printed with trailing " ?" CR LF)
@@ -70,6 +129,30 @@ STR_ASM_NONAME_LEN EQU $ - str_asm_noname
 
 str_asm_orphan:    DB "END-CODE without CODE"
 STR_ASM_ORPHAN_LEN EQU $ - str_asm_orphan
+
+str_asm_label_after: DB "LABEL must precede opcodes"
+STR_ASM_LABEL_AFTER_LEN EQU $ - str_asm_label_after
+
+str_asm_jr_range:  DB "JR out of range"
+STR_ASM_JR_RANGE_LEN EQU $ - str_asm_jr_range
+
+str_asm_too_labels: DB "too many labels"
+STR_ASM_TOO_LABELS_LEN EQU $ - str_asm_too_labels
+
+str_asm_too_fixups: DB "too many fixups"
+STR_ASM_TOO_FIXUPS_LEN EQU $ - str_asm_too_fixups
+
+str_asm_equ_in_code: DB "EQU outside CODE only"
+STR_ASM_EQU_IN_CODE_LEN EQU $ - str_asm_equ_in_code
+
+; "unresolved label " — printed before name; trailing space included
+str_asm_unresolved: DB "unresolved label "
+STR_ASM_UNRESOLVED_LEN EQU $ - str_asm_unresolved
+
+; "already fixed: " — printed before name (NAME-after format keeps the
+; name-printing helper uniform with the unresolved-label path)
+str_asm_already:   DB "already fixed: "
+STR_ASM_ALREADY_LEN EQU $ - str_asm_already
 
 ; -----------------------------------------------
 ; asm_print_error — Print HL..HL+B-1, then " ?", CR, LF via BDOS.
@@ -129,6 +212,110 @@ asm_err_orphan:
         LD      B, STR_ASM_ORPHAN_LEN
         JP      asm_die
 
+asm_err_label_after:
+        LD      HL, str_asm_label_after
+        LD      B, STR_ASM_LABEL_AFTER_LEN
+        JP      asm_die
+
+asm_err_jr_range:
+        LD      HL, str_asm_jr_range
+        LD      B, STR_ASM_JR_RANGE_LEN
+        JP      asm_die
+
+asm_err_too_labels:
+        LD      HL, str_asm_too_labels
+        LD      B, STR_ASM_TOO_LABELS_LEN
+        JP      asm_die
+
+asm_err_too_fixups:
+        LD      HL, str_asm_too_fixups
+        LD      B, STR_ASM_TOO_FIXUPS_LEN
+        JP      asm_die
+
+asm_err_equ_in_code:
+        LD      HL, str_asm_equ_in_code
+        LD      B, STR_ASM_EQU_IN_CODE_LEN
+        JP      asm_die
+
+; -----------------------------------------------
+; asm_print_error_with_name — Print prefix string + label name + " ?" CRLF.
+;   Entry: HL = prefix string, B = prefix length,
+;          DE = pointer to count_flags byte of the label dict entry
+;          (length is low 5 bits of (DE), name bytes follow at DE+1)
+;   Never returns — falls through to ABORT via asm_die_after_name.
+; -----------------------------------------------
+asm_print_error_with_name:
+        ; Print prefix bytes
+        LD      A, B
+        OR      A
+        JR      Z, .pen_skip_prefix
+.pen_pfx:
+        LD      E, (HL)                 ; (HL) = prefix char
+        PUSH    HL
+        PUSH    BC
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     BC
+        POP     HL
+        INC     HL
+        DJNZ    .pen_pfx
+.pen_skip_prefix:
+        ; HL = count_flags ptr (saved in asm_tmp2 by caller via DE→tmp);
+        ; we re-read it from asm_tmp2 here so prefix print could clobber DE.
+        LD      HL, (asm_tmp2)          ; HL = count_flags ptr
+        LD      A, (HL)                 ; A = count_flags
+        AND     F_LENMASK               ; A = name length
+        LD      B, A
+        OR      A
+        JR      Z, .pen_no_name
+        INC     HL                      ; HL = name start
+.pen_name:
+        LD      E, (HL)
+        PUSH    HL
+        PUSH    BC
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     BC
+        POP     HL
+        INC     HL
+        DJNZ    .pen_name
+.pen_no_name:
+        ; Print " ?" CR LF
+        LD      E, ' '
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        LD      E, '?'
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        LD      E, 0x0D
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        LD      E, 0x0A
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        JP      w_ABORT_cf
+
+; -----------------------------------------------
+; asm_err_unresolved — print "unresolved label NAME ?" and ABORT.
+;   Entry: HL = count_flags ptr of the unresolved label's dict entry.
+;   Stashes HL into asm_tmp2 then jumps to asm_print_error_with_name.
+; -----------------------------------------------
+asm_err_unresolved:
+        LD      (asm_tmp2), HL
+        LD      HL, str_asm_unresolved
+        LD      B, STR_ASM_UNRESOLVED_LEN
+        JP      asm_print_error_with_name
+
+; -----------------------------------------------
+; asm_err_already — print "already fixed: NAME ?" and ABORT.
+;   Entry: HL = count_flags ptr of the already-fixed label's dict entry.
+; -----------------------------------------------
+asm_err_already:
+        LD      (asm_tmp2), HL
+        LD      HL, str_asm_already
+        LD      B, STR_ASM_ALREADY_LEN
+        JP      asm_print_error_with_name
+
 ; -----------------------------------------------
 ; asm_cleanup — Subroutine (called from w_ABORT_cf)
 ;   If asm_mode != 0, restore HERE and hash bucket from the saved state
@@ -138,11 +325,16 @@ asm_cleanup:
         LD      A, (asm_mode)
         OR      A
         RET     Z
+        ; Unlink any in-progress label dict entries FIRST (they were
+        ; added AFTER the CODE word's link, so reverse-order unlink keeps
+        ; correctness even when labels collide with the CODE word in the
+        ; same bucket).
+        CALL    asm_unlink_labels
         ; Restore HERE
         LD      HL, (asm_saved_here)
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
-        ; Restore hash bucket head
+        ; Restore hash bucket head for the in-progress CODE word
         LD      A, (asm_saved_bucket)
         LD      L, A
         LD      H, 0
@@ -153,6 +345,11 @@ asm_cleanup:
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        ; (LATEST is intentionally not restored — matches the existing
+        ; colon-compiler error recovery convention; QUIT carries on and
+        ; the next `:` / CODE will overwrite LATEST.)
+        ; Reset label/fixup state
+        CALL    asm_reset_label_state
         ; Clear asm_mode
         XOR     A
         LD      (asm_mode), A
@@ -184,6 +381,370 @@ asm_emit_byte:
         INC     HL
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
+        RET
+
+; =====================================================================
+; Label / fixup helpers (Story 4.2)
+; =====================================================================
+
+; -----------------------------------------------
+; asm_slot_addr — Compute slot address from index.
+;   Entry: A = slot index (0..ASM_LABEL_POOL_SIZE-1)
+;   Exit:  HL = &asm_label_pool[A]
+;   Clobbers: A, HL
+; -----------------------------------------------
+asm_slot_addr:
+        LD      L, A
+        LD      H, 0
+        ADD     HL, HL              ; *2
+        ADD     HL, HL              ; *4
+        ADD     HL, HL              ; *8 (== ASM_LABEL_REC_SIZE)
+        PUSH    DE
+        LD      DE, asm_label_pool
+        ADD     HL, DE
+        POP     DE
+        RET
+
+; -----------------------------------------------
+; asm_fixup_addr — Compute fixup record address from index.
+;   Entry: A = fixup index
+;   Exit:  HL = &asm_fixup_pool[A]
+; -----------------------------------------------
+asm_fixup_addr:
+        LD      L, A
+        LD      H, 0
+        ADD     HL, HL              ; *2
+        ADD     HL, HL              ; *4 (== ASM_FIXUP_REC_SIZE)
+        PUSH    DE
+        LD      DE, asm_fixup_pool
+        ADD     HL, DE
+        POP     DE
+        RET
+
+; -----------------------------------------------
+; asm_alloc_label_slot — Allocate next free label slot.
+;   Exit: A = new slot index (also leaves slot zeroed)
+;   On overflow: ABORT via asm_err_too_labels.
+;   Preserves: BC, DE, IY, IX
+; -----------------------------------------------
+asm_alloc_label_slot:
+        LD      A, (asm_label_count)
+        CP      ASM_LABEL_POOL_SIZE
+        JP      NC, asm_err_too_labels
+        PUSH    AF                  ; save new index
+        CALL    asm_slot_addr       ; HL = &slot
+        ; Zero 8 bytes
+        LD      (HL), 0             ; resolved=0
+        INC     HL
+        LD      (HL), 0             ; target lo
+        INC     HL
+        LD      (HL), 0             ; target hi
+        INC     HL
+        LD      (HL), 0             ; bucket
+        INC     HL
+        LD      (HL), 0             ; old_head lo
+        INC     HL
+        LD      (HL), 0             ; old_head hi
+        INC     HL
+        LD      (HL), 0             ; cf_ptr lo
+        INC     HL
+        LD      (HL), 0             ; cf_ptr hi
+        ; Bump count
+        LD      A, (asm_label_count)
+        INC     A
+        LD      (asm_label_count), A
+        POP     AF                  ; A = new index
+        RET
+
+; -----------------------------------------------
+; asm_add_fixup — Append a fixup record.
+;   Entry: A = label index, C = kind (0=JR, 1=DW), HL = patch address
+;   Exit:  fixup record written, asm_fixup_count incremented.
+;   On overflow: ABORT via asm_err_too_fixups.
+; -----------------------------------------------
+asm_add_fixup:
+        PUSH    AF                  ; save label idx
+        PUSH    HL                  ; save patch addr
+        PUSH    BC                  ; save kind in C
+        LD      A, (asm_fixup_count)
+        CP      ASM_FIXUP_POOL_SIZE
+        JP      NC, asm_err_too_fixups
+        CALL    asm_fixup_addr      ; HL = &fixup_pool[count]
+        POP     BC                  ; C = kind
+        POP     DE                  ; DE = patch addr
+        LD      (HL), E             ; +0 patch lo
+        INC     HL
+        LD      (HL), D             ; +1 patch hi
+        INC     HL
+        LD      (HL), C             ; +2 kind
+        INC     HL
+        POP     AF                  ; A = label idx
+        LD      (HL), A             ; +3 label idx
+        ; Bump count
+        LD      HL, asm_fixup_count
+        INC     (HL)
+        RET
+
+; -----------------------------------------------
+; asm_jr_disp — Compute and range-check an 8-bit JR displacement.
+;   Entry: HL = patch address (== address of the displacement byte),
+;          DE = target address
+;   Exit:  A = signed displacement byte (target - (patch+1))
+;          HL preserved.
+;   On out-of-range: ABORT via asm_err_jr_range. Shared by the patch
+;   path (asm_apply_jr_fixup) and the direct-emit path
+;   (asm_apply_jr_fixup_emit) so the range logic lives in one place.
+; -----------------------------------------------
+asm_jr_disp:
+        PUSH    HL
+        INC     HL                  ; HL = patch + 1
+        EX      DE, HL              ; HL = target, DE = patch+1
+        OR      A
+        SBC     HL, DE              ; HL = signed displacement
+        LD      A, H
+        OR      A
+        JR      Z, .jrd_pos
+        CP      0xFF
+        JR      NZ, .jrd_oor
+        BIT     7, L                ; negative → bit 7 must be set
+        JR      Z, .jrd_oor
+        JR      .jrd_ok
+.jrd_pos:
+        BIT     7, L                ; positive → bit 7 must be clear
+        JR      NZ, .jrd_oor
+.jrd_ok:
+        LD      A, L                ; A = displacement
+        EX      DE, HL              ; HL = patch+1, DE = old HL=junk
+        POP     HL                  ; HL = patch addr
+        RET
+.jrd_oor:
+        POP     HL                  ; clean stack
+        JP      asm_err_jr_range
+
+; -----------------------------------------------
+; asm_apply_jr_fixup — Patch a queued JR fixup with a real displacement.
+;   Entry: HL = patch address, DE = target address
+;   On out-of-range: ABORT via asm_err_jr_range.
+;   The displacement byte field is at HL; the JR opcode itself sits at
+;   HL-1. The "next instruction" address used by Z80 is patch_addr+1.
+; -----------------------------------------------
+asm_apply_jr_fixup:
+        CALL    asm_jr_disp         ; A = disp, HL = patch addr
+        LD      (HL), A
+        RET
+
+; -----------------------------------------------
+; asm_apply_dw_fixup — Patch a queued DW fixup (16-bit absolute).
+;   Entry: HL = patch address, DE = target address
+;   Stores DE little-endian at HL.
+; -----------------------------------------------
+asm_apply_dw_fixup:
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+        RET
+
+; -----------------------------------------------
+; asm_apply_fixup_record — Apply one fixup record by reading patch
+;   address and kind in a single linear pass and tail-dispatching to
+;   the appropriate leaf.
+;   Entry: HL = &fixup record (record layout: patch_lo, patch_hi, kind, label_idx)
+;          DE = target address
+;   Exit:  Tail-jumps to asm_apply_jr_fixup or asm_apply_dw_fixup, which
+;          return to the caller of asm_apply_fixup_record.
+;   Clobbers: A, C, HL. Preserves B (slot index) and DE (target).
+; -----------------------------------------------
+asm_apply_fixup_record:
+        INC     HL
+        INC     HL
+        LD      A, (HL)             ; A = kind (record+2)
+        DEC     HL
+        DEC     HL                  ; HL = &record again
+        LD      C, A                ; spill kind to C
+        LD      A, (HL)             ; A = patch lo
+        INC     HL
+        LD      H, (HL)             ; H = patch hi
+        LD      L, A                ; HL = patch addr
+        LD      A, C                ; A = kind
+        OR      A
+        JP      Z, asm_apply_jr_fixup
+        JP      asm_apply_dw_fixup
+
+; -----------------------------------------------
+; asm_resolve_slot — Mark slot resolved with HERE as target, walk fixups.
+;   Entry: A = slot index of the label being resolved.
+;   Marks the slot resolved, stores HERE as its target, then sweeps the
+;   fixup pool: for every record whose label index matches, applies the
+;   patch via asm_apply_fixup_record and removes the record by swapping
+;   the last record over the current slot and decrementing the count.
+;   On JR-range error during apply, the underlying helper ABORTs.
+;
+;   Register usage in the walk:
+;     B  = our slot index (preserved across the loop)
+;     C  = walk index (preserved across the loop)
+;     HL = pointer to current fixup record (advanced by 4 per non-match)
+;     DE = scratch (reloaded from asm_resolve_target before each apply)
+; -----------------------------------------------
+asm_resolve_slot:
+        LD      B, A                ; B = our slot idx (live across loop)
+        CALL    asm_slot_addr       ; HL = &slot[B]
+        LD      (HL), 1             ; +0 resolved = 1
+        INC     HL
+        LD      A, (IY+UserArea.here)
+        LD      (HL), A             ; +1 target lo
+        LD      E, A
+        INC     HL
+        LD      A, (IY+UserArea.here+1)
+        LD      (HL), A             ; +2 target hi
+        LD      D, A
+        LD      (asm_resolve_target), DE
+
+        LD      HL, asm_fixup_pool
+        LD      C, 0                ; C = walk index
+.rsl_loop:
+        LD      A, (asm_fixup_count)
+        CP      C
+        RET     Z                   ; walk == count → done
+        ; Read this record's label idx (record+3); restore HL after.
+        INC     HL
+        INC     HL
+        INC     HL
+        LD      A, (HL)
+        DEC     HL
+        DEC     HL
+        DEC     HL                  ; HL = &record[walk]
+        CP      B
+        JR      Z, .rsl_match
+        ; No match — advance HL by 4 (one record), C++.
+        INC     HL
+        INC     HL
+        INC     HL
+        INC     HL
+        INC     C
+        JR      .rsl_loop
+.rsl_match:
+        ; Apply the matching fixup. The helper clobbers HL/A/C; preserve
+        ; B (slot idx) and the record pointer across the call.
+        PUSH    HL                  ; save record ptr
+        PUSH    BC                  ; save slot/walk
+        LD      DE, (asm_resolve_target)
+        CALL    asm_apply_fixup_record
+        POP     BC                  ; B=slot, C=walk
+        POP     HL                  ; HL = &record[walk]
+        ; Compact: copy fixup_pool[count-1] over fixup_pool[walk], dec count.
+        LD      A, (asm_fixup_count)
+        DEC     A                   ; A = last index
+        CP      C
+        JR      Z, .rsl_just_dec    ; current IS last → no copy
+        ; Copy 4 bytes from &record[last] over &record[walk]; HL is dst.
+        PUSH    HL                  ; save dst (= &record[walk])
+        PUSH    BC                  ; save B/C
+        CALL    asm_fixup_addr      ; HL = &record[A=last]; A unchanged
+        POP     BC                  ; B=slot, C=walk
+        POP     DE                  ; DE = dst (= &record[walk])
+        LD      A, (HL)             ; copy +0
+        LD      (DE), A
+        INC     HL
+        INC     DE
+        LD      A, (HL)             ; copy +1
+        LD      (DE), A
+        INC     HL
+        INC     DE
+        LD      A, (HL)             ; copy +2
+        LD      (DE), A
+        INC     HL
+        INC     DE
+        LD      A, (HL)             ; copy +3
+        LD      (DE), A
+        ; Restore HL = &record[walk] (DE is one past the end after copy).
+        EX      DE, HL              ; HL = &record[walk] + 3
+        DEC     HL
+        DEC     HL
+        DEC     HL                  ; HL = &record[walk]
+.rsl_just_dec:
+        ; Decrement asm_fixup_count without disturbing HL.
+        PUSH    HL
+        LD      HL, asm_fixup_count
+        DEC     (HL)
+        POP     HL                  ; HL = &record[walk]
+        ; Re-process the same walk index (a record was swapped in).
+        JR      .rsl_loop
+
+; -----------------------------------------------
+; asm_check_unresolved — Called from END-CODE before SMUDGE-clear.
+;   If any fixup remains, look up its label's count_flags ptr (slot+6),
+;   and ABORT via asm_err_unresolved (which prints "unresolved label NAME ?").
+; -----------------------------------------------
+asm_check_unresolved:
+        LD      A, (asm_fixup_count)
+        OR      A
+        RET     Z
+        ; Read first fixup's label idx (fixup +3)
+        XOR     A
+        CALL    asm_fixup_addr      ; HL = &fixup[0]
+        INC     HL
+        INC     HL
+        INC     HL
+        LD      A, (HL)             ; A = label idx
+        ; Get slot, read cf_ptr (slot+6,7)
+        CALL    asm_slot_addr       ; HL = &slot
+        LD      DE, 6
+        ADD     HL, DE
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)             ; DE = cf_ptr
+        EX      DE, HL              ; HL = cf_ptr
+        JP      asm_err_unresolved
+
+; -----------------------------------------------
+; asm_unlink_labels — Walk asm_label_pool in reverse insertion order
+;   and restore each bucket's head from the slot's saved old_head.
+;   Called from END-CODE (success path) and asm_cleanup (error path).
+;   Order matters: reverse insertion = LIFO undo of prepend-to-head.
+; -----------------------------------------------
+asm_unlink_labels:
+        LD      A, (asm_label_count)
+        OR      A
+        RET     Z
+.ul_loop:
+        DEC     A                   ; A = current slot index
+        PUSH    AF
+        CALL    asm_slot_addr       ; HL = &slot
+        ; Skip resolved/target (3 bytes) → bucket at +3
+        INC     HL
+        INC     HL
+        INC     HL
+        LD      A, (HL)             ; A = bucket index
+        INC     HL
+        LD      E, (HL)             ; E = old_head lo
+        INC     HL
+        LD      D, (HL)             ; D = old_head hi
+        ; Compute &hash_table[bucket]
+        LD      L, A
+        LD      H, 0
+        ADD     HL, HL              ; *2
+        PUSH    DE
+        LD      DE, hash_table
+        ADD     HL, DE
+        POP     DE
+        ; Restore bucket head
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+        POP     AF
+        OR      A
+        JR      NZ, .ul_loop
+        RET
+
+; -----------------------------------------------
+; asm_reset_label_state — Reset all label/fixup state to empty.
+; -----------------------------------------------
+asm_reset_label_state:
+        XOR     A
+        LD      (asm_label_count), A
+        LD      (asm_fixup_count), A
+        LD      HL, asm_label_dict
+        LD      (asm_label_dict_ptr), HL
         RET
 
 ; =====================================================================
@@ -331,6 +892,10 @@ w_CODE_cf:
         ; CODE words are native: HERE := HL with NO JP DOCOL prefix.
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
+        LD      (asm_body_start), HL
+
+        ; Reset per-CODE label/fixup state
+        CALL    asm_reset_label_state
 
         ; Enter assembler mode
         LD      A, 1
@@ -374,6 +939,35 @@ w_END_CODE_cf:
         OR      A
         JP      Z, asm_err_orphan
 
+        ; Save DE (IP) and BC (TOS) to return stack — the helpers below
+        ; (asm_check_unresolved, asm_unlink_labels) clobber DE/BC freely.
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), C
+        LD      (IX+1), B
+
+        ; Check for unresolved fixups — if any remain, that helper
+        ; ABORTs (which routes through asm_cleanup for full rollback).
+        CALL    asm_check_unresolved
+
+        ; Unlink all label dictionary entries from the global hash table
+        ; (success path — labels are per-CODE only).
+        CALL    asm_unlink_labels
+
+        ; Reset label/fixup state on the success path too, so that the
+        ; next CODE word starts from a clean baseline.
+        CALL    asm_reset_label_state
+
+        ; Restore LATEST to the CODE word entry (it may currently point
+        ; at the last LABEL's dict entry in the side area).
+        LD      HL, (asm_saved_here)
+        LD      (IY+UserArea.latest), L
+        LD      (IY+UserArea.latest+1), H
+
         ; Clear SMUDGE on the new word
         LD      HL, (asm_smudge_addr)
         LD      A, (HL)
@@ -383,6 +977,16 @@ w_END_CODE_cf:
         ; Leave assembler mode
         XOR     A
         LD      (asm_mode), A
+
+        ; Restore BC (TOS) and DE (IP)
+        LD      B, (IX+1)
+        LD      C, (IX+0)
+        INC     IX
+        INC     IX
+        LD      D, (IX+1)
+        LD      E, (IX+0)
+        INC     IX
+        INC     IX
         NEXT
 
 ; =====================================================================
@@ -584,3 +1188,395 @@ next_template:
         NEXT
 next_template_end:
 NEXT_TEMPLATE_LEN EQU next_template_end - next_template
+
+; =====================================================================
+; Label tag push helper — Tail used by all label-word bodies.
+;   The body of every LABEL-defined dict entry is exactly:
+;       LD      L, slot_index           ; 2 bytes
+;       JP      asm_push_label_tag      ; 3 bytes
+;   asm_push_label_tag pushes BC = 0xFF00 | slot_index onto the data
+;   stack and refuses to run outside CODE (defence in depth — correct
+;   cleanup makes label words unreachable when not in CODE).
+; =====================================================================
+asm_push_label_tag:
+        CALL    check_asm_mode
+        PUSH    BC                      ; save old TOS
+        LD      C, L                    ; C = slot index
+        LD      B, ASM_LABEL_TAG_HI     ; B = 0xFF
+        NEXT
+
+; =====================================================================
+; LABEL ( "<spaces>name" -- )
+;   Parse the next whitespace-delimited word, allocate a fresh slot,
+;   build a dict entry in the side area whose body pushes the slot's
+;   tag, capture bucket info for later unlink.
+;   Errors:
+;     not in CODE ?              — outside CODE
+;     LABEL must precede opcodes ? — HERE has moved past asm_saved_here
+;     too many labels ?          — slot pool full
+; =====================================================================
+w_LABEL:
+        DEFCODE "LABEL", 0
+w_LABEL_cf:
+        CALL    check_asm_mode
+        ; Save DE (IP) and BC (TOS) to return stack — build_header
+        ; clobbers everything, and the body-start check below also
+        ; clobbers DE.
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), C
+        LD      (IX+1), B
+
+        ; "Before any opcodes" check: HERE must equal asm_body_start.
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      DE, (asm_body_start)
+        OR      A
+        SBC     HL, DE
+        JP      NZ, asm_err_label_after
+
+        ; Allocate the slot first (so the index is known when we patch
+        ; the body); aborts on overflow.
+        CALL    asm_alloc_label_slot    ; A = new slot index
+        LD      (asm_tmp), A            ; spill slot idx
+
+        ; Save real HERE (= the CODE-body start) and redirect HERE to
+        ; the label dict side area for build_header.
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (asm_tmp2), HL          ; spill real HERE
+        LD      HL, (asm_label_dict_ptr)
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+
+        ; build_header with flags=0
+        XOR     A
+        CALL    build_header
+        JR      C, .lbl_no_name
+        ; HL = code field address in the side area.
+        ; Emit body: LD L, n / JP asm_push_label_tag (5 bytes).
+        LD      A, 0x2E                 ; LD L, n opcode
+        LD      (HL), A
+        INC     HL
+        LD      A, (asm_tmp)            ; A = slot index
+        LD      (HL), A
+        INC     HL
+        LD      (HL), 0xC3              ; JP nn opcode
+        INC     HL
+        LD      (HL), LOW asm_push_label_tag
+        INC     HL
+        LD      (HL), HIGH asm_push_label_tag
+        INC     HL
+        ; Save new side-area top.
+        LD      (asm_label_dict_ptr), HL
+
+        ; Restore real HERE.
+        LD      HL, (asm_tmp2)
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+
+        ; Fill in slot fields: bucket, old_head, cf_ptr.
+        LD      A, (asm_tmp)            ; slot index
+        CALL    asm_slot_addr           ; HL = &slot
+        ; +0 resolved already 0; +1,2 target unset; advance to +3
+        INC     HL
+        INC     HL
+        INC     HL
+        LD      A, (bh_bucket_index)
+        LD      (HL), A                 ; +3 bucket
+        INC     HL
+        LD      DE, (bh_old_bucket_head)
+        LD      (HL), E                 ; +4 old_head lo
+        INC     HL
+        LD      (HL), D                 ; +5 old_head hi
+        INC     HL
+        LD      DE, (bh_count_flags_addr)
+        LD      (HL), E                 ; +6 cf_ptr lo
+        INC     HL
+        LD      (HL), D                 ; +7 cf_ptr hi
+
+        ; Restore LATEST to the CODE word's entry — build_header set
+        ; LATEST to the new label entry, but the user expects LATEST to
+        ; remain the in-progress CODE word.
+        LD      HL, (asm_saved_here)
+        LD      (IY+UserArea.latest), L
+        LD      (IY+UserArea.latest+1), H
+
+        ; Restore BC (TOS) and DE (IP) from return stack.
+        LD      B, (IX+1)
+        LD      C, (IX+0)
+        INC     IX
+        INC     IX
+        LD      D, (IX+1)
+        LD      E, (IX+0)
+        INC     IX
+        INC     IX
+        NEXT
+
+.lbl_no_name:
+        ; build_header signalled "no name" — restore real HERE and abort.
+        ; The slot allocated above must be released BEFORE the abort path
+        ; runs asm_unlink_labels (which would otherwise read the slot's
+        ; uninitialised bucket=0 / old_head=0 fields and zero hash_table[0],
+        ; corrupting whatever pre-CODE word lived in bucket 0).
+        LD      HL, asm_label_count
+        DEC     (HL)
+        LD      HL, (asm_tmp2)
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+        ; Unwind RS save (symmetric with success path) — asm_cleanup
+        ; will run via asm_err_noname → asm_die → ABORT.
+        LD      B, (IX+1)
+        LD      C, (IX+0)
+        INC     IX
+        INC     IX
+        LD      D, (IX+1)
+        LD      E, (IX+0)
+        INC     IX
+        INC     IX
+        JP      asm_err_noname
+
+; =====================================================================
+; FIX ( label-tag -- )
+;   Mark the label slot identified by the tag as resolved with target
+;   = current HERE, then walk the fixup pool patching every queued
+;   forward reference to that label.
+; =====================================================================
+w_FIX:
+        DEFCODE "FIX", 0
+w_FIX_cf:
+        CALL    check_asm_mode
+        ; Validate label tag in BC.
+        LD      A, B
+        CP      ASM_LABEL_TAG_HI
+        JP      NZ, asm_bad_operand
+        LD      A, C
+        LD      HL, asm_label_count
+        CP      (HL)
+        JP      NC, asm_bad_operand
+        ; A = slot index. Check resolved flag first.
+        PUSH    AF
+        CALL    asm_slot_addr           ; HL = &slot
+        LD      A, (HL)                 ; resolved?
+        OR      A
+        JR      NZ, .fix_already
+        POP     AF
+        ; asm_resolve_slot may patch JR fixups (which can ABORT) and
+        ; clobbers DE; spill IP to scratch.
+        LD      (asm_ip_save), DE
+        CALL    asm_resolve_slot
+        LD      DE, (asm_ip_save)
+        POP     BC                      ; pop new TOS
+        NEXT
+.fix_already:
+        ; Already fixed — print "already fixed: NAME ?" and ABORT.
+        ; HL currently points at slot+0; advance to +6 (cf_ptr).
+        LD      DE, 6
+        ADD     HL, DE
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        EX      DE, HL                  ; HL = cf_ptr
+        POP     AF                      ; discard saved index
+        JP      asm_err_already
+
+; =====================================================================
+; JR, ( target -- )   unconditional Z80 JR
+;   Operand is either a label tag (0xFFnn) or a plain 16-bit address.
+;   Emits 0x18 + signed 8-bit displacement. Forward references with
+;   unresolved labels emit a placeholder and queue a fixup.
+; =====================================================================
+w_JR_COMMA:
+        DEFCODE "JR,", 0
+w_JR_COMMA_cf:
+        CALL    check_asm_mode
+        ; Spill IP — we use D/E as scratch for the target address.
+        LD      (asm_ip_save), DE
+        ; Emit JR opcode 0x18.
+        LD      A, 0x18
+        CALL    asm_emit_byte
+        ; HERE now points at the displacement byte slot. patch_addr =
+        ; HERE (the next byte we will emit).
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (asm_tmp2), HL          ; save patch addr
+        ; Inspect TOS.
+        LD      A, B
+        CP      ASM_LABEL_TAG_HI
+        JR      Z, .jrc_label
+        ; Plain 16-bit address: literal-target JR.
+        ; disp = target - (patch + 1)
+        LD      D, B
+        LD      E, C                    ; DE = target
+        LD      HL, (asm_tmp2)
+        CALL    asm_apply_jr_fixup_emit
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+.jrc_label:
+        ; Label tag: validate idx, look up slot.
+        LD      A, C
+        LD      HL, asm_label_count
+        CP      (HL)
+        JP      NC, asm_bad_operand
+        CALL    asm_slot_addr           ; HL = &slot
+        LD      A, (HL)                 ; resolved?
+        OR      A
+        JR      Z, .jrc_unresolved
+        ; Resolved: read target from slot+1,2.
+        INC     HL
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)                 ; DE = target
+        LD      HL, (asm_tmp2)          ; HL = patch addr
+        CALL    asm_apply_jr_fixup_emit
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+.jrc_unresolved:
+        ; Emit 0x00 placeholder displacement, queue fixup.
+        XOR     A
+        CALL    asm_emit_byte
+        ; A = label idx, C-arg = kind, HL = patch addr.
+        LD      A, C                    ; A = label index
+        LD      C, ASM_FIXUP_KIND_JR
+        LD      HL, (asm_tmp2)
+        CALL    asm_add_fixup
+        LD      DE, (asm_ip_save)
+        POP     BC                      ; pop new TOS
+        NEXT
+
+; -----------------------------------------------
+; asm_apply_jr_fixup_emit — Emit a resolved JR displacement byte directly
+;   (no patch — write at HERE). Entry: HL = HERE (patch addr), DE = target.
+;   Computes signed disp, range-checks, then asm_emit_byte's it.
+; -----------------------------------------------
+asm_apply_jr_fixup_emit:
+        CALL    asm_jr_disp             ; A = disp, HL = patch addr (== HERE)
+        JP      asm_emit_byte           ; emit at HERE, advance HERE
+
+; =====================================================================
+; DB, ( value -- )    emit one byte (low byte of value)
+; =====================================================================
+w_DB_COMMA:
+        DEFCODE "DB,", 0
+w_DB_COMMA_cf:
+        CALL    check_asm_mode
+        ; Reject label tags — `LABEL X X DB,` is almost always a user
+        ; mistake; emitting the slot index byte silently is a UX trap.
+        LD      A, B
+        CP      ASM_LABEL_TAG_HI
+        JP      Z, asm_bad_operand
+        LD      A, C
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; =====================================================================
+; DW, ( value-or-label-tag -- )    emit 16-bit cell little-endian
+;   Plain integer: emit low then high.
+;   Label tag (high byte = 0xFF):
+;     resolved   -> emit slot's target address little-endian
+;     unresolved -> emit two 0x00 placeholders + queue DW-absolute fixup
+; =====================================================================
+w_DW_COMMA:
+        DEFCODE "DW,", 0
+w_DW_COMMA_cf:
+        CALL    check_asm_mode
+        LD      A, B
+        CP      ASM_LABEL_TAG_HI
+        JR      Z, .dwc_label
+        ; Plain int: emit low then high (asm_emit_byte preserves DE).
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+.dwc_label:
+        ; Spill IP — the slot lookups use HL only but we'll touch DE
+        ; via fixup queue / asm_add_fixup which preserves DE; still,
+        ; spill for safety since asm_slot_addr's PUSH/POP DE leaves
+        ; DE intact but the body is easier to reason about with a save.
+        LD      (asm_ip_save), DE
+        LD      A, C
+        LD      HL, asm_label_count
+        CP      (HL)
+        JP      NC, asm_bad_operand
+        CALL    asm_slot_addr           ; HL = &slot
+        LD      A, (HL)
+        OR      A
+        JR      Z, .dwc_unresolved
+        ; Resolved: emit target lo then hi via two emits. Re-look-up
+        ; slot for hi byte (asm_emit_byte clobbers HL).
+        INC     HL
+        LD      A, (HL)                 ; target lo
+        CALL    asm_emit_byte
+        LD      A, C                    ; slot idx
+        CALL    asm_slot_addr
+        INC     HL
+        INC     HL
+        LD      A, (HL)
+        CALL    asm_emit_byte
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+.dwc_unresolved:
+        ; Save patch addr = HERE before placeholders.
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (asm_tmp2), HL
+        XOR     A
+        CALL    asm_emit_byte
+        XOR     A
+        CALL    asm_emit_byte
+        LD      A, C                    ; A = slot idx
+        LD      C, ASM_FIXUP_KIND_DW
+        LD      HL, (asm_tmp2)
+        CALL    asm_add_fixup
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+
+; =====================================================================
+; DS, ( count -- )    reserve count bytes initialised to zero
+;   Negative count → bad operand. count=0 is a no-op.
+; =====================================================================
+w_DS_COMMA:
+        DEFCODE "DS,", 0
+w_DS_COMMA_cf:
+        CALL    check_asm_mode
+        ; Reject negative (high bit of B set).
+        BIT     7, B
+        JP      NZ, asm_bad_operand
+        ; Zero?
+        LD      A, B
+        OR      C
+        JR      Z, .dsc_done
+.dsc_loop:
+        XOR     A
+        CALL    asm_emit_byte
+        DEC     BC
+        LD      A, B
+        OR      C
+        JR      NZ, .dsc_loop
+.dsc_done:
+        POP     BC
+        NEXT
+
+; =====================================================================
+; EQU ( value "<spaces>name" -- )
+;   Defines NAME as a CONSTANT with the given value. Allowed only OUTSIDE
+;   CODE (asm_mode == 0). Inside CODE it errors with "EQU outside CODE only ?".
+; =====================================================================
+w_EQU:
+        DEFCODE "EQU", 0
+w_EQU_cf:
+        LD      A, (asm_mode)
+        OR      A
+        JP      NZ, asm_err_equ_in_code
+        JP      w_CONSTANT_cf
