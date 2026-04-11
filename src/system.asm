@@ -20,6 +20,7 @@ w_BYE_cf:
 w_ABORT:
         DEFCODE "ABORT", 0
 w_ABORT_cf:
+        CALL    asm_cleanup             ; If asm_mode set, restore HERE/bucket
         LD      HL, (sp_base)
         LD      SP, HL                  ; Reset parameter stack
         JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE)

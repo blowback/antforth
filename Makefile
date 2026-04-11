@@ -748,6 +748,46 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf 'CODE MYDUP BC PUSH, NEXT, END-CODE\r\n5 MYDUP . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 5 '; then \
+		echo "PASS: REPL test 85 — CODE MYDUP: '5 MYDUP . .' outputs '5 5'"; \
+	else \
+		echo "FAIL: REPL test 85 — expected '5 5' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE TCA BC PUSH, A XOR, C A LD, NEXT, END-CODE\r\n99 TCA . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 99 '; then \
+		echo "PASS: REPL test 86 — LD, r-r encoding: 'C A LD,' assembles LD C,A, '99 TCA . .' outputs '0 99'"; \
+	else \
+		echo "FAIL: REPL test 86 — expected '0 99' in output (wrong LD, encoding or reversed operand order)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE DBL BC PUSH, A XOR, C ADD, C ADD, C A LD, A XOR, B A LD, NEXT, END-CODE\r\n21 DBL . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 21 '; then \
+		echo "PASS: REPL test 87 — multi-instruction CODE word DBL: '21 DBL . .' outputs '42 21'"; \
+	else \
+		echo "FAIL: REPL test 87 — expected '42 21' (DBL doubles low byte; wrong ADD,/LD, encoding or register clobber)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE ZORK BC PUSH, NEXT, END-CODE\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'ZORK'; then \
+		echo "PASS: REPL test 88 — WORDS lists newly-defined CODE word ZORK"; \
+	else \
+		echo "FAIL: REPL test 88 — expected 'ZORK' in WORDS output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE FOO NONEXISTENT,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'NONEXISTENT, ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 89 — error recovery: bad word inside CODE aborts cleanly, next input still works"; \
+	else \
+		echo "FAIL: REPL test 89 — expected 'NONEXISTENT, ?' error and '3' from '1 2 + .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
