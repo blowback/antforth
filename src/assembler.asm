@@ -3,19 +3,21 @@
 ;
 ; === Design Overview ===
 ;
-; Register-tag encoding (stories 4.2/4.3/4.4 extend this scheme; do not
-; change the existing tag values):
+; Unified tag encoding (story 4.3.5 refactor):
 ;
-;   8-bit registers use the Z80 r-field directly (tags 0x00..0x07):
-;       B=0  C=1  D=2  E=3  H=4  L=5  (HL)=6  A=7
-;   (HL) is not exposed in story 4.1 but its slot is reserved.
+;   Every tagged operand has high byte 0xFF. The low byte encodes a
+;   3-bit class (bits 7-5) and a 5-bit index (bits 4-0):
 ;
-;   16-bit register pairs use a disjoint tag namespace (0x10..0x14) so
-;   an opcode word can tell an 8-bit operand from a 16-bit operand:
-;       BC=0x10  DE=0x11  HL=0x12  AF=0x13  SP=0x14
+;     Class 000 (0x00)  8-bit register   B=0 C=1 D=2 E=3 H=4 L=5 A=7
+;     Class 001 (0x20)  Condition code   NZ=0 Z=1 NC=2 CS=3 PO=4 PE=5 P=6 M=7
+;     Class 010 (0x40)  Immediate marker value in next stack cell
+;     Class 011 (0x60)  16-bit register  BC=0 DE=1 HL=2 AF=3 SP=4
+;     Class 100 (0x80)  Indirect         (HL)=0
+;     Class 101 (0xA0)  Label            slot index 0..15
 ;
-;   Opcode words translate these canonical indices to the correct Z80
-;   field (qq for PUSH/POP, rp for arithmetic) as needed.
+;   Opcode words check B==0xFF to detect tagged operands (bare integers
+;   have B != 0xFF and trigger a "forgot #?" error), then extract the
+;   class via AND 0xE0 and the index via AND 0x1F.
 ;
 ; Operand order for multi-operand opcode words is **Zilog convention**,
 ; applied uniformly across every form — register-to-register,
@@ -34,8 +36,9 @@
 ; the destination in NNOS). Opcode words dispatch on the TOS tag class
 ; and pop the operands in the matching order. Common footgun: omitting
 ; the `#` marker (`A 0x42 LD,`) silently mis-assembles as a register-
-; to-register LD where 0x42 is interpreted as a register tag — always
-; include `#` for immediate operands.
+; to-register LD where 0x42 is interpreted as a register tag. Under the
+; unified tag encoding (story 4.3.5) this is now caught: bare integers
+; have high byte != 0xFF and trigger a clear error.
 ;
 ; Assembler mode:
 ;   `CODE name` calls build_header with F_SMUDGE, saves recovery info,
@@ -110,10 +113,10 @@ asm_jp_op:         DB 0   ; 1-byte spill slot for JP,/CALL, unconditional
 ;   +2  fixup kind (0 = JR-disp, 1 = DW-absolute)
 ;   +3  label slot index
 ;
-; Label tag encoding: TOS = 0xFFnn where nn = slot index 0..15. The high
-; byte 0xFF is well above any realistic HERE on iz-cpm/MicroBeast (BDOS
-; base ~0xE400) and disjoint from register tags (high byte 0). Decoder:
-; `if BC.high == 0xFF then label tag, slot = BC.low`.
+; Label tag encoding: TOS = 0xFF | (ASM_CLASS_LABEL | slot_index).
+; High byte 0xFF, low byte = 0xA0 | slot (class=101, 5-bit index).
+; Decoder: check B==0xFF, then (C AND 0xE0)==ASM_CLASS_LABEL,
+; slot = C AND 0x1F.
 ;
 ; Cleanup (asm_unlink_labels) walks slots in reverse insertion order and
 ; restores each bucket's head from the saved old_head. LIFO undo of the
@@ -131,13 +134,19 @@ ASM_FIXUP_REC_SIZE   EQU 4
 ASM_LABEL_DICT_SIZE  EQU 768
 ASM_FIXUP_KIND_JR    EQU 0
 ASM_FIXUP_KIND_DW    EQU 1
-; Tag high-byte sentinels. Each is well above any plausible HERE/dict
-; address on iz-cpm/MicroBeast (BDOS lives ~0xE400+) so a tag can never
-; collide with a real 16-bit value the user might push. JP,/CALL, share
-; ASM_FIXUP_KIND_DW because the patch operation is byte-identical.
-ASM_IMM_TAG_HI       EQU 0xFD     ; immediate-marker tag pushed by `#`
-ASM_COND_TAG_HI      EQU 0xFE     ; condition-code tag (low byte = cc 0..7)
-ASM_LABEL_TAG_HI     EQU 0xFF
+; Unified tag encoding: high byte = 0xFF for ALL tagged operands.
+; Low byte = 3-bit class (top) | 5-bit index (bottom).
+ASM_TAG_HI           EQU 0xFF
+; Class constants (upper 3 bits of low byte)
+ASM_CLASS_REG8       EQU 0x00     ; 8-bit register (index = r-field 0..7)
+ASM_CLASS_COND       EQU 0x20     ; condition code (index = cc 0..7)
+ASM_CLASS_IMM        EQU 0x40     ; immediate marker (index = 0)
+ASM_CLASS_REG16      EQU 0x60     ; 16-bit register pair (index 0..4)
+ASM_CLASS_INDIRECT   EQU 0x80     ; indexed/indirect (index 0 = (HL))
+ASM_CLASS_LABEL      EQU 0xA0     ; label (index = slot 0..15)
+; Extraction masks
+ASM_CLASS_MASK       EQU 0xE0     ; AND with low byte to get class
+ASM_INDEX_MASK       EQU 0x1F     ; AND with low byte to get index
 
 asm_label_count:   DB 0
 asm_fixup_count:   DB 0
@@ -188,12 +197,15 @@ STR_ASM_UNRESOLVED_LEN EQU $ - str_asm_unresolved
 str_asm_already:   DB "already fixed: "
 STR_ASM_ALREADY_LEN EQU $ - str_asm_already
 
+str_asm_bare_int:  DB "bare integer "
+STR_ASM_BARE_INT_LEN EQU $ - str_asm_bare_int
+
 ; -----------------------------------------------
-; asm_print_error — Print HL..HL+B-1, then " ?", CR, LF via BDOS.
-;   Entry: HL = message ptr, B = length
+; asm_print_str — Print HL..HL+B-1 via BDOS (no suffix).
+;   Entry: HL = string ptr, B = length
 ;   Clobbers: A, BC, DE, HL
 ; -----------------------------------------------
-asm_print_error:
+asm_print_str:
 .loop:
         LD      E, (HL)
         PUSH    HL
@@ -204,6 +216,22 @@ asm_print_error:
         POP     HL
         INC     HL
         DJNZ    .loop
+        RET
+
+; -----------------------------------------------
+; asm_print_error — Print HL..HL+B-1, then " ?", CR, LF via BDOS.
+;   Entry: HL = message ptr, B = length
+;   Clobbers: A, BC, DE, HL
+; -----------------------------------------------
+asm_print_error:
+        CALL    asm_print_str
+        ; Fall through to asm_print_q_crlf
+
+; -----------------------------------------------
+; asm_print_q_crlf — Print " ?" CR LF via BDOS.
+;   Clobbers: A, DE, C
+; -----------------------------------------------
+asm_print_q_crlf:
         LD      E, ' '
         LD      C, C_WRITE
         CALL    BDOS_ENTRY
@@ -217,6 +245,41 @@ asm_print_error:
         LD      C, C_WRITE
         CALL    BDOS_ENTRY
         RET
+
+; -----------------------------------------------
+; asm_print_hex16 — Print HL as 4 hex digits via BDOS.
+;   Clobbers: A, BC, DE, HL
+; -----------------------------------------------
+asm_print_hex16:
+        PUSH    HL
+        LD      A, H
+        CALL    asm_print_hex8
+        POP     HL
+        LD      A, L
+        ; Fall through to asm_print_hex8
+
+; -----------------------------------------------
+; asm_print_hex8 — Print A as 2 hex digits via BDOS.
+;   Clobbers: A, DE, C
+; -----------------------------------------------
+asm_print_hex8:
+        PUSH    AF
+        RRCA
+        RRCA
+        RRCA
+        RRCA
+        CALL    .nibble
+        POP     AF
+.nibble:
+        AND     0x0F
+        ADD     A, '0'
+        CP      '9' + 1
+        JR      C, .digit
+        ADD     A, 'A' - '9' - 1
+.digit:
+        LD      E, A
+        LD      C, C_WRITE
+        JP      BDOS_ENTRY
 
 ; -----------------------------------------------
 ; asm_die — Print (HL/B) via asm_print_error and JP ABORT. Never returns.
@@ -270,6 +333,32 @@ asm_err_equ_in_code:
         LD      HL, str_asm_equ_in_code
         LD      B, STR_ASM_EQU_IN_CODE_LEN
         JP      asm_die
+
+asm_err_bare_int:
+        ; HL = bare integer value on entry (set by callers)
+        PUSH    HL
+        LD      HL, str_asm_bare_int
+        LD      B, STR_ASM_BARE_INT_LEN
+        CALL    asm_print_str
+        POP     HL
+        CALL    asm_print_hex16
+        CALL    asm_print_q_crlf
+        JP      w_ABORT_cf
+
+; -----------------------------------------------
+; asm_check_tagged — Verify TOS (BC) is a tagged operand (B == 0xFF).
+;   If B != 0xFF, the user passed a bare integer where a tagged operand
+;   was expected. Prints "bare integer ?" and ABORTs.
+;   On success: returns with BC unchanged, Z flag set.
+;   On failure: never returns (ABORTs).
+; -----------------------------------------------
+asm_check_tagged:
+        LD      A, B
+        CP      ASM_TAG_HI
+        RET     Z
+        LD      H, B
+        LD      L, C
+        JP      asm_err_bare_int
 
 ; -----------------------------------------------
 ; asm_print_error_with_name — Print prefix string + label name + " ?" CRLF.
@@ -791,14 +880,14 @@ asm_reset_label_state:
 
 ; -----------------------------------------------
 ; asm_push_tag — Shared tail for register-tag words.
-;   Entry: L = tag byte (high byte assumed 0 because all tags < 256)
+;   Entry: L = class|index byte (low byte of unified tag)
 ;   check_asm_mode preserves L on the pass path.
 ; -----------------------------------------------
 asm_push_tag:
         CALL    check_asm_mode
         PUSH    BC                      ; save old TOS
         LD      C, L
-        LD      B, 0                    ; new TOS = tag
+        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF | class|idx
         NEXT
 
 ; --- 8-bit registers (tags 0x00..0x07) ---
@@ -845,58 +934,55 @@ w_REG_A_cf:
         LD      L, 0x07
         JP      asm_push_tag
 
-; --- 16-bit register pairs (tags 0x10..0x14) ---
+; --- 16-bit register pairs (class=011, index 0..4) ---
 
 w_REG_BC:
         DEFCODE "BC", 0
 w_REG_BC_cf:
-        LD      L, 0x10
+        LD      L, ASM_CLASS_REG16 | 0  ; 0x60
         JP      asm_push_tag
 
 w_REG_DE:
         DEFCODE "DE", 0
 w_REG_DE_cf:
-        LD      L, 0x11
+        LD      L, ASM_CLASS_REG16 | 1  ; 0x61
         JP      asm_push_tag
 
 w_REG_HL:
         DEFCODE "HL", 0
 w_REG_HL_cf:
-        LD      L, 0x12
+        LD      L, ASM_CLASS_REG16 | 2  ; 0x62
         JP      asm_push_tag
 
 w_REG_AF:
         DEFCODE "AF", 0
 w_REG_AF_cf:
-        LD      L, 0x13
+        LD      L, ASM_CLASS_REG16 | 3  ; 0x63
         JP      asm_push_tag
 
 w_REG_SP:
         DEFCODE "SP", 0
 w_REG_SP_cf:
-        LD      L, 0x14
+        LD      L, ASM_CLASS_REG16 | 4  ; 0x64
         JP      asm_push_tag
 
-; --- (HL) parsing word — pushes 8-bit r-field tag 6 (memory-via-HL).
-;     Distinguished from real registers only at the LD, level (the
-;     arith ops still reject 6 via assert_8bit_reg). ---
+; --- (HL) parsing word — class=100 (indirect), index=0. Opcode words
+;     extract the Z80 r-field (6) from the class, not from the index. ---
 w_REG_IHL:
         DEFCODE "(HL)", 0
 w_REG_IHL_cf:
-        LD      L, 0x06
+        LD      L, ASM_CLASS_INDIRECT | 0  ; 0x80
         JP      asm_push_tag
 
-; --- Immediate-marker word `#` — pushes ASM_IMM_TAG_HI<<8 on TOS,
-;     leaving the value the user just typed in NOS. Consumed by the
-;     next opcode word that supports an immediate variant. No global
-;     state — the marker lives entirely on the data stack. ---
+; --- Immediate-marker word `#` — pushes 0xFF40 (class=010, index=0)
+;     on TOS, leaving the value the user just typed in NOS. ---
 w_HASH:
         DEFCODE "#", 0
 w_HASH_cf:
         CALL    check_asm_mode
         PUSH    BC                      ; old TOS becomes NOS
-        LD      C, 0                    ; low byte irrelevant
-        LD      B, ASM_IMM_TAG_HI       ; B = 0xFD → BC = 0xFD00
+        LD      C, ASM_CLASS_IMM        ; C = 0x40
+        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF40
         NEXT
 
 ; --- Condition-code parsing words ---
@@ -907,8 +993,10 @@ w_HASH_cf:
 asm_push_cond_tag:
         CALL    check_asm_mode
         PUSH    BC                      ; save old TOS
-        LD      C, L                    ; C = cc (0..7)
-        LD      B, ASM_COND_TAG_HI      ; B = 0xFE
+        LD      A, L
+        OR      ASM_CLASS_COND          ; A = 0x20 | cc
+        LD      C, A
+        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF | (0x20|cc)
         NEXT
 
 w_COND_NZ:
@@ -959,15 +1047,48 @@ w_COND_M_cf:
         LD      L, 7
         JP      asm_push_cond_tag
 
-; --- Tag predicates (Z if matching tag) — used by LD,, arith, RET,, etc.
+; --- Tag predicates (Z if matching class) — used by LD,, arith, RET,, etc.
+;     All assume B==0xFF has already been verified (via asm_check_tagged
+;     or inline check). They test the class bits of C.
+
 asm_is_imm_tag:
-        LD      A, B
-        CP      ASM_IMM_TAG_HI
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_IMM
         RET
 
 asm_is_cond_tag:
-        LD      A, B
-        CP      ASM_COND_TAG_HI
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_COND
+        RET
+
+asm_is_label_tag:
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_LABEL
+        RET
+
+asm_is_reg16_tag:
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_REG16
+        RET
+
+asm_is_indirect_tag:
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_INDIRECT
+        RET
+
+asm_get_class:
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        RET
+
+asm_get_index:
+        LD      A, C
+        AND     ASM_INDEX_MASK
         RET
 
 ; =====================================================================
@@ -1123,21 +1244,18 @@ w_END_CODE_cf:
 ; -----------------------------------------------
 ; asm_pushpop_word — Shared tail for PUSH, and POP,.
 ;   Entry: A = base opcode (0xC5 for PUSH, 0xC1 for POP)
-;   Validates TOS = 16-bit tag in 0x10..0x13, emits base | (qq<<4),
-;   pops new TOS. Rejects SP and any 8-bit tag.
+;   Validates TOS = reg16 tag (class=011, index 0..3: BC/DE/HL/AF).
+;   Rejects SP (index 4) and any non-reg16 tag.
 ; -----------------------------------------------
 asm_pushpop_word:
         LD      (asm_tmp), A            ; spill base opcode
         CALL    check_asm_mode
-        ; Validate tag in BC: high byte 0, low byte 0x10..0x13
-        LD      A, B
-        OR      A
-        JP      NZ, asm_bad_operand
-        LD      A, C
-        SUB     0x10
-        JP      C, asm_bad_operand      ; < 0x10 → 8-bit tag
+        CALL    asm_check_tagged        ; verify B==0xFF
+        CALL    asm_is_reg16_tag
+        JP      NZ, asm_bad_operand     ; not a 16-bit register
+        CALL    asm_get_index           ; A = index (0..4)
         CP      4
-        JP      NC, asm_bad_operand     ; >= 0x14 → SP or garbage
+        JP      NC, asm_bad_operand     ; SP (4) or out of range
         ; qq = A (0..3); opcode = base | (qq<<4)
         RLCA
         RLCA
@@ -1166,32 +1284,42 @@ w_POP_COMMA_cf:
 ; =====================================================================
 
 ; -----------------------------------------------
-; assert_8bit_reg — HL = tag; reject if not a valid 8-bit r-field.
-;   On success: A = L (tag value 0..7 excluding 6), Z flag from `CP 6`.
-;   On failure: JP asm_bad_operand (never returns)
+; assert_8bit_reg — HL = unified tag; reject if H!=0xFF or not class=REG8.
+;   On success: A = r-field (0..7 excluding 6)
+;   On failure: JP asm_bad_operand or asm_err_bare_int (never returns)
 ; -----------------------------------------------
 assert_8bit_reg:
         LD      A, H
-        OR      A
-        JP      NZ, asm_bad_operand
+        CP      ASM_TAG_HI
+        JP      NZ, asm_err_bare_int    ; bare integer
         LD      A, L
+        AND     ASM_CLASS_MASK
+        JP      NZ, asm_bad_operand     ; class != REG8 (0x00)
+        LD      A, L
+        AND     ASM_INDEX_MASK          ; A = r-field
         CP      8
-        JP      NC, asm_bad_operand     ; >= 8 → 16-bit tag or garbage
-        CP      6
-        JP      Z, asm_bad_operand      ; (HL) not exposed in 4.1
+        JP      NC, asm_bad_operand
         RET
 
-; Permissive variant: accepts r-field 0..7 INCLUDING 6 = (HL). Used by
-; LD, where memory-via-HL is a valid operand; arith ops continue to use
-; the strict assert_8bit_reg above (Story 4.4 territory for arith (HL)).
+; Permissive variant: accepts class=REG8 (r-field 0..7) OR class=INDIRECT
+; ((HL) → returns r-field 6). Used by LD, where memory-via-HL is valid.
 assert_8bit_reg_or_ihl:
         LD      A, H
-        OR      A
-        JP      NZ, asm_bad_operand
+        CP      ASM_TAG_HI
+        JP      NZ, asm_err_bare_int    ; bare integer
         LD      A, L
+        AND     ASM_CLASS_MASK
+        JR      Z, .a8ihl_reg8          ; class=REG8
+        CP      ASM_CLASS_INDIRECT
+        JP      NZ, asm_bad_operand     ; not REG8 or INDIRECT
+        LD      A, 6                    ; (HL) → r-field = 6
+        RET
+.a8ihl_reg8:
+        LD      A, L
+        AND     ASM_INDEX_MASK
         CP      8
-        JP      NC, asm_bad_operand     ; >= 8 → 16-bit tag or garbage
-        RET                              ; allow 0..7 including 6 = (HL)
+        JP      NC, asm_bad_operand
+        RET
 
 ; -----------------------------------------------
 ; LD, ( dst src -- )  emits LD r, r' (0x40 | (dst<<3) | src)
@@ -1201,100 +1329,92 @@ w_LD_COMMA:
         DEFCODE "LD,", 0
 w_LD_COMMA_cf:
         CALL    check_asm_mode
-        ; Immediate-form check: TOS (BC) is the 0xFD00 marker?
-        ; Stack on entry for `destreg value # LD,`:
-        ;   TOS = 0xFD00 marker, NOS = value, NNOS = destreg tag.
-        ; Zilog dst-src order is preserved uniformly: destreg is the
-        ; leftmost (deepest) operand, the value follows, and `#` tags
-        ; the value as an immediate. Detecting the marker on TOS keeps
-        ; that ordering identical to the register-to-register form.
+        CALL    asm_check_tagged        ; TOS must be tagged
         CALL    asm_is_imm_tag
         JP      Z, .ldc_imm
         ; Register-to-register path — Zilog dst-src: NOS = dst, TOS = src.
         LD      H, B
         LD      L, C
         CALL    assert_8bit_reg_or_ihl  ; A = src r-value (0..7)
-        LD      (asm_tmp), A            ; spill src — shares asm_tmp with
-                                        ; asm_arith_word; safe because LD,
-                                        ; and arith opcode words never nest
+        LD      (asm_tmp), A
         POP     HL                      ; HL = destination tag (NOS)
         CALL    assert_8bit_reg_or_ihl  ; A = dst r-value
-        ; Reject LD (HL),(HL) — that opcode (0x76) is HALT, not LD.
-        LD      H, A                    ; stash dst in H temporarily
-        LD      A, (asm_tmp)            ; A = src
+        ; Reject LD (HL),(HL) — opcode 0x76 is HALT, not LD.
+        LD      H, A
+        LD      A, (asm_tmp)
         CP      6
         JR      NZ, .ldc_emit
-        LD      A, H                    ; A = dst
+        LD      A, H
         CP      6
         JP      Z, asm_bad_operand
 .ldc_emit:
         LD      A, H                    ; A = dst
-        ; Compute opcode: 0x40 | (dst<<3) | src
         RLCA
         RLCA
         RLCA                            ; A = dst << 3
-        OR      0x40                    ; A = 0x40 | (dst<<3)
+        OR      0x40
         LD      HL, asm_tmp
         OR      (HL)                    ; A |= src
         CALL    asm_emit_byte
-        POP     BC                      ; new TOS
+        POP     BC
         NEXT
 
 .ldc_imm:
-        ; Immediate path. TOS was the marker — discard by popping the
-        ; value into BC (new TOS = value); NNOS is the destination tag.
-        POP     BC                      ; BC = value (new working TOS)
-        POP     HL                      ; HL = destination register tag
+        ; TOS is imm marker — pop value and destination.
+        POP     BC                      ; BC = value
+        POP     HL                      ; HL = destination tag
         LD      A, H
-        OR      A
-        JP      NZ, asm_bad_operand     ; high byte must be 0 for register tag
+        CP      ASM_TAG_HI
+        JP      NZ, asm_err_bare_int
+        ; Classify destination by class bits.
         LD      A, L
-        CP      8
-        JR      C, .ldc_imm8
-        ; 16-bit destination — must be one of BC/DE/HL/SP (0x10..0x12, 0x14)
-        SUB     0x10
-        JP      C, asm_bad_operand
+        AND     ASM_CLASS_MASK
+        JR      Z, .ldc_imm8            ; class=REG8
+        CP      ASM_CLASS_REG16
+        JR      Z, .ldc_imm16
+        JP      asm_bad_operand         ; INDIRECT or anything else
+
+.ldc_imm16:
+        ; 16-bit dest: index 0..4 = BC/DE/HL/AF/SP. Reject AF (3).
+        LD      A, L
+        AND     ASM_INDEX_MASK          ; A = index (0..4)
         CP      5
-        JP      NC, asm_bad_operand     ; >= 0x15 → garbage
+        JP      NC, asm_bad_operand
         CP      3
-        JP      Z, asm_bad_operand      ; AF (0x13) → no LD AF, nn
-        ; A is now 0..4 with 3 already excluded (0,1,2,4 → BC,DE,HL,SP).
-        ; Map to qq: BC=0, DE=1, HL=2, SP=3 — that means 4 → 3.
+        JP      Z, asm_bad_operand      ; AF → no LD AF, nn
+        ; Map index to rp: BC=0, DE=1, HL=2, SP→index 4 maps to rp=3.
         CP      4
         JR      NZ, .ldc_imm16_qq
         LD      A, 3
 .ldc_imm16_qq:
-        ; A = qq (0..3). opcode = 0x01 | (qq << 4)
         RLCA
         RLCA
         RLCA
-        RLCA                            ; A = qq << 4
-        OR      0x01                    ; A = 0x01 | (qq<<4)
+        RLCA                            ; A = rp << 4
+        OR      0x01
         CALL    asm_emit_byte
-        ; BC holds the 16-bit value; asm_emit_byte preserves BC so we
-        ; can emit lo then hi directly without a scratch spill.
         LD      A, C
         CALL    asm_emit_byte
         LD      A, B
         CALL    asm_emit_byte
-        POP     BC                      ; new TOS
+        POP     BC
         NEXT
 
 .ldc_imm8:
-        ; A = L = 0..7 (destination 8-bit reg). Reject (HL) — Z80 has
-        ; LD (HL),n = 0x36 nn but it is deferred to Story 4.4 (Q3).
+        ; class=REG8: extract r-field index. Reject (HL) — deferred to 4.4.
+        LD      A, L
+        AND     ASM_INDEX_MASK
         CP      6
         JP      Z, asm_bad_operand
         ; opcode = 0x06 | (r << 3)
         RLCA
         RLCA
-        RLCA                            ; A = r << 3
+        RLCA
         OR      0x06
         CALL    asm_emit_byte
-        ; Value is in BC (new TOS); low byte is C.
         LD      A, C
         CALL    asm_emit_byte
-        POP     BC                      ; new TOS
+        POP     BC
         NEXT
 
 ; =====================================================================
@@ -1319,28 +1439,25 @@ asm_get_r8:
 asm_arith_word:
         LD      (asm_tmp), A            ; spill base opcode
         CALL    check_asm_mode
-        ; Immediate-form check: TOS = 0xFD00 marker?
+        CALL    asm_check_tagged        ; TOS must be tagged
         CALL    asm_is_imm_tag
         JR      Z, .arith_imm
-        ; Register form (existing path).
+        ; Register form.
         CALL    asm_get_r8              ; A = r-field
         LD      HL, asm_tmp
         OR      (HL)                    ; A = base | r
         CALL    asm_emit_byte
-        POP     BC                      ; new TOS
+        POP     BC
         NEXT
 .arith_imm:
-        ; TOS is the immediate marker; pop it (so new TOS is the value).
         POP     BC                      ; new TOS = value (n)
-        ; imm_base = 0xC6 | (reg_base & 0x38)
         LD      A, (asm_tmp)
-        AND     0x38                    ; isolate alu field
+        AND     0x38
         OR      0xC6
         CALL    asm_emit_byte
-        ; Emit n (low byte of value).
         LD      A, C
         CALL    asm_emit_byte
-        POP     BC                      ; new TOS
+        POP     BC
         NEXT
 
 w_ADD_COMMA:
@@ -1428,15 +1545,17 @@ NEXT_TEMPLATE_LEN EQU next_template_end - next_template
 ;   The body of every LABEL-defined dict entry is exactly:
 ;       LD      L, slot_index           ; 2 bytes
 ;       JP      asm_push_label_tag      ; 3 bytes
-;   asm_push_label_tag pushes BC = 0xFF00 | slot_index onto the data
+;   asm_push_label_tag pushes BC = 0xFFA0 | slot_index onto the data
 ;   stack and refuses to run outside CODE (defence in depth — correct
 ;   cleanup makes label words unreachable when not in CODE).
 ; =====================================================================
 asm_push_label_tag:
         CALL    check_asm_mode
         PUSH    BC                      ; save old TOS
-        LD      C, L                    ; C = slot index
-        LD      B, ASM_LABEL_TAG_HI     ; B = 0xFF
+        LD      A, L
+        OR      ASM_CLASS_LABEL         ; A = 0xA0 | slot_index
+        LD      C, A
+        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF | (0xA0|slot)
         NEXT
 
 ; =====================================================================
@@ -1585,10 +1704,11 @@ w_FIX:
 w_FIX_cf:
         CALL    check_asm_mode
         ; Validate label tag in BC.
-        LD      A, B
-        CP      ASM_LABEL_TAG_HI
+        CALL    asm_check_tagged
+        CALL    asm_is_label_tag
         JP      NZ, asm_bad_operand
         LD      A, C
+        AND     ASM_INDEX_MASK          ; A = slot index
         LD      HL, asm_label_count
         CP      (HL)
         JP      NC, asm_bad_operand
@@ -1628,81 +1748,81 @@ w_JR_COMMA:
         DEFCODE "JR,", 0
 w_JR_COMMA_cf:
         CALL    check_asm_mode
-        ; Spill IP — we use D/E as scratch for the target address.
         LD      (asm_ip_save), DE
         ; Conditional-prefix detection: peek NOS for a condition tag.
-        ; The cond words push 0xFE00 | cc; if NOS matches, this is a
-        ; conditional JR (NZ/Z/NC/CS only — PO/PE/P/M rejected).
         POP     HL                      ; HL = NOS
         LD      A, H
-        CP      ASM_COND_TAG_HI
+        CP      ASM_TAG_HI
+        JR      NZ, .jrc_not_cond
+        LD      A, L
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_COND
         JR      Z, .jrc_cond
+.jrc_not_cond:
         ; Not a condition — restore NOS and emit unconditional JR.
         PUSH    HL
         LD      A, 0x18
         JR      .jrc_emit_op
 .jrc_cond:
-        ; HL = condition tag; cc in L. Only NZ/Z/NC/CS (cc 0..3) are
-        ; legal — Z80 has no JR PO/PE/P/M.
+        ; cc = index from L. Only NZ/Z/NC/CS (0..3) legal for JR.
         LD      A, L
+        AND     ASM_INDEX_MASK
         CP      4
         JP      NC, asm_bad_operand
-        ; Conditional opcode = 0x20 | (cc << 3).
         ADD     A, A
         ADD     A, A
         ADD     A, A                    ; cc << 3
         OR      0x20
 .jrc_emit_op:
         CALL    asm_emit_byte
-        ; HERE now points at the displacement byte slot. patch_addr =
-        ; HERE (the next byte we will emit).
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
-        LD      (asm_tmp2), HL          ; save patch addr
-        ; Inspect TOS.
+        LD      (asm_tmp2), HL
+        ; Inspect TOS — check for label tag.
         LD      A, B
-        CP      ASM_LABEL_TAG_HI
+        CP      ASM_TAG_HI
+        JR      NZ, .jrc_literal
+        CALL    asm_is_label_tag
         JR      Z, .jrc_label
+.jrc_literal:
         ; Plain 16-bit address: literal-target JR.
-        ; disp = target - (patch + 1)
         LD      D, B
-        LD      E, C                    ; DE = target
+        LD      E, C
         LD      HL, (asm_tmp2)
         CALL    asm_apply_jr_fixup_emit
         LD      DE, (asm_ip_save)
         POP     BC
         NEXT
 .jrc_label:
-        ; Label tag: validate idx, look up slot.
+        ; Label tag: extract slot index via AND 0x1F.
         LD      A, C
+        AND     ASM_INDEX_MASK
         LD      HL, asm_label_count
         CP      (HL)
         JP      NC, asm_bad_operand
         CALL    asm_slot_addr           ; HL = &slot
-        LD      A, (HL)                 ; resolved?
+        LD      A, (HL)
         OR      A
         JR      Z, .jrc_unresolved
-        ; Resolved: read target from slot+1,2.
         INC     HL
         LD      E, (HL)
         INC     HL
-        LD      D, (HL)                 ; DE = target
-        LD      HL, (asm_tmp2)          ; HL = patch addr
+        LD      D, (HL)
+        LD      HL, (asm_tmp2)
         CALL    asm_apply_jr_fixup_emit
         LD      DE, (asm_ip_save)
         POP     BC
         NEXT
 .jrc_unresolved:
-        ; Emit 0x00 placeholder displacement, queue fixup.
         XOR     A
         CALL    asm_emit_byte
-        ; A = label idx, C-arg = kind, HL = patch addr.
-        LD      A, C                    ; A = label index
+        LD      A, C
+        AND     ASM_INDEX_MASK          ; A = label slot index
         LD      C, ASM_FIXUP_KIND_JR
         LD      HL, (asm_tmp2)
         CALL    asm_add_fixup
         LD      DE, (asm_ip_save)
-        POP     BC                      ; pop new TOS
+        POP     BC
         NEXT
 
 ; -----------------------------------------------
@@ -1749,25 +1869,24 @@ asm_jp_call_word:
         LD      (asm_jp_op), A          ; save unconditional opcode
         CALL    check_asm_mode
         LD      (asm_ip_save), DE
-        ; Save the target operand (BC) — could be label tag or literal.
+        ; Save target operand (BC) — could be label tag or literal.
         LD      H, B
         LD      L, C
-        LD      (asm_tmp2), HL          ; save target/tag
-        ; Pop the cell that was below TOS into BC. This is semantically
-        ; a peek + conditional-consume: unconditional form leaves this
-        ; value as the new TOS (1 cell consumed total), conditional form
-        ; does one more POP later (2 cells consumed total).
+        LD      (asm_tmp2), HL
         POP     BC
+        ; Check if NOS (now BC) is a condition tag.
         LD      A, B
-        CP      ASM_COND_TAG_HI
+        CP      ASM_TAG_HI
+        JR      NZ, .jpc_uncond
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_COND
         JR      Z, .jpc_cond
-        ; --- unconditional path ---
+.jpc_uncond:
         LD      A, (asm_jp_op)
         CALL    asm_emit_byte
         JR      .jpc_emit_target
 .jpc_cond:
-        ; --- conditional path ---
-        ; Compute the conditional base for JP (0xC2) or CALL (0xC4).
         LD      A, (asm_jp_op)
         CP      0xC3
         JR      Z, .jpc_cond_jp
@@ -1777,20 +1896,25 @@ asm_jp_call_word:
         LD      A, 0xC2                 ; JP cond base
 .jpc_have_base:
         LD      H, A                    ; H = cond base
-        LD      A, C                    ; A = cc (low byte of cond tag)
-        AND     0x07                    ; defence: range 0..7
+        LD      A, C
+        AND     ASM_INDEX_MASK          ; cc = index 0..7
         RLCA
         RLCA
         RLCA                            ; A = cc << 3
-        OR      H                       ; A = base | (cc<<3)
+        OR      H
         CALL    asm_emit_byte
-        POP     BC                      ; consume the cell below the cond tag
+        POP     BC                      ; consume the cell below cond tag
 .jpc_emit_target:
-        ; HL := saved target/tag.
         LD      HL, (asm_tmp2)
+        ; Check if target is a label tag.
         LD      A, H
-        CP      ASM_LABEL_TAG_HI
+        CP      ASM_TAG_HI
+        JR      NZ, .jpc_literal
+        LD      A, L
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_LABEL
         JR      Z, .jpc_label
+.jpc_literal:
         ; Literal target — emit lo then hi.
         LD      A, L
         CALL    asm_emit_byte
@@ -1799,43 +1923,36 @@ asm_jp_call_word:
         CALL    asm_emit_byte
         JR      .jpc_done
 .jpc_label:
-        ; Label tag: validate slot index. HL is discarded — the slot
-        ; look-up below rebuilds it from A via asm_slot_addr.
-        LD      A, L                    ; A = slot idx
+        LD      A, L
+        AND     ASM_INDEX_MASK          ; A = slot idx
         LD      HL, asm_label_count
         CP      (HL)
         JP      NC, asm_bad_operand
-        PUSH    AF                      ; save slot idx (only needed for
-                                        ; the unresolved path; balanced
-                                        ; with a discard pop on resolve)
+        PUSH    AF
         CALL    asm_slot_addr           ; HL = &slot
-        LD      A, (HL)                 ; resolved?
+        LD      A, (HL)
         OR      A
         JR      Z, .jpc_unres
-        ; Resolved — read lo+hi from slot+1/slot+2 into DE before any
-        ; emit (asm_emit_byte clobbers HL but preserves DE), then emit
-        ; both bytes without re-looking-up the slot.
         INC     HL
-        LD      E, (HL)                 ; lo
+        LD      E, (HL)
         INC     HL
-        LD      D, (HL)                 ; hi
-        POP     AF                      ; discard saved slot idx
+        LD      D, (HL)
+        POP     AF
         LD      A, E
         CALL    asm_emit_byte
         LD      A, D
         CALL    asm_emit_byte
         JR      .jpc_done
 .jpc_unres:
-        ; Save patch addr = HERE; emit 2 zero placeholders; queue fixup.
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
-        LD      (asm_tmp2), HL          ; patch addr
+        LD      (asm_tmp2), HL
         XOR     A
         CALL    asm_emit_byte
         XOR     A
         CALL    asm_emit_byte
         POP     AF                      ; A = slot idx
-        LD      C, ASM_FIXUP_KIND_DW    ; share DW fixup kind
+        LD      C, ASM_FIXUP_KIND_DW
         LD      HL, (asm_tmp2)
         CALL    asm_add_fixup
 .jpc_done:
@@ -1854,11 +1971,7 @@ w_RET_COMMA:
         DEFCODE "RET,", 0
 w_RET_COMMA_cf:
         CALL    check_asm_mode
-        ; Depth guard — BC is phantom garbage when the data stack is
-        ; empty (see memory project_tos_in_register). Without this
-        ; check, a post-boot or post-ABORT BC that happens to match
-        ; ASM_COND_TAG_HI would take the conditional path and POP
-        ; from an empty stack. Need sp_base - SP >= 2 (one real cell).
+        ; Depth guard — BC is phantom when stack is empty.
         LD      HL, (sp_base)
         OR      A
         SBC     HL, SP
@@ -1870,22 +1983,25 @@ w_RET_COMMA_cf:
         JR      C, .retc_uncond
 .retc_bc_ok:
         LD      A, B
-        CP      ASM_COND_TAG_HI
+        CP      ASM_TAG_HI
+        JR      NZ, .retc_uncond
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_COND
         JR      Z, .retc_cond
 .retc_uncond:
-        ; Unconditional — emit 0xC9, do NOT pop TOS.
         LD      A, 0xC9
         CALL    asm_emit_byte
         NEXT
 .retc_cond:
         LD      A, C
-        AND     0x07                    ; defence: range
+        AND     ASM_INDEX_MASK          ; cc = 0..7
         RLCA
         RLCA
         RLCA
         OR      0xC0
         CALL    asm_emit_byte
-        POP     BC                      ; consume the cond tag (new TOS)
+        POP     BC
         NEXT
 
 ; =====================================================================
@@ -1895,10 +2011,9 @@ w_DB_COMMA:
         DEFCODE "DB,", 0
 w_DB_COMMA_cf:
         CALL    check_asm_mode
-        ; Reject label tags — `LABEL X X DB,` is almost always a user
-        ; mistake; emitting the slot index byte silently is a UX trap.
+        ; Reject any tagged operand — DB, expects a raw integer.
         LD      A, B
-        CP      ASM_LABEL_TAG_HI
+        CP      ASM_TAG_HI
         JP      Z, asm_bad_operand
         LD      A, C
         CALL    asm_emit_byte
@@ -1916,10 +2031,16 @@ w_DW_COMMA:
         DEFCODE "DW,", 0
 w_DW_COMMA_cf:
         CALL    check_asm_mode
+        ; Check for label tag (class=LABEL).
         LD      A, B
-        CP      ASM_LABEL_TAG_HI
+        CP      ASM_TAG_HI
+        JR      NZ, .dwc_plain
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_LABEL
         JR      Z, .dwc_label
-        ; Plain int: emit low then high (asm_emit_byte preserves DE).
+.dwc_plain:
+        ; Plain int: emit low then high.
         LD      A, C
         CALL    asm_emit_byte
         LD      A, B
@@ -1927,12 +2048,9 @@ w_DW_COMMA_cf:
         POP     BC
         NEXT
 .dwc_label:
-        ; Spill IP — the slot lookups use HL only but we'll touch DE
-        ; via fixup queue / asm_add_fixup which preserves DE; still,
-        ; spill for safety since asm_slot_addr's PUSH/POP DE leaves
-        ; DE intact but the body is easier to reason about with a save.
         LD      (asm_ip_save), DE
         LD      A, C
+        AND     ASM_INDEX_MASK          ; A = slot idx
         LD      HL, asm_label_count
         CP      (HL)
         JP      NC, asm_bad_operand
@@ -1940,12 +2058,11 @@ w_DW_COMMA_cf:
         LD      A, (HL)
         OR      A
         JR      Z, .dwc_unresolved
-        ; Resolved: emit target lo then hi via two emits. Re-look-up
-        ; slot for hi byte (asm_emit_byte clobbers HL).
         INC     HL
         LD      A, (HL)                 ; target lo
         CALL    asm_emit_byte
-        LD      A, C                    ; slot idx
+        LD      A, C
+        AND     ASM_INDEX_MASK          ; slot idx (re-extract)
         CALL    asm_slot_addr
         INC     HL
         INC     HL
@@ -1955,7 +2072,6 @@ w_DW_COMMA_cf:
         POP     BC
         NEXT
 .dwc_unresolved:
-        ; Save patch addr = HERE before placeholders.
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
         LD      (asm_tmp2), HL
@@ -1963,7 +2079,8 @@ w_DW_COMMA_cf:
         CALL    asm_emit_byte
         XOR     A
         CALL    asm_emit_byte
-        LD      A, C                    ; A = slot idx
+        LD      A, C
+        AND     ASM_INDEX_MASK          ; A = slot idx
         LD      C, ASM_FIXUP_KIND_DW
         LD      HL, (asm_tmp2)
         CALL    asm_add_fixup

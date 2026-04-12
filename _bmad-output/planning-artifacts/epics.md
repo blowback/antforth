@@ -923,6 +923,65 @@ END-CODE
 **When** they use assembler words alongside Forth words
 **Then** the assembler vocabulary is only active inside CODE/END-CODE and does not interfere with normal Forth interpretation
 
+### Story 4.3.5: Stack Tag Encoding Refactor
+
+As an antforth assembler user,
+I want operand type errors (like `A 0 LD,` instead of `A 0 # LD,`) to be caught at assemble time with a clear message,
+So that I cannot silently produce machine code that does the wrong thing.
+
+**Background:**
+The original tag encoding (story 4.1/4.2/4.3) used three sentinel high bytes
+(`0xFF` label, `0xFE` condition, `0xFD` immediate) and tagged 8-bit registers as
+`0x00nn`. This made bare integer 0 indistinguishable from register B and burned
+~768 reserved cell values. This story unifies the encoding and adds typo
+detection without changing user-facing syntax.
+
+**Acceptance Criteria:**
+
+**Given** any tagged operand (register, condition, label, immediate marker,
+addressing mode) on the data stack
+**When** examined
+**Then** the high byte of the cell is exactly `0xFF` and the low byte holds a
+3-bit class field (top) and a 5-bit index field (bottom)
+
+**Given** an operand-consuming assembler word receives an operand
+**When** the operand cell's high byte is not `0xFF`
+**Then** the word raises a clear error (e.g. `expected tagged operand, got
+bare integer N — did you mean #N ?`) and does not assemble any bytes
+
+**Given** an immediate operand
+**When** `42 # A LD,` is typed
+**Then** the stack picture during `LD,` execution is `[..., 42, <imm-tag>, A-tag]`
+(two cells for the immediate: marker cell with class=immediate, value cell
+directly below) and the assembled bytes are `0x3E 0x2A`
+
+**Given** a 16-bit immediate operand
+**When** `0x1234 # BC LD,` is typed
+**Then** the assembled bytes are `0x01 0x34 0x12` (the value cell holds the
+full 16-bit value, no longer bottled into the low byte of a sentinel)
+
+**Given** the user types `A 0 LD,` (forgetting the `#`)
+**When** `LD,` examines its operands
+**Then** an error is raised pointing at the bare integer 0, and no bytes are
+assembled
+
+**Given** the existing story 4.1, 4.2, and 4.3 test suite
+**When** re-run after the encoding refactor
+**Then** every existing test continues to pass (modulo migration of any test
+that hand-constructs `0xFD`/`0xFE` literal sentinels)
+
+**Given** new REPL-piped test scripts covering the typo-detection path
+**When** run against the refactored assembler
+**Then** all "forgot the #" cases produce clear errors and all "correctly
+written" cases assemble identically to before
+
+**Given** the architecture document
+**When** updated as part of this story
+**Then** it contains a new subsection describing the tag-cell format
+(`0xFF <class:3><index:5>`), the class table, the two-cell layout for
+immediates and displacements, and a worked example showing `LD A, #42` and
+`LD A, B` side by side
+
 ### Story 4.4: Extended Z80 Opcodes
 
 As a Forth user,
@@ -936,15 +995,22 @@ So that I can use bit operations, rotates/shifts, and IX/IY indexed addressing i
 **Then** the correct DD-prefixed opcode with displacement byte is assembled
 
 **Given** a CODE definition using bit operations
-**When** `3 A BIT,` (BIT 3, A), `5 B SET,` (SET 5, B), `7 C RES,` (RES 7, C) are typed
+**When** `3 # A BIT,` (BIT 3, A), `5 # B SET,` (SET 5, B), `7 # C RES,` (RES 7, C) are typed
 **Then** the correct CB-prefixed opcodes are assembled
+**And** bit numbers outside 0..7 raise a clear range error at assemble time
+
+**Given** a CODE definition using bit operations on indexed memory
+**When** e.g., `3 # (IX) 5 +D BIT,` (BIT 3, (IX+5)) is typed
+**Then** the correct DDCB-prefixed opcode sequence is assembled
+**And** the three-operand stack picture (bit-immediate + indexed-addr-tag + displacement-cell)
+is consumed correctly by `BIT,` / `SET,` / `RES,`
 
 **Given** a CODE definition using rotates and shifts
 **When** `A RLC,`, `B RRC,`, `C RL,`, `D RR,`, `E SLA,`, `H SRA,`, `L SRL,` are typed
 **Then** the correct CB-prefixed opcodes are assembled
 
 **Given** a CODE definition using I/O instructions
-**When** `(C) A IN,` (IN A, (C)), `(C) A OUT,` (OUT (C), A), `0x42 # A IN,` (IN A, (0x42)) are typed
+**When** `(C) A IN,` (IN A, (C)), `A (C) OUT,` (OUT (C), A), `0x42 # A IN,` (IN A, (0x42)) are typed
 **Then** the correct opcodes are assembled for port I/O
 
 **Given** a CODE definition using block transfer and search instructions

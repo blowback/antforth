@@ -262,6 +262,51 @@ NEGATE, ABS, MIN, MAX, SPACES, .S, WORDS, number formatting (., U., .R), MARKER,
 
 **Anti-pattern:** Any CODE word that modifies DE, IX, or IY without saving/restoring (unless that's the word's defined purpose, e.g., >R modifies IX).
 
+### Assembler Tag-Cell Encoding (Story 4.3.5)
+
+Every tagged operand in the built-in assembler uses a unified two-byte cell with high byte `0xFF` and a low byte encoding a 3-bit class (bits 7-5) and a 5-bit index (bits 4-0):
+
+```
+Tag cell:  0xFF <CCCIIIII>
+                │   │
+                │   └── 5-bit index (0..31 per class)
+                └────── 3-bit class (0..7)
+
+Class 000 (0x00)  8-bit register     B=0 C=1 D=2 E=3 H=4 L=5 A=7
+Class 001 (0x20)  Condition code     NZ=0 Z=1 NC=2 CS=3 PO=4 PE=5 P=6 M=7
+Class 010 (0x40)  Immediate marker   value lives in next stack cell
+Class 011 (0x60)  16-bit register    BC=0 DE=1 HL=2 AF=3 SP=4
+Class 100 (0x80)  Indexed/indirect   (HL)=0
+Class 101 (0xA0)  Label              forward & backward refs (slot index 0..15)
+Class 110         RESERVED
+Class 111         RESERVED
+```
+
+**Two-cell layout for immediates:**
+```
+Stack (grows down):   ... | value | 0xFF40 | dest-tag |
+                              ^        ^
+                          raw 16-bit   imm marker (class=010)
+```
+
+**Worked example — `LD A, #42` vs `LD A, B`:**
+```
+LD A, #42  (Forth: A 42 # LD,)
+  Stack after A:       ... | 0xFF07 |              (A = class 000, index 7)
+  Stack after 42:      ... | 0xFF07 | 0x002A |     (raw value)
+  Stack after #:       ... | 0xFF07 | 0x002A | 0xFF40 |  (imm marker)
+  LD, detects imm marker on TOS → pops marker, pops value, pops A tag
+  Emits: 0x3E 0x2A  (LD A, 42)
+
+LD A, B  (Forth: A B LD,)
+  Stack after A:       ... | 0xFF07 |              (A tag)
+  Stack after B:       ... | 0xFF07 | 0xFF00 |     (B tag: class 000, index 0)
+  LD, sees class=REG8 on TOS → register-to-register path
+  Emits: 0x78  (LD A, B = 0x40 | (7<<3) | 0)
+```
+
+**Bare-integer detection:** If an operand-consuming word pops a cell whose high byte is not `0xFF`, it raises `bare integer ?` and emits no bytes. This catches the common mistake of omitting `#` for immediate operands.
+
 ### Dictionary Entry Construction
 
 **Rule:** No word is ever defined by manually emitting header bytes. Always use macros.

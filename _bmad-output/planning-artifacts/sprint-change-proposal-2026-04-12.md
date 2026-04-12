@@ -4,7 +4,7 @@
 **Author:** Bob (Scrum Master) — captured from BMAD party-mode design session
 **Project:** antforth
 **Epic in flight:** Epic 4 — Built-in Z80 Assembler
-**Status:** DRAFT — awaiting Ant's approval
+**Status:** APPROVED — 2026-04-12
 **Scope classification:** Moderate (mid-epic re-scope, single new story, no PRD/MVP impact)
 
 ---
@@ -371,12 +371,9 @@ inherits the two-cell displacement pattern for free.
 
 ## Section 6 — Approval
 
-**Awaiting Ant's explicit approval.**
+**Approved by Ant on 2026-04-12.**
 
-Approve this proposal with one of:
-- **yes** — Bob applies the epics.md and sprint-status.yaml diffs immediately, then the workflow concludes and you can later invoke `bmad-bmm-create-story` to draft the actual 4.3.5 story file.
-- **no** — proposal is shelved, no files modified.
-- **revise: <feedback>** — Bob loops back to fix specific items.
+All epics.md and sprint-status.yaml diffs have been applied.
 
 ---
 

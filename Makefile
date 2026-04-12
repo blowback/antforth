@@ -1171,6 +1171,70 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf 'CODE BAD132 A 0 LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 132 — forgot-# in LD, src: bare integer detected, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 132 — expected 'bare integer ...' error and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD133 0 A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 133 — bare integer in dst: bare integer detected, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 133 — expected 'bare integer ...' error and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK134 A 42 # LD, NEXT, END-CODE\r\nXT OK134 0 + C@ . XT OK134 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '62 42 '; then \
+		echo "PASS: REPL test 134 — A 42 # LD, assembles 3E 2A (62 42)"; \
+	else \
+		echo "FAIL: REPL test 134 — expected '62 42 ' (0x3E 0x2A)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK135 BC 1234 # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK135 0 + C@ . XT OK135 1 + C@ . XT OK135 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '1 52 18 '; then \
+		echo "PASS: REPL test 135 — BC 1234h # LD, assembles 01 34 12"; \
+	else \
+		echo "FAIL: REPL test 135 — expected '1 52 18 ' (0x01 0x34 0x12)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD136 A 0 ADD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 136 — forgot-# in ADD,: bare integer detected, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 136 — expected 'bare integer ...' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK137 42 # ADD, NEXT, END-CODE\r\nXT OK137 0 + C@ . XT OK137 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '198 42 '; then \
+		echo "PASS: REPL test 137 — 42 # ADD, assembles C6 2A (198 42)"; \
+	else \
+		echo "FAIL: REPL test 137 — expected '198 42 ' (0xC6 0x2A)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD138 0 PUSH, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 138 — bare integer in PUSH,: error detected, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 138 — expected 'bare integer ...' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK139 B C LD, A B LD, NEXT, END-CODE\r\nXT OK139 0 + C@ . XT OK139 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65 120 '; then \
+		echo "PASS: REPL test 139 — existing r-r LD still works: B C LD,=0x41, A B LD,=0x78"; \
+	else \
+		echo "FAIL: REPL test 139 — expected '65 120 ' (0x41 0x78)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
