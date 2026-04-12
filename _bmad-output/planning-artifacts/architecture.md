@@ -275,8 +275,8 @@ Tag cell:  0xFF <CCCIIIII>
 Class 000 (0x00)  8-bit register     B=0 C=1 D=2 E=3 H=4 L=5 A=7
 Class 001 (0x20)  Condition code     NZ=0 Z=1 NC=2 CS=3 PO=4 PE=5 P=6 M=7
 Class 010 (0x40)  Immediate marker   value lives in next stack cell
-Class 011 (0x60)  16-bit register    BC=0 DE=1 HL=2 AF=3 SP=4
-Class 100 (0x80)  Indexed/indirect   (HL)=0
+Class 011 (0x60)  16-bit register    BC=0 DE=1 HL=2 AF=3 SP=4 IX=5 IY=6 AF'=7
+Class 100 (0x80)  Indexed/indirect   (HL)=0, (IX)=1, (IY)=2, (IX+d)=3, (IY+d)=4, (SP)=5, (C)=6
 Class 101 (0xA0)  Label              forward & backward refs (slot index 0..15)
 Class 110         RESERVED
 Class 111         RESERVED

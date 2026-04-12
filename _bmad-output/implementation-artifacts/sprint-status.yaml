@@ -70,7 +70,7 @@ development_status:
   4-2-labels-and-data-definition-words: done
   4-3-basic-z80-opcodes: done
   4-3-5-stack-tag-encoding-refactor: done
-  4-4-extended-z80-opcodes: backlog
+  4-4-extended-z80-opcodes: done
   epic-4-retrospective: optional
 
   epic-5: backlog

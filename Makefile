@@ -1235,6 +1235,324 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 4.4 tests: Extended Z80 Opcodes ---
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK140 B INC, A DEC, (HL) INC, NEXT, END-CODE\r\nXT OK140 0 + C@ . XT OK140 1 + C@ . XT OK140 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '4 61 52 '; then \
+		echo "PASS: REPL test 140 — B INC,=04, A DEC,=3D, (HL) INC,=34"; \
+	else \
+		echo "FAIL: REPL test 140 — expected '4 61 52 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK141 BC INC, SP DEC, NEXT, END-CODE\r\nXT OK141 0 + C@ . XT OK141 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 59 '; then \
+		echo "PASS: REPL test 141 — BC INC,=03, SP DEC,=3B"; \
+	else \
+		echo "FAIL: REPL test 141 — expected '3 59 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK142 IX INC, IY DEC, NEXT, END-CODE\r\nXT OK142 0 + C@ . XT OK142 1 + C@ . XT OK142 2 + C@ . XT OK142 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 35 253 43 '; then \
+		echo "PASS: REPL test 142 — IX INC,=DD23, IY DEC,=FD2B"; \
+	else \
+		echo "FAIL: REPL test 142 — expected '221 35 253 43 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK143 (IX) 5 +D INC, (IY) 3 +D DEC, NEXT, END-CODE\r\nXT OK143 0 + C@ . XT OK143 1 + C@ . XT OK143 2 + C@ . XT OK143 3 + C@ . XT OK143 4 + C@ . XT OK143 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 52 5 253 53 3 '; then \
+		echo "PASS: REPL test 143 — (IX) 5 +D INC,=DD3405, (IY) 3 +D DEC,=FD3503"; \
+	else \
+		echo "FAIL: REPL test 143 — expected '221 52 5 253 53 3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK144 A RLC, B RRC, L SRL, NEXT, END-CODE\r\nXT OK144 0 + C@ . XT OK144 1 + C@ . XT OK144 2 + C@ . XT OK144 3 + C@ . XT OK144 4 + C@ . XT OK144 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 7 203 8 203 61 '; then \
+		echo "PASS: REPL test 144 — A RLC,=CB07, B RRC,=CB08, L SRL,=CB3D"; \
+	else \
+		echo "FAIL: REPL test 144 — expected '203 7 203 8 203 61 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK145 (HL) RLC, (HL) SRA, NEXT, END-CODE\r\nXT OK145 0 + C@ . XT OK145 1 + C@ . XT OK145 2 + C@ . XT OK145 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 6 203 46 '; then \
+		echo "PASS: REPL test 145 — (HL) RLC,=CB06, (HL) SRA,=CB2E"; \
+	else \
+		echo "FAIL: REPL test 145 — expected '203 6 203 46 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK146 (IX) 5 +D RLC, NEXT, END-CODE\r\nXT OK146 0 + C@ . XT OK146 1 + C@ . XT OK146 2 + C@ . XT OK146 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 203 5 6 '; then \
+		echo "PASS: REPL test 146 — (IX) 5 +D RLC,=DDCB0506"; \
+	else \
+		echo "FAIL: REPL test 146 — expected '221 203 5 6 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK147 3 # A BIT, 5 # B SET, 7 # C RES, NEXT, END-CODE\r\nXT OK147 0 + C@ . XT OK147 1 + C@ . XT OK147 2 + C@ . XT OK147 3 + C@ . XT OK147 4 + C@ . XT OK147 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 95 203 232 203 185 '; then \
+		echo "PASS: REPL test 147 — 3 # A BIT,=CB5F, 5 # B SET,=CBE8, 7 # C RES,=CBB9"; \
+	else \
+		echo "FAIL: REPL test 147 — expected '203 95 203 232 203 185 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK148 3 # (HL) BIT, NEXT, END-CODE\r\nXT OK148 0 + C@ . XT OK148 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 94 '; then \
+		echo "PASS: REPL test 148 — 3 # (HL) BIT,=CB5E"; \
+	else \
+		echo "FAIL: REPL test 148 — expected '203 94 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK149 3 # (IX) 5 +D BIT, NEXT, END-CODE\r\nXT OK149 0 + C@ . XT OK149 1 + C@ . XT OK149 2 + C@ . XT OK149 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 203 5 94 '; then \
+		echo "PASS: REPL test 149 — 3 # (IX) 5 +D BIT,=DDCB055E"; \
+	else \
+		echo "FAIL: REPL test 149 — expected '221 203 5 94 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD150 8 # A BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'range ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 150 — bit 8 raises range ?, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 150 — expected 'range ?' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK151 (C) A IN, A (C) OUT, NEXT, END-CODE\r\nXT OK151 0 + C@ . XT OK151 1 + C@ . XT OK151 2 + C@ . XT OK151 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 120 237 121 '; then \
+		echo "PASS: REPL test 151 — (C) A IN,=ED78, A (C) OUT,=ED79"; \
+	else \
+		echo "FAIL: REPL test 151 — expected '237 120 237 121 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK152 42 # A IN, A 42 # OUT, NEXT, END-CODE\r\nDECIMAL\r\nXT OK152 0 + C@ . XT OK152 1 + C@ . XT OK152 2 + C@ . XT OK152 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '219 66 211 66 '; then \
+		echo "PASS: REPL test 152 — 42h # A IN,=DB42, A 42h # OUT,=D342"; \
+	else \
+		echo "FAIL: REPL test 152 — expected '219 66 211 66 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK153 (C) B IN, NEXT, END-CODE\r\nXT OK153 0 + C@ . XT OK153 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 64 '; then \
+		echo "PASS: REPL test 153 — (C) B IN,=ED40"; \
+	else \
+		echo "FAIL: REPL test 153 — expected '237 64 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HEX\r\nCODE BAD154 42 # B IN, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 154 — immediate-port IN with B: bad operand, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 154 — expected 'bad operand ?' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK155 LDIR, LDDR, CPIR, CPDR, NEXT, END-CODE\r\nXT OK155 0 + C@ . XT OK155 1 + C@ . XT OK155 2 + C@ . XT OK155 3 + C@ .\r\nXT OK155 4 + C@ . XT OK155 5 + C@ . XT OK155 6 + C@ . XT OK155 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 176 237 184 ' && \
+	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 177 237 185 '; then \
+		echo "PASS: REPL test 155 — LDIR,=EDB0 LDDR,=EDB8 CPIR,=EDB1 CPDR,=EDB9"; \
+	else \
+		echo "FAIL: REPL test 155 — expected '237 176 237 184 ' and '237 177 237 185 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK156 LDI, LDD, CPI, CPD, NEXT, END-CODE\r\nXT OK156 0 + C@ . XT OK156 1 + C@ . XT OK156 2 + C@ . XT OK156 3 + C@ .\r\nXT OK156 4 + C@ . XT OK156 5 + C@ . XT OK156 6 + C@ . XT OK156 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 160 237 168 ' && \
+	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 161 237 169 '; then \
+		echo "PASS: REPL test 156 — LDI,=EDA0 LDD,=EDA8 CPI,=EDA1 CPD,=EDA9"; \
+	else \
+		echo "FAIL: REPL test 156 — expected '237 160 237 168 ' and '237 161 237 169 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK157 INI, INIR, IND, INDR, NEXT, END-CODE\r\nXT OK157 0 + C@ . XT OK157 1 + C@ . XT OK157 2 + C@ . XT OK157 3 + C@ .\r\nXT OK157 4 + C@ . XT OK157 5 + C@ . XT OK157 6 + C@ . XT OK157 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 162 237 178 ' && \
+	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 170 237 186 '; then \
+		echo "PASS: REPL test 157 — INI,=EDA2 INIR,=EDB2 IND,=EDAA INDR,=EDBA"; \
+	else \
+		echo "FAIL: REPL test 157 — expected '237 162 237 178 ' and '237 170 237 186 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK158 OUTI, OTIR, OUTD, OTDR, NEXT, END-CODE\r\nXT OK158 0 + C@ . XT OK158 1 + C@ . XT OK158 2 + C@ . XT OK158 3 + C@ .\r\nXT OK158 4 + C@ . XT OK158 5 + C@ . XT OK158 6 + C@ . XT OK158 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 163 237 179 ' && \
+	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 171 237 187 '; then \
+		echo "PASS: REPL test 158 — OUTI,=EDA3 OTIR,=EDB3 OUTD,=EDAB OTDR,=EDBB"; \
+	else \
+		echo "FAIL: REPL test 158 — expected '237 163 237 179 ' and '237 171 237 187 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK159 NEG, RETN, RETI, NEXT, END-CODE\r\nXT OK159 0 + C@ . XT OK159 1 + C@ . XT OK159 2 + C@ . XT OK159 3 + C@ . XT OK159 4 + C@ . XT OK159 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 68 237 69 237 77 '; then \
+		echo "PASS: REPL test 159 — NEG,=ED44 RETN,=ED45 RETI,=ED4D"; \
+	else \
+		echo "FAIL: REPL test 159 — expected '237 68 237 69 237 77 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK160 IM0, IM1, IM2, NEXT, END-CODE\r\nXT OK160 0 + C@ . XT OK160 1 + C@ . XT OK160 2 + C@ . XT OK160 3 + C@ . XT OK160 4 + C@ . XT OK160 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 70 237 86 237 94 '; then \
+		echo "PASS: REPL test 160 — IM0,=ED46 IM1,=ED56 IM2,=ED5E"; \
+	else \
+		echo "FAIL: REPL test 160 — expected '237 70 237 86 237 94 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK161 DE HL EX, EXX, NEXT, END-CODE\r\nXT OK161 0 + C@ . XT OK161 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '235 217 '; then \
+		echo "PASS: REPL test 161 — DE HL EX,=EB, EXX,=D9"; \
+	else \
+		echo "FAIL: REPL test 161 — expected '235 217 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK162 (SP) HL EX, (SP) IX EX, NEXT, END-CODE\r\nXT OK162 0 + C@ . XT OK162 1 + C@ . XT OK162 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '227 221 227 '; then \
+		echo "PASS: REPL test 162 — (SP) HL EX,=E3, (SP) IX EX,=DDE3"; \
+	else \
+		echo "FAIL: REPL test 162 — expected '227 221 227 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ": XT BL WORD FIND DROP ;\r\nCODE OK163 AF AF' EX, NEXT, END-CODE\r\nXT OK163 0 + C@ .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '8 '; then \
+		echo "PASS: REPL test 163 — AF AF' EX,=08"; \
+	else \
+		echo "FAIL: REPL test 163 — expected '8 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK164 (IX) 5 +D A LD, A (IX) 5 +D LD, NEXT, END-CODE\r\nXT OK164 0 + C@ . XT OK164 1 + C@ . XT OK164 2 + C@ . XT OK164 3 + C@ . XT OK164 4 + C@ . XT OK164 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 126 5 221 119 5 '; then \
+		echo "PASS: REPL test 164 — (IX) 5 +D A LD,=DD7E05, A (IX) 5 +D LD,=DD7705"; \
+	else \
+		echo "FAIL: REPL test 164 — expected '221 126 5 221 119 5 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK165 IX 1234 # LD, IY 5678 # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK165 0 + C@ . XT OK165 1 + C@ . XT OK165 2 + C@ . XT OK165 3 + C@ .\r\nXT OK165 4 + C@ . XT OK165 5 + C@ . XT OK165 6 + C@ . XT OK165 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 33 52 18 ' && \
+	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 33 120 86 '; then \
+		echo "PASS: REPL test 165 — IX 1234h # LD,=DD213412, IY 5678h # LD,=FD217856"; \
+	else \
+		echo "FAIL: REPL test 165 — expected '221 33 52 18 ' and '253 33 120 86 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK166 (IX) 5 +D 2A # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK166 0 + C@ . XT OK166 1 + C@ . XT OK166 2 + C@ . XT OK166 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 54 5 42 '; then \
+		echo "PASS: REPL test 166 — (IX) 5 +D 2Ah # LD,=DD36052A"; \
+	else \
+		echo "FAIL: REPL test 166 — expected '221 54 5 42 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK167 IX PUSH, IY POP, NEXT, END-CODE\r\nXT OK167 0 + C@ . XT OK167 1 + C@ . XT OK167 2 + C@ . XT OK167 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 229 253 225 '; then \
+		echo "PASS: REPL test 167 — IX PUSH,=DDE5, IY POP,=FDE1"; \
+	else \
+		echo "FAIL: REPL test 167 — expected '221 229 253 225 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK168 (IX) JP, (IY) JP, NEXT, END-CODE\r\nXT OK168 0 + C@ . XT OK168 1 + C@ . XT OK168 2 + C@ . XT OK168 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 233 253 233 '; then \
+		echo "PASS: REPL test 168 — (IX) JP,=DDE9, (IY) JP,=FDE9"; \
+	else \
+		echo "FAIL: REPL test 168 — expected '221 233 253 233 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK169 (IX) 5 +D ADD, (IY) 3 +D CP, NEXT, END-CODE\r\nXT OK169 0 + C@ . XT OK169 1 + C@ . XT OK169 2 + C@ . XT OK169 3 + C@ . XT OK169 4 + C@ . XT OK169 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 134 5 253 190 3 '; then \
+		echo "PASS: REPL test 169 — (IX) 5 +D ADD,=DD8605, (IY) 3 +D CP,=FDBE03"; \
+	else \
+		echo "FAIL: REPL test 169 — expected '221 134 5 253 190 3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD170 DE 5 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 170 — +D with non-(IX)/(IY): bad operand, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 170 — expected 'bad operand ?' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD171 (IX) 200 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'range ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 171 — displacement 200 out of range, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 171 — expected 'range ?' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD172 AF INC, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 172 — AF INC,: bad operand, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 172 — expected 'bad operand ?' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK173 B C LD, A B LD, (HL) A LD, NEXT, END-CODE\r\nXT OK173 0 + C@ . XT OK173 1 + C@ . XT OK173 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65 120 119 '; then \
+		echo "PASS: REPL test 173 — regression: B C LD,=41, A B LD,=78, (HL) A LD,=77"; \
+	else \
+		echo "FAIL: REPL test 173 — expected '65 120 119 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK174 (IY) 3 +D SLA, NEXT, END-CODE\r\nXT OK174 0 + C@ . XT OK174 1 + C@ . XT OK174 2 + C@ . XT OK174 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 203 3 38 '; then \
+		echo "PASS: REPL test 174 — (IY) 3 +D SLA,=FDCB0326 (FDCB shift)"; \
+	else \
+		echo "FAIL: REPL test 174 — expected '253 203 3 38 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK175 5 # (IY) 3 +D SET, NEXT, END-CODE\r\nXT OK175 0 + C@ . XT OK175 1 + C@ . XT OK175 2 + C@ . XT OK175 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 203 3 238 '; then \
+		echo "PASS: REPL test 175 — 5 # (IY) 3 +D SET,=FDCB03EE (FDCB bit op)"; \
+	else \
+		echo "FAIL: REPL test 175 — expected '253 203 3 238 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK176 (IX) -5 +D A LD, NEXT, END-CODE\r\nXT OK176 0 + C@ . XT OK176 1 + C@ . XT OK176 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 126 251 '; then \
+		echo "PASS: REPL test 176 — (IX) -5 +D A LD,=DD7EFB (negative displacement)"; \
+	else \
+		echo "FAIL: REPL test 176 — expected '221 126 251 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK177 (IX) -128 +D INC, (IX) 127 +D INC, NEXT, END-CODE\r\nXT OK177 0 + C@ . XT OK177 1 + C@ . XT OK177 2 + C@ . XT OK177 3 + C@ . XT OK177 4 + C@ . XT OK177 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 52 128 221 52 127 '; then \
+		echo "PASS: REPL test 177 — boundary displacements: -128=DD3480, +127=DD347F"; \
+	else \
+		echo "FAIL: REPL test 177 — expected '221 52 128 221 52 127 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK178 42 # ADD, AF PUSH, HL POP, NZ 4660 JP, NEXT, END-CODE\r\nXT OK178 0 + C@ . XT OK178 1 + C@ . XT OK178 2 + C@ . XT OK178 3 + C@ . XT OK178 4 + C@ . XT OK178 5 + C@ . XT OK178 6 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '198 42 245 225 194 52 18 '; then \
+		echo "PASS: REPL test 178 — regression: #ADD,=C62A, PUSH AF=F5, POP HL=E1, NZ JP,=C23412"; \
+	else \
+		echo "FAIL: REPL test 178 — expected '198 42 245 225 194 52 18 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
