@@ -17,10 +17,25 @@
 ;   Opcode words translate these canonical indices to the correct Z80
 ;   field (qq for PUSH/POP, rp for arithmetic) as needed.
 ;
-; Operand order for multi-operand opcode words is **Zilog convention**:
-; destination first, then source. `B C LD,` assembles `LD B, C`. On the
-; parameter stack: TOS = source, NOS = destination — so multi-operand
-; opcode words pop source first, then destination.
+; Operand order for multi-operand opcode words is **Zilog convention**,
+; applied uniformly across every form — register-to-register,
+; register-immediate, indirect-(HL), and every future Story 4.4+
+; extension. Destination comes first on the input stream, source last:
+;
+;   B C LD,            assembles  LD B, C          (reg,reg)
+;   A 0x42 # LD,       assembles  LD A, 0x42       (reg,n)
+;   BC 0x1234 # LD,    assembles  LD BC, 0x1234    (rp,nn)
+;   A (HL) LD,         assembles  LD A, (HL)       (reg,(HL))
+;   (HL) A LD,         assembles  LD (HL), A       ((HL),reg)
+;
+; On the parameter stack at opcode-word entry, TOS is whatever was
+; typed last: for the register forms that is the source register; for
+; the immediate forms it is the `#` marker (with the value in NOS and
+; the destination in NNOS). Opcode words dispatch on the TOS tag class
+; and pop the operands in the matching order. Common footgun: omitting
+; the `#` marker (`A 0x42 LD,`) silently mis-assembles as a register-
+; to-register LD where 0x42 is interpreted as a register tag — always
+; include `#` for immediate operands.
 ;
 ; Assembler mode:
 ;   `CODE name` calls build_header with F_SMUDGE, saves recovery info,
@@ -41,6 +56,15 @@
 ; Error format: all assembler errors print `{subject} ?` followed by CR
 ; LF, matching the interpreter's `word ?` convention, then jump to
 ; w_ABORT_cf which calls asm_cleanup to unwind any half-built word.
+;
+; Reserved single-letter dictionary words (will shadow any user word of
+; the same name once assembler.asm is loaded):
+;   A B C D E H L      8-bit registers (story 4.1)
+;   Z P M              condition codes (story 4.3 — Z=zero, P=plus, M=minus)
+; Two-letter condition words NZ NC CS PO PE are also reserved. The
+; carry-set condition is spelled `CS` (6502-style) — never `C`, which is
+; the C register — and `CC` is intentionally NOT defined so it remains
+; usable as a hex literal in BASE=16 (= 204).
 
 ; =====================================================================
 ; Assembler state / error-recovery scratch
@@ -60,6 +84,10 @@ asm_ip_save:       DW 0   ; spill slot for DE (IP) across helper calls in
 asm_resolve_target: DW 0  ; cached target address for asm_resolve_slot's
                           ; fixup-walk loop (loaded once at FIX time and
                           ; reloaded into DE before each apply call)
+asm_jp_op:         DB 0   ; 1-byte spill slot for JP,/CALL, unconditional
+                          ; opcode (kept separate from asm_tmp — Story 4.3
+                          ; retrospective lesson #2: don't share scratch
+                          ; across nesting boundaries)
 
 ; =====================================================================
 ; Per-CODE label and fixup pools (Story 4.2)
@@ -103,6 +131,12 @@ ASM_FIXUP_REC_SIZE   EQU 4
 ASM_LABEL_DICT_SIZE  EQU 768
 ASM_FIXUP_KIND_JR    EQU 0
 ASM_FIXUP_KIND_DW    EQU 1
+; Tag high-byte sentinels. Each is well above any plausible HERE/dict
+; address on iz-cpm/MicroBeast (BDOS lives ~0xE400+) so a tag can never
+; collide with a real 16-bit value the user might push. JP,/CALL, share
+; ASM_FIXUP_KIND_DW because the patch operation is byte-identical.
+ASM_IMM_TAG_HI       EQU 0xFD     ; immediate-marker tag pushed by `#`
+ASM_COND_TAG_HI      EQU 0xFE     ; condition-code tag (low byte = cc 0..7)
 ASM_LABEL_TAG_HI     EQU 0xFF
 
 asm_label_count:   DB 0
@@ -843,6 +877,99 @@ w_REG_SP_cf:
         LD      L, 0x14
         JP      asm_push_tag
 
+; --- (HL) parsing word — pushes 8-bit r-field tag 6 (memory-via-HL).
+;     Distinguished from real registers only at the LD, level (the
+;     arith ops still reject 6 via assert_8bit_reg). ---
+w_REG_IHL:
+        DEFCODE "(HL)", 0
+w_REG_IHL_cf:
+        LD      L, 0x06
+        JP      asm_push_tag
+
+; --- Immediate-marker word `#` — pushes ASM_IMM_TAG_HI<<8 on TOS,
+;     leaving the value the user just typed in NOS. Consumed by the
+;     next opcode word that supports an immediate variant. No global
+;     state — the marker lives entirely on the data stack. ---
+w_HASH:
+        DEFCODE "#", 0
+w_HASH_cf:
+        CALL    check_asm_mode
+        PUSH    BC                      ; old TOS becomes NOS
+        LD      C, 0                    ; low byte irrelevant
+        LD      B, ASM_IMM_TAG_HI       ; B = 0xFD → BC = 0xFD00
+        NEXT
+
+; --- Condition-code parsing words ---
+; The carry-set condition is spelled `CS` (6502-style), not Zilog `C`,
+; to avoid colliding with the existing register `C`. The carry-clear
+; condition keeps its Zilog spelling `NC` — `CC` was rejected because
+; CC is a valid hex literal in BASE=16. See story 4.3 Q2 / Q8.
+asm_push_cond_tag:
+        CALL    check_asm_mode
+        PUSH    BC                      ; save old TOS
+        LD      C, L                    ; C = cc (0..7)
+        LD      B, ASM_COND_TAG_HI      ; B = 0xFE
+        NEXT
+
+w_COND_NZ:
+        DEFCODE "NZ", 0
+w_COND_NZ_cf:
+        LD      L, 0
+        JP      asm_push_cond_tag
+
+w_COND_Z:
+        DEFCODE "Z", 0
+w_COND_Z_cf:
+        LD      L, 1
+        JP      asm_push_cond_tag
+
+w_COND_NC:
+        DEFCODE "NC", 0
+w_COND_NC_cf:
+        LD      L, 2
+        JP      asm_push_cond_tag
+
+w_COND_CS:
+        DEFCODE "CS", 0
+w_COND_CS_cf:
+        LD      L, 3
+        JP      asm_push_cond_tag
+
+w_COND_PO:
+        DEFCODE "PO", 0
+w_COND_PO_cf:
+        LD      L, 4
+        JP      asm_push_cond_tag
+
+w_COND_PE:
+        DEFCODE "PE", 0
+w_COND_PE_cf:
+        LD      L, 5
+        JP      asm_push_cond_tag
+
+w_COND_P:
+        DEFCODE "P", 0
+w_COND_P_cf:
+        LD      L, 6
+        JP      asm_push_cond_tag
+
+w_COND_M:
+        DEFCODE "M", 0
+w_COND_M_cf:
+        LD      L, 7
+        JP      asm_push_cond_tag
+
+; --- Tag predicates (Z if matching tag) — used by LD,, arith, RET,, etc.
+asm_is_imm_tag:
+        LD      A, B
+        CP      ASM_IMM_TAG_HI
+        RET
+
+asm_is_cond_tag:
+        LD      A, B
+        CP      ASM_COND_TAG_HI
+        RET
+
 ; =====================================================================
 ; CODE ( "<spaces>name" -- )
 ;   Parse name, build dictionary header with F_SMUDGE, save recovery
@@ -1054,6 +1181,18 @@ assert_8bit_reg:
         JP      Z, asm_bad_operand      ; (HL) not exposed in 4.1
         RET
 
+; Permissive variant: accepts r-field 0..7 INCLUDING 6 = (HL). Used by
+; LD, where memory-via-HL is a valid operand; arith ops continue to use
+; the strict assert_8bit_reg above (Story 4.4 territory for arith (HL)).
+assert_8bit_reg_or_ihl:
+        LD      A, H
+        OR      A
+        JP      NZ, asm_bad_operand
+        LD      A, L
+        CP      8
+        JP      NC, asm_bad_operand     ; >= 8 → 16-bit tag or garbage
+        RET                              ; allow 0..7 including 6 = (HL)
+
 ; -----------------------------------------------
 ; LD, ( dst src -- )  emits LD r, r' (0x40 | (dst<<3) | src)
 ;   Zilog operand order: NOS = destination, TOS = source.
@@ -1062,13 +1201,34 @@ w_LD_COMMA:
         DEFCODE "LD,", 0
 w_LD_COMMA_cf:
         CALL    check_asm_mode
-        ; TOS (BC) = source tag; validate as 8-bit
+        ; Immediate-form check: TOS (BC) is the 0xFD00 marker?
+        ; Stack on entry for `destreg value # LD,`:
+        ;   TOS = 0xFD00 marker, NOS = value, NNOS = destreg tag.
+        ; Zilog dst-src order is preserved uniformly: destreg is the
+        ; leftmost (deepest) operand, the value follows, and `#` tags
+        ; the value as an immediate. Detecting the marker on TOS keeps
+        ; that ordering identical to the register-to-register form.
+        CALL    asm_is_imm_tag
+        JP      Z, .ldc_imm
+        ; Register-to-register path — Zilog dst-src: NOS = dst, TOS = src.
         LD      H, B
         LD      L, C
-        CALL    assert_8bit_reg         ; A = src r-value
-        LD      (asm_tmp), A            ; spill src
+        CALL    assert_8bit_reg_or_ihl  ; A = src r-value (0..7)
+        LD      (asm_tmp), A            ; spill src — shares asm_tmp with
+                                        ; asm_arith_word; safe because LD,
+                                        ; and arith opcode words never nest
         POP     HL                      ; HL = destination tag (NOS)
-        CALL    assert_8bit_reg         ; A = dst r-value
+        CALL    assert_8bit_reg_or_ihl  ; A = dst r-value
+        ; Reject LD (HL),(HL) — that opcode (0x76) is HALT, not LD.
+        LD      H, A                    ; stash dst in H temporarily
+        LD      A, (asm_tmp)            ; A = src
+        CP      6
+        JR      NZ, .ldc_emit
+        LD      A, H                    ; A = dst
+        CP      6
+        JP      Z, asm_bad_operand
+.ldc_emit:
+        LD      A, H                    ; A = dst
         ; Compute opcode: 0x40 | (dst<<3) | src
         RLCA
         RLCA
@@ -1076,6 +1236,63 @@ w_LD_COMMA_cf:
         OR      0x40                    ; A = 0x40 | (dst<<3)
         LD      HL, asm_tmp
         OR      (HL)                    ; A |= src
+        CALL    asm_emit_byte
+        POP     BC                      ; new TOS
+        NEXT
+
+.ldc_imm:
+        ; Immediate path. TOS was the marker — discard by popping the
+        ; value into BC (new TOS = value); NNOS is the destination tag.
+        POP     BC                      ; BC = value (new working TOS)
+        POP     HL                      ; HL = destination register tag
+        LD      A, H
+        OR      A
+        JP      NZ, asm_bad_operand     ; high byte must be 0 for register tag
+        LD      A, L
+        CP      8
+        JR      C, .ldc_imm8
+        ; 16-bit destination — must be one of BC/DE/HL/SP (0x10..0x12, 0x14)
+        SUB     0x10
+        JP      C, asm_bad_operand
+        CP      5
+        JP      NC, asm_bad_operand     ; >= 0x15 → garbage
+        CP      3
+        JP      Z, asm_bad_operand      ; AF (0x13) → no LD AF, nn
+        ; A is now 0..4 with 3 already excluded (0,1,2,4 → BC,DE,HL,SP).
+        ; Map to qq: BC=0, DE=1, HL=2, SP=3 — that means 4 → 3.
+        CP      4
+        JR      NZ, .ldc_imm16_qq
+        LD      A, 3
+.ldc_imm16_qq:
+        ; A = qq (0..3). opcode = 0x01 | (qq << 4)
+        RLCA
+        RLCA
+        RLCA
+        RLCA                            ; A = qq << 4
+        OR      0x01                    ; A = 0x01 | (qq<<4)
+        CALL    asm_emit_byte
+        ; BC holds the 16-bit value; asm_emit_byte preserves BC so we
+        ; can emit lo then hi directly without a scratch spill.
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC                      ; new TOS
+        NEXT
+
+.ldc_imm8:
+        ; A = L = 0..7 (destination 8-bit reg). Reject (HL) — Z80 has
+        ; LD (HL),n = 0x36 nn but it is deferred to Story 4.4 (Q3).
+        CP      6
+        JP      Z, asm_bad_operand
+        ; opcode = 0x06 | (r << 3)
+        RLCA
+        RLCA
+        RLCA                            ; A = r << 3
+        OR      0x06
+        CALL    asm_emit_byte
+        ; Value is in BC (new TOS); low byte is C.
+        LD      A, C
         CALL    asm_emit_byte
         POP     BC                      ; new TOS
         NEXT
@@ -1102,9 +1319,26 @@ asm_get_r8:
 asm_arith_word:
         LD      (asm_tmp), A            ; spill base opcode
         CALL    check_asm_mode
+        ; Immediate-form check: TOS = 0xFD00 marker?
+        CALL    asm_is_imm_tag
+        JR      Z, .arith_imm
+        ; Register form (existing path).
         CALL    asm_get_r8              ; A = r-field
         LD      HL, asm_tmp
         OR      (HL)                    ; A = base | r
+        CALL    asm_emit_byte
+        POP     BC                      ; new TOS
+        NEXT
+.arith_imm:
+        ; TOS is the immediate marker; pop it (so new TOS is the value).
+        POP     BC                      ; new TOS = value (n)
+        ; imm_base = 0xC6 | (reg_base & 0x38)
+        LD      A, (asm_tmp)
+        AND     0x38                    ; isolate alu field
+        OR      0xC6
+        CALL    asm_emit_byte
+        ; Emit n (low byte of value).
+        LD      A, C
         CALL    asm_emit_byte
         POP     BC                      ; new TOS
         NEXT
@@ -1396,8 +1630,29 @@ w_JR_COMMA_cf:
         CALL    check_asm_mode
         ; Spill IP — we use D/E as scratch for the target address.
         LD      (asm_ip_save), DE
-        ; Emit JR opcode 0x18.
+        ; Conditional-prefix detection: peek NOS for a condition tag.
+        ; The cond words push 0xFE00 | cc; if NOS matches, this is a
+        ; conditional JR (NZ/Z/NC/CS only — PO/PE/P/M rejected).
+        POP     HL                      ; HL = NOS
+        LD      A, H
+        CP      ASM_COND_TAG_HI
+        JR      Z, .jrc_cond
+        ; Not a condition — restore NOS and emit unconditional JR.
+        PUSH    HL
         LD      A, 0x18
+        JR      .jrc_emit_op
+.jrc_cond:
+        ; HL = condition tag; cc in L. Only NZ/Z/NC/CS (cc 0..3) are
+        ; legal — Z80 has no JR PO/PE/P/M.
+        LD      A, L
+        CP      4
+        JP      NC, asm_bad_operand
+        ; Conditional opcode = 0x20 | (cc << 3).
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A                    ; cc << 3
+        OR      0x20
+.jrc_emit_op:
         CALL    asm_emit_byte
         ; HERE now points at the displacement byte slot. patch_addr =
         ; HERE (the next byte we will emit).
@@ -1458,6 +1713,180 @@ w_JR_COMMA_cf:
 asm_apply_jr_fixup_emit:
         CALL    asm_jr_disp             ; A = disp, HL = patch addr (== HERE)
         JP      asm_emit_byte           ; emit at HERE, advance HERE
+
+; =====================================================================
+; JP, ( target -- )         and    CALL, ( target -- )
+;   Each accepts an optional condition tag in NOS:
+;     [..., cc-tag, target] →  conditional form (cc encoded in opcode)
+;     [..., target]         →  unconditional form (peeks NOS, doesn't pop)
+;   Target is either a literal address or a label tag (0xFFnn).
+;   Forward references with unresolved labels emit 0x00 0x00 placeholders
+;   and queue an absolute (DW-kind) fixup; FIX patches them later.
+;   The two opcode words share asm_jp_call_word; w_JP_COMMA_cf passes
+;   A=0xC3, w_CALL_COMMA_cf passes A=0xCD.
+; =====================================================================
+w_JP_COMMA:
+        DEFCODE "JP,", 0
+w_JP_COMMA_cf:
+        LD      A, 0xC3
+        JP      asm_jp_call_word
+
+w_CALL_COMMA:
+        DEFCODE "CALL,", 0
+w_CALL_COMMA_cf:
+        LD      A, 0xCD
+        JP      asm_jp_call_word
+
+; -----------------------------------------------
+; asm_jp_call_word — Shared body for JP, and CALL,.
+;   Entry: A = unconditional opcode byte (0xC3 = JP, 0xCD = CALL).
+;   Uses asm_tmp for the unconditional opcode and asm_tmp2 for the
+;   saved target/patch-addr. asm_emit_byte / asm_slot_addr / asm_add_fixup
+;   all preserve DE; we still spill IP defensively per the Story 4.2
+;   retrospective lesson on JR,/FIX/DW,.
+; -----------------------------------------------
+asm_jp_call_word:
+        LD      (asm_jp_op), A          ; save unconditional opcode
+        CALL    check_asm_mode
+        LD      (asm_ip_save), DE
+        ; Save the target operand (BC) — could be label tag or literal.
+        LD      H, B
+        LD      L, C
+        LD      (asm_tmp2), HL          ; save target/tag
+        ; Pop the cell that was below TOS into BC. This is semantically
+        ; a peek + conditional-consume: unconditional form leaves this
+        ; value as the new TOS (1 cell consumed total), conditional form
+        ; does one more POP later (2 cells consumed total).
+        POP     BC
+        LD      A, B
+        CP      ASM_COND_TAG_HI
+        JR      Z, .jpc_cond
+        ; --- unconditional path ---
+        LD      A, (asm_jp_op)
+        CALL    asm_emit_byte
+        JR      .jpc_emit_target
+.jpc_cond:
+        ; --- conditional path ---
+        ; Compute the conditional base for JP (0xC2) or CALL (0xC4).
+        LD      A, (asm_jp_op)
+        CP      0xC3
+        JR      Z, .jpc_cond_jp
+        LD      A, 0xC4                 ; CALL cond base
+        JR      .jpc_have_base
+.jpc_cond_jp:
+        LD      A, 0xC2                 ; JP cond base
+.jpc_have_base:
+        LD      H, A                    ; H = cond base
+        LD      A, C                    ; A = cc (low byte of cond tag)
+        AND     0x07                    ; defence: range 0..7
+        RLCA
+        RLCA
+        RLCA                            ; A = cc << 3
+        OR      H                       ; A = base | (cc<<3)
+        CALL    asm_emit_byte
+        POP     BC                      ; consume the cell below the cond tag
+.jpc_emit_target:
+        ; HL := saved target/tag.
+        LD      HL, (asm_tmp2)
+        LD      A, H
+        CP      ASM_LABEL_TAG_HI
+        JR      Z, .jpc_label
+        ; Literal target — emit lo then hi.
+        LD      A, L
+        CALL    asm_emit_byte
+        LD      HL, (asm_tmp2)
+        LD      A, H
+        CALL    asm_emit_byte
+        JR      .jpc_done
+.jpc_label:
+        ; Label tag: validate slot index. HL is discarded — the slot
+        ; look-up below rebuilds it from A via asm_slot_addr.
+        LD      A, L                    ; A = slot idx
+        LD      HL, asm_label_count
+        CP      (HL)
+        JP      NC, asm_bad_operand
+        PUSH    AF                      ; save slot idx (only needed for
+                                        ; the unresolved path; balanced
+                                        ; with a discard pop on resolve)
+        CALL    asm_slot_addr           ; HL = &slot
+        LD      A, (HL)                 ; resolved?
+        OR      A
+        JR      Z, .jpc_unres
+        ; Resolved — read lo+hi from slot+1/slot+2 into DE before any
+        ; emit (asm_emit_byte clobbers HL but preserves DE), then emit
+        ; both bytes without re-looking-up the slot.
+        INC     HL
+        LD      E, (HL)                 ; lo
+        INC     HL
+        LD      D, (HL)                 ; hi
+        POP     AF                      ; discard saved slot idx
+        LD      A, E
+        CALL    asm_emit_byte
+        LD      A, D
+        CALL    asm_emit_byte
+        JR      .jpc_done
+.jpc_unres:
+        ; Save patch addr = HERE; emit 2 zero placeholders; queue fixup.
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (asm_tmp2), HL          ; patch addr
+        XOR     A
+        CALL    asm_emit_byte
+        XOR     A
+        CALL    asm_emit_byte
+        POP     AF                      ; A = slot idx
+        LD      C, ASM_FIXUP_KIND_DW    ; share DW fixup kind
+        LD      HL, (asm_tmp2)
+        CALL    asm_add_fixup
+.jpc_done:
+        LD      DE, (asm_ip_save)
+        NEXT
+
+; =====================================================================
+; RET, ( -- )    and    cond RET, ( cond -- )
+;   Peeks TOS — if it is a condition tag, pops it and emits RET cc
+;   (0xC0 | (cc<<3)); otherwise emits unconditional RET (0xC9) and
+;   leaves TOS untouched. RET, is the only opcode word in the assembler
+;   that may peek-and-consume — by design, so the unconditional form
+;   takes zero operands.
+; =====================================================================
+w_RET_COMMA:
+        DEFCODE "RET,", 0
+w_RET_COMMA_cf:
+        CALL    check_asm_mode
+        ; Depth guard — BC is phantom garbage when the data stack is
+        ; empty (see memory project_tos_in_register). Without this
+        ; check, a post-boot or post-ABORT BC that happens to match
+        ; ASM_COND_TAG_HI would take the conditional path and POP
+        ; from an empty stack. Need sp_base - SP >= 2 (one real cell).
+        LD      HL, (sp_base)
+        OR      A
+        SBC     HL, SP
+        LD      A, H
+        OR      A
+        JR      NZ, .retc_bc_ok
+        LD      A, L
+        CP      2
+        JR      C, .retc_uncond
+.retc_bc_ok:
+        LD      A, B
+        CP      ASM_COND_TAG_HI
+        JR      Z, .retc_cond
+.retc_uncond:
+        ; Unconditional — emit 0xC9, do NOT pop TOS.
+        LD      A, 0xC9
+        CALL    asm_emit_byte
+        NEXT
+.retc_cond:
+        LD      A, C
+        AND     0x07                    ; defence: range
+        RLCA
+        RLCA
+        RLCA
+        OR      0xC0
+        CALL    asm_emit_byte
+        POP     BC                      ; consume the cond tag (new TOS)
+        NEXT
 
 ; =====================================================================
 ; DB, ( value -- )    emit one byte (low byte of value)

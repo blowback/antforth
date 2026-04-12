@@ -68,7 +68,7 @@ development_status:
   4-0-startup-banner: done
   4-1-code-word-framework-and-basic-instructions: done
   4-2-labels-and-data-definition-words: done
-  4-3-basic-z80-opcodes: backlog
+  4-3-basic-z80-opcodes: done
   4-4-extended-z80-opcodes: backlog
   epic-4-retrospective: optional
 
