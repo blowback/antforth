@@ -1,6 +1,6 @@
 # Story 5.0: Z80 Instruction Set Completeness Survey
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -236,10 +236,25 @@ Recent commits follow one-commit-per-story pattern:
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+- Agent report on unprefixed instructions initially claimed LD A,(BC)/LD A,(DE)/LD (BC),A/LD (DE),A/LD A,(nn)/LD (nn),A and ADD HL,rr were supported — manual verification against assembler.asm opcode emission proved they are NOT supported. The agent confused internal Z80 instructions used by the assembler code with instructions the assembler can produce for the user.
 
 ### Completion Notes List
 
+- Audited 158 Z80 instruction forms across all prefix classes (unprefixed, CB, DD, FD, ED, DDCB, FDCB)
+- Found 131 supported (82.9%) and 27 missing
+- Report saved to `docs/z80-instruction-coverage.md`
+- All 73 regression tests + 178 REPL tests pass (no source changes made)
+- Missing instructions grouped into clear categories for project lead review
+- All missing instructions have `DB,` workarounds documented
+
 ### Change Log
 
+- 2026-04-12: Z80 instruction set completeness survey completed — report at docs/z80-instruction-coverage.md
+
 ### File List
+
+- docs/z80-instruction-coverage.md — Survey report (new)
