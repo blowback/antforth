@@ -13,6 +13,97 @@ w_BYE_cf:
         ; No NEXT — BYE never returns
 
 ; -----------------------------------------------
+; MARKER ( "<spaces>name" -- )
+;   Create a word that, when executed, restores dictionary state
+;   to what it was just before MARKER ran.
+;   Body layout: [saved_here(2)][saved_hash_table(128)]
+; -----------------------------------------------
+w_MARKER:
+        DEFCODE "MARKER", 0
+w_MARKER_cf:
+        ; Save DE (IP) and BC (TOS) to return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), C
+        LD      (IX+1), B
+
+        ; Build dictionary header (flags=0, no SMUDGE)
+        XOR     A
+        CALL    build_header
+        JR      C, .marker_no_name
+
+        ; HL = code field — emit JP DOMARKER
+        LD      (HL), 0xC3              ; JP opcode
+        INC     HL
+        LD      (HL), LOW DOMARKER
+        INC     HL
+        LD      (HL), HIGH DOMARKER
+        INC     HL
+
+        ; Emit saved HERE (2 bytes) — bh_entry_start is pre-header HERE
+        LD      DE, (bh_entry_start)
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+        INC     HL
+
+        ; Save body hash start address for fixup later
+        PUSH    HL                      ; body_hash_start on stack
+
+        ; Copy 128 bytes from hash_table to body
+        ; Need LDIR: HL=src, DE=dst, BC=count
+        ; Currently HL = body dest, need to swap
+        EX      DE, HL                  ; DE = body dest
+        LD      HL, hash_table          ; HL = source
+        LD      BC, 128
+        LDIR                            ; DE = past end of body
+
+        ; Fixup: restore pre-MARKER bucket value in body copy
+        ; Body hash copy starts at (saved on stack)
+        ; Modified bucket = bh_bucket_index, old value = bh_old_bucket_head
+        POP     HL                      ; HL = body_hash_start
+        LD      A, (bh_bucket_index)
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC
+        ADD     HL, BC                  ; HL = body_hash_start + bucket_index * 2
+        LD      BC, (bh_old_bucket_head)
+        LD      (HL), C
+        INC     HL
+        LD      (HL), B
+
+        ; Update HERE = DE (past end of body, from LDIR)
+        LD      (IY+UserArea.here), E
+        LD      (IY+UserArea.here+1), D
+
+        ; Restore BC (TOS) and DE (IP) from return stack
+        LD      B, (IX+1)
+        LD      C, (IX+0)
+        INC     IX
+        INC     IX
+        LD      D, (IX+1)
+        LD      E, (IX+0)
+        INC     IX
+        INC     IX
+        NEXT
+
+.marker_no_name:
+        ; Restore BC (TOS) and DE (IP) from return stack
+        LD      B, (IX+1)
+        LD      C, (IX+0)
+        INC     IX
+        INC     IX
+        LD      D, (IX+1)
+        LD      E, (IX+0)
+        INC     IX
+        INC     IX
+        JP      w_ABORT_cf
+
+; -----------------------------------------------
 ; ABORT ( -- )
 ;   Reset parameter stack and restart QUIT
 ;   Never returns

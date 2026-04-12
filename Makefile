@@ -1978,6 +1978,102 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; FOO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 226 — basic MARKER creation and use"; \
+	else \
+		echo "FAIL: REPL test 226 — expected '42 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; M1 FOO\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'FOO ?'; then \
+		echo "PASS: REPL test 227 — MARKER restore removes definitions"; \
+	else \
+		echo "FAIL: REPL test 227 — expected 'FOO ?' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; M1 : FOO 99 ; FOO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99 '; then \
+		echo "PASS: REPL test 228 — redefine after restore"; \
+	else \
+		echo "FAIL: REPL test 228 — expected '99 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 M1 M1\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'M1 ?'; then \
+		echo "PASS: REPL test 229 — MARKER removes itself"; \
+	else \
+		echo "FAIL: REPL test 229 — expected 'M1 ?' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 : AA1 1 ; MARKER M2 : BB2 2 ; M2 AA1 .\r\nBB2\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1 ' && echo "$$OUTPUT" | grep -q 'BB2 ?'; then \
+		echo "PASS: REPL test 230 — nested markers (M2 partial restore, BB2 removed)"; \
+	else \
+		echo "FAIL: REPL test 230 — expected '1 ' and 'BB2 ?' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 : AA1 1 ; MARKER M2 : BB2 2 ; M1 AA1\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'AA1 ?'; then \
+		echo "PASS: REPL test 231 — nested markers (M1 full restore)"; \
+	else \
+		echo "FAIL: REPL test 231 — expected 'AA1 ?' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 VARIABLE X 42 X ! X @ .\r\nM1 X\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 ' && echo "$$OUTPUT" | grep -q 'X ?'; then \
+		echo "PASS: REPL test 232 — VARIABLE removed by MARKER"; \
+	else \
+		echo "FAIL: REPL test 232 — expected '42 ' and 'X ?' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 77 CONSTANT K K .\r\nM1 K\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '77 ' && echo "$$OUTPUT" | grep -q 'K ?'; then \
+		echo "PASS: REPL test 233 — CONSTANT removed by MARKER"; \
+	else \
+		echo "FAIL: REPL test 233 — expected '77 ' and 'K ?' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER M1 HEX M1 BASE @ DECIMAL .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '16 '; then \
+		echo "PASS: REPL test 234 — BASE not affected by MARKER"; \
+	else \
+		echo "FAIL: REPL test 234 — expected '16 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HERE MARKER M1 : FOO ; M1 HERE = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-1 '; then \
+		echo "PASS: REPL test 235 — HERE restored correctly"; \
+	else \
+		echo "FAIL: REPL test 235 — expected '-1 ' (TRUE) in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '42 MARKER M1 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 236 — MARKER preserves TOS (BC register)"; \
+	else \
+		echo "FAIL: REPL test 236 — expected '42 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'MARKER\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '3 '; then \
+		echo "PASS: REPL test 237 — MARKER with no name aborts and recovers"; \
+	else \
+		echo "FAIL: REPL test 237 — expected '3 ' in output (recovery after no-name ABORT)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

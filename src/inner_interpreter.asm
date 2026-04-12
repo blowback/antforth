@@ -78,6 +78,52 @@ DODOES:
         LD      C, L            ; BC = body address (new TOS)
         NEXT
 
+; === DOMARKER — Restore dictionary state from marker body ===
+; HL points to code field (JP DOMARKER)
+; Body at cf+3: [saved_here(2)][saved_hash_table(128)]
+; ( -- ) no stack effect
+DOMARKER:
+        ; Skip code field to reach body
+        INC     HL
+        INC     HL
+        INC     HL                      ; HL = &saved_here
+
+        ; Save DE (IP) and BC (TOS) — LDIR clobbers both DE and BC
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), C
+        LD      (IX+1), B
+
+        ; Read saved HERE from body
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL                      ; DE = saved_here, HL = &saved_hash_data
+
+        ; Restore HERE
+        LD      (IY+UserArea.here), E
+        LD      (IY+UserArea.here+1), D
+
+        ; Copy 128 bytes from body to hash_table
+        LD      DE, hash_table          ; DE = destination
+        LD      BC, 128
+        LDIR                            ; Restore all 64 hash bucket heads
+
+        ; Restore BC (TOS) and DE (IP)
+        LD      B, (IX+1)
+        LD      C, (IX+0)
+        INC     IX
+        INC     IX
+        LD      E, (IX+0)
+        LD      D, (IX+1)
+        INC     IX
+        INC     IX
+        NEXT
+
 ; -----------------------------------------------
 ; LIT ( -- x )
 ;   Push inline literal from thread to parameter stack
