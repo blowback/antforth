@@ -212,8 +212,8 @@ Add the compiler and control flow. User can define new words (colon definitions,
 Add the reverse-polish Z80 assembler with labels and data definition support. User can define CODE words from within Forth, writing performance-critical routines at the machine level with proper labels (including forward references), data definitions, and the full Z80 instruction set.
 **FRs covered:** FR10, FR38, FR39, FR40
 
-### Epic 5: Safe Experimentation & System Maturity
-Add MARKER for dictionary state snapshot/restore. User can checkpoint system state, experiment freely, and roll back to known-good state. System is complete and ready for community sharing.
+### Epic 5: System Maturity & Compliance
+Z80 assembler completeness audit, comment words for interactive usability, MARKER for dictionary snapshot/restore, and ANS Forth Core word compliance audit. System is verified, documented, and ready for community sharing.
 **FRs covered:** FR15
 
 ## Epic 1: Execution Engine
@@ -1017,11 +1017,60 @@ is consumed correctly by `BIT,` / `SET,` / `RES,`
 **When** `LDIR,`, `LDDR,`, `CPIR,`, `CPDR,` are typed
 **Then** the correct ED-prefixed opcodes are assembled
 
-## Epic 5: Safe Experimentation & System Maturity
+## Epic 5: System Maturity & Compliance
 
-Add MARKER for dictionary state snapshot/restore. User can checkpoint, experiment freely, and roll back to known-good state.
+Z80 assembler completeness audit, comment words for interactive usability, MARKER for dictionary snapshot/restore, and ANS Forth Core word compliance audit.
 
-### Story 5.1: MARKER Snapshot & Restore
+### Story 5.0: Z80 Instruction Set Completeness Survey
+
+As a Forth assembler user,
+I want a systematic audit of every documented Z80 opcode against the antforth assembler,
+So that I know exactly which instructions are supported and which (if any) are missing.
+
+**Acceptance Criteria:**
+
+**Given** the complete Z80 instruction set as documented in the Zilog Z80 CPU User Manual
+**When** each instruction is checked against the antforth assembler's available words
+**Then** a report is produced listing every Z80 opcode, whether it can be assembled, and the exact antforth syntax
+
+**Given** the report is complete
+**When** reviewed
+**Then** it covers all instruction categories: 8-bit loads, 16-bit loads, 8-bit arithmetic/logic, 16-bit arithmetic, rotates/shifts, bit operations, jumps, calls/returns, I/O, block transfers, exchange, and miscellaneous (ED-prefix)
+
+**Given** any gaps are identified
+**When** the report is reviewed by the project lead
+**Then** each gap includes the Z80 mnemonic, opcode bytes, and a note on whether it's a deliberate omission or an oversight
+
+**Note:** This is an audit/report story only — no implementation of missing opcodes within this story.
+
+### Story 5.1: Comment Words
+
+As a Forth user,
+I want comment words available during interactive sessions,
+So that I can annotate my code inline and write readable definitions.
+
+**Acceptance Criteria:**
+
+**Given** the user types `( this is a comment )` at the Forth prompt or inside a definition
+**When** `(` executes
+**Then** all text up to and including the next `)` is consumed and ignored
+**And** the closing `)` is required (missing `)` raises an error)
+**And** `(` is an IMMEDIATE word (works in both interpret and compile mode)
+
+**Given** the user types `\ this is a line comment` at the Forth prompt or inside a definition
+**When** `\` executes
+**Then** all text from `\` to the end of the current input line is consumed and ignored
+**And** `\` is an IMMEDIATE word (works in both interpret and compile mode)
+
+**Given** comment words are used inside colon definitions
+**When** the definition is compiled and executed
+**Then** the comments have no effect on the compiled code — they are purely parse-time
+
+**Given** comment words are used inside CODE definitions
+**When** the assembler is active
+**Then** comments work identically (they consume input text, not assembled bytes)
+
+### Story 5.2: MARKER Snapshot & Restore
 
 As a Forth user,
 I want to snapshot the dictionary state and restore to it later,
@@ -1055,3 +1104,25 @@ So that I can experiment freely knowing I can undo everything and return to a kn
 **Given** the user creates a MARKER, defines words that include VARIABLE and CONSTANT definitions
 **When** the MARKER is executed to restore
 **Then** those variables and constants are removed from the dictionary along with all other definitions made after the marker
+
+### Story 5.3: ANS Forth Core Word Compliance Survey
+
+As a Forth standards enthusiast,
+I want a systematic audit of antforth against the ANS Forth Core word set,
+So that I know exactly how compliant the system is and which words (if any) are missing.
+
+**Acceptance Criteria:**
+
+**Given** the ANS Forth (DPANS94) Core word set
+**When** each required Core word is checked against the antforth dictionary
+**Then** a report is produced listing every Core word, whether antforth implements it, and any semantic differences from the standard
+
+**Given** the report is complete
+**When** reviewed
+**Then** it includes a compliance percentage and categorises any gaps as: (a) deliberately omitted, (b) oversight, or (c) partially implemented with noted differences
+
+**Given** any Core Extension words that antforth happens to implement
+**When** the report is produced
+**Then** these are listed as bonus coverage beyond the Core requirement
+
+**Note:** This is an audit/report story only — no implementation of missing words within this story.

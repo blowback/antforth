@@ -64,15 +64,18 @@ development_status:
   3-5-immediate-postpone-string-literals-and-words: done
   epic-3-retrospective: done
 
-  epic-4: in-progress
+  epic-4: done
   4-0-startup-banner: done
   4-1-code-word-framework-and-basic-instructions: done
   4-2-labels-and-data-definition-words: done
   4-3-basic-z80-opcodes: done
   4-3-5-stack-tag-encoding-refactor: done
   4-4-extended-z80-opcodes: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
-  epic-5: backlog
-  5-1-marker-snapshot-and-restore: backlog
+  epic-5: in-progress
+  5-0-z80-instruction-set-completeness-survey: ready-for-dev
+  5-1-comment-words: backlog
+  5-2-marker-snapshot-and-restore: backlog
+  5-3-ans-forth-core-word-compliance-survey: backlog
   epic-5-retrospective: optional
