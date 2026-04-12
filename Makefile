@@ -1890,6 +1890,94 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf '\\ this is ignored\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 215 — backslash line comment ignores rest of line"; \
+	else \
+		echo "FAIL: REPL test 215 — expected '42 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\\ \r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 216 — backslash at end of line (nothing after) no error"; \
+	else \
+		echo "FAIL: REPL test 216 — expected '42 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': COMMENTED \\ this is ignored\r\n3 + ; 10 COMMENTED .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '13 '; then \
+		echo "PASS: REPL test 217 — backslash inside colon definition, compilation continues next line"; \
+	else \
+		echo "FAIL: REPL test 217 — expected '13 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE NOP218 \\ comment inside CODE body\r\nNOP, END-CODE\r\n77 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '77 '; then \
+		echo "PASS: REPL test 218 — backslash inside CODE body, assembly continues next line"; \
+	else \
+		echo "FAIL: REPL test 218 — expected '77 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '( hello world ) 42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 219 — paren comment consumed, code after ) executes"; \
+	else \
+		echo "FAIL: REPL test 219 — expected '42 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '( nested parens are not special ) 55 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '55 '; then \
+		echo "PASS: REPL test 220 — literal ) ends paren comment (no nesting)"; \
+	else \
+		echo "FAIL: REPL test 220 — expected '55 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': COMMENTED2 5 ( add three ) 3 + ; 10 COMMENTED2 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '8 '; then \
+		echo "PASS: REPL test 221 — paren comment inside colon definition, no effect on compiled code"; \
+	else \
+		echo "FAIL: REPL test 221 — expected '8 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '( missing paren\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? missing )' && echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 222 — missing ) raises error and recovers"; \
+	else \
+		echo "FAIL: REPL test 222 — expected '? missing )' and '42 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '( ) 99 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99 '; then \
+		echo "PASS: REPL test 223 — empty paren comment works"; \
+	else \
+		echo "FAIL: REPL test 223 — expected '99 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE NOPTEST224 ( comment inside CODE ) NOP, END-CODE\r\n88 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '88 '; then \
+		echo "PASS: REPL test 224 — paren comment inside CODE body, no interference with assembler"; \
+	else \
+		echo "FAIL: REPL test 224 — expected '88 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '5 ( comment ) .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '5 '; then \
+		echo "PASS: REPL test 225 — paren comment preserves TOS (BC register)"; \
+	else \
+		echo "FAIL: REPL test 225 — expected '5 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

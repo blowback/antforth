@@ -751,3 +751,101 @@ w_DOT_QUOTE_cf:
 
 ; ." scratch storage
 dq_saved_ip:    DW 0
+
+; -----------------------------------------------
+; \ ( -- ) IMMEDIATE
+;   Line comment: consume rest of parse area
+;   Sets >IN = #TIB so remainder of input is ignored
+; -----------------------------------------------
+w_BACKSLASH:
+        DEFCODE '\', F_IMMEDIATE
+w_BACKSLASH_cf:
+        ; Set >IN = #TIB (consume rest of line)
+        LD      A, (IY+UserArea.tib_len)
+        LD      (IY+UserArea.tib_in), A
+        LD      A, (IY+UserArea.tib_len+1)
+        LD      (IY+UserArea.tib_in+1), A
+        NEXT
+
+; -----------------------------------------------
+; ( ( -- ) IMMEDIATE
+;   Paren comment: consume input up to and including next ')'
+;   Error if ')' not found before end of input
+; -----------------------------------------------
+w_PAREN:
+        DEFCODE "(", F_IMMEDIATE
+w_PAREN_cf:
+        ; Save BC (TOS) to parameter stack — ( has no stack effect
+        PUSH    BC
+
+        ; Save DE (IP) to return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+
+        ; Compute HL = tib_addr + >IN, BC = tib_len - >IN
+        LD      E, (IY+UserArea.tib_addr)
+        LD      D, (IY+UserArea.tib_addr+1)     ; DE = tib_addr
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)       ; HL = >IN
+        ADD     HL, DE                           ; HL = tib_addr + >IN
+
+        LD      A, (IY+UserArea.tib_len)
+        SUB     (IY+UserArea.tib_in)
+        LD      C, A
+        LD      A, (IY+UserArea.tib_len+1)
+        SBC     A, (IY+UserArea.tib_in+1)
+        LD      B, A                             ; BC = remaining = tib_len - >IN
+
+.paren_scan:
+        ; Check if any chars remaining
+        LD      A, B
+        OR      C
+        JR      Z, .paren_missing               ; No chars left — missing ')'
+
+        LD      A, (HL)
+        INC     HL
+        DEC     BC
+
+        ; Advance >IN
+        PUSH    HL
+        PUSH    BC
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     BC
+        POP     HL
+
+        CP      ')'
+        JR      NZ, .paren_scan                  ; Not ')' — keep scanning
+
+        ; Found ')' — restore DE (IP) and BC (TOS)
+        LD      E, (IX+0)
+        LD      D, (IX+1)
+        INC     IX
+        INC     IX
+        POP     BC              ; Restore TOS
+        NEXT
+
+.paren_missing:
+        ; Print "missing )" CR LF then ABORT
+        LD      HL, .paren_err_msg
+        LD      B, .paren_err_len
+.paren_err_print:
+        PUSH    HL
+        PUSH    BC
+        LD      E, (HL)
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     BC
+        POP     HL
+        INC     HL
+        DJNZ    .paren_err_print
+        JP      w_ABORT_cf
+
+.paren_err_msg:
+        DB      "? missing )", 0x0D, 0x0A
+.paren_err_len  EQU     $ - .paren_err_msg
