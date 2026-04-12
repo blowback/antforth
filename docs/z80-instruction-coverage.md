@@ -1,8 +1,8 @@
 # Z80 Instruction Set Coverage Report
 
-**Date:** 2026-04-12
+**Date:** 2026-04-12 (updated after Story 5.0.5)
 **Assembler:** antforth built-in reverse-polish Z80 assembler
-**Source:** `src/assembler.asm` (90 DEFCODE words, ~3,400 lines)
+**Source:** `src/assembler.asm` (~4,100 lines)
 **Reference:** Zilog Z80 CPU User Manual instruction tables
 
 ## Summary
@@ -10,29 +10,11 @@
 | Metric | Count |
 |--------|-------|
 | Total Z80 instruction forms audited | 158 |
-| Supported | 131 |
-| Missing | 27 |
-| **Coverage** | **82.9%** |
+| Supported | 158 |
+| Missing | 0 |
+| **Coverage** | **100%** |
 
-### Missing Instructions by Category
-
-| Category | Missing | Instructions |
-|----------|---------|-------------|
-| 8-bit arithmetic (carry) | 6 | ADC A,r / ADC A,(HL) / ADC A,n / SBC A,r / SBC A,(HL) / SBC A,n |
-| Accumulator rotates | 4 | RLCA / RRCA / RLA / RRA |
-| General-purpose AF | 4 | DAA / CPL / SCF / CCF |
-| Simple control | 4 | NOP / HALT / DI / EI |
-| Branching | 2 | RST p / DJNZ e |
-| 16-bit arithmetic (ED) | 2 | ADC HL,rr / SBC HL,rr |
-| 16-bit loads | 5 | LD A,(BC) / LD A,(DE) / LD (BC),A / LD (DE),A / LD A,(nn) / LD (nn),A / LD HL,(nn) / LD (nn),HL |
-| ED special loads | 4 | LD A,I / LD A,R / LD I,A / LD R,A |
-| ED 16-bit memory | 2 | LD (nn),rr / LD rr,(nn) for BC/DE/SP |
-| ED BCD rotates | 2 | RLD / RRD |
-| 16-bit ADD | 1 | ADD HL,rr |
-| DD 16-bit ADD | 1 | ADD IX,rr / ADD IY,rr |
-| DD 16-bit memory | 2 | LD IX,(nn) / LD (nn),IX / LD IY,(nn) / LD (nn),IY |
-
-**Note:** All missing instructions can be worked around using `DB,` to emit raw opcode bytes.
+Story 5.0.5 closed 27 gaps identified by Story 5.0's completeness survey.
 
 ---
 
@@ -47,22 +29,20 @@
 | LD r, (HL) | 0x46\|r<<3 | `A (HL) LD,` | Supported |
 | LD (HL), r | 0x70\|r | `(HL) A LD,` | Supported |
 | LD (HL), n | 0x36 nn | `(HL) 0x42 # LD,` | Supported |
-| LD A, (BC) | 0x0A | — | **Missing** |
-| LD A, (DE) | 0x1A | — | **Missing** |
-| LD (BC), A | 0x02 | — | **Missing** |
-| LD (DE), A | 0x12 | — | **Missing** |
-| LD A, (nn) | 0x3A lo hi | — | **Missing** |
-| LD (nn), A | 0x32 lo hi | — | **Missing** |
-
-**Workaround for missing forms:** `0x0A DB,` for LD A,(BC), etc.
+| LD A, (BC) | 0x0A | `A (BC) LD,` | Supported |
+| LD A, (DE) | 0x1A | `A (DE) LD,` | Supported |
+| LD (BC), A | 0x02 | `(BC) A LD,` | Supported |
+| LD (DE), A | 0x12 | `(DE) A LD,` | Supported |
+| LD A, (nn) | 0x3A lo hi | `A 4660 () LD,` | Supported |
+| LD (nn), A | 0x32 lo hi | `4660 () A LD,` | Supported |
 
 ### 16-bit Load Group
 
 | Z80 Mnemonic | Opcode(s) | Antforth Syntax | Status |
 |-------------|-----------|-----------------|--------|
 | LD rr, nn | 0x01\|rp<<4 | `BC 0x1234 # LD,` | Supported |
-| LD HL, (nn) | 0x2A lo hi | — | **Missing** |
-| LD (nn), HL | 0x22 lo hi | — | **Missing** |
+| LD HL, (nn) | 0x2A lo hi | `HL 4660 () LD,` | Supported |
+| LD (nn), HL | 0x22 lo hi | `4660 () HL LD,` | Supported |
 | LD SP, HL | 0xF9 | `SP HL LD,` | Supported |
 | PUSH rr | 0xC5\|rp<<4 | `BC PUSH,` | Supported |
 | POP rr | 0xC1\|rp<<4 | `BC POP,` | Supported |
@@ -74,15 +54,15 @@
 | ADD A, r | 0x80\|r | `B ADD,` | Supported |
 | ADD A, (HL) | 0x86 | `(HL) ADD,` | Supported |
 | ADD A, n | 0xC6 nn | `0x42 # ADD,` | Supported |
-| ADC A, r | 0x88\|r | — | **Missing** |
-| ADC A, (HL) | 0x8E | — | **Missing** |
-| ADC A, n | 0xCE nn | — | **Missing** |
+| ADC A, r | 0x88\|r | `B ADC,` | Supported |
+| ADC A, (HL) | 0x8E | `(HL) ADC,` | Supported |
+| ADC A, n | 0xCE nn | `0x42 # ADC,` | Supported |
 | SUB r | 0x90\|r | `B SUB,` | Supported |
 | SUB (HL) | 0x96 | `(HL) SUB,` | Supported |
 | SUB n | 0xD6 nn | `0x42 # SUB,` | Supported |
-| SBC A, r | 0x98\|r | — | **Missing** |
-| SBC A, (HL) | 0x9E | — | **Missing** |
-| SBC A, n | 0xDE nn | — | **Missing** |
+| SBC A, r | 0x98\|r | `B SBC,` | Supported |
+| SBC A, (HL) | 0x9E | `(HL) SBC,` | Supported |
+| SBC A, n | 0xDE nn | `0x42 # SBC,` | Supported |
 | AND r | 0xA0\|r | `B AND,` | Supported |
 | AND (HL) | 0xA6 | `(HL) AND,` | Supported |
 | AND n | 0xE6 nn | `0x42 # AND,` | Supported |
@@ -100,9 +80,9 @@
 
 | Z80 Mnemonic | Opcode(s) | Antforth Syntax | Status |
 |-------------|-----------|-----------------|--------|
-| ADD HL, rr | 0x09\|rp<<4 | — | **Missing** |
-| ADC HL, rr | ED 0x4A\|rp<<4 | — | **Missing** |
-| SBC HL, rr | ED 0x42\|rp<<4 | — | **Missing** |
+| ADD HL, rr | 0x09\|rp<<4 | `HL BC ADD,` | Supported |
+| ADC HL, rr | ED 0x4A\|rp<<4 | `HL BC ADC,` | Supported |
+| SBC HL, rr | ED 0x42\|rp<<4 | `HL BC SBC,` | Supported |
 | INC rr | 0x03\|rp<<4 | `BC INC,` | Supported |
 | DEC rr | 0x0B\|rp<<4 | `BC DEC,` | Supported |
 
@@ -119,31 +99,31 @@
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| RLCA | 0x07 | — | **Missing** |
-| RRCA | 0x0F | — | **Missing** |
-| RLA | 0x17 | — | **Missing** |
-| RRA | 0x1F | — | **Missing** |
+| RLCA | 0x07 | `RLCA,` | Supported |
+| RRCA | 0x0F | `RRCA,` | Supported |
+| RLA | 0x17 | `RLA,` | Supported |
+| RRA | 0x1F | `RRA,` | Supported |
 
-**Note:** These are distinct from the CB-prefixed rotates (RLC A, etc.). The accumulator rotates are single-byte, do not affect S/Z/P flags, and are faster. The CB-prefixed versions (`A RLC,` etc.) ARE supported but produce 2-byte opcodes and affect all flags differently.
+**Note:** These are distinct from the CB-prefixed rotates (RLC A, etc.). The accumulator rotates are single-byte, do not affect S/Z/P flags, and are faster. The CB-prefixed versions (`A RLC,` etc.) produce 2-byte opcodes and affect all flags differently.
 
 ### General-Purpose AF Operations
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| DAA | 0x27 | — | **Missing** |
-| CPL | 0x2F | — | **Missing** |
-| SCF | 0x37 | — | **Missing** |
-| CCF | 0x3F | — | **Missing** |
+| DAA | 0x27 | `DAA,` | Supported |
+| CPL | 0x2F | `CPL,` | Supported |
+| SCF | 0x37 | `SCF,` | Supported |
+| CCF | 0x3F | `CCF,` | Supported |
 | NEG | ED 0x44 | `NEG,` | Supported (ED-prefix) |
 
 ### Control Flow
 
 | Z80 Mnemonic | Opcode(s) | Antforth Syntax | Status |
 |-------------|-----------|-----------------|--------|
-| NOP | 0x00 | — | **Missing** |
-| HALT | 0x76 | — | **Missing** |
-| DI | 0xF3 | — | **Missing** |
-| EI | 0xFB | — | **Missing** |
+| NOP | 0x00 | `NOP,` | Supported |
+| HALT | 0x76 | `HALT,` | Supported |
+| DI | 0xF3 | `DI,` | Supported |
+| EI | 0xFB | `EI,` | Supported |
 | JP nn | 0xC3 lo hi | `0x1234 # JP,` or `label JP,` | Supported |
 | JP cc, nn | 0xC2\|cc<<3 | `NZ 0x1234 # JP,` or `NZ label JP,` | Supported |
 | JP (HL) | 0xE9 | `(HL) JP,` | Supported |
@@ -153,8 +133,8 @@
 | CALL cc, nn | 0xC4\|cc<<3 | `NZ 0x1234 # CALL,` | Supported |
 | RET | 0xC9 | `RET,` | Supported |
 | RET cc | 0xC0\|cc<<3 | `NZ RET,` | Supported |
-| RST p | 0xC7\|p | — | **Missing** |
-| DJNZ e | 0x10 dd | — | **Missing** |
+| RST p | 0xC7\|p | `56 RST,` | Supported |
+| DJNZ e | 0x10 dd | `label DJNZ,` | Supported |
 
 ### Exchange Group
 
@@ -203,10 +183,10 @@ Bit range (0-7) validated at assemble time.
 | LD (IX+d), r | DD 0x70\|r dd | `(IX) 5 +D A LD,` | Supported |
 | LD (IX+d), n | DD 0x36 dd nn | `(IX) 5 +D 0x42 # LD,` | Supported |
 | ADD A, (IX+d) | DD 0x86 dd | `(IX) 5 +D ADD,` | Supported |
+| ADC A, (IX+d) | DD 0x8E dd | `(IX) 5 +D ADC,` | Supported |
 | SUB (IX+d) | DD 0x96 dd | `(IX) 5 +D SUB,` | Supported |
+| SBC A, (IX+d) | DD 0x9E dd | `(IX) 5 +D SBC,` | Supported |
 | AND/XOR/OR/CP (IX+d) | DD xx dd | `(IX) 5 +D AND,` etc. | Supported |
-| ADC A, (IX+d) | DD 0x8E dd | — | **Missing** (no ADC, word) |
-| SBC A, (IX+d) | DD 0x9E dd | — | **Missing** (no SBC, word) |
 | INC (IX+d) | DD 0x34 dd | `(IX) 5 +D INC,` | Supported |
 | DEC (IX+d) | DD 0x35 dd | `(IX) 5 +D DEC,` | Supported |
 
@@ -224,9 +204,9 @@ All IY equivalents follow the same pattern with `(IY)` instead of `(IX)`.
 | POP IX | DD 0xE1 | `IX POP,` | Supported |
 | JP (IX) | DD 0xE9 | `(IX) JP,` | Supported |
 | EX (SP), IX | DD 0xE3 | `(SP) IX EX,` | Supported |
-| ADD IX, rr | DD 0x09\|rp<<4 | — | **Missing** |
-| LD IX, (nn) | DD 0x2A lo hi | — | **Missing** |
-| LD (nn), IX | DD 0x22 lo hi | — | **Missing** |
+| ADD IX, rr | DD 0x09\|rp<<4 | `IX BC ADD,` | Supported |
+| LD IX, (nn) | DD 0x2A lo hi | `IX 4660 () LD,` | Supported |
+| LD (nn), IX | DD 0x22 lo hi | `4660 () IX LD,` | Supported |
 
 All IY equivalents follow the same pattern.
 
@@ -279,21 +259,21 @@ All IY equivalents follow the same pattern.
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| ADC HL, rr | ED 0x4A\|rp<<4 | — | **Missing** |
-| SBC HL, rr | ED 0x42\|rp<<4 | — | **Missing** |
+| ADC HL, rr | ED 0x4A\|rp<<4 | `HL BC ADC,` | Supported |
+| SBC HL, rr | ED 0x42\|rp<<4 | `HL BC SBC,` | Supported |
 
 ### ED-Prefixed: 16-bit Memory Loads
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| LD (nn), BC | ED 0x43 lo hi | — | **Missing** |
-| LD BC, (nn) | ED 0x4B lo hi | — | **Missing** |
-| LD (nn), DE | ED 0x53 lo hi | — | **Missing** |
-| LD DE, (nn) | ED 0x5B lo hi | — | **Missing** |
-| LD (nn), SP | ED 0x73 lo hi | — | **Missing** |
-| LD SP, (nn) | ED 0x7B lo hi | — | **Missing** |
+| LD (nn), BC | ED 0x43 lo hi | `4660 () BC LD,` | Supported |
+| LD BC, (nn) | ED 0x4B lo hi | `BC 4660 () LD,` | Supported |
+| LD (nn), DE | ED 0x53 lo hi | `4660 () DE LD,` | Supported |
+| LD DE, (nn) | ED 0x5B lo hi | `DE 4660 () LD,` | Supported |
+| LD (nn), SP | ED 0x73 lo hi | `4660 () SP LD,` | Supported |
+| LD SP, (nn) | ED 0x7B lo hi | `SP 4660 () LD,` | Supported |
 
-**Note:** LD (nn),HL / LD HL,(nn) use unprefixed 0x22/0x2A forms, also missing.
+LD (nn),HL / LD HL,(nn) use unprefixed 0x22/0x2A forms, also supported.
 
 ### ED-Prefixed: Interrupt / Special
 
@@ -310,17 +290,17 @@ All IY equivalents follow the same pattern.
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| RLD | ED 0x6F | — | **Missing** |
-| RRD | ED 0x67 | — | **Missing** |
+| RLD | ED 0x6F | `RLD,` | Supported |
+| RRD | ED 0x67 | `RRD,` | Supported |
 
 ### ED-Prefixed: Special Register Loads
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| LD A, I | ED 0x57 | — | **Missing** |
-| LD A, R | ED 0x5F | — | **Missing** |
-| LD I, A | ED 0x47 | — | **Missing** |
-| LD R, A | ED 0x4F | — | **Missing** |
+| LD A, I | ED 0x57 | `A IREG LD,` | Supported |
+| LD A, R | ED 0x5F | `A RREG LD,` | Supported |
+| LD I, A | ED 0x47 | `IREG A LD,` | Supported |
+| LD R, A | ED 0x4F | `RREG A LD,` | Supported |
 
 ### ED-Prefixed: I/O
 
@@ -338,13 +318,19 @@ All IY equivalents follow the same pattern.
 | Zilog Name | Antforth Name | Reason |
 |-----------|---------------|--------|
 | C (carry-set condition) | CS | Avoids collision with C register word |
+| I (interrupt register) | IREG | Avoids collision with Forth loop index word `I` |
+| R (refresh register) | RREG | Consistent with IREG naming |
 
-All other mnemonics match Zilog spelling.
+## New Words Added by Story 5.0.5
 
-## Notes
-
-1. **All missing instructions have a `DB,` workaround** — e.g., `0x07 DB,` for RLCA, `0xED DB, 0x57 DB,` for LD A,I
-2. **Accumulator rotates vs CB rotates** — RLCA/RRCA/RLA/RRA (missing) are single-byte, affect only C flag. The CB-prefixed equivalents `A RLC,` / `A RRC,` / `A RL,` / `A RR,` (supported) produce 2-byte opcodes and affect all flags. They are NOT interchangeable.
-3. **LD dispatch complexity** — The `LD,` word handles ~15 encoding variants but does not cover indirect-register loads (LD A,(BC)/(DE)) or absolute-address loads (LD A,(nn), LD (nn),A, LD HL,(nn), LD (nn),HL)
-4. **ADC/SBC as separate words** — These would require new DEFCODE words (`ADC,` and `SBC,`) with their own dispatch, or extending the existing arithmetic helper with carry-flag variants
-5. **Simple single-byte instructions** — NOP, HALT, DI, EI, RLCA, RRCA, RLA, RRA, DAA, CPL, SCF, CCF are all single-byte zero-operand instructions that would each be trivial to add (~5 lines each)
+| Category | Words |
+|----------|-------|
+| Single-byte zero-operand | `NOP,` `HALT,` `DI,` `EI,` `DAA,` `CPL,` `SCF,` `CCF,` `RLCA,` `RRCA,` `RLA,` `RRA,` |
+| 8-bit arithmetic with carry | `ADC,` `SBC,` (register, (HL), immediate, indexed forms) |
+| 16-bit arithmetic | `ADD,` extended for HL/IX/IY destination; `ADC,` `SBC,` for HL destination |
+| Indirect-register loads | `(BC)` `(DE)` tag words; `LD,` extended |
+| Absolute-address loads | `()` tag word; `LD,` extended for all rr and IX/IY forms |
+| Special register loads | `IREG` `RREG` tag words; `LD,` extended |
+| Branch | `DJNZ,` (with label/literal operand support) |
+| Restart | `RST,` (bare integer operand, validated) |
+| BCD rotates | `RLD,` `RRD,` |

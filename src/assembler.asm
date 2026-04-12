@@ -8,11 +8,12 @@
 ;   Every tagged operand has high byte 0xFF. The low byte encodes a
 ;   3-bit class (bits 7-5) and a 5-bit index (bits 4-0):
 ;
-;     Class 000 (0x00)  8-bit register   B=0 C=1 D=2 E=3 H=4 L=5 A=7
+;     Class 000 (0x00)  8-bit register   B=0 C=1 D=2 E=3 H=4 L=5 A=7 I=8 R=9
 ;     Class 001 (0x20)  Condition code   NZ=0 Z=1 NC=2 CS=3 PO=4 PE=5 P=6 M=7
 ;     Class 010 (0x40)  Immediate marker value in next stack cell
-;     Class 011 (0x60)  16-bit register  BC=0 DE=1 HL=2 AF=3 SP=4
-;     Class 100 (0x80)  Indirect         (HL)=0
+;     Class 011 (0x60)  16-bit register  BC=0 DE=1 HL=2 AF=3 SP=4 IX=5 IY=6 AF'=7
+;     Class 100 (0x80)  Indirect         (HL)=0 (IX)=1 (IY)=2 (IX+d)=3 (IY+d)=4
+;                                        (SP)=5 (C)=6 (BC)=7 (DE)=8 ()=9
 ;     Class 101 (0xA0)  Label            slot index 0..15
 ;
 ;   Opcode words check B==0xFF to detect tagged operands (bare integers
@@ -153,13 +154,21 @@ ASM_IX_INDEX         EQU 5
 ASM_IY_INDEX         EQU 6
 ASM_AFP_INDEX        EQU 7
 ; INDIRECT extended indices (class 0x80):
-;   0=(HL), 1=(IX), 2=(IY), 3=(IX+d), 4=(IY+d), 5=(SP), 6=(C)
+;   0=(HL), 1=(IX), 2=(IY), 3=(IX+d), 4=(IY+d), 5=(SP), 6=(C),
+;   7=(BC), 8=(DE), 9=() (absolute memory address)
 ASM_IND_IX           EQU 1
 ASM_IND_IY           EQU 2
 ASM_IND_IXD          EQU 3
 ASM_IND_IYD          EQU 4
 ASM_IND_SP           EQU 5
 ASM_IND_C            EQU 6
+ASM_IND_BC           EQU 7
+ASM_IND_DE           EQU 8
+ASM_IND_ABS          EQU 9
+; REG8 extended indices for special registers (LD-only):
+;   8=I, 9=R
+ASM_REG8_I           EQU 8
+ASM_REG8_R           EQU 9
 
 asm_label_count:   DB 0
 asm_fixup_count:   DB 0
@@ -1032,6 +1041,46 @@ w_REG_IC_cf:
         LD      L, ASM_CLASS_INDIRECT | ASM_IND_C  ; 0x86
         JP      asm_push_tag
 
+w_REG_IBC:
+        DEFCODE "(BC)", 0
+w_REG_IBC_cf:
+        LD      L, ASM_CLASS_INDIRECT | ASM_IND_BC ; 0x87
+        JP      asm_push_tag
+
+w_REG_IDE:
+        DEFCODE "(DE)", 0
+w_REG_IDE_cf:
+        LD      L, ASM_CLASS_INDIRECT | ASM_IND_DE ; 0x88
+        JP      asm_push_tag
+
+; --- () — absolute memory address marker (Story 5.0.5, Task 4)
+;     Wraps a bare integer address as an indirect-memory tag. Two cells
+;     pushed: the address value (under) and the INDIRECT|ABS tag on top.
+;     Mirrors `#` but for memory addresses instead of immediates. ---
+w_ABS_PAREN:
+        DEFCODE "()", 0
+w_ABS_PAREN_cf:
+        CALL    check_asm_mode
+        ; TOS (BC) = address value (bare integer). Push it as NOS, tag on TOS.
+        PUSH    BC                      ; address becomes NOS
+        LD      C, ASM_CLASS_INDIRECT | ASM_IND_ABS ; 0x89
+        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF89
+        NEXT
+
+; --- Special registers IREG and RREG (REG8 with extended indices) ---
+;     Named IREG/RREG to avoid shadowing Forth's I (loop index).
+w_REG_I:
+        DEFCODE "IREG", 0
+w_REG_I_cf:
+        LD      L, ASM_CLASS_REG8 | ASM_REG8_I ; 0x08
+        JP      asm_push_tag
+
+w_REG_R:
+        DEFCODE "RREG", 0
+w_REG_R_cf:
+        LD      L, ASM_CLASS_REG8 | ASM_REG8_R ; 0x09
+        JP      asm_push_tag
+
 ; --- Immediate-marker word `#` — pushes 0xFF40 (class=010, index=0)
 ;     on TOS, leaving the value the user just typed in NOS. ---
 w_HASH:
@@ -1516,6 +1565,10 @@ assert_8bit_reg_or_ihl:
         JR      Z, .a8ihl_reg8          ; class=REG8
         CP      ASM_CLASS_INDIRECT
         JP      NZ, asm_bad_operand     ; not REG8 or INDIRECT
+        ; Verify index==0 (only (HL) is valid here, not (BC)/(DE)/() etc.)
+        LD      A, L
+        AND     ASM_INDEX_MASK
+        JP      NZ, asm_bad_operand     ; reject non-(HL) indirect
         LD      A, 6                    ; (HL) → r-field = 6
         RET
 .a8ihl_reg8:
@@ -1534,12 +1587,33 @@ w_LD_COMMA:
 w_LD_COMMA_cf:
         CALL    check_asm_mode
         CALL    asm_check_tagged        ; TOS must be tagged
+        ; Story 5.0.5: check for new INDIRECT forms as source
+        CALL    asm_is_indirect_tag
+        JR      NZ, .ldc_not_new_ind
+        CALL    asm_get_index
+        CP      ASM_IND_BC
+        JP      Z, .ldc_ibc_src
+        CP      ASM_IND_DE
+        JP      Z, .ldc_ide_src
+        CP      ASM_IND_ABS
+        JP      Z, .ldc_abs_src
+.ldc_not_new_ind:
+        ; Story 5.0.5: check for I/R special registers as source
+        CALL    asm_get_class
+        JR      NZ, .ldc_not_ir_src
+        CALL    asm_get_index
+        CP      ASM_REG8_I
+        JP      Z, .ldc_ir_src
+        CP      ASM_REG8_R
+        JP      Z, .ldc_ir_src
+.ldc_not_ir_src:
+        ; Existing dispatch
         CALL    asm_is_imm_tag
         JP      Z, .ldc_imm
         ; Check for indexed source: LD r,(IX+d) / LD r,(IY+d)
         CALL    asm_is_ixiy_indexed
         JP      Z, .ldc_idx_src
-        ; Check for REG16 source (LD SP,IX / LD SP,IY)
+        ; Check for REG16 source (LD SP,IX / LD SP,IY / LD (nn),rr)
         CALL    asm_is_reg16_tag
         JP      Z, .ldc_r16_src
         ; Register-to-register path — Zilog dst-src: NOS = dst, TOS = src.
@@ -1556,6 +1630,16 @@ w_LD_COMMA_cf:
         AND     ASM_CLASS_MASK
         CP      ASM_CLASS_INDIRECT
         JR      Z, .ldc_chk_idx_dst
+        ; Story 5.0.5: check for I/R as destination
+        OR      A                       ; class == REG8 (0x00)?
+        JR      NZ, .ldc_normal_reg_dst
+        LD      A, L
+        AND     ASM_INDEX_MASK
+        CP      ASM_REG8_I
+        JP      Z, .ldc_i_dst
+        CP      ASM_REG8_R
+        JP      Z, .ldc_r_dst
+.ldc_normal_reg_dst:
         ; Normal register dst
         CALL    assert_8bit_reg_or_ihl  ; A = dst r-value
         ; Reject LD (HL),(HL) — opcode 0x76 is HALT, not LD.
@@ -1586,6 +1670,13 @@ w_LD_COMMA_cf:
         JR      Z, .ldc_idx_dst
         CP      ASM_IND_IYD
         JR      Z, .ldc_idx_dst
+        ; Story 5.0.5: check for (BC)/(DE)/() as destination
+        CP      ASM_IND_BC
+        JP      Z, .ldc_ibc_dst
+        CP      ASM_IND_DE
+        JP      Z, .ldc_ide_dst
+        CP      ASM_IND_ABS
+        JP      Z, .ldc_abs_r8_dst
         ; Could be (HL) — index 0 → r-field 6
         OR      A
         JP      NZ, asm_bad_operand
@@ -1631,8 +1722,26 @@ w_LD_COMMA_cf:
         NEXT
 
 .ldc_r16_src:
-        ; TOS is a reg16 — check for LD SP,IX / LD SP,IY
+        ; TOS is a reg16 — check NOS for () absolute or LD SP,IX/IY
         CALL    asm_get_index
+        LD      (asm_tmp), A            ; save source reg16 index
+        ; Peek NOS to check for () destination
+        POP     HL
+        PUSH    HL                      ; peek and restore NOS
+        LD      A, H
+        CP      ASM_TAG_HI
+        JR      NZ, .ldc_r16_chk_sp    ; NOS not tagged
+        LD      A, L
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_INDIRECT
+        JR      NZ, .ldc_r16_chk_sp
+        LD      A, L
+        AND     ASM_INDEX_MASK
+        CP      ASM_IND_ABS
+        JP      Z, .ldc_r16_abs_dst
+.ldc_r16_chk_sp:
+        ; Existing: LD SP,IX / LD SP,IY
+        LD      A, (asm_tmp)
         CP      ASM_IX_INDEX
         JR      Z, .ldc_sp_ixiy
         CP      ASM_IY_INDEX
@@ -1809,6 +1918,315 @@ w_LD_COMMA_cf:
         NEXT
 
 ; =====================================================================
+; Story 5.0.5 LD, extensions — new indirect/register forms
+; =====================================================================
+
+; --- (BC) as source: LD A,(BC) ---
+.ldc_ibc_src:
+        ; TOS = (BC) tag. NOS = destination (must be A).
+        POP     BC                      ; BC = destination tag
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand     ; must be REG8
+        CALL    asm_get_index
+        CP      7                       ; must be A
+        JP      NZ, asm_bad_operand
+        LD      A, 0x0A                 ; LD A,(BC)
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- (DE) as source: LD A,(DE) ---
+.ldc_ide_src:
+        ; TOS = (DE) tag. NOS = destination (must be A).
+        POP     BC                      ; BC = destination tag
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand
+        CALL    asm_get_index
+        CP      7
+        JP      NZ, asm_bad_operand
+        LD      A, 0x1A                 ; LD A,(DE)
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- () as source: LD dst,(nn) ---
+.ldc_abs_src:
+        ; TOS = () tag. NOS = address. NNOS = destination.
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        POP     HL                      ; HL = destination tag
+        LD      A, H
+        CP      ASM_TAG_HI
+        JP      NZ, asm_err_bare_int
+        ; Save address
+        PUSH    BC                      ; save address on stack
+        ; Classify destination
+        LD      A, L
+        AND     ASM_CLASS_MASK
+        JR      Z, .ldabs_r8_dst        ; class=REG8
+        CP      ASM_CLASS_REG16
+        JR      Z, .ldabs_r16_dst
+        JP      asm_bad_operand
+
+.ldabs_r8_dst:
+        LD      A, L
+        AND     ASM_INDEX_MASK
+        CP      7                       ; must be A
+        JP      NZ, asm_bad_operand
+        ; LD A,(nn) = 0x3A lo hi
+        LD      A, 0x3A
+        CALL    asm_emit_byte
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+.ldabs_r16_dst:
+        LD      A, L
+        AND     ASM_INDEX_MASK
+        CP      2                       ; HL
+        JR      Z, .ldabs_hl
+        CP      ASM_IX_INDEX
+        JR      Z, .ldabs_ix
+        CP      ASM_IY_INDEX
+        JR      Z, .ldabs_iy
+        ; ED-prefix: BC(0), DE(1), SP(4)
+        CP      3
+        JP      Z, asm_bad_operand      ; AF
+        CP      ASM_IX_INDEX
+        JP      NC, asm_bad_operand
+        CP      4
+        JR      NZ, .ldabs_ed
+        LD      A, 3                    ; SP: index 4 → rp 3
+.ldabs_ed:
+        ; LD rr,(nn) = ED 4B|(rp<<4) lo hi
+        RLCA
+        RLCA
+        RLCA
+        RLCA
+        OR      0x4B
+        LD      (asm_tmp), A
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, (asm_tmp)
+        CALL    asm_emit_byte
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+.ldabs_hl:
+        ; LD HL,(nn) = 0x2A lo hi
+        LD      A, 0x2A
+        CALL    asm_emit_byte
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+.ldabs_ix:
+        ; LD IX,(nn) = DD 2A lo hi
+        LD      A, 0xDD
+        CALL    asm_emit_byte
+        LD      A, 0x2A
+        CALL    asm_emit_byte
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+.ldabs_iy:
+        ; LD IY,(nn) = FD 2A lo hi
+        LD      A, 0xFD
+        CALL    asm_emit_byte
+        LD      A, 0x2A
+        CALL    asm_emit_byte
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- I/R as source: LD A,I / LD A,R ---
+.ldc_ir_src:
+        ; TOS = I or R (REG8 index 8 or 9). Pop, check NOS = A.
+        CALL    asm_get_index           ; A = 8 (I) or 9 (R)
+        LD      (asm_tmp), A            ; save I/R index
+        POP     BC                      ; BC = NOS = destination tag
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand     ; must be REG8
+        CALL    asm_get_index
+        CP      7                       ; must be A
+        JP      NZ, asm_bad_operand
+        ; LD A,I = ED 57, LD A,R = ED 5F
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, (asm_tmp)
+        CP      ASM_REG8_I
+        JR      Z, .ldc_ai
+        LD      A, 0x5F                 ; LD A,R
+        JR      .ldc_ir_emit
+.ldc_ai:
+        LD      A, 0x57                 ; LD A,I
+.ldc_ir_emit:
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- (BC) as destination: LD (BC),A ---
+.ldc_ibc_dst:
+        ; NOS popped into HL = (BC) tag. asm_tmp = src r-field.
+        LD      A, (asm_tmp)
+        CP      7                       ; only A
+        JP      NZ, asm_bad_operand
+        LD      A, 0x02                 ; LD (BC),A
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- (DE) as destination: LD (DE),A ---
+.ldc_ide_dst:
+        LD      A, (asm_tmp)
+        CP      7
+        JP      NZ, asm_bad_operand
+        LD      A, 0x12                 ; LD (DE),A
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- () as destination from REG8: LD (nn),A ---
+.ldc_abs_r8_dst:
+        ; NOS popped into HL = () tag. asm_tmp = src r-field.
+        LD      A, (asm_tmp)
+        CP      7                       ; only A
+        JP      NZ, asm_bad_operand
+        ; Pop address from under () tag
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, 0x32                 ; LD (nn),A
+        CALL    asm_emit_byte
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- () as destination from REG16: LD (nn),rr ---
+.ldc_r16_abs_dst:
+        ; NOS is () tag (peeked and verified). Pop it, pop address.
+        POP     HL                      ; discard () tag (was peeked)
+        POP     BC                      ; BC = address (lo=C, hi=B)
+        LD      A, (asm_tmp)            ; source reg16 index
+        CP      2                       ; HL
+        JR      Z, .ldr16abs_hl
+        CP      ASM_IX_INDEX
+        JR      Z, .ldr16abs_ix
+        CP      ASM_IY_INDEX
+        JR      Z, .ldr16abs_iy
+        ; ED-prefix: BC(0), DE(1), SP(4)
+        CP      3
+        JP      Z, asm_bad_operand      ; AF
+        CP      ASM_IX_INDEX
+        JP      NC, asm_bad_operand
+        CP      4
+        JR      NZ, .ldr16abs_ed
+        LD      A, 3                    ; SP: index 4 → rp 3
+.ldr16abs_ed:
+        ; LD (nn),rr = ED 43|(rp<<4) lo hi
+        ; BC = address (preserved by asm_emit_byte)
+        RLCA
+        RLCA
+        RLCA
+        RLCA
+        OR      0x43
+        LD      (asm_tmp), A
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, (asm_tmp)
+        CALL    asm_emit_byte
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+.ldr16abs_hl:
+        ; LD (nn),HL = 0x22 lo hi. BC = address.
+        LD      A, 0x22
+        CALL    asm_emit_byte
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+.ldr16abs_ix:
+        ; LD (nn),IX = DD 22 lo hi. BC = address.
+        LD      A, 0xDD
+        CALL    asm_emit_byte
+        LD      A, 0x22
+        CALL    asm_emit_byte
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+.ldr16abs_iy:
+        ; LD (nn),IY = FD 22 lo hi. BC = address.
+        LD      A, 0xFD
+        CALL    asm_emit_byte
+        LD      A, 0x22
+        CALL    asm_emit_byte
+        LD      A, C
+        CALL    asm_emit_byte
+        LD      A, B
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- I as destination: LD I,A ---
+.ldc_i_dst:
+        ; NOS popped into HL, L has I tag. asm_tmp = src r-field.
+        LD      A, (asm_tmp)
+        CP      7                       ; only A
+        JP      NZ, asm_bad_operand
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, 0x47                 ; LD I,A
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; --- R as destination: LD R,A ---
+.ldc_r_dst:
+        LD      A, (asm_tmp)
+        CP      7
+        JP      NZ, asm_bad_operand
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, 0x4F                 ; LD R,A
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; =====================================================================
 ; Opcode words — Arithmetic/logic on A (8-bit register operand)
 ; =====================================================================
 
@@ -1879,8 +2297,90 @@ asm_arith_word:
 w_ADD_COMMA:
         DEFCODE "ADD,", 0
 w_ADD_COMMA_cf:
+        ; Check if TOS is REG16 → 16-bit ADD HL,rr / ADD IX,rr / ADD IY,rr
+        LD      A, B
+        CP      ASM_TAG_HI
+        JR      NZ, .add_8bit
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_REG16
+        JR      Z, .add_16bit
+.add_8bit:
         LD      A, 0x80
         JP      asm_arith_word
+.add_16bit:
+        CALL    check_asm_mode
+        ; TOS (BC) = source reg16, extract index
+        CALL    asm_get_index           ; A = source index
+        LD      (asm_tmp), A            ; save raw source index
+        ; Pop NOS = destination
+        POP     BC
+        CALL    asm_check_tagged
+        CALL    asm_is_reg16_tag
+        JP      NZ, asm_bad_operand
+        CALL    asm_get_index           ; A = destination index
+        ; Destination must be HL(2), IX(5), or IY(6)
+        CP      2
+        JR      Z, .add16_dst_hl
+        CP      ASM_IX_INDEX
+        JR      Z, .add16_dst_ixiy
+        CP      ASM_IY_INDEX
+        JR      Z, .add16_dst_ixiy
+        JP      asm_bad_operand
+.add16_dst_hl:
+        ; ADD HL,rr — source must be BC(0), DE(1), HL(2), SP(4)
+        LD      A, (asm_tmp)
+        CP      3
+        JP      Z, asm_bad_operand      ; reject AF
+        CP      ASM_IX_INDEX
+        JP      NC, asm_bad_operand     ; reject IX, IY, AF'
+        ; Map index to rp: 0→0, 1→1, 2→2, 4→3
+        CP      4
+        JR      NZ, .add16_hl
+        LD      A, 3                    ; SP: index 4 → rp 3
+        JR      .add16_hl
+.add16_dst_ixiy:
+        ; ADD IX,rr / ADD IY,rr — source can be BC(0), DE(1), same-reg(→rp2), SP(4)
+        LD      (asm_tmp+1), A          ; save destination index (IX=5 or IY=6)
+        LD      A, (asm_tmp)            ; reload source index
+        CP      3
+        JP      Z, asm_bad_operand      ; reject AF
+        ; Accept IX/IY as source ONLY if same as destination (ADD IX,IX / ADD IY,IY)
+        CP      ASM_IX_INDEX
+        JR      Z, .add16_ixiy_src_ixiy
+        CP      ASM_IY_INDEX
+        JR      Z, .add16_ixiy_src_ixiy
+        ; Source is BC(0), DE(1), HL(2), or SP(4)
+        CP      ASM_AFP_INDEX
+        JP      NC, asm_bad_operand     ; reject AF'(7)+
+        CP      4
+        JR      NZ, .add16_ixiy_emit
+        LD      A, 3                    ; SP: index 4 → rp 3
+        JR      .add16_ixiy_emit
+.add16_ixiy_src_ixiy:
+        ; Source is IX or IY — must match destination
+        LD      HL, asm_tmp+1
+        CP      (HL)                    ; source index == dest index?
+        JP      NZ, asm_bad_operand     ; reject cross-index (IX+IY)
+        LD      A, 2                    ; same-reg → rp 2 (HL slot under prefix)
+.add16_ixiy_emit:
+        LD      (asm_tmp), A            ; save source rp
+        LD      A, (asm_tmp+1)          ; reload dest index for prefix
+        CALL    asm_emit_ixiy_prefix    ; DD or FD
+        LD      A, (asm_tmp)            ; reload source rp
+        JR      .add16_emit             ; share emit with HL path
+.add16_hl:
+        ; ADD HL,rr = 0x09 | (rp<<4)
+        ; A already holds rp (or was set to 3 for SP)
+.add16_emit:
+        RLCA
+        RLCA
+        RLCA
+        RLCA
+        OR      0x09
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
 
 w_SUB_COMMA:
         DEFCODE "SUB,", 0
@@ -3376,3 +3876,300 @@ w_EXX_COMMA_cf:
         LD      A, 0xD9
         CALL    asm_emit_byte
         NEXT
+
+; =====================================================================
+; Single-byte zero-operand words (Story 5.0.5, Task 1)
+;   Shared emitter: check asm_mode, emit one byte, NEXT.
+; =====================================================================
+
+; -----------------------------------------------
+; asm_emit_single — Emit single-byte zero-operand instruction.
+;   Entry: A = opcode byte
+; -----------------------------------------------
+asm_emit_single:
+        LD      (asm_tmp), A
+        CALL    check_asm_mode
+        LD      A, (asm_tmp)
+        CALL    asm_emit_byte
+        NEXT
+
+w_NOP_COMMA:
+        DEFCODE "NOP,", 0
+w_NOP_COMMA_cf:
+        LD      A, 0x00
+        JP      asm_emit_single
+
+w_HALT_COMMA:
+        DEFCODE "HALT,", 0
+w_HALT_COMMA_cf:
+        LD      A, 0x76
+        JP      asm_emit_single
+
+w_DI_COMMA:
+        DEFCODE "DI,", 0
+w_DI_COMMA_cf:
+        LD      A, 0xF3
+        JP      asm_emit_single
+
+w_EI_COMMA:
+        DEFCODE "EI,", 0
+w_EI_COMMA_cf:
+        LD      A, 0xFB
+        JP      asm_emit_single
+
+w_DAA_COMMA:
+        DEFCODE "DAA,", 0
+w_DAA_COMMA_cf:
+        LD      A, 0x27
+        JP      asm_emit_single
+
+w_CPL_COMMA:
+        DEFCODE "CPL,", 0
+w_CPL_COMMA_cf:
+        LD      A, 0x2F
+        JP      asm_emit_single
+
+w_SCF_COMMA:
+        DEFCODE "SCF,", 0
+w_SCF_COMMA_cf:
+        LD      A, 0x37
+        JP      asm_emit_single
+
+w_CCF_COMMA:
+        DEFCODE "CCF,", 0
+w_CCF_COMMA_cf:
+        LD      A, 0x3F
+        JP      asm_emit_single
+
+w_RLCA_COMMA:
+        DEFCODE "RLCA,", 0
+w_RLCA_COMMA_cf:
+        LD      A, 0x07
+        JP      asm_emit_single
+
+w_RRCA_COMMA:
+        DEFCODE "RRCA,", 0
+w_RRCA_COMMA_cf:
+        LD      A, 0x0F
+        JP      asm_emit_single
+
+w_RLA_COMMA:
+        DEFCODE "RLA,", 0
+w_RLA_COMMA_cf:
+        LD      A, 0x17
+        JP      asm_emit_single
+
+w_RRA_COMMA:
+        DEFCODE "RRA,", 0
+w_RRA_COMMA_cf:
+        LD      A, 0x1F
+        JP      asm_emit_single
+
+; =====================================================================
+; ADC, and SBC, (8-bit) — Story 5.0.5, Task 2
+;   Reuse asm_arith_word with appropriate base opcodes.
+;   16-bit forms (ADC HL,rr / SBC HL,rr) handled by prologue check.
+; =====================================================================
+
+w_ADC_COMMA:
+        DEFCODE "ADC,", 0
+w_ADC_COMMA_cf:
+        ; Check if TOS is REG16 → 16-bit ADC HL,rr
+        LD      A, B
+        CP      ASM_TAG_HI
+        JR      NZ, .adc_8bit
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_REG16
+        JR      Z, .adc_16bit
+.adc_8bit:
+        LD      A, 0x88
+        JP      asm_arith_word
+.adc_16bit:
+        CALL    check_asm_mode
+        ; TOS (BC) = source reg16, extract rp
+        CALL    asm_get_index           ; A = source index
+        ; Validate: BC(0), DE(1), HL(2), SP(4). Reject AF(3), IX(5)+.
+        CP      ASM_IX_INDEX
+        JP      NC, asm_bad_operand
+        CP      3
+        JP      Z, asm_bad_operand
+        ; Map index to rp: 0→0, 1→1, 2→2, 4→3
+        CP      4
+        JR      NZ, .adc16_rp_ok
+        LD      A, 3
+.adc16_rp_ok:
+        LD      (asm_tmp), A            ; save source rp
+        ; Pop NOS = destination, must be HL only
+        POP     BC
+        CALL    asm_check_tagged
+        CALL    asm_is_reg16_tag
+        JP      NZ, asm_bad_operand
+        CALL    asm_get_index
+        CP      2                       ; must be HL
+        JP      NZ, asm_bad_operand
+        ; ADC HL,rr = ED 4A|(rp<<4)
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, (asm_tmp)
+        RLCA
+        RLCA
+        RLCA
+        RLCA
+        OR      0x4A
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+w_SBC_COMMA:
+        DEFCODE "SBC,", 0
+w_SBC_COMMA_cf:
+        ; Check if TOS is REG16 → 16-bit SBC HL,rr
+        LD      A, B
+        CP      ASM_TAG_HI
+        JR      NZ, .sbc_8bit
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        CP      ASM_CLASS_REG16
+        JR      Z, .sbc_16bit
+.sbc_8bit:
+        LD      A, 0x98
+        JP      asm_arith_word
+.sbc_16bit:
+        CALL    check_asm_mode
+        ; TOS (BC) = source reg16, extract rp
+        CALL    asm_get_index           ; A = source index
+        ; Validate: BC(0), DE(1), HL(2), SP(4). Reject AF(3), IX(5)+.
+        CP      ASM_IX_INDEX
+        JP      NC, asm_bad_operand
+        CP      3
+        JP      Z, asm_bad_operand
+        ; Map index to rp: 0→0, 1→1, 2→2, 4→3
+        CP      4
+        JR      NZ, .sbc16_rp_ok
+        LD      A, 3
+.sbc16_rp_ok:
+        LD      (asm_tmp), A            ; save source rp
+        ; Pop NOS = destination, must be HL only
+        POP     BC
+        CALL    asm_check_tagged
+        CALL    asm_is_reg16_tag
+        JP      NZ, asm_bad_operand
+        CALL    asm_get_index
+        CP      2                       ; must be HL
+        JP      NZ, asm_bad_operand
+        ; SBC HL,rr = ED 42|(rp<<4)
+        LD      A, 0xED
+        CALL    asm_emit_byte
+        LD      A, (asm_tmp)
+        RLCA
+        RLCA
+        RLCA
+        RLCA
+        OR      0x42
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; =====================================================================
+; DJNZ, ( target -- )  Story 5.0.5, Task 5
+;   Follows JR, pattern but with fixed opcode 0x10, no condition operand.
+; =====================================================================
+w_DJNZ_COMMA:
+        DEFCODE "DJNZ,", 0
+w_DJNZ_COMMA_cf:
+        CALL    check_asm_mode
+        LD      (asm_ip_save), DE
+        ; Emit opcode 0x10
+        LD      A, 0x10
+        CALL    asm_emit_byte
+        ; Record current HERE for displacement calculation
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (asm_tmp2), HL
+        ; Check TOS for label tag
+        LD      A, B
+        CP      ASM_TAG_HI
+        JR      NZ, .djnz_literal
+        CALL    asm_is_label_tag
+        JR      Z, .djnz_label
+.djnz_literal:
+        ; Plain 16-bit address
+        LD      D, B
+        LD      E, C
+        LD      HL, (asm_tmp2)
+        CALL    asm_apply_jr_fixup_emit
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+.djnz_label:
+        ; Label tag: extract slot index
+        LD      A, C
+        AND     ASM_INDEX_MASK
+        LD      HL, asm_label_count
+        CP      (HL)
+        JP      NC, asm_bad_operand
+        CALL    asm_slot_addr           ; HL = &slot
+        LD      A, (HL)
+        OR      A
+        JR      Z, .djnz_unresolved
+        ; Resolved: get target address
+        INC     HL
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        LD      HL, (asm_tmp2)
+        CALL    asm_apply_jr_fixup_emit
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+.djnz_unresolved:
+        ; Emit placeholder, queue fixup
+        XOR     A
+        CALL    asm_emit_byte
+        LD      A, C
+        AND     ASM_INDEX_MASK          ; A = label slot index
+        LD      C, ASM_FIXUP_KIND_JR
+        LD      HL, (asm_tmp2)
+        CALL    asm_add_fixup
+        LD      DE, (asm_ip_save)
+        POP     BC
+        NEXT
+
+; =====================================================================
+; RST, ( vector -- )  Story 5.0.5, Task 6
+;   Takes bare integer (not tagged), validates 0/8/10/18/20/28/30/38.
+; =====================================================================
+w_RST_COMMA:
+        DEFCODE "RST,", 0
+w_RST_COMMA_cf:
+        CALL    check_asm_mode
+        ; TOS (BC) = vector (bare integer). B must be 0.
+        LD      A, B
+        OR      A
+        JP      NZ, asm_bad_operand     ; high byte must be 0
+        LD      A, C
+        CP      0x39                    ; > 0x38?
+        JP      NC, asm_bad_operand
+        AND     0x07                    ; low 3 bits must be 0
+        JP      NZ, asm_bad_operand
+        LD      A, C
+        OR      0xC7                    ; build RST opcode
+        CALL    asm_emit_byte
+        POP     BC
+        NEXT
+
+; =====================================================================
+; RLD, and RRD, — ED-prefix zero-operand (Story 5.0.5, Task 7)
+; =====================================================================
+w_RLD_COMMA:
+        DEFCODE "RLD,", 0
+w_RLD_COMMA_cf:
+        LD      A, 0x6F
+        JP      asm_emit_ed_op
+
+w_RRD_COMMA:
+        DEFCODE "RRD,", 0
+w_RRD_COMMA_cf:
+        LD      A, 0x67
+        JP      asm_emit_ed_op

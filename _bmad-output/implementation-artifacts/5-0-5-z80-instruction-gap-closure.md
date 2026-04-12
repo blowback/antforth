@@ -1,6 +1,6 @@
 # Story 5.0.5: Z80 Instruction Gap Closure
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -63,62 +63,62 @@ Story 5.0's completeness survey found 27 missing instruction forms out of 158 au
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add 12 single-byte zero-operand words (AC: #1)
-  - [ ] 1.1 Create shared `asm_emit_single` helper: `check_asm_mode`, emit A, NEXT
-  - [ ] 1.2 Add `NOP,` (0x00), `HALT,` (0x76), `DI,` (0xF3), `EI,` (0xFB)
-  - [ ] 1.3 Add `DAA,` (0x27), `CPL,` (0x2F), `SCF,` (0x37), `CCF,` (0x3F)
-  - [ ] 1.4 Add `RLCA,` (0x07), `RRCA,` (0x0F), `RLA,` (0x17), `RRA,` (0x1F)
+- [x] Task 1: Add 12 single-byte zero-operand words (AC: #1)
+  - [x] 1.1 Create shared `asm_emit_single` helper: `check_asm_mode`, emit A, NEXT
+  - [x] 1.2 Add `NOP,` (0x00), `HALT,` (0x76), `DI,` (0xF3), `EI,` (0xFB)
+  - [x] 1.3 Add `DAA,` (0x27), `CPL,` (0x2F), `SCF,` (0x37), `CCF,` (0x3F)
+  - [x] 1.4 Add `RLCA,` (0x07), `RRCA,` (0x0F), `RLA,` (0x17), `RRA,` (0x1F)
 
-- [ ] Task 2: Add `ADC,` and `SBC,` (8-bit) (AC: #2)
-  - [ ] 2.1 Add `ADC,` — reuse `asm_arith_word` with base opcode 0x88
-  - [ ] 2.2 Add `SBC,` — reuse `asm_arith_word` with base opcode 0x98
-  - [ ] 2.3 Verify all 4 operand forms work: register, (HL), immediate, indexed
+- [x] Task 2: Add `ADC,` and `SBC,` (8-bit) (AC: #2)
+  - [x] 2.1 Add `ADC,` — reuse `asm_arith_word` with base opcode 0x88
+  - [x] 2.2 Add `SBC,` — reuse `asm_arith_word` with base opcode 0x98
+  - [x] 2.3 Verify all 4 operand forms work: register, (HL), immediate, indexed
 
-- [ ] Task 3: Add 16-bit ADD/ADC/SBC (AC: #4, #8)
-  - [ ] 3.1 Extend `ADD,` to handle REG16 destination (ADD HL,rr): check if NOS is HL, emit 0x09|(rp<<4)
-  - [ ] 3.2 Extend `ADC,` to handle REG16 destination (ADC HL,rr): emit ED prefix + 0x4A|(rp<<4)
-  - [ ] 3.3 Extend `SBC,` to handle REG16 destination (SBC HL,rr): emit ED prefix + 0x42|(rp<<4)
-  - [ ] 3.4 Extend `ADD,` for ADD IX,rr / ADD IY,rr: emit DD/FD prefix + 0x09|(rp<<4)
+- [x] Task 3: Add 16-bit ADD/ADC/SBC (AC: #4, #8)
+  - [x] 3.1 Extend `ADD,` to handle REG16 destination (ADD HL,rr): check if NOS is HL, emit 0x09|(rp<<4)
+  - [x] 3.2 Extend `ADC,` to handle REG16 destination (ADC HL,rr): emit ED prefix + 0x4A|(rp<<4)
+  - [x] 3.3 Extend `SBC,` to handle REG16 destination (SBC HL,rr): emit ED prefix + 0x42|(rp<<4)
+  - [x] 3.4 Extend `ADD,` for ADD IX,rr / ADD IY,rr: emit DD/FD prefix + 0x09|(rp<<4)
 
-- [ ] Task 4: Add missing LD forms (AC: #3, #7, #9)
-  - [ ] 4.1 Design syntax for indirect-register loads (see Dev Notes for options)
-  - [ ] 4.2 Implement LD A,(BC) / LD A,(DE) / LD (BC),A / LD (DE),A
-  - [ ] 4.3 Implement LD A,(nn) / LD (nn),A
-  - [ ] 4.4 Implement LD HL,(nn) / LD (nn),HL (unprefixed 0x2A/0x22)
-  - [ ] 4.5 Implement ED-prefix LD (nn),rr / LD rr,(nn) for BC/DE/SP
-  - [ ] 4.6 Implement LD IX,(nn) / LD (nn),IX / LD IY,(nn) / LD (nn),IY (DD/FD 0x2A/0x22)
-  - [ ] 4.7 Implement LD A,I / LD A,R / LD I,A / LD R,A (ED-prefix)
+- [x] Task 4: Add missing LD forms (AC: #3, #7, #9)
+  - [x] 4.1 Design syntax for indirect-register loads (see Dev Notes for options)
+  - [x] 4.2 Implement LD A,(BC) / LD A,(DE) / LD (BC),A / LD (DE),A
+  - [x] 4.3 Implement LD A,(nn) / LD (nn),A
+  - [x] 4.4 Implement LD HL,(nn) / LD (nn),HL (unprefixed 0x2A/0x22)
+  - [x] 4.5 Implement ED-prefix LD (nn),rr / LD rr,(nn) for BC/DE/SP
+  - [x] 4.6 Implement LD IX,(nn) / LD (nn),IX / LD IY,(nn) / LD (nn),IY (DD/FD 0x2A/0x22)
+  - [x] 4.7 Implement LD A,I / LD A,R / LD I,A / LD R,A (ED-prefix)
 
-- [ ] Task 5: Add `DJNZ,` (AC: #5)
-  - [ ] 5.1 Implement `DJNZ,` — follow `JR,` pattern with fixed opcode 0x10
-  - [ ] 5.2 Support both label and literal-address operands
-  - [ ] 5.3 Forward reference resolution via fixup pool (same as JR,)
+- [x] Task 5: Add `DJNZ,` (AC: #5)
+  - [x] 5.1 Implement `DJNZ,` — follow `JR,` pattern with fixed opcode 0x10
+  - [x] 5.2 Support both label and literal-address operands
+  - [x] 5.3 Forward reference resolution via fixup pool (same as JR,)
 
-- [ ] Task 6: Add `RST,` (AC: #6)
-  - [ ] 6.1 Implement `RST,` — pop TOS, validate it's one of {0x00,0x08,0x10,0x18,0x20,0x28,0x30,0x38}
-  - [ ] 6.2 Emit opcode 0xC7|p (where p is the restart vector)
-  - [ ] 6.3 Reject non-standard vectors with `bad operand ?`
+- [x] Task 6: Add `RST,` (AC: #6)
+  - [x] 6.1 Implement `RST,` — pop TOS, validate it's one of {0x00,0x08,0x10,0x18,0x20,0x28,0x30,0x38}
+  - [x] 6.2 Emit opcode 0xC7|p (where p is the restart vector)
+  - [x] 6.3 Reject non-standard vectors with `bad operand ?`
 
-- [ ] Task 7: Add `RLD,` and `RRD,` (AC: #7)
-  - [ ] 7.1 Add `RLD,` → `asm_emit_ed_op` with 0x6F
-  - [ ] 7.2 Add `RRD,` → `asm_emit_ed_op` with 0x67
+- [x] Task 7: Add `RLD,` and `RRD,` (AC: #7)
+  - [x] 7.1 Add `RLD,` → `asm_emit_ed_op` with 0x6F
+  - [x] 7.2 Add `RRD,` → `asm_emit_ed_op` with 0x67
 
-- [ ] Task 8: Add REPL tests for all new instructions (AC: #10, #11)
-  - [ ] 8.1 Tests for single-byte ops: assemble each, verify byte with C@
-  - [ ] 8.2 Tests for ADC,/SBC,: register, (HL), immediate, indexed forms
-  - [ ] 8.3 Tests for 16-bit ADD/ADC/SBC: HL,rr and IX/IY variants
-  - [ ] 8.4 Tests for new LD forms: all indirect-register, absolute, ED-prefix, and I/R forms
-  - [ ] 8.5 Tests for DJNZ,: forward and backward labels
-  - [ ] 8.6 Tests for RST,: valid vectors and error on invalid
-  - [ ] 8.7 Tests for RLD,/RRD,
+- [x] Task 8: Add REPL tests for all new instructions (AC: #10, #11)
+  - [x] 8.1 Tests for single-byte ops: assemble each, verify byte with C@
+  - [x] 8.2 Tests for ADC,/SBC,: register, (HL), immediate, indexed forms
+  - [x] 8.3 Tests for 16-bit ADD/ADC/SBC: HL,rr and IX/IY variants
+  - [x] 8.4 Tests for new LD forms: all indirect-register, absolute, ED-prefix, and I/R forms
+  - [x] 8.5 Tests for DJNZ,: forward and backward labels
+  - [x] 8.6 Tests for RST,: valid vectors and error on invalid
+  - [x] 8.7 Tests for RLD,/RRD,
 
-- [ ] Task 9: Update coverage report (AC: #12)
-  - [ ] 9.1 Update `docs/z80-instruction-coverage.md` to reflect 100% coverage
-  - [ ] 9.2 Verify all 158 instruction forms are now marked "Supported"
+- [x] Task 9: Update coverage report (AC: #12)
+  - [x] 9.1 Update `docs/z80-instruction-coverage.md` to reflect 100% coverage
+  - [x] 9.2 Verify all 158 instruction forms are now marked "Supported"
 
-- [ ] Task 10: Verify no regressions (AC: #10)
-  - [ ] 10.1 `make test` — all 73 regression tests pass
-  - [ ] 10.2 `make test-repl` — all existing 178 + new tests pass
+- [x] Task 10: Verify no regressions (AC: #10)
+  - [x] 10.1 `make test` — all 73 regression tests pass
+  - [x] 10.2 `make test-repl` — all existing 178 + new tests pass
 
 ## Dev Notes
 
@@ -146,10 +146,14 @@ Create `asm_emit_single`: `check_asm_mode` → `asm_emit_byte` → `NEXT`. Each 
 
 ```z80
 asm_emit_single:
+        LD      (asm_tmp), A
         CALL    check_asm_mode
+        LD      A, (asm_tmp)
         CALL    asm_emit_byte
         NEXT
 ```
+
+Note: A must be saved/restored via `asm_tmp` because `check_asm_mode` clobbers A.
 
 #### ADC, and SBC, (8-bit)
 
@@ -213,19 +217,17 @@ Syntax:
 
 The `()` word pops TOS (bare integer address), pushes it back, then pushes the `0xFF` + INDIRECT class + index 9 tag on top. LD, sees the () tag and extracts the address from the cell below.
 
-#### LD A,I / LD A,R / LD I,A / LD R,A: `I` and `R` register words
+#### LD A,I / LD A,R / LD I,A / LD R,A: `IREG` and `RREG` register words
 
-**DECISION:** Add `I` and `R` as register tag words. Use a new tag class or new REG8 indices. LD, handles `A I LD,` → ED 0x57.
+**DECISION:** Add `IREG` and `RREG` as register tag words using REG8 class with new indices (I=8, R=9). Named `IREG`/`RREG` (not `I`/`R`) to avoid shadowing Forth's `I` loop index word. LD, handles `A IREG LD,` → ED 0x57.
 
 These are NOT general-purpose registers — only LD A,I / LD I,A / LD A,R / LD R,A are valid. LD, must reject all non-A combinations with `bad operand ?`.
 
-Suggested: use REG8 class with new indices (I=8, R=9). LD, checks for these indices and routes to the ED-prefix path.
-
 Syntax:
-- `A I LD,` → LD A,I = ED 0x57
-- `A R LD,` → LD A,R = ED 0x5F
-- `I A LD,` → LD I,A = ED 0x47
-- `R A LD,` → LD R,A = ED 0x4F
+- `A IREG LD,` → LD A,I = ED 0x57
+- `A RREG LD,` → LD A,R = ED 0x5F
+- `IREG A LD,` → LD I,A = ED 0x47
+- `RREG A LD,` → LD R,A = ED 0x4F
 
 #### DJNZ,
 
@@ -345,11 +347,31 @@ Each new instruction should have at least one test that:
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6 (1M context)
 
 ### Debug Log References
+- asm_emit_byte clobbers HL — all absolute-address LD forms initially had a bug where the high byte of the address was corrupted after the first asm_emit_byte call. Fixed by using BC (preserved by asm_emit_byte) to hold the address instead of HL.
+- `I` register word shadowed Forth's `I` loop index — renamed to `IREG` / `RREG` to avoid conflict.
+- REPL input line length limit — tests reading 8+ bytes needed to be split across multiple CODE definitions.
 
 ### Completion Notes List
+- Task 1: Added `asm_emit_single` helper and 12 single-byte zero-operand words (NOP, HALT, DI, EI, DAA, CPL, SCF, CCF, RLCA, RRCA, RLA, RRA)
+- Task 2: Added ADC, and SBC, (8-bit) via asm_arith_word with base opcodes 0x88/0x98
+- Task 3: Extended ADD,/ADC,/SBC, with REG16 prologues for 16-bit forms. ADD supports HL/IX/IY destinations; ADC/SBC support HL only.
+- Task 4: Added (BC), (DE), () tag words and IREG/RREG register words. Extended LD, dispatch with 11 new handler blocks for indirect-register loads, absolute-address loads (all rr+IX/IY variants), and I/R special register loads.
+- Task 5: Added DJNZ, following JR, pattern with fixed opcode 0x10, label/literal operand support
+- Task 6: Added RST, with bare integer operand validation (multiples of 8, 0x00-0x38)
+- Task 7: Added RLD, and RRD, via asm_emit_ed_op
+- Task 8: Added 35 new REPL tests (tests 179-207) covering all new instructions
+- Task 9: Updated z80-instruction-coverage.md to reflect 100% coverage (158/158)
+- Task 10: All 73 regression + 214 REPL tests pass with zero regressions
 
 ### Change Log
+- 2026-04-12: Story 5.0.5 implementation complete — closed 27 instruction gaps, achieving 100% Z80 coverage
+- 2026-04-12: Code review fixes — hardened assert_8bit_reg_or_ihl, added 5 error-path tests + HL HL ADC/SBC test, updated Dev Notes for IREG/RREG naming
+- 2026-04-12: Second review fixes — fixed ADD IX,IX / ADD IY,IY (were rejected, now emit DD/FD 29), updated design overview comment with all tag indices, fixed Dev Notes asm_emit_single snippet
 
 ### File List
+- src/assembler.asm — All new opcode words, tag constants, LD, extensions (~730 lines added); design overview comment updated; ADD IX,IX/IY,IY fix; assert_8bit_reg_or_ihl hardened
+- Makefile — 43 new REPL tests (tests 179-214)
+- docs/z80-instruction-coverage.md — Updated to 100% coverage
