@@ -74,7 +74,8 @@ development_status:
   epic-4-retrospective: done
 
   epic-5: in-progress
-  5-0-z80-instruction-set-completeness-survey: ready-for-dev
+  5-0-z80-instruction-set-completeness-survey: done
+  5-0-5-z80-instruction-gap-closure: ready-for-dev
   5-1-comment-words: backlog
   5-2-marker-snapshot-and-restore: backlog
   5-3-ans-forth-core-word-compliance-survey: backlog

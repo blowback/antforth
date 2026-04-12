@@ -1043,6 +1043,31 @@ So that I know exactly which instructions are supported and which (if any) are m
 
 **Note:** This is an audit/report story only — no implementation of missing opcodes within this story.
 
+### Story 5.0.5: Z80 Instruction Gap Closure
+
+As a Forth assembler user,
+I want every documented Z80 instruction to be assembler-supported,
+So that I never need `DB,` workarounds for standard Z80 opcodes.
+
+**Background:**
+Story 5.0's completeness survey found 27 missing instruction forms (82.9% coverage). This story closes all gaps to reach 100%.
+
+**Acceptance Criteria:**
+
+**Given** the 27 missing Z80 instruction forms identified in Story 5.0
+**When** all are implemented and tested
+**Then** the assembler supports 158/158 documented Z80 instruction forms (100% coverage)
+**And** all existing 178 REPL tests continue to pass
+**And** new REPL tests verify correct opcode bytes for every added instruction
+
+**Missing instructions to add:**
+- 12 single-byte zero-operand: NOP, HALT, DI, EI, DAA, CPL, SCF, CCF, RLCA, RRCA, RLA, RRA
+- ADC, and SBC, (8-bit with carry): register, (HL), immediate, indexed forms
+- 16-bit arithmetic: ADD HL,rr / ADC HL,rr / SBC HL,rr / ADD IX,rr / ADD IY,rr
+- Missing LD forms: LD A,(BC) / LD A,(DE) / LD (BC),A / LD (DE),A / LD A,(nn) / LD (nn),A / LD HL,(nn) / LD (nn),HL / ED 16-bit memory loads / LD IX,(nn) / LD (nn),IX / LD A,I / LD A,R / LD I,A / LD R,A
+- DJNZ, RST,
+- RLD, RRD
+
 ### Story 5.1: Comment Words
 
 As a Forth user,
