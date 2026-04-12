@@ -86,8 +86,13 @@ checkers in Forth itself. An ANS extension.
 
 # OO 
 
-Need to get hold of Pountain's book first! 
+Need to get hold of Dick Pountain's book first! 
 
 NEON/Yerk and FOBJ maybe worth looking at.
 
 Forth Dimensions Volume IX onwards.
+
+## Comments
+
+Argh! We don't support comment words! How have we got this far without me noticing...
+Prolly should comment code more often.
