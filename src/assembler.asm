@@ -889,16 +889,15 @@ w_ASM_RECOGNIZE_cf:
         OR      A
         JR      Z, .recog_fast_false
 
-        ; Save DE (threaded IP) — we need DE as scratch for comparison.
-        LD      (.recog_save_ip), DE
-
-        ; BC = c-addr (TOS). Load counted string length.
+        ; BC = c-addr (TOS). Extract name info before EXX.
         LD      H, B
         LD      L, C                    ; HL = c-addr
-        LD      A, (HL)                 ; A = name length (0 = empty, handled by scan)
-        LD      (.recog_len), A         ; save search length
-        INC     HL
-        LD      (.recog_name), HL       ; save name pointer
+        LD      A, (HL)                 ; A = name length (survives EXX)
+        INC     HL                      ; HL → name bytes
+        PUSH    HL                      ; save name pointer on machine stack
+        EXX                             ; BC' = c-addr, DE' = IP, HL' = (don't care)
+        POP     DE                      ; DE = name pointer (from stack)
+        LD      C, A                    ; C = search length (persistent)
 
         ; Scan table
         LD      HL, asm_reg_table
@@ -909,29 +908,28 @@ w_ASM_RECOGNIZE_cf:
 
         ; Compare lengths
         LD      B, A                    ; B = entry name length (also loop counter)
-        LD      A, (.recog_len)
-        CP      B
+        CP      C                       ; compare with search length
         JR      NZ, .recog_skip         ; length mismatch → skip entry
 
         ; Lengths match — compare name bytes (case-insensitive)
         PUSH    HL                      ; save pointer to length byte
         INC     HL                      ; HL → table name bytes
-        LD      DE, (.recog_name)       ; DE = search name pointer
+        PUSH    DE                      ; save name pointer (consumed by comparison)
 .recog_cmp:
         LD      A, (DE)                 ; search char
         UPPER                           ; convert to uppercase (one expansion per parent label only)
-        LD      C, A                    ; C = uppercased search char
-        LD      A, (HL)                 ; table char (already uppercase)
-        CP      C
+        CP      (HL)                    ; compare with table char (already uppercase)
         JR      NZ, .recog_cmp_fail
         INC     HL
         INC     DE
         DJNZ    .recog_cmp
 
         ; Match found! HL points to tag byte.
-        LD      C, (HL)                 ; C = tag byte
-        POP     HL                      ; discard saved length ptr
-        LD      DE, (.recog_save_ip)    ; restore IP
+        LD      A, (HL)                 ; A = tag byte (survives EXX)
+        POP     DE                      ; discard saved name pointer
+        POP     HL                      ; discard saved table position
+        EXX                             ; restore: BC = c-addr, DE = IP
+        LD      C, A                    ; C = tag byte
         ; Push tag value as NOS, TRUE as TOS.
         LD      B, ASM_TAG_HI           ; BC = 0xFFxx tag value
         PUSH    BC                      ; push tag value
@@ -939,6 +937,7 @@ w_ASM_RECOGNIZE_cf:
         NEXT
 
 .recog_cmp_fail:
+        POP     DE                      ; restore name pointer
         POP     HL                      ; HL = length byte of this entry
         LD      B, (HL)                 ; B = full name length (re-read)
         ; fall through to .recog_skip
@@ -946,33 +945,21 @@ w_ASM_RECOGNIZE_cf:
         ; HL at length byte, B = name length.
         ; Advance past: length(1) + name(B) + tag(1)
         INC     HL                      ; skip length byte
-        LD      C, B
-        LD      B, 0
-        ADD     HL, BC                  ; skip name bytes
+.recog_skip_name:
+        INC     HL                      ; skip one name byte
+        DJNZ    .recog_skip_name
         INC     HL                      ; skip tag byte
         JR      .recog_next
 
 .recog_no_match:
-        ; Table exhausted or empty name. Restore DE and c-addr.
-        LD      DE, (.recog_save_ip)    ; restore IP
-        LD      HL, (.recog_name)
-        DEC     HL                      ; HL = c-addr (count byte)
-        LD      B, H
-        LD      C, L                    ; BC = c-addr (restored TOS)
-        PUSH    BC                      ; push c-addr
-        LD      BC, 0                   ; FALSE
-        NEXT
-
+        ; Table exhausted. EXX restores BC = c-addr, DE = IP.
+        EXX
+        ; Fall through — register state now matches .recog_fast_false
 .recog_fast_false:
-        ; BC = c-addr (still valid, DE untouched or restored above)
+        ; BC = c-addr, DE = IP (either from shadows or never swapped)
         PUSH    BC                      ; push c-addr
         LD      BC, 0                   ; FALSE
         NEXT
-
-; Scratch storage for recognizer
-.recog_len:       DB 0
-.recog_name:      DW 0
-.recog_save_ip:   DW 0
 
 ; =====================================================================
 ; Special assembler words with unique bodies (not handled by recognizer)
