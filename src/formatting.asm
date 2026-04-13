@@ -80,6 +80,32 @@ u_to_str:
 .uts_count:     DB      0               ; Scratch for digit count
 
 ; -----------------------------------------------
+; print_neg_prefix — Internal helper
+;   If BC is negative, emit '-' and negate BC.
+;   If BC is non-negative, do nothing.
+;   Input:  BC = signed number
+;   Output: BC = |BC| (absolute value)
+;   Clobbers: AF, DE, HL (HL via BDOS)
+;   Preserves: IX, IY
+; -----------------------------------------------
+print_neg_prefix:
+        BIT     7, B
+        RET     Z               ; Non-negative: return immediately
+        ; Negative: emit '-'
+        PUSH    BC              ; Save number
+        LD      E, '-'
+        CALL    bdos_putchar
+        POP     BC              ; Restore number
+        ; Negate BC: BC = 0 - BC
+        XOR     A
+        SUB     C
+        LD      C, A
+        SBC     A, A
+        SUB     B
+        LD      B, A
+        RET
+
+; -----------------------------------------------
 ; emit_unsigned — Internal helper
 ;   Emit unsigned number from BC followed by trailing space
 ;   Caller must have saved DE (IP) to return stack before calling
@@ -95,8 +121,7 @@ emit_unsigned:
         CALL    bdos_print_str
         ; Emit trailing space
         LD      E, ' '
-        CALL    bdos_putchar
-        RET
+        JP      bdos_putchar
 
 ; -----------------------------------------------
 ; . (dot) ( n -- )
@@ -108,22 +133,8 @@ w_DOT_cf:
         CALL    check_underflow
         ; Save DE (IP) to return stack
         CALL    rpush_de
-        ; Check sign
-        BIT     7, B
-        JR      Z, .dot_positive
-        ; Negative: emit '-'
-        PUSH    BC              ; Save number
-        LD      E, '-'
-        CALL    bdos_putchar
-        POP     BC              ; Restore number
-        ; Negate BC: BC = 0 - BC
-        XOR     A
-        SUB     C
-        LD      C, A
-        SBC     A, A
-        SUB     B
-        LD      B, A
-.dot_positive:
+        ; Handle sign: emit '-' and negate if negative
+        CALL    print_neg_prefix
         CALL    emit_unsigned
         ; Restore DE (IP) from return stack
         CALL    rpop_de
@@ -349,23 +360,8 @@ w_DOT_S_cf:
 ; .dots_print_signed — print BC as signed number with trailing space
 ; Clobbers: AF, BC, DE, HL
 .dots_print_signed:
-        BIT     7, B
-        JR      Z, .dps_positive
-        ; Negative: emit '-'
-        PUSH    BC
-        LD      E, '-'
-        CALL    bdos_putchar
-        POP     BC
-        ; Negate BC
-        XOR     A
-        SUB     C
-        LD      C, A
-        SBC     A, A
-        SUB     B
-        LD      B, A
-.dps_positive:
-        CALL    emit_unsigned
-        RET
+        CALL    print_neg_prefix
+        JP      emit_unsigned
 
 .dots_depth:      DW      0
 .dots_addr:       DW      0

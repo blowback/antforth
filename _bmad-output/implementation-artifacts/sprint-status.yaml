@@ -89,5 +89,5 @@ development_status:
   6-4-tag-predicate-cleanup-dead-code-removal: done
   6-5-ld-dispatch-table: done
   6-6-register-word-recognizer: done
-  6-7-misc-dedup: backlog
+  6-7-misc-dedup: done
   epic-6-retrospective: optional
