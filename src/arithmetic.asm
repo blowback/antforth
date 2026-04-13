@@ -6,6 +6,48 @@
 ;   HL, AF = scratch (free within CODE words)
 
 ; -----------------------------------------------
+; 1+ ( n -- n+1 )
+;   Add one to TOS
+; -----------------------------------------------
+w_ONE_PLUS:
+        DEFCODE "1+", 0
+w_ONE_PLUS_cf:
+        INC     BC
+        NEXT
+
+; -----------------------------------------------
+; 1- ( n -- n-1 )
+;   Subtract one from TOS
+; -----------------------------------------------
+w_ONE_MINUS:
+        DEFCODE "1-", 0
+w_ONE_MINUS_cf:
+        DEC     BC
+        NEXT
+
+; -----------------------------------------------
+; 2* ( x -- x*2 )
+;   Arithmetic left shift (multiply by 2)
+; -----------------------------------------------
+w_TWO_STAR:
+        DEFCODE "2*", 0
+w_TWO_STAR_cf:
+        SLA     C
+        RL      B
+        NEXT
+
+; -----------------------------------------------
+; 2/ ( x -- x/2 )
+;   Arithmetic right shift (divide by 2, sign-preserving)
+; -----------------------------------------------
+w_TWO_SLASH:
+        DEFCODE "2/", 0
+w_TWO_SLASH_cf:
+        SRA     B
+        RR      C
+        NEXT
+
+; -----------------------------------------------
 ; + ( n1 n2 -- n3 )
 ;   Add top two stack items
 ; -----------------------------------------------

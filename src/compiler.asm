@@ -1,6 +1,76 @@
 ; compiler.asm — Colon compiler words (:, ;, [, ], LITERAL, CREATE, CONSTANT, DOES>)
 ; AntForth — A Forth for CP/M on Z80
 
+; -----------------------------------------------
+; >BODY ( xt -- a-addr )
+;   Given xt (code field address of a CREATE'd word), return body address
+;   CREATE layout: [JP DOVAR (3 bytes)][does-addr (2 bytes)][body...]
+;   So body = xt + 5
+; -----------------------------------------------
+w_TO_BODY:
+        DEFCODE ">BODY", 0
+w_TO_BODY_cf:
+        INC     BC              ; +1
+        INC     BC              ; +2
+        INC     BC              ; +3
+        INC     BC              ; +4
+        INC     BC              ; +5
+        NEXT
+
+; -----------------------------------------------
+; ' (tick) ( "<spaces>name" -- xt )
+;   Parse next word, find it, return its execution token
+;   Error if word not found
+; -----------------------------------------------
+w_TICK:
+        DEFWORD "'", 0
+w_TICK_body:
+w_TICK_cf EQU w_TICK_body - 3
+        DW w_BL_cf                   ; ( -- 32 )
+        DW w_WORD_cf                 ; ( 32 -- c-addr )
+        DW w_FIND_cf                 ; ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+        DW w_DUP_cf                  ; ( ... flag flag )
+        DW w_QBRANCH_cf              ; if flag=0, not found
+        DW .tick_notfound - $
+        ; Found: ( xt flag ) — drop flag, keep xt
+        DW w_DROP_cf                 ; ( xt )
+        DW EXIT_CODE
+.tick_notfound:
+        ; ( c-addr 0 ) — word not found
+        DW w_DROP_cf                 ; drop 0, leaving c-addr
+        DW w_COUNT_cf                ; ( c-addr -- addr len )
+        DW w_TYPE_cf                 ; print the unknown word
+        DW w_LIT_cf, ' '
+        DW w_EMIT_cf                 ; space
+        DW w_LIT_cf, '?'
+        DW w_EMIT_cf                 ; question mark
+        DW w_CR_cf                   ; newline
+        DW w_ABORT_cf                ; reset and restart (never returns)
+
+; -----------------------------------------------
+; ['] ( "<spaces>name" -- ) compile: ( -- xt )
+;   Compile-time: parse name, find xt, compile as literal
+; -----------------------------------------------
+w_BRACKET_TICK:
+        DEFIMMED "[']"
+w_BRACKET_TICK_body:
+w_BRACKET_TICK_cf EQU w_BRACKET_TICK_body - 3
+        DW w_TICK_cf                 ; ( -- xt ) parse and find word
+        DW w_LITERAL_cf              ; compile xt as inline literal
+        DW EXIT_CODE
+
+; -----------------------------------------------
+; [CHAR] ( "<spaces>name" -- ) compile: ( -- char )
+;   Compile-time: parse name, get first char, compile as literal
+; -----------------------------------------------
+w_BRACKET_CHAR:
+        DEFIMMED "[CHAR]"
+w_BRACKET_CHAR_body:
+w_BRACKET_CHAR_cf EQU w_BRACKET_CHAR_body - 3
+        DW w_CHAR_cf                 ; ( -- char ) parse and get first char
+        DW w_LITERAL_cf              ; compile char as inline literal
+        DW EXIT_CODE
+
 ; === Shared header-building scratch variables ===
 bh_name_start:       DW 0   ; Pointer to name in TIB
 bh_name_len:         DB 0   ; Clamped name length

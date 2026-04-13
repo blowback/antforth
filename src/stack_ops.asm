@@ -6,6 +6,20 @@
 ; Return stack:    >R, R>, R@
 
 ; -----------------------------------------------
+; ?DUP ( x -- 0 | x x )
+;   Duplicate TOS only if non-zero
+; -----------------------------------------------
+w_QDUP:
+        DEFCODE "?DUP", 0
+w_QDUP_cf:
+        LD      A, B
+        OR      C               ; Test if BC is zero
+        JR      Z, .qdup_zero
+        PUSH    BC              ; Non-zero: duplicate
+.qdup_zero:
+        NEXT
+
+; -----------------------------------------------
 ; DUP ( x -- x x )
 ;   Duplicate top of stack
 ; -----------------------------------------------

@@ -1,6 +1,6 @@
 # ANS Forth Core Word Set Compliance Report
 
-**Date:** 2026-04-12
+**Date:** 2026-04-13
 **System:** antforth (Z80 Forth for CP/M)
 **Reference:** DPANS94 (ANSI X3.215-1994), sections 6.1 (Core) and 6.2 (Core Extension)
 **Source:** `src/*.asm`
@@ -10,17 +10,17 @@
 | Metric | Count |
 |--------|-------|
 | Total Core words in standard | 133 |
-| Fully implemented | 96 |
-| Partially implemented | 2 |
-| Missing | 35 |
-| **Core compliance** | **72.2%** |
+| Fully implemented | 111 |
+| Partially implemented | 1 |
+| Missing | 21 |
+| **Core compliance** | **83.5%** |
 
 | Gap Classification | Count |
 |--------------------|-------|
-| (a) Deliberately omitted | 3 |
-| (b) Oversight — simple words | 14 |
-| (b) Oversight — missing subsystem | 18 |
-| (c) Partially implemented | 2 |
+| (a) Deliberately omitted | 1 |
+| (b) Oversight — missing subsystem | 19 |
+| (b) Oversight — moderate | 1 |
+| (c) Partially implemented | 1 |
 
 | Core Extension bonus | Count |
 |----------------------|-------|
@@ -32,43 +32,43 @@
 
 ### Stack Operations
 
-14 Core words — 9 implemented, 5 missing
+14 Core words — 10 implemented, 4 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
-| `DUP` | `( x -- x x )` | Implemented | `stack_ops.asm:13` | |
-| `DROP` | `( x -- )` | Implemented | `stack_ops.asm:23` | |
-| `SWAP` | `( x1 x2 -- x2 x1 )` | Implemented | `stack_ops.asm:34` | |
-| `OVER` | `( x1 x2 -- x1 x2 x1 )` | Implemented | `stack_ops.asm:48` | |
-| `ROT` | `( x1 x2 x3 -- x2 x3 x1 )` | Implemented | `stack_ops.asm:63` | |
-| `?DUP` | `( x -- 0 \| x x )` | **Missing** | — | (b) Oversight; simple to add |
+| `DUP` | `( x -- x x )` | Implemented | `stack_ops.asm:25` | |
+| `DROP` | `( x -- )` | Implemented | `stack_ops.asm:35` | |
+| `SWAP` | `( x1 x2 -- x2 x1 )` | Implemented | `stack_ops.asm:46` | |
+| `OVER` | `( x1 x2 -- x1 x2 x1 )` | Implemented | `stack_ops.asm:60` | |
+| `ROT` | `( x1 x2 x3 -- x2 x3 x1 )` | Implemented | `stack_ops.asm:75` | |
+| `?DUP` | `( x -- 0 \| x x )` | Implemented | `stack_ops.asm:12` | |
 | `2DROP` | `( x1 x2 -- )` | **Missing** | — | (b) Oversight; double-cell stack |
 | `2DUP` | `( x1 x2 -- x1 x2 x1 x2 )` | **Missing** | — | (b) Oversight; double-cell stack |
 | `2OVER` | `( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 )` | **Missing** | — | (b) Oversight; double-cell stack |
 | `2SWAP` | `( x1 x2 x3 x4 -- x3 x4 x1 x2 )` | **Missing** | — | (b) Oversight; double-cell stack |
-| `DEPTH` | `( -- +n )` | Implemented | `stack_ops.asm:170` | |
-| `>R` | `( x -- ) ( R: -- x )` | Implemented | `stack_ops.asm:241` | |
-| `R>` | `( -- x ) ( R: x -- )` | Implemented | `stack_ops.asm:255` | |
-| `R@` | `( -- x ) ( R: x -- x )` | Implemented | `stack_ops.asm:269` | |
+| `DEPTH` | `( -- +n )` | Implemented | `stack_ops.asm:182` | |
+| `>R` | `( x -- ) ( R: -- x )` | Implemented | `stack_ops.asm:253` | |
+| `R>` | `( -- x ) ( R: x -- )` | Implemented | `stack_ops.asm:267` | |
+| `R@` | `( -- x ) ( R: x -- x )` | Implemented | `stack_ops.asm:281` | |
 
 ### Arithmetic
 
-19 Core words — 10 implemented, 9 missing
+19 Core words — 14 implemented, 5 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
-| `+` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:13` | |
-| `-` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:27` | |
-| `*` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:44` | |
-| `/` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:198` | |
-| `MOD` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:214` | |
-| `/MOD` | `( n1 n2 -- rem quot )` | Implemented | `arithmetic.asm:177` | |
+| `+` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:55` | |
+| `-` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:69` | |
+| `*` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:86` | |
+| `/` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:240` | |
+| `MOD` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:256` | |
+| `/MOD` | `( n1 n2 -- rem quot )` | Implemented | `arithmetic.asm:219` | |
 | `*/` | `( n1 n2 n3 -- n4 )` | **Missing** | — | (b) Oversight; needs double-cell intermediate |
 | `*/MOD` | `( n1 n2 n3 -- n4 n5 )` | **Missing** | — | (b) Oversight; needs double-cell intermediate |
-| `1+` | `( n -- n+1 )` | **Missing** | — | (b) Oversight; trivial |
-| `1-` | `( n -- n-1 )` | **Missing** | — | (b) Oversight; trivial |
-| `2*` | `( x -- x*2 )` | **Missing** | — | (b) Oversight; single left shift |
-| `2/` | `( x -- x/2 )` | **Missing** | — | (b) Oversight; arithmetic right shift |
+| `1+` | `( n -- n+1 )` | Implemented | `arithmetic.asm:12` | |
+| `1-` | `( n -- n-1 )` | Implemented | `arithmetic.asm:22` | |
+| `2*` | `( x -- x*2 )` | Implemented | `arithmetic.asm:32` | |
+| `2/` | `( x -- x/2 )` | Implemented | `arithmetic.asm:43` | |
 | `ABS` | `( n -- u )` | Implemented | `bootstrap.asm:9` | DEFWORD |
 | `NEGATE` | `( n -- -n )` | Implemented | `bootstrap.asm:22` | DEFWORD |
 | `MAX` | `( n1 n2 -- n3 )` | Implemented | `bootstrap.asm:56` | DEFWORD |
@@ -108,37 +108,37 @@
 
 ### Memory
 
-17 Core words — 14 implemented, 3 missing
+17 Core words — 15 implemented, 2 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
-| `!` | `( x a-addr -- )` | Implemented | `memory.asm:27` | |
-| `@` | `( a-addr -- x )` | Implemented | `memory.asm:13` | |
-| `C!` | `( char c-addr -- )` | Implemented | `memory.asm:57` | |
-| `C@` | `( c-addr -- char )` | Implemented | `memory.asm:44` | |
+| `!` | `( x a-addr -- )` | Implemented | `memory.asm:58` | |
+| `@` | `( a-addr -- x )` | Implemented | `memory.asm:44` | |
+| `C!` | `( char c-addr -- )` | Implemented | `memory.asm:88` | |
+| `C@` | `( c-addr -- char )` | Implemented | `memory.asm:75` | |
 | `2!` | `( x1 x2 a-addr -- )` | **Missing** | — | (b) Oversight; double-cell store |
 | `2@` | `( a-addr -- x1 x2 )` | **Missing** | — | (b) Oversight; double-cell fetch |
-| `+!` | `( n a-addr -- )` | Implemented | `memory.asm:72` | |
-| `,` | `( x -- )` | Implemented | `memory.asm:120` | |
-| `C,` | `( char -- )` | Implemented | `memory.asm:138` | |
-| `HERE` | `( -- addr )` | Implemented | `memory.asm:93` | |
-| `ALLOT` | `( n -- )` | Implemented | `memory.asm:105` | |
-| `ALIGN` | `( -- )` | Implemented | `memory.asm:154` | |
-| `ALIGNED` | `( addr -- a-addr )` | Implemented | `memory.asm:171` | |
-| `CELLS` | `( n1 -- n2 )` | Implemented | `memory.asm:184` | |
-| `CELL+` | `( a-addr1 -- a-addr2 )` | **Missing** | — | (b) Oversight; trivial (2 +) |
-| `FILL` | `( c-addr u char -- )` | Implemented | `memory.asm:195` | |
-| `MOVE` | `( addr1 addr2 u -- )` | Implemented | `memory.asm:240` | |
+| `+!` | `( n a-addr -- )` | Implemented | `memory.asm:103` | |
+| `,` | `( x -- )` | Implemented | `memory.asm:151` | |
+| `C,` | `( char -- )` | Implemented | `memory.asm:169` | |
+| `HERE` | `( -- addr )` | Implemented | `memory.asm:124` | |
+| `ALLOT` | `( n -- )` | Implemented | `memory.asm:136` | |
+| `ALIGN` | `( -- )` | Implemented | `memory.asm:185` | |
+| `ALIGNED` | `( addr -- a-addr )` | Implemented | `memory.asm:202` | |
+| `CELLS` | `( n1 -- n2 )` | Implemented | `memory.asm:215` | |
+| `CELL+` | `( a-addr1 -- a-addr2 )` | Implemented | `memory.asm:12` | |
+| `FILL` | `( c-addr u char -- )` | Implemented | `memory.asm:226` | |
+| `MOVE` | `( addr1 addr2 u -- )` | Implemented | `memory.asm:271` | |
 
 ### Character
 
-3 Core words — 0 implemented, 3 missing
+3 Core words — 3 implemented, 0 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
-| `CHAR` | `( "<spaces>name" -- char )` | **Missing** | — | (b) Oversight; parse word, return first char |
-| `CHAR+` | `( c-addr1 -- c-addr2 )` | **Missing** | — | (a) On Z80 (1 char = 1 byte), equivalent to `1+` |
-| `CHARS` | `( n1 -- n2 )` | **Missing** | — | (a) On Z80 (1 char = 1 byte), this is a no-op |
+| `CHAR` | `( "<spaces>name" -- char )` | Implemented | `strings.asm:169` | |
+| `CHAR+` | `( c-addr1 -- c-addr2 )` | Implemented | `memory.asm:23` | INC BC; same as 1+ on Z80 (1 char = 1 byte) |
+| `CHARS` | `( n1 -- n2 )` | Implemented | `memory.asm:33` | No-op on Z80 (1 char = 1 byte); provided for portability |
 
 ### I/O
 
@@ -187,7 +187,7 @@
 
 ### Control Flow
 
-16 Core words — 15 implemented, 0 missing, 1 partial
+16 Core words — 16 implemented, 0 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
@@ -205,47 +205,47 @@
 | `J` | `( -- n )` | Implemented | `control_flow.asm:354` | |
 | `LEAVE` | `( -- )` | Implemented | `control_flow.asm:462` | DEFIMMED |
 | `UNLOOP` | `( -- )` | Implemented | `control_flow.asm:329` | |
-| `EXIT` | `( -- )` | **Partial** | `inner_interpreter.asm:23` | (c) `EXIT_CODE` label exists but has no dictionary entry; cannot be called from Forth |
+| `EXIT` | `( -- )` | Implemented | `inner_interpreter.asm:26` | DEFCODE wrapping `EXIT_CODE` |
 | `RECURSE` | `( -- )` | Implemented | `control_flow.asm:483` | IMMEDIATE flag |
 
 ### Compiler and Defining Words
 
-14 Core words — 12 implemented, 2 missing
+14 Core words — 14 implemented, 0 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
-| `:` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:289` | |
-| `;` | `( -- )` | Implemented | `compiler.asm:434` | IMMEDIATE |
-| `CONSTANT` | `( x "<spaces>name" -- )` | Implemented | `compiler.asm:584` | |
+| `:` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:331` | |
+| `;` | `( -- )` | Implemented | `compiler.asm:476` | IMMEDIATE |
+| `CONSTANT` | `( x "<spaces>name" -- )` | Implemented | `compiler.asm:626` | |
 | `VARIABLE` | `( "<spaces>name" -- )` | Implemented | `bootstrap.asm:74` | DEFWORD |
-| `CREATE` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:524` | |
-| `DOES>` | `( -- )` | Implemented | `compiler.asm:650` | IMMEDIATE |
-| `IMMEDIATE` | `( -- )` | Implemented | `compiler.asm:269` | |
-| `LITERAL` | `( x -- )` | Implemented | `compiler.asm:496` | IMMEDIATE |
-| `POSTPONE` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:209` | DEFIMMED |
-| `[` | `( -- )` | Implemented | `compiler.asm:473` | IMMEDIATE |
-| `]` | `( -- )` | Implemented | `compiler.asm:484` | |
+| `CREATE` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:566` | |
+| `DOES>` | `( -- )` | Implemented | `compiler.asm:692` | IMMEDIATE |
+| `IMMEDIATE` | `( -- )` | Implemented | `compiler.asm:311` | |
+| `LITERAL` | `( x -- )` | Implemented | `compiler.asm:538` | IMMEDIATE |
+| `POSTPONE` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:251` | DEFIMMED |
+| `[` | `( -- )` | Implemented | `compiler.asm:515` | IMMEDIATE |
+| `]` | `( -- )` | Implemented | `compiler.asm:526` | |
 | `STATE` | `( -- a-addr )` | Implemented | `outer_interpreter.asm:26` | |
-| `[']` | `( "<spaces>name" -- xt )` | **Missing** | — | (b) Oversight; compile-time tick |
-| `[CHAR]` | `( "<spaces>name" -- char )` | **Missing** | — | (b) Oversight; compile-time char |
+| `[']` | `( "<spaces>name" -- xt )` | Implemented | `compiler.asm:54` | DEFIMMED |
+| `[CHAR]` | `( "<spaces>name" -- char )` | Implemented | `compiler.asm:66` | DEFIMMED |
 
 ### System and Interpreter
 
-13 Core words — 8 implemented, 4 missing, 1 partial
+13 Core words — 11 implemented, 2 missing
 
 | Word | Stack Effect | Status | Source | Notes |
 |------|-------------|--------|--------|-------|
-| `EXECUTE` | `( xt -- )` | Implemented | `inner_interpreter.asm:188` | |
+| `EXECUTE` | `( xt -- )` | Implemented | `inner_interpreter.asm:194` | |
 | `FIND` | `( c-addr -- c-addr 0 \| xt 1 \| xt -1 )` | Implemented | `dictionary.asm:22` | Hash-table lookup |
-| `ABORT` | `( -- )` | Implemented | `system.asm:112` | |
+| `ABORT` | `( -- )` | Implemented | `system.asm:218` | |
 | `QUIT` | `( -- )` | Implemented | `outer_interpreter.asm:237` | |
 | `>IN` | `( -- a-addr )` | Implemented | `outer_interpreter.asm:46` | |
 | `BASE` | `( -- a-addr )` | Implemented | `outer_interpreter.asm:36` | |
 | `SOURCE` | `( -- c-addr u )` | Implemented | `outer_interpreter.asm:66` | |
-| `(` | `( "ccc)" -- )` | Implemented | `strings.asm:776` | IMMEDIATE |
-| `'` | `( "<spaces>name" -- xt )` | **Missing** | — | (b) Oversight; fundamental for metaprogramming |
-| `>BODY` | `( xt -- a-addr )` | **Missing** | — | (b) Oversight; introspect CREATE'd words |
-| `ABORT"` | `( "ccc" x -- )` | **Missing** | — | (b) Oversight; conditional abort with message |
+| `(` | `( "ccc)" -- )` | Implemented | `strings.asm:838` | IMMEDIATE |
+| `'` | `( "<spaces>name" -- xt )` | Implemented | `compiler.asm:25` | DEFWORD |
+| `>BODY` | `( xt -- a-addr )` | Implemented | `compiler.asm:10` | xt+5 (skips JP + does-addr) |
+| `ABORT"` | `( "ccc" x -- )` | Implemented | `system.asm:178` | IMMEDIATE; runtime `(ABORT")` at `system.asm:112` |
 | `EVALUATE` | `( c-addr u -- )` | **Missing** | — | (b) Oversight; requires input source switching |
 | `ENVIRONMENT?` | `( c-addr u -- false \| true )` | **Missing** | — | (a) Deliberately omitted; complex query system, rarely used |
 
@@ -253,44 +253,13 @@
 
 ## Gap Analysis
 
-### (a) Deliberately Omitted — 3 words
-
-These words are absent for clear platform or design reasons:
+### (a) Deliberately Omitted — 1 word
 
 | Word | Rationale |
 |------|-----------|
 | `ENVIRONMENT?` | Complex metadata query system for implementation-defined limits. Rarely used by portable programs. Low value-to-effort ratio. |
-| `CHAR+` | On Z80 where 1 char = 1 byte, `CHAR+` is equivalent to `1+` (which is also missing but trivial to add). |
-| `CHARS` | On Z80 where 1 char = 1 byte, `CHARS` is a no-op by definition. |
 
-### (b) Oversight — 32 words
-
-#### Simple words (trivial to implement) — 9 words
-
-| Word | Complexity | Notes |
-|------|-----------|-------|
-| `?DUP` | Trivial | Conditional duplicate; a few Z80 instructions |
-| `1+` | Trivial | `INC BC` |
-| `1-` | Trivial | `DEC BC` |
-| `2*` | Trivial | Shift left (add BC to itself) |
-| `2/` | Trivial | Arithmetic shift right |
-| `CELL+` | Trivial | `2 +` on 16-bit system |
-| `CHAR` | Simple | Parse next word, return first character |
-| `'` | Simple | Interpret-time version of tick — parse and look up xt |
-| `>BODY` | Simple | Return data-field address from xt |
-
-#### Compile-time words — 2 words
-
-| Word | Complexity | Notes |
-|------|-----------|-------|
-| `[']` | Simple | Compile-time tick; depends on `'` |
-| `[CHAR]` | Simple | Compile-time char; depends on `CHAR` |
-
-#### Error handling — 1 word
-
-| Word | Complexity | Notes |
-|------|-----------|-------|
-| `ABORT"` | Moderate | Conditional abort with compiled message string |
+### (b) Oversight — 20 words
 
 #### System — 1 word
 
@@ -319,11 +288,10 @@ antforth is a single-cell (16-bit) system. The following words operate on double
 
 `*/` and `*/MOD` use a double-cell intermediate (n1*n2 as 32-bit before dividing by n3), so they depend on the double-cell arithmetic primitives.
 
-### (c) Partially Implemented — 2 words
+### (c) Partially Implemented — 1 word
 
 | Word | Status | Details |
 |------|--------|---------|
-| `EXIT` | Code exists, no dictionary entry | `EXIT_CODE` at `inner_interpreter.asm:23` implements the return-from-colon-definition logic. It is used internally by `;` and the threading model. However, it has no dictionary header, so Forth code cannot call `EXIT` by name. Adding a DEFCODE wrapper around the existing label is straightforward. |
 | `>NUMBER` | Single-cell only | `strings.asm:266` accepts the standard double-cell stack signature `( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )` but the high cell of `ud` is passed through unchanged. Number conversion accumulates into the low cell only. Functionally correct for values that fit in 16 bits. |
 
 ---
@@ -365,29 +333,14 @@ antforth also defines words that are useful but outside the Core word sets:
 - **Logic and comparison** — 100% Core compliance (12/12).
 - **I/O** — 100% Core compliance (8/8).
 - **String and parsing** — 100% Core compliance (4/4).
-- **Control flow** — Near-complete (15/16); only `EXIT` lacks a dictionary entry.
-- **Compiler** — Strong coverage (12/14); only `[']` and `[CHAR]` missing.
-- **Memory** — Strong coverage (14/17); only double-cell and `CELL+` missing.
+- **Control flow** — 100% Core compliance (16/16).
+- **Compiler** — 100% Core compliance (14/14).
+- **Character** — 100% Core compliance (3/3).
+- **Memory** — Near-complete (15/17); only double-cell `2!` and `2@` missing.
+- **System** — Near-complete (11/13); only `EVALUATE` and `ENVIRONMENT?` missing.
 
 ### The two big gaps
 
 1. **Double-cell operations (13 words):** antforth has no 32-bit arithmetic. This is the single largest gap and affects stack, memory, arithmetic, and mixed-precision categories. Adding the double-cell primitives (`M*`, `UM*`, `UM/MOD`, `S>D`) would unblock `FM/MOD`, `SM/REM`, `*/`, and `*/MOD` as well.
 
 2. **Pictured numeric output (6 words):** The `<# # #S #> HOLD SIGN` subsystem is entirely absent. antforth prints numbers with `.` and `U.` directly. Adding pictured output enables user-customisable number formatting.
-
-### Quick wins
-
-Adding these 10 words would raise compliance from 72.2% to 79.7%:
-
-| Word | Effort |
-|------|--------|
-| `EXIT` | Wrap existing `EXIT_CODE` in DEFCODE |
-| `1+` | Single `INC BC` |
-| `1-` | Single `DEC BC` |
-| `2*` | `SLA C / RL B` or `ADD HL,HL` pattern |
-| `2/` | `SRA B / RR C` |
-| `CELL+` | DEFWORD: `2 +` |
-| `?DUP` | Test BC, conditionally push |
-| `CHAR` | Parse word, load first byte |
-| `'` | Parse word, call FIND, validate |
-| `>BODY` | Compute data field offset from xt |

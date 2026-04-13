@@ -1,6 +1,6 @@
 # Story 5.4: ANS Forth Core Quick Wins
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,7 +34,7 @@ so that antforth reaches ~83% Core compliance and portable Forth code works with
 | `CELL+` | `( a-addr -- a-addr+2 )` | `INC BC; INC BC` (cell = 2 bytes on Z80) | `src/memory.asm` |
 | `CHAR+` | `( c-addr -- c-addr+1 )` | `INC BC` (Z80: 1 char = 1 byte) | `src/memory.asm` |
 | `CHARS` | `( n -- n )` | No-op, just NEXT (Z80: 1 char = 1 byte) | `src/memory.asm` |
-| `>BODY` | `( xt -- a-addr )` | `INC BC; INC BC; INC BC` (skip 3-byte JP) | `src/compiler.asm` |
+| `>BODY` | `( xt -- a-addr )` | 5x `INC BC` (skip 3-byte JP + 2-byte does-addr) | `src/compiler.asm` |
 
 ### Tier 2 — Simple DEFCODE (3 words)
 
@@ -65,54 +65,54 @@ so that antforth reaches ~83% Core compliance and portable Forth code works with
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement Tier 1 trivial DEFCODE words (AC: #1)
-  - [ ] 1.1 `1+` in `src/arithmetic.asm` — DEFCODE "1+", 0; INC BC; NEXT
-  - [ ] 1.2 `1-` in `src/arithmetic.asm` — DEFCODE "1-", 0; DEC BC; NEXT
-  - [ ] 1.3 `2*` in `src/arithmetic.asm` — DEFCODE "2*", 0; SLA C; RL B; NEXT
-  - [ ] 1.4 `2/` in `src/arithmetic.asm` — DEFCODE "2/", 0; SRA B; RR C; NEXT
-  - [ ] 1.5 `?DUP` in `src/stack_ops.asm` — DEFCODE "?DUP", 0; test BC zero; if non-zero PUSH BC; NEXT
-  - [ ] 1.6 `CELL+` in `src/memory.asm` — DEFCODE "CELL+", 0; INC BC; INC BC; NEXT
-  - [ ] 1.7 `CHAR+` in `src/memory.asm` — DEFCODE "CHAR+", 0; INC BC; NEXT (identical to 1+)
-  - [ ] 1.8 `CHARS` in `src/memory.asm` — DEFCODE "CHARS", 0; NEXT (no-op)
-  - [ ] 1.9 `>BODY` in `src/compiler.asm` — DEFCODE ">BODY", 0; INC BC; INC BC; INC BC; NEXT
+- [x] Task 1: Implement Tier 1 trivial DEFCODE words (AC: #1)
+  - [x] 1.1 `1+` in `src/arithmetic.asm` — DEFCODE "1+", 0; INC BC; NEXT
+  - [x] 1.2 `1-` in `src/arithmetic.asm` — DEFCODE "1-", 0; DEC BC; NEXT
+  - [x] 1.3 `2*` in `src/arithmetic.asm` — DEFCODE "2*", 0; SLA C; RL B; NEXT
+  - [x] 1.4 `2/` in `src/arithmetic.asm` — DEFCODE "2/", 0; SRA B; RR C; NEXT
+  - [x] 1.5 `?DUP` in `src/stack_ops.asm` — DEFCODE "?DUP", 0; test BC zero; if non-zero PUSH BC; NEXT
+  - [x] 1.6 `CELL+` in `src/memory.asm` — DEFCODE "CELL+", 0; INC BC; INC BC; NEXT
+  - [x] 1.7 `CHAR+` in `src/memory.asm` — DEFCODE "CHAR+", 0; INC BC; NEXT (identical to 1+)
+  - [x] 1.8 `CHARS` in `src/memory.asm` — DEFCODE "CHARS", 0; NEXT (no-op)
+  - [x] 1.9 `>BODY` in `src/compiler.asm` — DEFCODE ">BODY", 0; INC BC x5; NEXT (xt+5 = skip JP + does-addr)
 
-- [ ] Task 2: Implement Tier 2 simple DEFCODE words (AC: #1)
-  - [ ] 2.1 `EXIT` in `src/inner_interpreter.asm` — DEFCODE "EXIT", 0; JP EXIT_CODE (or inline the 6-instruction body)
-  - [ ] 2.2 `CHAR` in `src/strings.asm` — DEFCODE "CHAR", 0; call BL WORD to parse next token; load first byte of counted string into C, zero B; NEXT
-  - [ ] 2.3 `'` (tick) in `src/compiler.asm` — DEFCODE "'", 0; call BL WORD FIND; if FIND returns 0, call error handler (word not found); else push xt in BC; NEXT
-- [ ] Task 3: Implement Tier 3 compile-time DEFIMMED words (AC: #1)
-  - [ ] 3.1 `[']` in `src/compiler.asm` — DEFIMMED "[']"; thread: tick, w_LIT_cf (compile xt as literal), COMMA, EXIT_CODE. Or: DEFIMMED that calls `'` then compiles the result using LITERAL logic (compile LIT + value)
-  - [ ] 3.2 `[CHAR]` in `src/compiler.asm` — DEFIMMED "[CHAR]"; thread: CHAR, then compile result as literal using LITERAL logic
+- [x] Task 2: Implement Tier 2 simple DEFCODE words (AC: #1)
+  - [x] 2.1 `EXIT` in `src/inner_interpreter.asm` — DEFCODE "EXIT", 0; JP EXIT_CODE
+  - [x] 2.2 `CHAR` in `src/strings.asm` — DEFCODE "CHAR", 0; inline parsing of next space-delimited token, return first char
+  - [x] 2.3 `'` (tick) in `src/compiler.asm` — DEFWORD "'", 0; BL WORD FIND, error if not found, DROP flag keeping xt
+- [x] Task 3: Implement Tier 3 compile-time DEFIMMED words (AC: #1)
+  - [x] 3.1 `[']` in `src/compiler.asm` — DEFIMMED "[']"; threads: TICK, LITERAL, EXIT_CODE
+  - [x] 3.2 `[CHAR]` in `src/compiler.asm` — DEFIMMED "[CHAR]"; threads: CHAR, LITERAL, EXIT_CODE
 
-- [ ] Task 4: Implement ABORT" (AC: #1)
-  - [ ] 4.1 Create runtime helper `(ABORT")` in `src/system.asm` — DEFCODE that: pops flag from stack; if flag is zero, skip inline string and continue; if flag is non-zero, print inline counted string via TYPE, then call ABORT
-  - [ ] 4.2 Create `ABORT"` in `src/system.asm` — DEFIMMED "ABORT\""; at compile time: compile reference to `(ABORT")`, then compile inline string (same pattern as `."` in `src/strings.asm:655`)
+- [x] Task 4: Implement ABORT" (AC: #1)
+  - [x] 4.1 Create runtime helper `(ABORT")` in `src/system.asm` — DEFCODE; pops flag, if zero skip inline string, if non-zero print via BDOS then JP ABORT
+  - [x] 4.2 Create `ABORT"` in `src/system.asm` — DEFCODE with F_IMMEDIATE; compiles (ABORT") xt + inline counted string (same pattern as `."` in strings.asm)
 
-- [ ] Task 5: Add REPL-piped tests for all 15 words (AC: #2)
-  - [ ] 5.1 Tests for `1+`, `1-`: `5 1+ .` expects `6`; `5 1- .` expects `4`; edge: `0 1- .` expects `-1`; `-1 1+ .` expects `0`
-  - [ ] 5.2 Tests for `2*`, `2/`: `7 2* .` expects `14`; `14 2/ .` expects `7`; edge: `-6 2/ .` expects `-3` (arithmetic shift)
-  - [ ] 5.3 Tests for `?DUP`: `5 ?DUP . .` expects `5 5`; `0 ?DUP .` expects `0` (only one value on stack)
-  - [ ] 5.4 Tests for `CELL+`, `CHAR+`, `CHARS`: `1000 CELL+ .` expects `1002`; `1000 CHAR+ .` expects `1001`; `5 CHARS .` expects `5`
-  - [ ] 5.5 Test for `EXIT`: `: TEST-EXIT 1 EXIT 2 ; TEST-EXIT .` expects `1` (2 never reached)
-  - [ ] 5.6 Test for `CHAR`: `CHAR A .` expects `65`; `CHAR Z .` expects `90`
-  - [ ] 5.7 Test for `'` (tick): `' DUP EXECUTE .` — define a test word, tick it, execute it
-  - [ ] 5.8 Test for `>BODY`: `CREATE FOO 42 , FOO >BODY @ .` expects `42` (FOO's xt + 3 = data field containing 42, but note CREATE already points to body via DOVAR; verify correct offset)
-  - [ ] 5.9 Test for `[']`: `: USE-TICK ['] DUP EXECUTE ; 7 USE-TICK . .` expects `7 7`
-  - [ ] 5.10 Test for `[CHAR]`: `: GET-A [CHAR] A ; GET-A .` expects `65`
-  - [ ] 5.11 Test for `ABORT"`: `: CHK 0= ABORT" nonzero" ; 0 CHK` should not abort; `1 CHK` should abort with message containing "nonzero"
+- [x] Task 5: Add REPL-piped tests for all 15 words (AC: #2)
+  - [x] 5.1 Tests for `1+`, `1-`: tests 238-241 (including edge cases -1, 0)
+  - [x] 5.2 Tests for `2*`, `2/`: tests 242-244 (including arithmetic shift -6 2/ = -3)
+  - [x] 5.3 Tests for `?DUP`: tests 245-246 (non-zero and zero cases)
+  - [x] 5.4 Tests for `CELL+`, `CHAR+`, `CHARS`: tests 247-249
+  - [x] 5.5 Test for `EXIT`: test 250 (1 EXIT 2 in colon def returns 1)
+  - [x] 5.6 Test for `CHAR`: tests 251-252 (CHAR A = 65, CHAR Z = 90)
+  - [x] 5.7 Test for `'` (tick): test 256 (7 ' DUP EXECUTE . outputs 7)
+  - [x] 5.8 Test for `>BODY`: test 255 (' FOO >BODY @ . outputs 42; corrected to use tick since FOO pushes body not xt)
+  - [x] 5.9 Test for `[']`: test 253 (compiles xt of DUP, EXECUTE duplicates 7)
+  - [x] 5.10 Test for `[CHAR]`: test 254 (GET-A [CHAR] A ; GET-A . outputs 65)
+  - [x] 5.11 Test for `ABORT"`: tests 257-258 (0 CHK no abort; 1 CHK aborts with "nonzero" and recovers)
 
-- [ ] Task 6: Run full regression suite (AC: #3)
-  - [ ] 6.1 `make test` — all 73 assembly thread tests pass
-  - [ ] 6.2 `make test-repl` — all existing REPL tests pass
-  - [ ] 6.3 New REPL tests pass
+- [x] Task 6: Run full regression suite (AC: #3)
+  - [x] 6.1 `make test` — all 73 assembly thread tests pass
+  - [x] 6.2 `make test-repl` — all 237 existing REPL tests pass
+  - [x] 6.3 All 21 new REPL tests pass (tests 238-258)
 
-- [ ] Task 7: Update compliance report (AC: #4)
-  - [ ] 7.1 In `docs/ans-forth-core-compliance.md`, change status of all 15 words from "Missing" to "Implemented" with correct source file and line number
-  - [ ] 7.2 Update `EXIT` from "Partial" to "Implemented"
-  - [ ] 7.3 Update summary table: Fully implemented count, Missing count, compliance percentage
-  - [ ] 7.4 Update Gap Analysis section: remove implemented words from oversight lists
-  - [ ] 7.5 Update Quick Wins section to reflect completion
-  - [ ] 7.6 Move `CHAR+` and `CHARS` from "Deliberately omitted" to "Implemented" (they were omitted because they're trivial on Z80, but we now provide them for portability)
+- [x] Task 7: Update compliance report (AC: #4)
+  - [x] 7.1 In `docs/ans-forth-core-compliance.md`, changed status of all 15 words from Missing/Partial to Implemented with correct source file and line numbers
+  - [x] 7.2 Updated `EXIT` from "Partial" to "Implemented"
+  - [x] 7.3 Updated summary table: 111 fully implemented, 1 partial, 21 missing, 83.5% compliance
+  - [x] 7.4 Updated Gap Analysis: removed implemented words, simplified to 1 deliberate omission + 20 oversight (1 moderate + 19 subsystem)
+  - [x] 7.5 Removed Quick Wins section (completed)
+  - [x] 7.6 Moved `CHAR+` and `CHARS` from "Deliberately omitted" to "Implemented" in Character section
 
 ## Dev Notes
 
@@ -221,8 +221,40 @@ DEFIMMED is shorthand for `DEFWORD "NAME", F_IMMEDIATE`.
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+- CHAR initially failed (stack underflow) — root cause: PUSH BC to save old TOS was incorrectly POP'd before setting new TOS; fix: keep the PUSH (needed for ( -- char ) stack effect), only set BC = result
+- >BODY initially used xt+3 (per story spec) — root cause: CREATE layout includes 2-byte does-addr slot after JP DOVAR, so body = xt+5 not xt+3; fix: 5x INC BC
+- >BODY test initially used `FOO >BODY` — root cause: executing FOO pushes body address (not xt); fix: use `' FOO >BODY` to get xt first
+- ['] test had shell quoting issue with `'"'"'` in Makefile recipe — fix: switched to printf "%s" with double-quoted string
 
 ### Completion Notes List
 
+- Implemented 15 ANS Core words across 7 source files
+- Tier 1 (9 trivial DEFCODE): 1+, 1-, 2*, 2/, ?DUP, CELL+, CHAR+, CHARS, >BODY
+- Tier 2 (3 simple DEFCODE/DEFWORD): EXIT (JP EXIT_CODE), CHAR (inline parsing), ' (DEFWORD threading BL WORD FIND)
+- Tier 3 (2 DEFIMMED): ['] and [CHAR] both thread through LITERAL
+- Tier 4 (1 moderate): ABORT" with runtime (ABORT") handler and compile-time string compilation
+- Added 21 new REPL tests (tests 238-258) covering all words with edge cases
+- Updated compliance report: 72.2% → 83.5% (96 → 111 fully implemented)
+- Zero regressions: all 73 assembly tests and all 258 REPL tests pass
+
+### Change Log
+
+- 2026-04-13: Story 5.4 implemented — 15 ANS Core words added, compliance raised from 72.2% to 83.5%
+- 2026-04-13: Code review — Fixed ABORT" tests (inverted 0= logic), corrected >BODY spec table (xt+5 not xt+3), documented BDOS convention deviation in (ABORT"), added sprint-status.yaml to File List
+
 ### File List
+
+- `src/arithmetic.asm` — Added 1+, 1-, 2*, 2/ (4 DEFCODE words)
+- `src/stack_ops.asm` — Added ?DUP (1 DEFCODE word)
+- `src/memory.asm` — Added CELL+, CHAR+, CHARS (3 DEFCODE words)
+- `src/inner_interpreter.asm` — Added EXIT (1 DEFCODE wrapping EXIT_CODE)
+- `src/strings.asm` — Added CHAR (1 DEFCODE word)
+- `src/compiler.asm` — Added >BODY, ' (tick), ['], [CHAR] (4 words: 1 DEFCODE, 1 DEFWORD, 2 DEFIMMED)
+- `src/system.asm` — Added (ABORT") runtime helper, ABORT" compile-time word (2 words)
+- `Makefile` — Added 21 REPL tests (tests 238-258)
+- `docs/ans-forth-core-compliance.md` — Updated statuses, counts, gap analysis, observations
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Updated story status

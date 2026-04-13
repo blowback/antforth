@@ -104,6 +104,195 @@ w_MARKER_cf:
         JP      w_ABORT_cf
 
 ; -----------------------------------------------
+; (ABORT") ( flag -- ) runtime helper
+;   If flag is zero, skip inline counted string and continue.
+;   If flag is non-zero, print inline string via TYPE, then ABORT.
+;   Inline string format: count byte + chars + cell-alignment padding
+; -----------------------------------------------
+w_PAREN_ABORT_QUOTE:
+        DEFCODE '(ABORT")', 0
+w_PAREN_ABORT_QUOTE_cf:
+        ; BC = flag (TOS)
+        LD      A, B
+        OR      C               ; Test if flag is zero
+        POP     BC              ; Pop new TOS (consumed flag)
+        JR      NZ, .paq_abort  ; Non-zero: abort with message
+
+        ; Flag is zero: skip inline string
+        ; DE = IP, points to count byte
+        LD      A, (DE)         ; A = count
+        INC     DE              ; DE past count byte
+        ADD     A, E
+        LD      E, A
+        JR      NC, .paq_skip_nc
+        INC     D
+.paq_skip_nc:
+        ; Cell-align: if DE is odd, increment by 1
+        BIT     0, E
+        JR      Z, .paq_skip_aligned
+        INC     DE
+.paq_skip_aligned:
+        ; DE = new IP, past string
+        NEXT
+
+.paq_abort:
+        ; Non-zero flag: print string then ABORT
+        ; DE = IP = pointer to count byte
+        ; Note: raw BDOS calls (not BDOS_SAVE/BDOS_RESTORE) because ABORT
+        ; resets SP anyway; IP saved/restored via return stack instead.
+        ; Save IP to return stack for BDOS safety
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+
+        LD      A, (DE)         ; A = count
+        INC     DE              ; DE = string start
+        OR      A
+        JR      Z, .paq_do_abort ; Empty string, just abort
+
+        LD      B, A            ; B = count
+        LD      H, D
+        LD      L, E            ; HL = string address
+.paq_print:
+        PUSH    HL
+        PUSH    BC
+        LD      E, (HL)
+        LD      C, C_WRITE
+        CALL    BDOS_ENTRY
+        POP     BC
+        POP     HL
+        INC     HL
+        DJNZ    .paq_print
+
+.paq_do_abort:
+        ; Restore return stack (not strictly needed since ABORT resets everything,
+        ; but keep it clean)
+        INC     IX
+        INC     IX
+        JP      w_ABORT_cf      ; ABORT (never returns)
+
+; -----------------------------------------------
+; ABORT" ( "ccc<quote>" flag -- ) IMMEDIATE, compile-only
+;   Compile-time: compile (ABORT") + inline string
+;   Runtime: if flag non-zero, print string and ABORT
+; -----------------------------------------------
+w_ABORT_QUOTE:
+        DEFCODE 'ABORT"', F_IMMEDIATE
+w_ABORT_QUOTE_cf:
+        ; Save DE (IP) to scratch cell
+        LD      (aq_saved_ip), DE
+
+        ; Compile (ABORT") xt + inline string at HERE
+        PUSH    BC              ; save TOS
+        ; First compile the (ABORT") xt
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1)
+        LD      (HL), LOW w_PAREN_ABORT_QUOTE_cf
+        INC     HL
+        LD      (HL), HIGH w_PAREN_ABORT_QUOTE_cf
+        INC     HL
+        ; Now compile the inline counted string at HL
+        ; Save count address, then copy chars from TIB
+        PUSH    HL              ; save count_addr
+        INC     HL              ; HL = first char destination
+
+        ; Compute source pointer: TIB + >IN
+        LD      E, (IY+UserArea.tib_in)
+        LD      D, (IY+UserArea.tib_in+1)
+        PUSH    HL              ; save dest
+        LD      L, (IY+UserArea.tib_addr)
+        LD      H, (IY+UserArea.tib_addr+1)
+        ADD     HL, DE          ; HL = source
+        LD      (aq_src), HL
+        POP     HL              ; HL = dest
+
+        ; Skip one leading space (per string literal convention)
+        PUSH    HL
+        LD      HL, (aq_src)
+        LD      A, (HL)
+        CP      ' '
+        JR      NZ, .aq_no_skip
+        INC     HL
+        LD      (aq_src), HL
+        ; Advance >IN by 1
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+.aq_no_skip:
+        POP     HL              ; HL = dest
+
+        ; Compute remaining = tib_len - >IN
+        LD      A, (IY+UserArea.tib_len)
+        SUB     (IY+UserArea.tib_in)
+        LD      C, A
+        LD      A, (IY+UserArea.tib_len+1)
+        SBC     A, (IY+UserArea.tib_in+1)
+        OR      A
+        JR      Z, .aq_rem_ok
+        LD      C, 255
+.aq_rem_ok:
+        LD      B, 0            ; B = char count
+
+.aq_copy:
+        LD      A, C
+        OR      A
+        JR      Z, .aq_done     ; end of input
+        PUSH    HL
+        LD      HL, (aq_src)
+        LD      A, (HL)
+        INC     HL
+        LD      (aq_src), HL
+        POP     HL
+        DEC     C               ; remaining--
+        ; Advance >IN
+        PUSH    HL
+        PUSH    AF
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     AF
+        POP     HL
+        CP      '"'
+        JR      Z, .aq_done     ; closing quote found
+        ; Copy character
+        LD      (HL), A
+        INC     HL
+        INC     B               ; count++
+        JR      .aq_copy
+
+.aq_done:
+        ; B = string length, HL = past last char
+        ; Write count byte
+        POP     DE              ; DE = count_addr
+        LD      A, B
+        LD      (DE), A         ; store count byte
+
+        ; Cell-align HL: if odd, pad with 0 and advance
+        BIT     0, L
+        JR      Z, .aq_aligned
+        LD      (HL), 0         ; padding byte
+        INC     HL
+.aq_aligned:
+        ; Update HERE
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+
+        POP     BC              ; restore TOS
+
+        ; Restore IP
+        LD      DE, (aq_saved_ip)
+        NEXT
+
+; ABORT" scratch storage
+aq_saved_ip:    DW 0
+aq_src:         DW 0
+
+; -----------------------------------------------
 ; ABORT ( -- )
 ;   Reset parameter stack and restart QUIT
 ;   Never returns

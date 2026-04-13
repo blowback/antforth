@@ -2074,6 +2074,175 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf '5 1+ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '6 '; then \
+			echo "PASS: REPL test 238 — 1+: '5 1+ .' outputs '6'"; \
+		else \
+			echo "FAIL: REPL test 238 — expected '6 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '5 1- .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '4 '; then \
+			echo "PASS: REPL test 239 — 1-: '5 1- .' outputs '4'"; \
+		else \
+			echo "FAIL: REPL test 239 — expected '4 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '0 1- .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-1 '; then \
+			echo "PASS: REPL test 240 — 1-: '0 1- .' outputs '-1' (edge case)"; \
+		else \
+			echo "FAIL: REPL test 240 — expected '-1 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 1+ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
+			echo "PASS: REPL test 241 — 1+: '-1 1+ .' outputs '0' (edge case)"; \
+		else \
+			echo "FAIL: REPL test 241 — expected '0 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '7 2* .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '14 '; then \
+			echo "PASS: REPL test 242 — 2*: '7 2* .' outputs '14'"; \
+		else \
+			echo "FAIL: REPL test 242 — expected '14 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '14 2/ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 '; then \
+			echo "PASS: REPL test 243 — 2/: '14 2/ .' outputs '7'"; \
+		else \
+			echo "FAIL: REPL test 243 — expected '7 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-6 2/ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-3 '; then \
+			echo "PASS: REPL test 244 — 2/: '-6 2/ .' outputs '-3' (arithmetic shift)"; \
+		else \
+			echo "FAIL: REPL test 244 — expected '-3 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '5 ?DUP . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 5 '; then \
+			echo "PASS: REPL test 245 — ?DUP non-zero: '5 ?DUP . .' outputs '5 5'"; \
+		else \
+			echo "FAIL: REPL test 245 — expected '5 5 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '0 ?DUP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
+			echo "PASS: REPL test 246 — ?DUP zero: '0 ?DUP .' outputs '0'"; \
+		else \
+			echo "FAIL: REPL test 246 — expected '0 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '1000 CELL+ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1002 '; then \
+			echo "PASS: REPL test 247 — CELL+: '1000 CELL+ .' outputs '1002'"; \
+		else \
+			echo "FAIL: REPL test 247 — expected '1002 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '1000 CHAR+ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1001 '; then \
+			echo "PASS: REPL test 248 — CHAR+: '1000 CHAR+ .' outputs '1001'"; \
+		else \
+			echo "FAIL: REPL test 248 — expected '1001 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf '5 CHARS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+			echo "PASS: REPL test 249 — CHARS: '5 CHARS .' outputs '5' (no-op on Z80)"; \
+		else \
+			echo "FAIL: REPL test 249 — expected '5 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf ': TEST-EXIT 1 EXIT 2 ; TEST-EXIT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1 '; then \
+			echo "PASS: REPL test 250 — EXIT: ': TEST-EXIT 1 EXIT 2 ; TEST-EXIT .' outputs '1'"; \
+		else \
+			echo "FAIL: REPL test 250 — expected '1 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf 'CHAR A .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '65 '; then \
+			echo "PASS: REPL test 251 — CHAR: 'CHAR A .' outputs '65'"; \
+		else \
+			echo "FAIL: REPL test 251 — expected '65 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf 'CHAR Z .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '90 '; then \
+			echo "PASS: REPL test 252 — CHAR: 'CHAR Z .' outputs '90'"; \
+		else \
+			echo "FAIL: REPL test 252 — expected '90 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" ": USE-TICK ['] DUP ; 7 USE-TICK EXECUTE . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 7 '; then \
+			echo "PASS: REPL test 253 — bracket-tick: compiles xt of DUP, EXECUTE duplicates 7"; \
+		else \
+			echo "FAIL: REPL test 253 — expected '7 7 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf ': GET-A [CHAR] A ; GET-A .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '65 '; then \
+			echo "PASS: REPL test 254 — [CHAR]: ': GET-A [CHAR] A ; GET-A .' outputs '65'"; \
+		else \
+			echo "FAIL: REPL test 254 — expected '65 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf "CREATE FOO 42 ,\r\n' FOO >BODY @ .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
+			echo "PASS: REPL test 255 — >BODY: \"CREATE FOO 42 , ' FOO >BODY @ .\" outputs '42'"; \
+		else \
+			echo "FAIL: REPL test 255 — expected '42 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf "7 ' DUP EXECUTE .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 '; then \
+			echo "PASS: REPL test 256 — tick: \"7 ' DUP EXECUTE .\" outputs '7'"; \
+		else \
+			echo "FAIL: REPL test 256 — expected '7 ' in output"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf ': CHK ABORT" nonzero" ; 0 CHK\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		if echo "$$OUTPUT" | grep -q 'ok'; then \
+			echo "PASS: REPL test 257 — ABORT\": '0 CHK' does not abort (flag=0)"; \
+		else \
+			echo "FAIL: REPL test 257 — expected 'ok' (no abort for zero flag)"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
+	@OUTPUT=$$(printf ': CHK ABORT" nonzero" ; 1 CHK\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+		NONZERO_COUNT=$$(echo "$$OUTPUT" | grep -c 'nonzero' || true) && \
+		if [ "$$NONZERO_COUNT" -ge 2 ] && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+			echo "PASS: REPL test 258 — ABORT\": '1 CHK' aborts with message 'nonzero' and recovers"; \
+		else \
+			echo "FAIL: REPL test 258 — expected 'nonzero' abort message and recovery with '5'"; \
+			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+			exit 1; \
+		fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

@@ -6,6 +6,36 @@
 ; Bulk:           FILL, MOVE
 
 ; -----------------------------------------------
+; CELL+ ( a-addr -- a-addr+2 )
+;   Add cell size (2) to address
+; -----------------------------------------------
+w_CELL_PLUS:
+        DEFCODE "CELL+", 0
+w_CELL_PLUS_cf:
+        INC     BC
+        INC     BC
+        NEXT
+
+; -----------------------------------------------
+; CHAR+ ( c-addr -- c-addr+1 )
+;   Add char size (1) to address
+; -----------------------------------------------
+w_CHAR_PLUS:
+        DEFCODE "CHAR+", 0
+w_CHAR_PLUS_cf:
+        INC     BC
+        NEXT
+
+; -----------------------------------------------
+; CHARS ( n -- n )
+;   Convert chars to address units (no-op on Z80: 1 char = 1 byte)
+; -----------------------------------------------
+w_CHARS:
+        DEFCODE "CHARS", 0
+w_CHARS_cf:
+        NEXT
+
+; -----------------------------------------------
 ; @ ( addr -- x )
 ;   Fetch cell (16-bit) from memory
 ; -----------------------------------------------

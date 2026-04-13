@@ -163,6 +163,113 @@ w_WORD_cf:
 .word_here:     DW      0
 
 ; -----------------------------------------------
+; CHAR ( "<spaces>name" -- char )
+;   Parse next space-delimited word, return ASCII value of first char
+; -----------------------------------------------
+w_CHAR:
+        DEFCODE "CHAR", 0
+w_CHAR_cf:
+        ; Stack effect: ( -- char ) — push new value
+        PUSH    BC              ; Save old TOS (grows stack by 1)
+
+        ; Save DE (IP) to return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+
+        ; Parse next space-delimited token from TIB
+        ; Load parse state: HL = tib_addr + >IN
+        LD      E, (IY+UserArea.tib_addr)
+        LD      D, (IY+UserArea.tib_addr+1)     ; DE = tib_addr
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)       ; HL = >IN
+        ADD     HL, DE                           ; HL = tib_addr + >IN
+
+        ; Compute remaining = tib_len - >IN
+        LD      E, (IY+UserArea.tib_len)
+        LD      D, (IY+UserArea.tib_len+1)      ; DE = tib_len
+        LD      A, (IY+UserArea.tib_in)
+        LD      C, A
+        LD      A, (IY+UserArea.tib_in+1)
+        LD      B, A                             ; BC = >IN
+        PUSH    HL                               ; Save parse pos
+        EX      DE, HL                           ; HL = tib_len
+        OR      A
+        SBC     HL, BC                           ; HL = remaining
+        LD      B, H
+        LD      C, L                             ; BC = remaining
+        POP     HL                               ; HL = parse pos
+
+        ; Skip leading spaces
+.char_skip:
+        LD      A, B
+        OR      C
+        JR      Z, .char_empty                   ; No chars left
+        LD      A, (HL)
+        CP      ' '
+        JR      NZ, .char_found
+        INC     HL
+        DEC     BC
+        PUSH    HL
+        PUSH    BC
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     BC
+        POP     HL
+        JR      .char_skip
+
+.char_found:
+        ; HL = first char of token
+        LD      A, (HL)         ; A = first char — save it
+        LD      (.char_result), A
+
+        ; Skip rest of token to advance >IN past it
+.char_scan:
+        INC     HL
+        DEC     BC
+        PUSH    HL
+        PUSH    BC
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        INC     HL
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     BC
+        POP     HL
+        LD      A, B
+        OR      C
+        JR      Z, .char_finish                  ; End of input
+        LD      A, (HL)
+        CP      ' '
+        JR      NZ, .char_scan                   ; Still in token
+
+        JR      .char_finish
+
+.char_empty:
+        ; No token found — return 0
+        XOR     A
+        LD      (.char_result), A
+
+.char_finish:
+        ; Set BC = char value (new TOS)
+        LD      A, (.char_result)
+        LD      C, A
+        LD      B, 0
+
+        ; Restore DE (IP) from return stack
+        LD      E, (IX+0)
+        LD      D, (IX+1)
+        INC     IX
+        INC     IX
+        NEXT
+
+.char_result:   DB 0
+
+; -----------------------------------------------
 ; char_to_digit — Internal helper
 ;   Convert ASCII char to digit value using current BASE
 ;   Input: A = ASCII character

@@ -19,6 +19,15 @@ DOCOL:
         ; HL = body address = new IP, use NEXTHL to avoid redundant EX DE, HL
         NEXTHL
 
+; -----------------------------------------------
+; EXIT ( -- ) ( R: nest-sys -- )
+;   Return from colon definition (dictionary word wrapping EXIT_CODE)
+; -----------------------------------------------
+w_EXIT:
+        DEFCODE "EXIT", 0
+w_EXIT_cf:
+        JP      EXIT_CODE
+
 ; === EXIT — Return from colon definition ===
 EXIT_CODE:
         ; Pop IP from return stack
