@@ -22,14 +22,8 @@ w_MARKER:
         DEFCODE "MARKER", 0
 w_MARKER_cf:
         ; Save DE (IP) and BC (TOS) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         ; Build dictionary header (flags=0, no SMUDGE)
         XOR     A
@@ -141,10 +135,7 @@ w_PAREN_ABORT_QUOTE_cf:
         ; Note: raw BDOS calls (not BDOS_SAVE/BDOS_RESTORE) because ABORT
         ; resets SP anyway; IP saved/restored via return stack instead.
         ; Save IP to return stack for BDOS safety
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         LD      A, (DE)         ; A = count
         INC     DE              ; DE = string start

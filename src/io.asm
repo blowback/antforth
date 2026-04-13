@@ -120,10 +120,7 @@ w_ACCEPT_cf:
         ; (SP) = c-addr (ignored — BDOS writes to bdos_input_buf+2 = tib_buffer)
 
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Set max_len in BDOS input buffer header
         LD      A, C
@@ -147,10 +144,7 @@ w_ACCEPT_cf:
         LD      B, 0            ; BC = +n2 (actual chars read, new TOS)
 
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 ; -----------------------------------------------

@@ -226,10 +226,7 @@ w_FILL:
 w_FILL_cf:                              ; No underflow check — low-risk bulk op
         ; BC = char (TOS), (SP) = u, (SP+2) = addr
         ; Save IP (DE) to return stack — LDIR uses DE
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         LD      A, C            ; A = fill byte (char)
         POP     HL              ; HL = u (count)
@@ -254,10 +251,7 @@ w_FILL_cf:                              ; No underflow check — low-risk bulk o
         LDIR                    ; Propagate fill byte through region
 .fill_done:
         ; Restore IP from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
 
         POP     BC              ; New TOS
         NEXT
@@ -271,10 +265,7 @@ w_MOVE:
 w_MOVE_cf:                              ; No underflow check — low-risk bulk op
         ; BC = u (TOS), (SP) = addr2, (SP+2) = addr1
         ; Save IP (DE) to return stack — LDIR/LDDR use DE
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         LD      A, B
         OR      C
@@ -305,10 +296,7 @@ w_MOVE_cf:                              ; No underflow check — low-risk bulk o
         POP     HL              ; Discard addr1
 .move_done:
         ; Restore IP from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
 
         POP     BC              ; New TOS
         NEXT

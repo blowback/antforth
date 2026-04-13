@@ -204,10 +204,7 @@ w_PAREN_DO_cf:
         LD      (IX+0), L
         LD      (IX+1), H
         ; Push index (start) to return stack (at IX+0,1)
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_bc
         POP     BC                   ; New TOS
         NEXT
 

@@ -12,10 +12,7 @@ w_WORD:
 w_WORD_cf:
         ; BC = delimiter char (TOS, only C matters)
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Save delimiter in scratch
         LD      A, C
@@ -75,10 +72,7 @@ w_WORD_cf:
         LD      B, H
         LD      C, L                              ; BC = HERE (c-addr, new TOS)
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 .word_found:
@@ -152,10 +146,7 @@ w_WORD_cf:
         LD      B, H
         LD      C, L                               ; BC = HERE (c-addr, new TOS)
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 ; === WORD scratch storage ===
@@ -173,10 +164,7 @@ w_CHAR_cf:
         PUSH    BC              ; Save old TOS (grows stack by 1)
 
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Parse next space-delimited token from TIB
         ; Load parse state: HL = tib_addr + >IN
@@ -261,10 +249,7 @@ w_CHAR_cf:
         LD      B, 0
 
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 .char_result:   DB 0
@@ -374,10 +359,7 @@ w_TO_NUMBER:
 w_TO_NUMBER_cf:
         ; Stack: BC = u1 (TOS), (SP) = c-addr1, ud1-low, ud1-high
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Get arguments
         LD      B, C            ; B = count (u1, only low byte matters for reasonable strings)
@@ -400,10 +382,7 @@ w_TO_NUMBER_cf:
         LD      B, 0            ; BC = u2 (remaining count, TOS)
 
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 ; -----------------------------------------------
@@ -416,10 +395,7 @@ w_NUMBER_Q:
 w_NUMBER_Q_cf:
         ; BC = c-addr (TOS, points to counted string)
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Save original c-addr for failure return
         PUSH    BC              ; Stack: [c-addr_orig]
@@ -476,10 +452,7 @@ w_NUMBER_Q_cf:
         PUSH    DE              ; Push n (second on stack)
         LD      BC, 0xFFFF      ; TRUE (TOS)
         ; Restore IP
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 .numq_fail:
@@ -488,10 +461,7 @@ w_NUMBER_Q_cf:
         PUSH    BC              ; Push c-addr as second-on-stack
         LD      BC, 0           ; FALSE (TOS)
         ; Restore IP
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 .numq_negate:   DB      0
@@ -885,10 +855,7 @@ w_PAREN_cf:
         PUSH    BC
 
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Compute HL = tib_addr + >IN, BC = tib_len - >IN
         LD      E, (IY+UserArea.tib_addr)
@@ -929,10 +896,7 @@ w_PAREN_cf:
         JR      NZ, .paren_scan                  ; Not ')' — keep scanning
 
         ; Found ')' — restore DE (IP) and BC (TOS)
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         POP     BC              ; Restore TOS
         NEXT
 

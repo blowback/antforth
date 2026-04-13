@@ -122,10 +122,7 @@ w_ROLL_cf:
         NEXT
 .roll_work:
         ; Save IP to return stack (LDDR needs DE)
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Compute address of xu on stack: SP + u*2
         LD      H, B
@@ -169,10 +166,7 @@ w_ROLL_cf:
         INC     SP
 
         ; Restore IP from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
 
         NEXT
 

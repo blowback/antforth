@@ -96,14 +96,8 @@ w_QUERY:
         DEFCODE "QUERY", 0
 w_QUERY_cf:
         ; Save DE (IP) and BC (TOS) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         ; Set max_len in BDOS input buffer header
         LD      A, TIB_SIZE

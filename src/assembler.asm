@@ -1288,14 +1288,8 @@ w_CODE_cf:
         JP      NZ, asm_err_nested
 
         ; Save DE (IP) and BC (TOS) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         LD      A, F_SMUDGE
         CALL    build_header
@@ -1364,14 +1358,8 @@ w_END_CODE_cf:
 
         ; Save DE (IP) and BC (TOS) to return stack — the helpers below
         ; (asm_check_unresolved, asm_unlink_labels) clobber DE/BC freely.
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         ; Check for unresolved fixups — if any remain, that helper
         ; ABORTs (which routes through asm_cleanup for full rollback).
@@ -2360,14 +2348,8 @@ w_NEXT_COMMA_cf:
         CALL    check_asm_mode
         ; Copy NEXT_TEMPLATE_LEN bytes from next_template to HERE via
         ; LDIR. Must preserve DE (=IP) and BC (=TOS) — save both to RS.
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
         LD      HL, next_template
         LD      E, (IY+UserArea.here)
         LD      D, (IY+UserArea.here+1)
@@ -2428,14 +2410,8 @@ w_LABEL_cf:
         ; Save DE (IP) and BC (TOS) to return stack — build_header
         ; clobbers everything, and the body-start check below also
         ; clobbers DE.
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         ; "Before any opcodes" check: HERE must equal asm_body_start.
         LD      L, (IY+UserArea.here)

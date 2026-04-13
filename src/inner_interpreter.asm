@@ -98,14 +98,8 @@ DOMARKER:
         INC     HL                      ; HL = &saved_here
 
         ; Save DE (IP) and BC (TOS) — LDIR clobbers both DE and BC
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         ; Read saved HERE from body
         LD      E, (HL)
@@ -127,11 +121,32 @@ DOMARKER:
         LD      C, (IX+0)
         INC     IX
         INC     IX
+        CALL    rpop_de
+        NEXT
+
+; -----------------------------------------------
+; Internal return-stack helpers (not Forth words)
+; -----------------------------------------------
+rpush_de:                       ; Push DE onto return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), E
+        LD      (IX+1), D
+        RET                         ; 9 bytes
+
+rpop_de:                        ; Pop DE from return stack
         LD      E, (IX+0)
         LD      D, (IX+1)
         INC     IX
         INC     IX
-        NEXT
+        RET                         ; 9 bytes
+
+rpush_bc:                       ; Push BC onto return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), C
+        LD      (IX+1), B
+        RET                         ; 9 bytes
 
 ; -----------------------------------------------
 ; LIT ( -- x )

@@ -359,14 +359,8 @@ w_COLON:
         DEFCODE ":", 0
 w_COLON_cf:
         ; Save DE (IP) and BC (TOS) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         LD      A, F_SMUDGE
         CALL    build_header
@@ -573,14 +567,8 @@ w_CREATE:
         DEFCODE "CREATE", 0
 w_CREATE_cf:
         ; Save DE (IP) and BC (TOS) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_de
+        CALL    rpush_bc
 
         XOR     A                                ; flags = 0 (no SMUDGE)
         CALL    build_header
@@ -633,14 +621,8 @@ w_CONSTANT:
         DEFCODE "CONSTANT", 0
 w_CONSTANT_cf:
         ; Save DE (IP) and BC (TOS=value) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B                        ; Save the constant value
+        CALL    rpush_de
+        CALL    rpush_bc                         ; Save the constant value
 
         XOR     A                                ; flags = 0
         CALL    build_header
@@ -753,8 +735,5 @@ w_PAREN_DOES_cf:
         INC     HL
         LD      (HL), D
         ; EXIT — return from defining word (pop IP from return stack)
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT

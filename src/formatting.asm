@@ -107,10 +107,7 @@ w_DOT:
 w_DOT_cf:
         CALL    check_underflow
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
         ; Check sign
         BIT     7, B
         JR      Z, .dot_positive
@@ -129,10 +126,7 @@ w_DOT_cf:
 .dot_positive:
         CALL    emit_unsigned
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         ; Pop new TOS from parameter stack
         POP     BC
         NEXT
@@ -146,16 +140,10 @@ w_U_DOT:
 w_U_DOT_cf:
         CALL    check_underflow
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
         CALL    emit_unsigned
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         ; Pop new TOS from parameter stack
         POP     BC
         NEXT
@@ -171,16 +159,10 @@ w_DOT_R_cf:
         CALL    check_underflow_2
         ; BC = width (TOS), (SP) = n
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Save width to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_bc
 
         ; Pop n into BC
         POP     BC
@@ -249,10 +231,7 @@ w_DOT_R_cf:
         INC     IX
         INC     IX
         ; Restore DE (IP)
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         ; Pop new TOS
         POP     BC
         NEXT
@@ -274,16 +253,10 @@ w_DOT_S:
         DEFCODE ".S", 0
 w_DOT_S_cf:
         ; Save DE (IP) to return stack
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), E
-        LD      (IX+1), D
+        CALL    rpush_de
 
         ; Save BC (TOS) to return stack for safekeeping
-        DEC     IX
-        DEC     IX
-        LD      (IX+0), C
-        LD      (IX+1), B
+        CALL    rpush_bc
 
         ; Calculate depth = (S0 - SP) / 2
         LD      HL, (sp_base)
@@ -370,10 +343,7 @@ w_DOT_S_cf:
         INC     IX
 
         ; Restore DE (IP) from return stack
-        LD      E, (IX+0)
-        LD      D, (IX+1)
-        INC     IX
-        INC     IX
+        CALL    rpop_de
         NEXT
 
 ; .dots_print_signed — print BC as signed number with trailing space
