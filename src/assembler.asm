@@ -1735,9 +1735,9 @@ w_LD_COMMA_cf:
         LD      A, L
         AND     ASM_INDEX_MASK
         CP      ASM_IX_INDEX
-        JR      Z, .ldc_imm16_ix
+        JR      Z, .ldc_imm16_ixiy
         CP      ASM_IY_INDEX
-        JR      Z, .ldc_imm16_iy
+        JR      Z, .ldc_imm16_ixiy
         CP      5
         JP      NC, asm_bad_operand
         CP      3
@@ -1760,23 +1760,9 @@ w_LD_COMMA_cf:
         POP     BC
         NEXT
 
-.ldc_imm16_ix:
-        ; LD IX,nn = DD 21 lo hi
-        LD      A, 0xDD
-        CALL    asm_emit_byte
-        LD      A, 0x21
-        CALL    asm_emit_byte
-        LD      A, C
-        CALL    asm_emit_byte
-        LD      A, B
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-.ldc_imm16_iy:
-        ; LD IY,nn = FD 21 lo hi
-        LD      A, 0xFD
-        CALL    asm_emit_byte
+.ldc_imm16_ixiy:
+        ; LD IX/IY,nn = DD/FD 21 lo hi
+        CALL    asm_emit_ixiy_prefix    ; A = IX/IY index from dispatch
         LD      A, 0x21
         CALL    asm_emit_byte
         LD      A, C
@@ -1808,37 +1794,22 @@ w_LD_COMMA_cf:
         LD      A, L
         AND     ASM_INDEX_MASK
         CP      ASM_IND_IXD
-        JR      Z, .ldc_imm_ixd
+        JR      Z, .ldc_imm_ixiyd
         CP      ASM_IND_IYD
-        JR      Z, .ldc_imm_iyd
+        JR      Z, .ldc_imm_ixiyd
         JP      asm_bad_operand
-.ldc_imm_ixd:
+.ldc_imm_ixiyd:
+        ; LD (IX+d),n / LD (IY+d),n = DD/FD 36 disp val
+        CALL    asm_emit_ixiy_prefix    ; A = IXD/IYD index from dispatch
         LD      A, C
         LD      (asm_tmp), A            ; save value
-        LD      A, 0xDD
-        CALL    asm_emit_byte
         LD      A, 0x36                 ; LD (HL),n opcode
         CALL    asm_emit_byte
-        ; Pop displacement (under tag on stack)
         POP     BC                      ; BC = displacement cell
         LD      A, C
         CALL    asm_emit_byte           ; emit displacement
         LD      A, (asm_tmp)
         CALL    asm_emit_byte           ; emit value
-        POP     BC
-        NEXT
-.ldc_imm_iyd:
-        LD      A, C
-        LD      (asm_tmp), A
-        LD      A, 0xFD
-        CALL    asm_emit_byte
-        LD      A, 0x36
-        CALL    asm_emit_byte
-        POP     BC
-        LD      A, C
-        CALL    asm_emit_byte
-        LD      A, (asm_tmp)
-        CALL    asm_emit_byte
         POP     BC
         NEXT
 
@@ -1916,9 +1887,9 @@ w_LD_COMMA_cf:
         CP      2                       ; HL
         JR      Z, .ldabs_hl
         CP      ASM_IX_INDEX
-        JR      Z, .ldabs_ix
+        JR      Z, .ldabs_ixiy
         CP      ASM_IY_INDEX
-        JR      Z, .ldabs_iy
+        JR      Z, .ldabs_ixiy
         ; ED-prefix: BC(0), DE(1), SP(4)
         CP      3
         JP      Z, asm_bad_operand      ; AF
@@ -1959,24 +1930,9 @@ w_LD_COMMA_cf:
         POP     BC
         NEXT
 
-.ldabs_ix:
-        ; LD IX,(nn) = DD 2A lo hi
-        LD      A, 0xDD
-        CALL    asm_emit_byte
-        LD      A, 0x2A
-        CALL    asm_emit_byte
-        POP     BC                      ; BC = address (lo=C, hi=B)
-        LD      A, C
-        CALL    asm_emit_byte
-        LD      A, B
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-.ldabs_iy:
-        ; LD IY,(nn) = FD 2A lo hi
-        LD      A, 0xFD
-        CALL    asm_emit_byte
+.ldabs_ixiy:
+        ; LD IX/IY,(nn) = DD/FD 2A lo hi
+        CALL    asm_emit_ixiy_prefix    ; A = IX/IY index from dispatch
         LD      A, 0x2A
         CALL    asm_emit_byte
         POP     BC                      ; BC = address (lo=C, hi=B)
@@ -2061,9 +2017,9 @@ w_LD_COMMA_cf:
         CP      2                       ; HL
         JR      Z, .ldr16abs_hl
         CP      ASM_IX_INDEX
-        JR      Z, .ldr16abs_ix
+        JR      Z, .ldr16abs_ixiy
         CP      ASM_IY_INDEX
-        JR      Z, .ldr16abs_iy
+        JR      Z, .ldr16abs_ixiy
         ; ED-prefix: BC(0), DE(1), SP(4)
         CP      3
         JP      Z, asm_bad_operand      ; AF
@@ -2101,22 +2057,9 @@ w_LD_COMMA_cf:
         CALL    asm_emit_byte
         POP     BC
         NEXT
-.ldr16abs_ix:
-        ; LD (nn),IX = DD 22 lo hi. BC = address.
-        LD      A, 0xDD
-        CALL    asm_emit_byte
-        LD      A, 0x22
-        CALL    asm_emit_byte
-        LD      A, C
-        CALL    asm_emit_byte
-        LD      A, B
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-.ldr16abs_iy:
-        ; LD (nn),IY = FD 22 lo hi. BC = address.
-        LD      A, 0xFD
-        CALL    asm_emit_byte
+.ldr16abs_ixiy:
+        ; LD (nn),IX/IY = DD/FD 22 lo hi. BC = address.
+        CALL    asm_emit_ixiy_prefix    ; A = IX/IY index from dispatch
         LD      A, 0x22
         CALL    asm_emit_byte
         LD      A, C
@@ -2688,24 +2631,18 @@ w_JP_COMMA_cf:
         LD      A, C
         AND     ASM_INDEX_MASK
         CP      ASM_IND_IX
-        JR      Z, .jp_iix
+        JR      Z, .jp_iixiy
         CP      ASM_IND_IY
-        JR      Z, .jp_iiy
+        JR      Z, .jp_iixiy
 .jp_normal:
         LD      A, 0xC3
         JP      asm_jp_call_word
-.jp_iix:
+.jp_iixiy:
+        ; JP (IX) / JP (IY) = DD/FD E9
+        LD      (asm_tmp), A            ; save tag index across check
         CALL    check_asm_mode
-        LD      A, 0xDD
-        CALL    asm_emit_byte
-        LD      A, 0xE9
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-.jp_iiy:
-        CALL    check_asm_mode
-        LD      A, 0xFD
-        CALL    asm_emit_byte
+        LD      A, (asm_tmp)
+        CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, 0xE9
         CALL    asm_emit_byte
         POP     BC
@@ -3031,9 +2968,9 @@ asm_inc_dec_word:
 .idc_reg16:
         CALL    asm_get_index
         CP      ASM_IX_INDEX
-        JR      Z, .idc_ix16
+        JR      Z, .idc_ixiy16
         CP      ASM_IY_INDEX
-        JR      Z, .idc_iy16
+        JR      Z, .idc_ixiy16
         CP      3
         JP      Z, asm_bad_operand      ; AF — no INC/DEC AF
         CP      5
@@ -3053,26 +2990,15 @@ asm_inc_dec_word:
         POP     BC
         NEXT
 
-.idc_ix16:
-        LD      A, ASM_IX_INDEX
-        CALL    asm_emit_ixiy_prefix    ; emit DD
-        LD      A, (asm_tmp)
-        ; INC HL = 0x24-1 = 0x23, DEC HL = 0x25-1 = 0x24+1 = ...
-        ; Actually: INC HL opcode = 0x23, DEC HL = 0x2B.
-        ; With DD prefix: INC IX = DD 23, DEC IX = DD 2B.
-        ; base8=0x04(INC), base16=0x03(INC) → HL opcode = 0x03|(2<<4) = 0x23
-        ; base8=0x05(DEC), base16=0x0B(DEC) → HL opcode = 0x0B|(2<<4) = 0x2B
+.idc_ixiy16:
+        ; INC/DEC IX/IY = DD/FD 23/2B
+        ; A = ASM_IX_INDEX or ASM_IY_INDEX from dispatch
+        ; DD prefix: INC IX = DD 23, DEC IX = DD 2B
+        ; base16=0x03(INC) → HL opcode = 0x03|(2<<4) = 0x23
+        ; base16=0x0B(DEC) → HL opcode = 0x0B|(2<<4) = 0x2B
+        CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, (asm_tmp+1)
         OR      0x20                    ; rr=2 (HL) << 4
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-.idc_iy16:
-        LD      A, ASM_IY_INDEX
-        CALL    asm_emit_ixiy_prefix    ; emit FD
-        LD      A, (asm_tmp+1)
-        OR      0x20
         CALL    asm_emit_byte
         POP     BC
         NEXT
@@ -3082,9 +3008,9 @@ asm_inc_dec_word:
         OR      A
         JR      Z, .idc_ihl             ; index 0 = (HL)
         CP      ASM_IND_IXD
-        JR      Z, .idc_ixd
+        JR      Z, .idc_ixiyd
         CP      ASM_IND_IYD
-        JR      Z, .idc_iyd
+        JR      Z, .idc_ixiyd
         JP      asm_bad_operand
 
 .idc_ihl:
@@ -3095,23 +3021,14 @@ asm_inc_dec_word:
         POP     BC
         NEXT
 
-.idc_ixd:
-        LD      A, ASM_IND_IXD
-        CALL    asm_emit_ixiy_prefix    ; emit DD
+.idc_ixiyd:
+        ; INC/DEC (IX+d)/(IY+d) = DD/FD opcode disp
+        ; A = ASM_IND_IXD or ASM_IND_IYD from dispatch
+        CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, (asm_tmp)
         OR      0x30                    ; opcode for (HL) = base|(6<<3)
         CALL    asm_emit_byte
         CALL    asm_pop_indexed_disp    ; A = displacement, BC = new TOS
-        CALL    asm_emit_byte
-        NEXT
-
-.idc_iyd:
-        LD      A, ASM_IND_IYD
-        CALL    asm_emit_ixiy_prefix    ; emit FD
-        LD      A, (asm_tmp)
-        OR      0x30
-        CALL    asm_emit_byte
-        CALL    asm_pop_indexed_disp
         CALL    asm_emit_byte
         NEXT
 
@@ -3173,9 +3090,9 @@ asm_cb_shift_word:
         OR      A
         JR      Z, .cbs_ihl
         CP      ASM_IND_IXD
-        JR      Z, .cbs_ixd
+        JR      Z, .cbs_ixiyd
         CP      ASM_IND_IYD
-        JR      Z, .cbs_iyd
+        JR      Z, .cbs_ixiyd
         JP      asm_bad_operand
 
 .cbs_ihl:
@@ -3187,10 +3104,10 @@ asm_cb_shift_word:
         POP     BC
         NEXT
 
-.cbs_ixd:
-        ; DDCB: prefix, CB, displacement, opcode
-        LD      A, ASM_IND_IXD
-        CALL    asm_emit_ixiy_prefix    ; emit DD
+.cbs_ixiyd:
+        ; DDCB/FDCB: prefix, CB, displacement, opcode
+        ; A = ASM_IND_IXD or ASM_IND_IYD from dispatch
+        CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, 0xCB
         CALL    asm_emit_byte
         CALL    asm_pop_indexed_disp    ; A = disp, BC = new TOS
@@ -3198,18 +3115,6 @@ asm_cb_shift_word:
         LD      A, (asm_tmp)
         OR      0x06
         CALL    asm_emit_byte           ; emit opcode
-        NEXT
-
-.cbs_iyd:
-        LD      A, ASM_IND_IYD
-        CALL    asm_emit_ixiy_prefix    ; emit FD
-        LD      A, 0xCB
-        CALL    asm_emit_byte
-        CALL    asm_pop_indexed_disp
-        CALL    asm_emit_byte
-        LD      A, (asm_tmp)
-        OR      0x06
-        CALL    asm_emit_byte
         NEXT
 
 w_RLC_COMMA:
@@ -3321,9 +3226,9 @@ asm_bit_op_word:
         OR      A
         JR      Z, .bop_ihl
         CP      ASM_IND_IXD
-        JR      Z, .bop_ixd
+        JR      Z, .bop_ixiyd
         CP      ASM_IND_IYD
-        JR      Z, .bop_iyd
+        JR      Z, .bop_ixiyd
         JP      asm_bad_operand
 
 .bop_ihl:
@@ -3351,26 +3256,27 @@ asm_bit_op_word:
         POP     BC
         NEXT
 
-.bop_ixd:
-        ; Stack: ... | bit_val | imm_marker | disp | IXD_tag(consumed)
-        ; Pop displacement first
+.bop_ixiyd:
+        ; BIT/SET/RES (IX+d)/(IY+d) = DD/FD CB disp opcode
+        ; Stack: ... | bit_val | imm_marker | disp | tag(consumed)
+        ; A = ASM_IND_IXD or ASM_IND_IYD from dispatch
+        LD      (asm_ip_save), A        ; save tag index for prefix emit
+        ; Validate operands before emitting any bytes
         POP     HL                      ; HL = displacement cell
         LD      A, L
         LD      (asm_tmp+1), A          ; save displacement
-        ; Pop imm marker
         POP     BC
         CALL    asm_check_tagged
         CALL    asm_is_imm_tag
         JP      NZ, asm_bad_operand
-        ; Pop bit number
         POP     BC
         LD      A, C
         CP      8
         JP      NC, asm_range_err
         LD      (asm_tmp+2), A          ; save bit number
-        ; Emit: DD CB disp opcode
-        LD      A, 0xDD
-        CALL    asm_emit_byte
+        ; All operands validated — emit: DD/FD CB disp opcode
+        LD      A, (asm_ip_save)
+        CALL    asm_emit_ixiy_prefix    ; emit DD/FD prefix
         LD      A, 0xCB
         CALL    asm_emit_byte
         LD      A, (asm_tmp+1)          ; displacement
@@ -3382,36 +3288,6 @@ asm_bit_op_word:
         LD      HL, asm_tmp
         OR      (HL)                    ; base | (bit<<3)
         OR      0x06                    ; (HL) r-field
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-.bop_iyd:
-        POP     HL
-        LD      A, L
-        LD      (asm_tmp+1), A
-        POP     BC
-        CALL    asm_check_tagged
-        CALL    asm_is_imm_tag
-        JP      NZ, asm_bad_operand
-        POP     BC
-        LD      A, C
-        CP      8
-        JP      NC, asm_range_err
-        LD      (asm_tmp+2), A
-        LD      A, 0xFD
-        CALL    asm_emit_byte
-        LD      A, 0xCB
-        CALL    asm_emit_byte
-        LD      A, (asm_tmp+1)
-        CALL    asm_emit_byte
-        LD      A, (asm_tmp+2)
-        RLCA
-        RLCA
-        RLCA
-        LD      HL, asm_tmp
-        OR      (HL)
-        OR      0x06
         CALL    asm_emit_byte
         POP     BC
         NEXT
@@ -3755,9 +3631,9 @@ w_EX_COMMA_cf:
         CP      ASM_CLASS_REG16 | 2     ; HL
         JR      Z, .ex_sp_hl
         CP      ASM_CLASS_REG16 | ASM_IX_INDEX ; IX
-        JR      Z, .ex_sp_ix
+        JR      Z, .ex_sp_ixiy
         CP      ASM_CLASS_REG16 | ASM_IY_INDEX ; IY
-        JR      Z, .ex_sp_iy
+        JR      Z, .ex_sp_ixiy
         JP      asm_bad_operand
 
 .ex_sp_hl:
@@ -3766,17 +3642,10 @@ w_EX_COMMA_cf:
         POP     BC
         NEXT
 
-.ex_sp_ix:
-        LD      A, 0xDD
-        CALL    asm_emit_byte
-        LD      A, 0xE3
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-.ex_sp_iy:
-        LD      A, 0xFD
-        CALL    asm_emit_byte
+.ex_sp_ixiy:
+        ; EX (SP),IX/IY = DD/FD E3
+        AND     ASM_INDEX_MASK          ; extract index (5=IX, 6=IY)
+        CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, 0xE3
         CALL    asm_emit_byte
         POP     BC
