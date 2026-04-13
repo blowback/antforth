@@ -123,14 +123,8 @@ w_QUERY_cf:
         LD      (IY+UserArea.tib_in+1), A
 
         ; Restore BC (TOS) and DE (IP) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        CALL    rpop_bc
+        CALL    rpop_de
         NEXT
 
 ; -----------------------------------------------

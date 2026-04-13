@@ -348,10 +348,7 @@ w_DOT_S_cf:
 
 .dots_done:
         ; Restore BC (TOS) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
+        CALL    rpop_bc
 
         ; Restore DE (IP) from return stack
         CALL    rpop_de

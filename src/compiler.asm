@@ -358,9 +358,7 @@ w_IMMEDIATE_cf:
 w_COLON:
         DEFCODE ":", 0
 w_COLON_cf:
-        ; Save DE (IP) and BC (TOS) to return stack
-        CALL    rpush_de
-        CALL    rpush_bc
+        EXX                                      ; Save TOS/IP/W to shadows
 
         LD      A, F_SMUDGE
         CALL    build_header
@@ -392,27 +390,11 @@ w_COLON_cf:
         LD      (IY+UserArea.state), 1
         LD      (IY+UserArea.state+1), 0
 
-        ; Restore BC (TOS) and DE (IP) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
 .colon_no_name:
-        ; Restore BC and DE from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         JP      w_ABORT_cf
 
 ; -----------------------------------------------
@@ -566,10 +548,7 @@ w_LITERAL_cf:
 w_CREATE:
         DEFCODE "CREATE", 0
 w_CREATE_cf:
-        ; Save DE (IP) and BC (TOS) to return stack
-        CALL    rpush_de
-        CALL    rpush_bc
-
+        EXX                                      ; Save TOS/IP/W to shadows
         XOR     A                                ; flags = 0 (no SMUDGE)
         CALL    build_header
         JR      C, .create_no_name
@@ -590,26 +569,11 @@ w_CREATE_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; Restore BC (TOS) and DE (IP) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
 .create_no_name:
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         JP      w_ABORT_cf
 
 ; -----------------------------------------------
@@ -620,10 +584,7 @@ w_CREATE_cf:
 w_CONSTANT:
         DEFCODE "CONSTANT", 0
 w_CONSTANT_cf:
-        ; Save DE (IP) and BC (TOS=value) to return stack
-        CALL    rpush_de
-        CALL    rpush_bc                         ; Save the constant value
-
+        EXX                                      ; Save TOS (value)/IP/W to shadows
         XOR     A                                ; flags = 0
         CALL    build_header
         JR      C, .const_no_name
@@ -636,40 +597,30 @@ w_CONSTANT_cf:
         LD      (HL), HIGH DOCON
         INC     HL
 
-        ; Body: emit constant value from return stack
-        LD      C, (IX+0)
-        LD      B, (IX+1)                        ; BC = saved value
-        LD      (HL), C
+        ; Body: emit constant value from BC' (shadow)
+        EXX                                      ; BC = saved value (TOS)
+        LD      A, C                             ; A = value low byte
+        EXX                                      ; back to main, HL = body pos
+        LD      (HL), A                          ; emit low byte
         INC     HL
-        LD      (HL), B
+        EXX                                      ; BC = saved value again
+        LD      A, B                             ; A = value high byte
+        EXX                                      ; back to main
+        LD      (HL), A                          ; emit high byte
         INC     HL
 
         ; Update HERE
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; Discard saved value from return stack
-        INC     IX
-        INC     IX
-
-        ; Restore DE (IP) — TOS consumed
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
-
-        ; Pop new TOS (value was consumed)
-        POP     BC
+        ; TOS consumed — restore IP/W, pop new TOS
+        EXX                                      ; Restore DE=IP, HL=W from shadows
+        POP     BC                               ; Pop new TOS
         NEXT
 
 .const_no_name:
-        INC     IX
-        INC     IX                               ; Discard saved value
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
-        POP     BC
+        EXX                                      ; Restore TOS/IP/W from shadows
+        POP     BC                               ; TOS consumed, pop new TOS
         JP      w_ABORT_cf
 
 ; -----------------------------------------------

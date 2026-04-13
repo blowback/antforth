@@ -1190,9 +1190,7 @@ w_CODE_cf:
         OR      A
         JP      NZ, asm_err_nested
 
-        ; Save DE (IP) and BC (TOS) to return stack
-        CALL    rpush_de
-        CALL    rpush_bc
+        EXX                                      ; Save TOS/IP/W to shadows
 
         LD      A, F_SMUDGE
         CALL    build_header
@@ -1221,29 +1219,11 @@ w_CODE_cf:
         LD      A, 1
         LD      (asm_mode), A
 
-        ; Restore BC (TOS) and DE (IP) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
 .code_no_name:
-        ; build_header signalled "no name" — unwind IX (for symmetry
-        ; with the colon pattern; QUIT would reset it anyway) and abort
-        ; with a descriptive error.
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         JP      asm_err_noname
 
 ; =====================================================================
@@ -1259,10 +1239,8 @@ w_END_CODE_cf:
         OR      A
         JP      Z, asm_err_orphan
 
-        ; Save DE (IP) and BC (TOS) to return stack — the helpers below
-        ; (asm_check_unresolved, asm_unlink_labels) clobber DE/BC freely.
-        CALL    rpush_de
-        CALL    rpush_bc
+        EXX                                      ; Save TOS/IP/W to shadows
+        ; Helpers below clobber main DE/BC freely — shadows are safe.
 
         ; Check for unresolved fixups — if any remain, that helper
         ; ABORTs (which routes through asm_cleanup for full rollback).
@@ -1292,15 +1270,7 @@ w_END_CODE_cf:
         XOR     A
         LD      (asm_mode), A
 
-        ; Restore BC (TOS) and DE (IP)
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
 ; =====================================================================
@@ -2187,9 +2157,8 @@ w_NEXT_COMMA:
 w_NEXT_COMMA_cf:
         CALL    check_asm_mode
         ; Copy NEXT_TEMPLATE_LEN bytes from next_template to HERE via
-        ; LDIR. Must preserve DE (=IP) and BC (=TOS) — save both to RS.
-        CALL    rpush_de
-        CALL    rpush_bc
+        ; LDIR. Main BC/DE/HL are free scratch after EXX.
+        EXX                                      ; Save TOS/IP/W to shadows
         LD      HL, next_template
         LD      E, (IY+UserArea.here)
         LD      D, (IY+UserArea.here+1)
@@ -2197,15 +2166,7 @@ w_NEXT_COMMA_cf:
         LDIR                                    ; HL→DE, DE ends = HERE+N
         LD      (IY+UserArea.here), E
         LD      (IY+UserArea.here+1), D
-        ; Restore TOS and IP
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT                                    ; real NEXT — return to interp
 
 ; --- Template: the NEXT macro expands here. Flow never reaches these
@@ -2247,11 +2208,7 @@ w_LABEL:
         DEFCODE "LABEL", 0
 w_LABEL_cf:
         CALL    check_asm_mode
-        ; Save DE (IP) and BC (TOS) to return stack — build_header
-        ; clobbers everything, and the body-start check below also
-        ; clobbers DE.
-        CALL    rpush_de
-        CALL    rpush_bc
+        EXX                                      ; Save TOS/IP/W to shadows
 
         ; "Before any opcodes" check: HERE must equal asm_body_start.
         LD      L, (IY+UserArea.here)
@@ -2328,15 +2285,7 @@ w_LABEL_cf:
         LD      (IY+UserArea.latest), L
         LD      (IY+UserArea.latest+1), H
 
-        ; Restore BC (TOS) and DE (IP) from return stack.
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
 .lbl_no_name:
@@ -2350,16 +2299,7 @@ w_LABEL_cf:
         LD      HL, (asm_tmp2)
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
-        ; Unwind RS save (symmetric with success path) — asm_cleanup
-        ; will run via asm_err_noname → asm_die → ABORT.
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         JP      asm_err_noname
 
 ; =====================================================================

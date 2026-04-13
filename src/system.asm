@@ -21,9 +21,7 @@ w_BYE_cf:
 w_MARKER:
         DEFCODE "MARKER", 0
 w_MARKER_cf:
-        ; Save DE (IP) and BC (TOS) to return stack
-        CALL    rpush_de
-        CALL    rpush_bc
+        EXX                                      ; Save TOS/IP/W to shadows
 
         ; Build dictionary header (flags=0, no SMUDGE)
         XOR     A
@@ -74,27 +72,11 @@ w_MARKER_cf:
         LD      (IY+UserArea.here), E
         LD      (IY+UserArea.here+1), D
 
-        ; Restore BC (TOS) and DE (IP) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
 .marker_no_name:
-        ; Restore BC (TOS) and DE (IP) from return stack
-        LD      B, (IX+1)
-        LD      C, (IX+0)
-        INC     IX
-        INC     IX
-        LD      D, (IX+1)
-        LD      E, (IX+0)
-        INC     IX
-        INC     IX
+        EXX                                      ; Restore TOS/IP/W from shadows
         JP      w_ABORT_cf
 
 ; -----------------------------------------------
