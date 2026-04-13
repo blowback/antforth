@@ -121,12 +121,12 @@ w_ROLL_cf:
         POP     BC              ; u=0: just load x0 as new TOS
         NEXT
 .roll_work:
-        ; Save IP to return stack (LDDR needs DE)
-        CALL    rpush_de
+        ; Preserve u across the EXX (main BC is junk after EXX)
+        PUSH    BC              ; save u on param stack
+        EXX                     ; save TOS/IP/W to shadows
+        POP     HL              ; HL = u in main set
 
         ; Compute address of xu on stack: SP + u*2
-        LD      H, B
-        LD      L, C            ; HL = u
         ADD     HL, HL          ; HL = u*2
         PUSH    HL              ; Save u*2 for LDDR byte count
         ADD     HL, SP          ; HL = SP_after_push + u*2 = SP_orig - 2 + u*2
@@ -157,16 +157,16 @@ w_ROLL_cf:
         LDDR                    ; Shift block up: x0..xu-1 each move +2 bytes
 
         ; Retrieve xu from stack, set as new TOS
-        POP     HL              ; HL = xu
-        LD      B, H
-        LD      C, L            ; BC = xu (new TOS)
+        POP     BC              ; BC = xu (new TOS)
 
         ; Remove the duplicate slot left at bottom of shifted region
         INC     SP
         INC     SP
 
-        ; Restore IP from return stack
-        CALL    rpop_de
+        ; Stage new TOS through the param stack across the exit EXX
+        PUSH    BC              ; save new TOS
+        EXX                     ; restore IP from shadow (main BC clobbered)
+        POP     BC              ; recover new TOS
 
         NEXT
 

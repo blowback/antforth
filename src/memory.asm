@@ -225,12 +225,12 @@ w_FILL:
         DEFCODE "FILL", 0
 w_FILL_cf:                              ; No underflow check — low-risk bulk op
         ; BC = char (TOS), (SP) = u, (SP+2) = addr
-        ; Save IP (DE) to return stack — LDIR uses DE
-        CALL    rpush_de
+        ; Capture char in A (survives EXX), then use EXX to free BC/DE/HL scratch
+        LD      A, C            ; A = fill byte (char) — must precede EXX
+        EXX                     ; Save TOS/IP/W to shadows; main BC/DE/HL = scratch
 
-        LD      A, C            ; A = fill byte (char)
         POP     HL              ; HL = u (count)
-        POP     DE              ; DE = addr (safe now, IP is saved)
+        POP     DE              ; DE = addr (safe — IP preserved in shadow)
         ; Now: A=char, HL=count, DE=addr
         LD      B, H
         LD      C, L            ; BC = count
@@ -250,8 +250,8 @@ w_FILL_cf:                              ; No underflow check — low-risk bulk o
         INC     DE              ; DE = addr+1 (destination)
         LDIR                    ; Propagate fill byte through region
 .fill_done:
-        ; Restore IP from return stack
-        CALL    rpop_de
+        ; Restore IP from shadow
+        EXX
 
         POP     BC              ; New TOS
         NEXT
@@ -264,8 +264,10 @@ w_MOVE:
         DEFCODE "MOVE", 0
 w_MOVE_cf:                              ; No underflow check — low-risk bulk op
         ; BC = u (TOS), (SP) = addr2, (SP+2) = addr1
-        ; Save IP (DE) to return stack — LDIR/LDDR use DE
-        CALL    rpush_de
+        ; Preserve u across the EXX so main BC still holds count for LDIR/LDDR
+        PUSH    BC              ; save u on param stack
+        EXX                     ; save TOS/IP/W to shadows
+        POP     BC              ; recover u into main BC
 
         LD      A, B
         OR      C
@@ -295,8 +297,8 @@ w_MOVE_cf:                              ; No underflow check — low-risk bulk o
         POP     DE              ; Discard addr2
         POP     HL              ; Discard addr1
 .move_done:
-        ; Restore IP from return stack
-        CALL    rpop_de
+        ; Restore IP from shadow
+        EXX
 
         POP     BC              ; New TOS
         NEXT

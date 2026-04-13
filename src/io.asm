@@ -119,11 +119,11 @@ w_ACCEPT_cf:
         ; BC = +n1 (max chars, TOS)
         ; (SP) = c-addr (ignored — BDOS writes to bdos_input_buf+2 = tib_buffer)
 
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Capture max-len in A (survives EXX), then free BC/DE/HL via shadows
+        LD      A, C            ; A = max chars — must precede EXX
+        EXX                     ; Save TOS/IP/W to shadows
 
         ; Set max_len in BDOS input buffer header
-        LD      A, C
         LD      (bdos_input_buf), A
 
         ; Pop and discard c-addr (second argument)
@@ -138,13 +138,11 @@ w_ACCEPT_cf:
         LD      E, 0x0A
         CALL    bdos_putchar
 
-        ; Read actual character count
+        ; Read actual character count — stage through A across exit EXX
         LD      A, (bdos_input_len)
+        EXX                     ; Restore IP from shadow (A survives)
         LD      C, A
         LD      B, 0            ; BC = +n2 (actual chars read, new TOS)
-
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
         NEXT
 
 ; -----------------------------------------------

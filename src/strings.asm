@@ -11,11 +11,11 @@ w_WORD:
         DEFCODE "WORD", 0
 w_WORD_cf:
         ; BC = delimiter char (TOS, only C matters)
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Capture delim in A (survives EXX), then free BC/DE/HL via shadows
+        LD      A, C            ; A = delimiter — must precede EXX
+        EXX                     ; Save TOS/IP/W to shadows
 
         ; Save delimiter in scratch
-        LD      A, C
         LD      (.word_delim), A
 
         ; Load parse state: HL = tib_addr + >IN
@@ -69,10 +69,10 @@ w_WORD_cf:
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)          ; HL = HERE
         LD      (HL), 0                           ; count = 0
-        LD      B, H
-        LD      C, L                              ; BC = HERE (c-addr, new TOS)
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
+        ; Stage HERE (new TOS) through param stack across exit EXX
+        PUSH    HL
+        EXX                                       ; Restore IP from shadow
+        POP     BC                                ; BC = HERE (c-addr, new TOS)
         NEXT
 
 .word_found:
@@ -143,10 +143,10 @@ w_WORD_cf:
         ; A = count, store at HERE
         LD      HL, (.word_here)
         LD      (HL), A                            ; Store count byte
-        LD      B, H
-        LD      C, L                               ; BC = HERE (c-addr, new TOS)
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
+        ; Stage HERE (new TOS) through param stack across exit EXX
+        PUSH    HL
+        EXX                                        ; Restore IP from shadow
+        POP     BC                                 ; BC = HERE (c-addr, new TOS)
         NEXT
 
 ; === WORD scratch storage ===
@@ -358,16 +358,13 @@ w_TO_NUMBER:
         DEFCODE ">NUMBER", 0
 w_TO_NUMBER_cf:
         ; Stack: BC = u1 (TOS), (SP) = c-addr1, ud1-low, ud1-high
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Capture count in A (survives EXX); main BC is junk after EXX
+        LD      A, C            ; A = count (u1 low byte)
+        EXX                     ; Save TOS/IP/W to shadows
+        LD      B, A            ; B = count (do_number input)
 
-        ; Get arguments
-        LD      B, C            ; B = count (u1, only low byte matters for reasonable strings)
         POP     HL              ; HL = c-addr1
-        ; Stack: ud1-low, ud1-high
-
         POP     DE              ; DE = ud1-low (accumulator for do_number)
-        ; Stack: ud1-high
 
         CALL    do_number
 
@@ -378,11 +375,11 @@ w_TO_NUMBER_cf:
         PUSH    DE              ; ud2-low
         PUSH    HL              ; c-addr2
 
-        LD      C, B
+        ; Stage remaining count through A across exit EXX
+        LD      A, B
+        EXX                     ; Restore IP from shadow
+        LD      C, A
         LD      B, 0            ; BC = u2 (remaining count, TOS)
-
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
         NEXT
 
 ; -----------------------------------------------
@@ -394,20 +391,18 @@ w_NUMBER_Q:
         DEFCODE "NUMBER?", 0
 w_NUMBER_Q_cf:
         ; BC = c-addr (TOS, points to counted string)
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
-
-        ; Save original c-addr for failure return
-        PUSH    BC              ; Stack: [c-addr_orig]
+        ; Stage c-addr into main HL while saving TOS/IP/W to shadows.
+        ; Shadow BC' implicitly preserves original c-addr for the fail path.
+        PUSH    BC              ; save c-addr on param stack
+        EXX                     ; save TOS/IP/W; shadow BC' = c-addr_orig
+        POP     HL              ; HL = c-addr (main)
 
         ; Load count byte
-        LD      A, (BC)
+        LD      A, (HL)
         OR      A
         JR      Z, .numq_fail  ; count = 0 → fail
 
-        INC     BC              ; BC = name start (past count byte)
-        LD      H, B
-        LD      L, C            ; HL = name start
+        INC     HL              ; HL = name start (past count byte)
         LD      B, A            ; B = count
 
         ; Check for leading '-'
@@ -447,21 +442,16 @@ w_NUMBER_Q_cf:
         INC     DE              ; Two's complement
 
 .numq_ok:
-        ; Stack: [c-addr_orig]
-        POP     AF              ; Discard original c-addr
-        PUSH    DE              ; Push n (second on stack)
-        LD      BC, 0xFFFF      ; TRUE (TOS)
-        ; Restore IP
-        CALL    rpop_de
+        PUSH    DE              ; Push n as NOS
+        EXX                     ; Restore IP from shadow (main BC clobbered)
+        LD      BC, 0xFFFF      ; TRUE (new TOS) — no need to stage through A
         NEXT
 
 .numq_fail:
-        ; Stack: [c-addr_orig]
-        POP     BC              ; Restore original c-addr
-        PUSH    BC              ; Push c-addr as second-on-stack
-        LD      BC, 0           ; FALSE (TOS)
-        ; Restore IP
-        CALL    rpop_de
+        ; Shadow BC' still holds original c-addr — EXX brings it back to main BC
+        EXX                     ; Restore IP; main BC = c-addr_orig
+        PUSH    BC              ; Push c-addr as NOS
+        LD      BC, 0           ; FALSE (new TOS)
         NEXT
 
 .numq_negate:   DB      0
@@ -851,11 +841,10 @@ w_BACKSLASH_cf:
 w_PAREN:
         DEFCODE "(", F_IMMEDIATE
 w_PAREN_cf:
-        ; Save BC (TOS) to parameter stack — ( has no stack effect
-        PUSH    BC
-
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Save TOS/IP/W via shadows. Shadow BC' implicitly preserves the
+        ; original TOS for free, so no explicit `PUSH BC` is needed
+        ; (matches 7.1 COLON/CREATE/CONSTANT convention for `( -- )` words).
+        EXX
 
         ; Compute HL = tib_addr + >IN, BC = tib_len - >IN
         LD      E, (IY+UserArea.tib_addr)
@@ -895,16 +884,18 @@ w_PAREN_cf:
         CP      ')'
         JR      NZ, .paren_scan                  ; Not ')' — keep scanning
 
-        ; Found ')' — restore DE (IP) and BC (TOS)
-        CALL    rpop_de
-        POP     BC              ; Restore TOS
+        ; Found ')' — restore IP via EXX; main BC ← shadow BC' = original TOS
+        EXX
         NEXT
 
 .paren_missing:
-        ; Print "missing )" CR LF then ABORT
+        ; Print "missing )" CR LF then ABORT. Restore shadows defensively
+        ; before ABORT (ABORT resets SP/RSP and re-enters QUIT which reloads IP,
+        ; but matching the 7.1 convention keeps reasoning simple).
         LD      HL, .paren_err_msg
         LD      B, .paren_err_len
         CALL    bdos_print_str
+        EXX
         JP      w_ABORT_cf
 
 .paren_err_msg:
