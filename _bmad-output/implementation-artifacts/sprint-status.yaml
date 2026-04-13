@@ -73,11 +73,11 @@ development_status:
   4-4-extended-z80-opcodes: done
   epic-4-retrospective: done
 
-  epic-5: in-progress
+  epic-5: done
   5-0-z80-instruction-set-completeness-survey: done
   5-0-5-z80-instruction-gap-closure: done
   5-1-comment-words: done
   5-2-marker-snapshot-and-restore: done
   5-3-ans-forth-core-word-compliance-survey: done
   5-4-ans-forth-core-quick-wins: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
