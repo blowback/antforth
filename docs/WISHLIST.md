@@ -2,6 +2,7 @@
 
 Capturing ideas that are not in MVP, or PRD for any future phases.
 
+
 # Multitasker
 
 A polyForth/fig-Forth style cooperative multitasking system based
@@ -73,6 +74,7 @@ improvement.
 
 `SEARCH-ORDER`, `GET-ORDER`, `SET-ORDER`, `WORDLIST`, and 
 `DEFINITIONS` from ANS. Namespace control!
+Move z80 opcodes into ASSEMBLER word-list and automatically acticate/deactivate it.
 
 # SEE decompiler
 
@@ -92,7 +94,7 @@ NEON/Yerk and FOBJ maybe worth looking at.
 
 Forth Dimensions Volume IX onwards.
 
-## Comments
+## Comments - DONE
 
 Argh! We don't support comment words! How have we got this far without me noticing...
 Prolly should comment code more often.
