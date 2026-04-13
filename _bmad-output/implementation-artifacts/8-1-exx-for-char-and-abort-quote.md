@@ -1,6 +1,6 @@
 # Story 8.1: EXX for CHAR and (ABORT") Runtime
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,34 +25,34 @@ I want the two remaining non-formatting `CALL rpush_de` / `CALL rpop_de` save/re
 
 ## Tasks / Subtasks
 
-- [ ] Task 0: Record baseline (AC: #5)
-  - [ ] 0.1 `make asm && wc -c build/antforth.com` — confirm 14,105 bytes
-  - [ ] 0.2 `make test && make test-repl` — confirm all 265 tests pass
+- [x] Task 0: Record baseline (AC: #5)
+  - [x] 0.1 `make asm && wc -c build/antforth.com` — confirm 14,105 bytes
+  - [x] 0.2 `make test && make test-repl` — confirm all 265 tests pass
 
-- [ ] Task 1: Convert w_CHAR_cf to EXX (AC: #1, #2, #4)
-  - [ ] 1.1 Replace `CALL rpush_de` (src/strings.asm:167, 3 bytes) with `EXX` (1 byte) — note the preceding `PUSH BC` stays (it's preserving old TOS on the parameter stack, not a save/restore thing)
-  - [ ] 1.2 Replace `CALL rpop_de` at the exit (src/strings.asm:252, 3 bytes) with `EXX` (1 byte)
-  - [ ] 1.3 After entry EXX, main BC/DE/HL are all free scratch. The current `PUSH HL / PUSH BC / LD L/H, (IY+tib_in) / INC HL / LD (IY+tib_in), L/H / POP BC / POP HL` dance around the tib_in writes exists because every register pair is occupied in the pre-EXX world. Audit whether main DE can now hold `tib_in` persistently, eliminating those PUSH/POP sequences.
-  - [ ] 1.4 Attempt to eliminate `.char_result` scratch byte (src/strings.asm:255): after `LD A, (HL)` at `.char_found`, A holds the first character. With main registers free, consider stashing A into a main register (e.g., keep A untouched through the scan loop, or move to a register that survives the IY updates) instead of writing to memory. If elimination costs more bytes than the 1 byte of data + load/store overhead saves, document the analysis in Completion Notes and leave `.char_result` in place (AC #2(b)).
-  - [ ] 1.5 `make asm && make test && make test-repl` — all tests pass
-  - [ ] 1.6 Record byte delta after CHAR conversion
+- [x] Task 1: Convert w_CHAR_cf to EXX (AC: #1, #2, #4)
+  - [x] 1.1 Replace `CALL rpush_de` (src/strings.asm:167, 3 bytes) with `EXX` (1 byte) — note the preceding `PUSH BC` stays (it's preserving old TOS on the parameter stack, not a save/restore thing)
+  - [x] 1.2 Replace `CALL rpop_de` at the exit (src/strings.asm:252, 3 bytes) with `EXX` (1 byte)
+  - [x] 1.3 Eliminated the PUSH/POP dance around tib_in updates entirely — rather than tracking tib_in during the loops, compute new tib_in = parse_ptr - tib_addr once at exit (HL holds final parse_ptr; DE loaded with tib_addr via IY, SBC HL,DE gives new tib_in).
+  - [x] 1.4 Eliminated `.char_result` scratch byte: char value stashed in main D between `.char_found` and `.char_finish`; then moved to A (which survives the final EXX) and built into BC after the exit EXX.
+  - [x] 1.5 `make asm && make test && make test-repl` — all tests pass
+  - [x] 1.6 Byte delta after CHAR conversion: 14,105 → 14,072 = **−33 bytes**
 
-- [ ] Task 2: Delete dead stack management in (ABORT") runtime (AC: #3, #4)
-  - [ ] 2.1 Verify the "dead save" claim: trace every path between `.paq_abort` (src/strings.asm / src/system.asm:114) and `.paq_do_abort` (src/system.asm:132). Confirm no `CALL rpop_de` or `LD DE, (IX+n)` reads the saved IP back. The only instruction that uses DE after the rpush is `LD A, (DE)` + `INC DE`, both BEFORE any BDOS call could clobber DE — these operate on the original DE, not a restored one.
-  - [ ] 2.2 Verify `bdos_print_str` does not trash IX (consistent with every AntForth BDOS helper — return stack is IX-based and has never been reported corrupted by BDOS). Search repo for any `rpush`/`rpop` pair spanning a BDOS call to confirm IX-preservation is an established invariant (`w_DOT_cf` and many others do this successfully).
-  - [ ] 2.3 Verify `w_ABORT_cf` (src/system.asm, near line 266) resets SP wholesale (`LD SP, (sp_base)`) and re-enters QUIT which resets IX as well — so any leftover return-stack state before ABORT is erased.
-  - [ ] 2.4 Delete `CALL rpush_de` at src/system.asm:120
-  - [ ] 2.5 Delete `INC IX / INC IX` at src/system.asm:135–136
-  - [ ] 2.6 Update the surrounding comments — the "Save IP to return stack for BDOS safety" comment (src/system.asm:119) becomes stale; replace with a brief note explaining that no save is needed because the saved value was never consumed and ABORT resets stacks wholesale.
-  - [ ] 2.7 `make asm && make test && make test-repl` — all tests pass
-  - [ ] 2.8 Record byte delta after (ABORT") change
+- [x] Task 2: Delete dead stack management in (ABORT") runtime (AC: #3, #4)
+  - [x] 2.1 Verified: between `.paq_abort` and `JP w_ABORT_cf` no instruction reads the return-stack slot created by rpush_de. `LD A,(DE)` and `INC DE` use live main DE, not a restored copy.
+  - [x] 2.2 Verified `bdos_print_str` (src/io.asm:204) uses only HL/BC/DE/A — never touches IX. IX-preservation is established by every `rpush_de` → BDOS → `rpop_de` sequence in the codebase.
+  - [x] 2.3 Verified `w_ABORT_cf` (src/system.asm:266-270) resets SP via `LD SP, (sp_base)` and tail-calls `w_QUIT_cf` which resets IX.
+  - [x] 2.4 Deleted `CALL rpush_de` at src/system.asm:120
+  - [x] 2.5 Deleted `INC IX / INC IX` at src/system.asm:135–136
+  - [x] 2.6 Updated comments to explain that no save is needed because ABORT resets stacks wholesale and bdos_print_str preserves IX.
+  - [x] 2.7 `make asm && make test && make test-repl` — all tests pass
+  - [x] 2.8 Byte delta after (ABORT") change: 14,072 → 14,065 = **−7 bytes** (matches predicted exactly)
 
-- [ ] Task 3: Final verification (AC: #5, #6)
-  - [ ] 3.1 `make test && make test-repl` — all 265 tests green (assembly + REPL)
-  - [ ] 3.2 `wc -c build/antforth.com` — record final size, compute delta from 14,105 baseline
-  - [ ] 3.3 Verify savings ≥ 8 bytes
-  - [ ] 3.4 Manually exercise CHAR on MicroBeast hardware: `CHAR A .` → prints 65; `CHAR foo .` → prints 102 (ASCII 'f'); `CHAR` with empty input → pushes 0. These behaviours are already covered by REPL tests but a hardware spot-check is Epic 6/7 convention.
-  - [ ] 3.5 Manually exercise `ABORT"` on MicroBeast: `: T 1 ABORT" should not fire" ;` then `T` → executes cleanly (flag is non-zero but... wait, 1 is truthy so it aborts). Correct test: `: T 0 ABORT" no abort" ;` then `T` → no abort; `: U -1 ABORT" yes abort" ;` then `U` → prints "yes abort" and aborts.
+- [x] Task 3: Final verification (AC: #5, #6)
+  - [x] 3.1 `make test && make test-repl` — assembly test passes + 272 REPL tests pass (story cited 265 baseline; current count is 272 — all green, zero failures)
+  - [x] 3.2 Final binary size: 14,065 bytes; delta from 14,105 baseline = **−40 bytes**
+  - [x] 3.3 Savings 40 ≥ 8 bytes ✓
+  - [x] 3.4 CHAR behaviour covered by REPL tests 251 (`CHAR A .` → 65), 252 (`CHAR Z .` → 90), and 254 (`[CHAR] A` → 65) — all pass. Hardware spot-check deferred to code-review phase.
+  - [x] 3.5 ABORT" behaviour covered by REPL tests 257 (zero flag → no abort) and 258 (non-zero flag → prints message and aborts) — all pass. Hardware spot-check deferred to code-review phase.
 
 ## Dev Notes
 
@@ -247,10 +247,29 @@ AC target: ≥ 8 bytes (conservative floor, allows for `.char_result` deferral u
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context) — claude-opus-4-6[1m]
+
 ### Debug Log References
+
+None — no debugging required; all changes landed cleanly on first build.
 
 ### Completion Notes List
 
+- **CHAR saved 33 bytes** (more than the 4-byte base target + 2-4 byte `.char_result` bonus). The extra savings came from realising that `tib_in` does not need to be tracked incrementally during the skip/scan loops — since `parse_ptr = tib_addr + tib_in` is invariant, the new `tib_in` can simply be computed as `parse_ptr - tib_addr` once at exit via a single `SBC HL, DE`. This eliminated **two** copies of the 17-byte `PUSH HL / PUSH BC / LD L,(IY+tib_in) / LD H,(IY+tib_in+1) / INC HL / LD (IY+tib_in),L / LD (IY+tib_in+1),H / POP BC / POP HL` dance inside the inner loops. The freed register pressure also allowed `.char_result` (1 byte data + 2 × `LD (.char_result),A` + `LD A,(.char_result)` = ~7 bytes of overhead) to be removed — char rides in main D between `.char_found` and `.char_finish`, then is moved to A (preserved across the exit EXX) to build the new TOS. Entry computation also slightly tightened by using direct `LD B,(IY+...)` / `LD C,(IY+...)` instead of `LD A,(IY+...) / LD B,A` pairs now that BC is free post-PUSH.
+- **(ABORT") saved 7 bytes** exactly as predicted — `CALL rpush_de` (3) and `INC IX / INC IX` (4) both deleted. Verified all three prerequisites: (a) saved DE never read back, (b) `bdos_print_str` (src/io.asm:204-214) touches only HL/BC/DE/A, (c) `w_ABORT_cf` resets SP and tail-calls `w_QUIT_cf` which resets IX.
+- **Total: 14,105 → 14,065 bytes (−40 bytes)**, well above the AC #5 floor of 8 bytes.
+- **Test count note:** story AC cited 265 tests; current count is 272 REPL tests + 1 assembly regression. All pass; no regressions.
+- AC #2 satisfied via option (a) — `.char_result` eliminated entirely.
+- Leaf-level audit (AC #4): new CHAR body makes no CALLs (parse loop fully inline); `.paq_abort` introduces no new EXX so `bdos_print_str` EXX-freeness is defensive-only.
+- **Code review (2026-04-14):** M1 (tib_in double-load), L1 (misleading DE comment), L3 (invariant note at `.char_empty`) all fixed. Additional 4 bytes saved. L2 (no regression test covering CHAR at exhausted TIB) left as a pre-existing coverage gap — behaviour is unchanged from pre-story code.
+
 ### File List
 
+- Modified: src/strings.asm (w_CHAR_cf rewritten: EXX pattern + tib_in at-exit computation + `.char_result` elimination)
+- Modified: src/system.asm (w_PAREN_ABORT_QUOTE_cf `.paq_abort` path — removed dead rpush_de + INC IX/INC IX unwind, updated comments)
+
 ### Change Log
+
+- 2026-04-14: Converted `w_CHAR_cf` to Group A EXX pattern (PUSH BC / EXX entry, EXX + A-staged TOS build at exit). Eliminated incremental tib_in tracking inside skip/scan loops (compute at exit as parse_ptr - tib_addr). Eliminated `.char_result` scratch byte. Saved 33 bytes.
+- 2026-04-14: Removed dead `CALL rpush_de` and `INC IX / INC IX` stack-management pair from `.paq_abort` — the saved IP was never consumed and `w_ABORT_cf` resets SP/IX/IP wholesale. Saved 7 bytes.
+- 2026-04-14: Code-review fixes applied to `w_CHAR_cf` — (M1) reordered prologue to copy tib_in into BC directly instead of loading it from IY a second time for the remaining calc (saves 4 bytes by dropping two IY-relative loads in exchange for two register-to-register copies); (L1) corrected misleading post-subtract comment that claimed DE held tib_len when it actually holds remaining; (L3) added invariant note at `.char_empty` that HL must remain live for the tib_in writeback. Final binary: 14,065 → 14,061 bytes (−4). Cumulative story delta: 14,105 → 14,061 = **−44 bytes**. All 272 REPL + assembly regression tests pass.

@@ -112,13 +112,11 @@ w_PAREN_ABORT_QUOTE_cf:
         NEXT
 
 .paq_abort:
-        ; Non-zero flag: print string then ABORT
-        ; DE = IP = pointer to count byte
-        ; Note: raw BDOS calls (not BDOS_SAVE/BDOS_RESTORE) because ABORT
-        ; resets SP anyway; IP saved/restored via return stack instead.
-        ; Save IP to return stack for BDOS safety
-        CALL    rpush_de
-
+        ; Non-zero flag: print string then ABORT.
+        ; No IP save needed: w_ABORT_cf resets SP wholesale and re-enters QUIT
+        ; (which resets IX and reloads DE), so any leftover state is erased.
+        ; bdos_print_str preserves IX (established invariant — return stack is
+        ; IX-based and all BDOS-calling words rely on this).
         LD      A, (DE)         ; A = count
         INC     DE              ; DE = string start
         OR      A
@@ -130,10 +128,6 @@ w_PAREN_ABORT_QUOTE_cf:
         CALL    bdos_print_str
 
 .paq_do_abort:
-        ; Restore return stack (not strictly needed since ABORT resets everything,
-        ; but keep it clean)
-        INC     IX
-        INC     IX
         JP      w_ABORT_cf      ; ABORT (never returns)
 
 ; -----------------------------------------------

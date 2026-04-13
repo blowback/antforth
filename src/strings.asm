@@ -162,32 +162,26 @@ w_CHAR:
 w_CHAR_cf:
         ; Stack effect: ( -- char ) — push new value
         PUSH    BC              ; Save old TOS (grows stack by 1)
+        EXX                     ; Park IP in DE'; main BC/DE/HL = free scratch
 
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
-
-        ; Parse next space-delimited token from TIB
-        ; Load parse state: HL = tib_addr + >IN
+        ; Compute parse_ptr = tib_addr + tib_in in HL; keep tib_in in BC for reuse
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)       ; HL = tib_in
+        LD      C, L
+        LD      B, H                             ; BC = tib_in (retained for remaining calc)
         LD      E, (IY+UserArea.tib_addr)
         LD      D, (IY+UserArea.tib_addr+1)     ; DE = tib_addr
-        LD      L, (IY+UserArea.tib_in)
-        LD      H, (IY+UserArea.tib_in+1)       ; HL = >IN
-        ADD     HL, DE                           ; HL = tib_addr + >IN
+        ADD     HL, DE                           ; HL = tib_addr + tib_in = parse_ptr
 
-        ; Compute remaining = tib_len - >IN
-        LD      E, (IY+UserArea.tib_len)
-        LD      D, (IY+UserArea.tib_len+1)      ; DE = tib_len
-        LD      A, (IY+UserArea.tib_in)
-        LD      C, A
-        LD      A, (IY+UserArea.tib_in+1)
-        LD      B, A                             ; BC = >IN
-        PUSH    HL                               ; Save parse pos
-        EX      DE, HL                           ; HL = tib_len
+        ; Compute remaining = tib_len - tib_in in BC (park parse_ptr in DE)
+        EX      DE, HL                           ; DE = parse_ptr, HL = tib_addr (discarded)
+        LD      L, (IY+UserArea.tib_len)
+        LD      H, (IY+UserArea.tib_len+1)      ; HL = tib_len
         OR      A
-        SBC     HL, BC                           ; HL = remaining
+        SBC     HL, BC                           ; HL = tib_len - tib_in = remaining
         LD      B, H
         LD      C, L                             ; BC = remaining
-        POP     HL                               ; HL = parse pos
+        EX      DE, HL                           ; HL = parse_ptr (DE now remaining — discarded)
 
         ; Skip leading spaces
 .char_skip:
@@ -199,60 +193,45 @@ w_CHAR_cf:
         JR      NZ, .char_found
         INC     HL
         DEC     BC
-        PUSH    HL
-        PUSH    BC
-        LD      L, (IY+UserArea.tib_in)
-        LD      H, (IY+UserArea.tib_in+1)
-        INC     HL
-        LD      (IY+UserArea.tib_in), L
-        LD      (IY+UserArea.tib_in+1), H
-        POP     BC
-        POP     HL
         JR      .char_skip
 
 .char_found:
         ; HL = first char of token
-        LD      A, (HL)         ; A = first char — save it
-        LD      (.char_result), A
+        LD      A, (HL)                          ; A = first char
+        LD      D, A                             ; D = stashed char (survives scan)
 
-        ; Skip rest of token to advance >IN past it
+        ; Skip rest of token to advance parse_ptr past it
 .char_scan:
         INC     HL
         DEC     BC
-        PUSH    HL
-        PUSH    BC
-        LD      L, (IY+UserArea.tib_in)
-        LD      H, (IY+UserArea.tib_in+1)
-        INC     HL
-        LD      (IY+UserArea.tib_in), L
-        LD      (IY+UserArea.tib_in+1), H
-        POP     BC
-        POP     HL
         LD      A, B
         OR      C
         JR      Z, .char_finish                  ; End of input
         LD      A, (HL)
         CP      ' '
         JR      NZ, .char_scan                   ; Still in token
-
         JR      .char_finish
 
 .char_empty:
-        ; No token found — return 0
-        XOR     A
-        LD      (.char_result), A
+        ; No token found — char = 0. HL is live parse_ptr; .char_finish relies
+        ; on it to compute new tib_in, so no instructions may clobber HL here.
+        LD      D, 0
 
 .char_finish:
-        ; Set BC = char value (new TOS)
-        LD      A, (.char_result)
-        LD      C, A
+        ; HL = final parse_ptr; D = char value (ASCII or 0)
+        ; Compute new tib_in = HL - tib_addr and write back
+        LD      A, D                             ; A = char (preserved through rest)
+        LD      E, (IY+UserArea.tib_addr)
+        LD      D, (IY+UserArea.tib_addr+1)     ; DE = tib_addr (D now clobbered)
+        OR      A                                ; clear carry (A unchanged)
+        SBC     HL, DE
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+
+        EXX                                      ; Restore IP to main DE
+        LD      C, A                             ; A survived EXX — build new TOS
         LD      B, 0
-
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
         NEXT
-
-.char_result:   DB 0
 
 ; -----------------------------------------------
 ; char_to_digit — Internal helper
