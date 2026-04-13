@@ -465,31 +465,10 @@ w_COMP_ERROR_cf:
         JR      Z, .comp_err_abort              ; empty name, just abort
         LD      B, A                            ; B = length
         INC     HL                              ; HL = name start
-        ; Print chars via BDOS
-.comp_err_print:
-        LD      E, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .comp_err_print
-        ; Print " ?"
-        LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, '?'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        ; CR LF
-        LD      E, 0x0D
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        ; Print name via BDOS
+        CALL    bdos_print_str
+        ; Print " ?" CR LF
+        CALL    bdos_print_q_crlf
 
 .comp_err_abort:
         ; --- 5.4: Call ABORT ---

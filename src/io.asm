@@ -11,8 +11,7 @@ w_EMIT_cf:
         LD      A, C            ; A = char (save from TOS before BDOS clobbers)
         BDOS_SAVE               ; PUSH DE, PUSH BC
         LD      E, A            ; E = char for BDOS
-        LD      C, C_WRITE      ; BDOS function 2: C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         BDOS_RESTORE            ; POP BC, POP DE — restores IP and old TOS
         POP     BC              ; Pop new TOS (char consumed)
         NEXT
@@ -40,8 +39,7 @@ w_TYPE_cf:
         LD      A, (HL)         ; A = next char
         PUSH    DE              ; Save DE (BDOS clobbers all)
         LD      E, A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     DE              ; Restore DE
         POP     BC              ; Restore count
         POP     HL              ; Restore address
@@ -63,14 +61,7 @@ w_CR:
         DEFCODE "CR", 0
 w_CR_cf:
         BDOS_SAVE
-        LD      E, 0x0D         ; Carriage return
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        BDOS_RESTORE
-        BDOS_SAVE
-        LD      E, 0x0A         ; Line feed
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_crlf
         BDOS_RESTORE
         NEXT
 
@@ -83,8 +74,7 @@ w_SPACE:
 w_SPACE_cf:
         BDOS_SAVE
         LD      E, 0x20         ; Space character
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         BDOS_RESTORE
         NEXT
 
@@ -106,8 +96,7 @@ w_SPACES_cf:
 .spaces_loop:
         BDOS_SAVE               ; Saves DE (IP) and BC (count)
         LD      E, 0x20
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         BDOS_RESTORE            ; Restores BC (count) and DE (IP)
         DEC     BC
         LD      A, B
@@ -150,8 +139,7 @@ w_ACCEPT_cf:
 
         ; BDOS 10 echoes CR when Enter pressed — emit LF ourselves
         LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
 
         ; Read actual character count
         LD      A, (bdos_input_len)
@@ -201,3 +189,45 @@ w_KEYQ_cf:
 .keyq_false:
         LD      BC, 0           ; FALSE (0)
         NEXT
+
+; -----------------------------------------------
+; Internal BDOS output helpers (not Forth words)
+; -----------------------------------------------
+bdos_putchar:               ; Entry: E = character
+        LD      C, C_WRITE      ; 2 bytes
+        CALL    BDOS_ENTRY      ; 3 bytes
+        RET                     ; 1 byte — 6 bytes total
+
+bdos_crlf:                  ; Print CR + LF
+        LD      E, 0x0D
+        CALL    bdos_putchar
+        LD      E, 0x0A
+        JP      bdos_putchar    ; tail-call, 10 bytes total
+
+; -----------------------------------------------
+; bdos_print_str — Print HL..HL+B-1 via BDOS (no suffix).
+;   Entry: HL = string ptr, B = length
+;   Clobbers: A, BC, DE, HL
+; -----------------------------------------------
+bdos_print_str:
+.loop:
+        LD      E, (HL)
+        PUSH    HL
+        PUSH    BC
+        CALL    bdos_putchar
+        POP     BC
+        POP     HL
+        INC     HL
+        DJNZ    .loop
+        RET
+
+; -----------------------------------------------
+; bdos_print_q_crlf — Print " ?" CR LF via BDOS.
+;   Clobbers: A, BC, DE, HL
+; -----------------------------------------------
+bdos_print_q_crlf:
+        LD      E, ' '
+        CALL    bdos_putchar
+        LD      E, '?'
+        CALL    bdos_putchar
+        JP      bdos_crlf       ; tail-call

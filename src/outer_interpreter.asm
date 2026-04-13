@@ -116,8 +116,7 @@ w_QUERY_cf:
 
         ; BDOS 10 echoes CR — emit LF ourselves
         LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
 
         ; Set #TIB = actual chars read
         LD      A, (bdos_input_len)

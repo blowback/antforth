@@ -1151,3 +1151,162 @@ So that I know exactly how compliant the system is and which words (if any) are 
 **Then** these are listed as bonus coverage beyond the Core requirement
 
 **Note:** This is an audit/report story only — no implementation of missing words within this story.
+
+## Epic 6: Code Size Optimization
+
+AntForth reached MVP at 15,518 bytes. Every kilobyte the compiler uses is a kilobyte less for user programs on a 64K machine. This epic trims mechanical repetition, dead code, and redundant patterns through refactoring — no feature cuts, no architectural compromises. Target: ~600-700 bytes saved (~4% of binary).
+
+### Story 6.1: BDOS Output Helpers
+
+As a system maintainer,
+I want repeated BDOS character-output patterns extracted into shared subroutines,
+So that the binary shrinks by ~160-180 bytes without changing any observable behaviour.
+
+**Acceptance Criteria:**
+
+**Given** the new `bdos_putchar` subroutine in `src/io.asm`
+**When** any code calls it with E = character
+**Then** BDOS function 2 (C_WRITE) is invoked and the subroutine returns
+
+**Given** all 47 inline `LD C, C_WRITE / CALL BDOS_ENTRY` sequences across 9 source files
+**When** each is replaced with `CALL bdos_putchar` (or `JP bdos_putchar` for tail-call sites)
+**Then** `make test && make test-repl` passes all regression tests with zero failures
+
+**Given** the new `bdos_crlf` subroutine
+**When** inline CR+LF output sequences are replaced with `CALL bdos_crlf` (or `JP bdos_crlf` for tail calls)
+**Then** all tests pass
+
+**Given** `asm_print_str` promoted from `assembler.asm` to `io.asm` as `bdos_print_str`
+**When** inline print-string loops matching its contract (HL = string, B = length) are replaced with `CALL bdos_print_str`
+**Then** all tests pass
+**And** `asm_print_str` in assembler.asm becomes `asm_print_str EQU bdos_print_str`
+
+**Given** `asm_print_q_crlf` promoted to `io.asm` as `bdos_print_q_crlf`
+**When** inline ` ?` + CR/LF sequences are replaced with `CALL bdos_print_q_crlf` (or `JP` for tail calls)
+**Then** all tests pass
+
+**Given** all layers are complete
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 140 bytes smaller than the pre-story baseline (15,519 bytes)
+
+### Story 6.2: Return-Stack Push/Pop Subroutines
+
+As a system maintainer,
+I want the repeated 8-byte inline return-stack push/pop patterns extracted into shared subroutines,
+So that the binary shrinks by ~245 bytes without changing any observable behaviour.
+
+**Acceptance Criteria:**
+
+**Given** three new subroutines in `src/inner_interpreter.asm`: `rpush_de`, `rpop_de`, `rpush_bc`
+**When** each is called with the appropriate register pair
+**Then** it pushes to or pops from the return stack (IX) correctly
+
+**Given** all 57 inline return-stack push/pop sequences across 10 source files
+**When** each is replaced with `CALL rpush_de` / `CALL rpop_de` / `CALL rpush_bc`
+**Then** `make test && make test-repl` passes all regression tests with zero failures
+
+**Given** DOCOL and EXIT are the hottest paths in the system
+**When** return-stack subroutines are introduced
+**Then** DOCOL and EXIT retain their inline sequences (not refactored)
+
+**Given** all replacements are complete
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 200 bytes smaller than the pre-story baseline
+
+### Story 6.3: IX/IY Prefix Pair Merges
+
+As a system maintainer,
+I want the nine duplicated IX/IY code pairs in the assembler merged into shared handlers,
+So that the binary shrinks by ~70-90 bytes without changing any observable behaviour.
+
+**Acceptance Criteria:**
+
+**Given** nine code pairs in `src/assembler.asm` that differ only by `0xDD` vs `0xFD` prefix
+**When** each pair is merged into a single handler that calls `asm_emit_ixiy_prefix` then a shared emit sequence
+**Then** `make test && make test-repl` passes all regression tests with zero failures
+
+**Given** all six LD-family pairs and three non-LD pairs are merged
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 60 bytes smaller than the pre-story baseline
+
+### Story 6.4: Tag Predicate Cleanup + Dead Code Removal
+
+As a system maintainer,
+I want dead code removed and remaining tag predicates refactored to share a common tail,
+So that the binary shrinks by ~11 bytes and unnecessary code is eliminated.
+
+**Acceptance Criteria:**
+
+**Given** `asm_is_cond_tag` is defined but never called
+**When** it is removed
+**Then** `make test && make test-repl` passes all regression tests with zero failures
+
+**Given** the remaining 4 tag predicates share identical bodies
+**When** they are refactored to JR-into-shared-tail
+**Then** all tests pass and the binary is at least 8 bytes smaller than the pre-story baseline
+
+### Story 6.5: LD, Dispatch Table
+
+As a system maintainer,
+I want the LD, dispatch preamble replaced with a class-indexed jump table,
+So that the binary shrinks by ~25-50 bytes and dispatch is cleaner.
+
+**Acceptance Criteria:**
+
+**Given** the current linear chain of CALL/JP pairs in the LD, dispatch preamble
+**When** it is replaced with a class-indexed jump table using the class field of the tag encoding
+**Then** `make test && make test-repl` passes all regression tests with zero failures
+
+**Given** the jump table implementation is complete
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 20 bytes smaller than the pre-story baseline
+
+**Dependency:** Story 6.4 (tag predicates) should land first.
+
+### Story 6.6: Register Word Recognizer
+
+As a system maintainer,
+I want the 32 individual DEFCODE register/indirect/condition-code dictionary entries replaced with a single recognizer,
+So that the binary shrinks by ~130-140 bytes without changing any observable behaviour.
+
+**Acceptance Criteria:**
+
+**Given** a new recognizer word `w_ASM_RECOGNIZE` (~50-60 bytes)
+**When** it is checked during INTERPRET between FIND failure and NUMBER?
+**Then** register, indirect, and condition-code words are recognised from a compact lookup table
+
+**Given** `asm_mode` is 0 (normal Forth, outside CODE definition)
+**When** the recognizer is called
+**Then** it returns false immediately with zero overhead to normal Forth operation
+
+**Given** all 32 DEFCODE register entries are removed and replaced by the recognizer
+**When** `make test && make test-repl` passes all regression tests with zero failures
+**Then** register words still function correctly inside CODE definitions
+
+**Given** the recognizer is complete
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 100 bytes smaller than the pre-story baseline
+
+**Trade-offs:** `WORDS` will no longer show register names (acceptable — they only work inside CODE). Case-insensitive comparison reuses UPPER logic from FIND.
+
+**Dependency:** Stories 6.1-6.5 should land first (capstone story).
+
+### Story 6.7: Misc Dedup
+
+As a system maintainer,
+I want remaining small deduplication opportunities cleaned up,
+So that an additional ~15-25 bytes are saved from miscellaneous patterns.
+
+**Acceptance Criteria:**
+
+**Given** the sign-negation pattern duplicated in `formatting.asm` (`w_DOT` and `.dots_print_signed`)
+**When** a shared helper is extracted
+**Then** all tests pass and the binary shrinks
+
+**Given** any `CALL foo / RET` sequences found during the epic
+**When** they are converted to `JP foo` tail calls
+**Then** each site saves 1 byte and all tests pass
+
+**Given** any JP instructions within JR range found during the epic
+**When** they are converted to JR
+**Then** each site saves 1 byte and all tests pass

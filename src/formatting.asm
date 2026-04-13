@@ -92,20 +92,10 @@ emit_unsigned:
         ; Emit digits
         LD      B, A                    ; B = count
 .eu_emit:
-        LD      A, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      E, A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .eu_emit
+        CALL    bdos_print_str
         ; Emit trailing space
         LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         RET
 
 ; -----------------------------------------------
@@ -127,8 +117,7 @@ w_DOT_cf:
         ; Negative: emit '-'
         PUSH    BC              ; Save number
         LD      E, '-'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     BC              ; Restore number
         ; Negate BC: BC = 0 - BC
         XOR     A
@@ -237,8 +226,7 @@ w_DOT_R_cf:
 .dotr_pad:
         PUSH    BC
         LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     BC
         DJNZ    .dotr_pad
 .dotr_no_pad:
@@ -248,25 +236,14 @@ w_DOT_R_cf:
         JR      Z, .dotr_emit_digits
         PUSH    BC
         LD      E, '-'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     BC
 .dotr_emit_digits:
         ; Emit digit string
         LD      HL, (.dotr_str)
         LD      A, (.dotr_len)
         LD      B, A
-.dotr_emit_loop:
-        LD      A, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      E, A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .dotr_emit_loop
+        CALL    bdos_print_str
 
         ; Clean up return stack (remove saved width)
         INC     IX
@@ -318,32 +295,19 @@ w_DOT_S_cf:
 
         ; Print '<'
         LD      E, '<'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
 
         ; Print depth as unsigned number
         LD      BC, (.dots_depth)
         CALL    u_to_str                ; HL = str, A = len
         LD      B, A
-.dots_depth_emit:
-        LD      A, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      E, A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .dots_depth_emit
+        CALL    bdos_print_str
 
         ; Print '> '
         LD      E, '>'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
 
         ; Check if depth == 0
         LD      HL, (.dots_depth)
@@ -420,8 +384,7 @@ w_DOT_S_cf:
         ; Negative: emit '-'
         PUSH    BC
         LD      E, '-'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     BC
         ; Negate BC
         XOR     A

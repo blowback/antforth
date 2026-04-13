@@ -154,16 +154,7 @@ w_PAREN_ABORT_QUOTE_cf:
         LD      B, A            ; B = count
         LD      H, D
         LD      L, E            ; HL = string address
-.paq_print:
-        PUSH    HL
-        PUSH    BC
-        LD      E, (HL)
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .paq_print
+        CALL    bdos_print_str
 
 .paq_do_abort:
         ; Restore return stack (not strictly needed since ABORT resets everything,
@@ -365,22 +356,8 @@ do_underflow_error:
         ; Note: CALL check_underflow return addr remains on SP — harmless, ABORT resets SP
         LD      HL, str_underflow
         LD      B, STR_UNDERFLOW_LEN
-.print_loop:
-        LD      E, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .print_loop
+        CALL    bdos_print_str
         ; Newline
-        LD      E, 0x0D
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_crlf
         ; ABORT resets SP and enters QUIT
         JP      w_ABORT_cf

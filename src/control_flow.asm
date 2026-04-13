@@ -15,20 +15,12 @@ w_QCOMP_cf:
         ; Raw BDOS calls (no BDOS_SAVE/BDOS_RESTORE) — registers are
         ; irrelevant since we JP to ABORT immediately after printing.
         LD      HL, .comp_only_msg
-        LD      B, 16               ; length: 14 chars + CR + LF
-.qcomp_print:
-        PUSH    HL
-        PUSH    BC
-        LD      E, (HL)
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .qcomp_print
+        LD      B, .comp_only_len
+        CALL    bdos_print_str
         JP      w_ABORT_cf
 .comp_only_msg:
         DB      "? compile only", 0x0D, 0x0A
+.comp_only_len  EQU     $ - .comp_only_msg
 .qcomp_ok:
         NEXT
 

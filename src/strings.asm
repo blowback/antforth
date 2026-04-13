@@ -845,8 +845,7 @@ w_DOT_QUOTE_cf:
         PUSH    HL
         PUSH    BC
         LD      E, A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     BC
         POP     HL
         JR      .dq_i_loop
@@ -941,16 +940,7 @@ w_PAREN_cf:
         ; Print "missing )" CR LF then ABORT
         LD      HL, .paren_err_msg
         LD      B, .paren_err_len
-.paren_err_print:
-        PUSH    HL
-        PUSH    BC
-        LD      E, (HL)
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .paren_err_print
+        CALL    bdos_print_str
         JP      w_ABORT_cf
 
 .paren_err_msg:

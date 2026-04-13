@@ -74,7 +74,8 @@ improvement.
 
 `SEARCH-ORDER`, `GET-ORDER`, `SET-ORDER`, `WORDLIST`, and 
 `DEFINITIONS` from ANS. Namespace control!
-Move z80 opcodes into ASSEMBLER word-list and automatically acticate/deactivate it.
+Move z80 opcodes into ASSEMBLER word-list and automatically activate/deactivate it.
+Oh, what about keeping different wordlists in different pages?
 
 # SEE decompiler
 

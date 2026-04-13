@@ -201,8 +201,7 @@ w_WORDS_cf:
         PUSH    DE
         LD      A, (DE)
         LD      E, A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     DE
         POP     BC
         INC     DE
@@ -211,8 +210,7 @@ w_WORDS_cf:
         ; Print a space
         PUSH    DE
         LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_putchar
         POP     DE
 
 .words_skip:
@@ -232,12 +230,7 @@ w_WORDS_cf:
         JR      NZ, .words_bucket
 
         ; Print CR/LF
-        LD      E, 0x0D
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_crlf
 
         ; Restore TOS and IP
         POP     BC

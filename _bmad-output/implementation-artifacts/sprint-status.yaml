@@ -1,4 +1,4 @@
-# generated: 2026-03-12
+# generated: 2026-04-13
 # project: antforth
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-03-12
+generated: 2026-04-13
 project: antforth
 project_key: NOKEY
 tracking_system: file-system
@@ -81,3 +81,13 @@ development_status:
   5-3-ans-forth-core-word-compliance-survey: done
   5-4-ans-forth-core-quick-wins: done
   epic-5-retrospective: done
+
+  epic-6: in-progress
+  6-1-bdos-output-helpers: done
+  6-2-return-stack-push-pop-subroutines: backlog
+  6-3-ix-iy-prefix-pair-merges: backlog
+  6-4-tag-predicate-cleanup-dead-code-removal: backlog
+  6-5-ld-dispatch-table: backlog
+  6-6-register-word-recognizer: backlog
+  6-7-misc-dedup: backlog
+  epic-6-retrospective: optional

@@ -225,23 +225,7 @@ STR_ASM_BARE_INT_LEN EQU $ - str_asm_bare_int
 str_asm_range:     DB "range"
 STR_ASM_RANGE_LEN  EQU $ - str_asm_range
 
-; -----------------------------------------------
-; asm_print_str — Print HL..HL+B-1 via BDOS (no suffix).
-;   Entry: HL = string ptr, B = length
-;   Clobbers: A, BC, DE, HL
-; -----------------------------------------------
-asm_print_str:
-.loop:
-        LD      E, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .loop
-        RET
+asm_print_str EQU bdos_print_str
 
 ; -----------------------------------------------
 ; asm_print_error — Print HL..HL+B-1, then " ?", CR, LF via BDOS.
@@ -249,27 +233,10 @@ asm_print_str:
 ;   Clobbers: A, BC, DE, HL
 ; -----------------------------------------------
 asm_print_error:
-        CALL    asm_print_str
-        ; Fall through to asm_print_q_crlf
+        CALL    bdos_print_str
+        JP      bdos_print_q_crlf   ; explicit tail-call replaces fall-through
 
-; -----------------------------------------------
-; asm_print_q_crlf — Print " ?" CR LF via BDOS.
-;   Clobbers: A, DE, C
-; -----------------------------------------------
-asm_print_q_crlf:
-        LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, '?'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0D
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        RET
+asm_print_q_crlf EQU bdos_print_q_crlf
 
 ; -----------------------------------------------
 ; asm_print_hex16 — Print HL as 4 hex digits via BDOS.
@@ -303,8 +270,7 @@ asm_print_hex8:
         ADD     A, 'A' - '9' - 1
 .digit:
         LD      E, A
-        LD      C, C_WRITE
-        JP      BDOS_ENTRY
+        JP      bdos_putchar
 
 ; -----------------------------------------------
 ; asm_die — Print (HL/B) via asm_print_error and JP ABORT. Never returns.
@@ -397,16 +363,7 @@ asm_print_error_with_name:
         LD      A, B
         OR      A
         JR      Z, .pen_skip_prefix
-.pen_pfx:
-        LD      E, (HL)                 ; (HL) = prefix char
-        PUSH    HL
-        PUSH    BC
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .pen_pfx
+        CALL    bdos_print_str
 .pen_skip_prefix:
         ; HL = count_flags ptr (saved in asm_tmp2 by caller via DE→tmp);
         ; we re-read it from asm_tmp2 here so prefix print could clobber DE.
@@ -417,30 +374,10 @@ asm_print_error_with_name:
         OR      A
         JR      Z, .pen_no_name
         INC     HL                      ; HL = name start
-.pen_name:
-        LD      E, (HL)
-        PUSH    HL
-        PUSH    BC
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        POP     BC
-        POP     HL
-        INC     HL
-        DJNZ    .pen_name
+        CALL    bdos_print_str
 .pen_no_name:
         ; Print " ?" CR LF
-        LD      E, ' '
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, '?'
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0D
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
-        LD      E, 0x0A
-        LD      C, C_WRITE
-        CALL    BDOS_ENTRY
+        CALL    bdos_print_q_crlf
         JP      w_ABORT_cf
 
 ; -----------------------------------------------
