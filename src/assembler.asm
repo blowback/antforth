@@ -1096,33 +1096,24 @@ w_COND_M_cf:
 ;     or inline check). They test the class bits of C.
 
 asm_is_imm_tag:
-        LD      A, C
-        AND     ASM_CLASS_MASK
-        CP      ASM_CLASS_IMM
-        RET
-
-asm_is_cond_tag:
-        LD      A, C
-        AND     ASM_CLASS_MASK
-        CP      ASM_CLASS_COND
-        RET
+        LD      A, ASM_CLASS_IMM
+        JR      asm_is_class_check
 
 asm_is_label_tag:
-        LD      A, C
-        AND     ASM_CLASS_MASK
-        CP      ASM_CLASS_LABEL
-        RET
+        LD      A, ASM_CLASS_LABEL
+        JR      asm_is_class_check
 
 asm_is_reg16_tag:
-        LD      A, C
-        AND     ASM_CLASS_MASK
-        CP      ASM_CLASS_REG16
-        RET
+        LD      A, ASM_CLASS_REG16
+        JR      asm_is_class_check
 
 asm_is_indirect_tag:
-        LD      A, C
+        LD      A, ASM_CLASS_INDIRECT
+        ; fall through
+
+asm_is_class_check:                     ; asm_is_indirect_tag falls through here
+        XOR     C
         AND     ASM_CLASS_MASK
-        CP      ASM_CLASS_INDIRECT
         RET
 
 asm_get_class:
