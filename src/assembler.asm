@@ -1503,35 +1503,45 @@ w_LD_COMMA:
 w_LD_COMMA_cf:
         CALL    check_asm_mode
         CALL    asm_check_tagged        ; TOS must be tagged
-        ; Story 5.0.5: check for new INDIRECT forms as source
-        CALL    asm_is_indirect_tag
-        JR      NZ, .ldc_not_new_ind
-        CALL    asm_get_index
+        ; Class-indexed dispatch on source operand
+        LD      A, C
+        AND     ASM_CLASS_MASK
+        JR      Z, .ldc_reg8_src        ; REG8 (0x00)
+        CP      ASM_CLASS_INDIRECT
+        JR      Z, .ldc_indirect_src    ; INDIRECT (0x80)
+        CP      ASM_CLASS_IMM
+        JP      Z, .ldc_imm             ; IMM (0x40)
+        CP      ASM_CLASS_REG16
+        JP      Z, .ldc_r16_src         ; REG16 (0x60)
+        JP      asm_bad_operand         ; COND/LABEL = error
+
+; --- INDIRECT sub-dispatch ---
+.ldc_indirect_src:
+        LD      A, C
+        AND     ASM_INDEX_MASK
+        OR      A
+        JR      Z, .ldc_r8_cont         ; (HL) index=0 → reg-to-reg path
+        CP      ASM_IND_IXD
+        JP      Z, .ldc_idx_src
+        CP      ASM_IND_IYD
+        JP      Z, .ldc_idx_src
         CP      ASM_IND_BC
         JP      Z, .ldc_ibc_src
         CP      ASM_IND_DE
         JP      Z, .ldc_ide_src
         CP      ASM_IND_ABS
         JP      Z, .ldc_abs_src
-.ldc_not_new_ind:
-        ; Story 5.0.5: check for I/R special registers as source
-        CALL    asm_get_class
-        JR      NZ, .ldc_not_ir_src
-        CALL    asm_get_index
+        JP      asm_bad_operand
+
+; --- REG8 sub-dispatch (I/R check, then fallthrough to reg-to-reg) ---
+.ldc_reg8_src:
+        LD      A, C
+        AND     ASM_INDEX_MASK
         CP      ASM_REG8_I
         JP      Z, .ldc_ir_src
         CP      ASM_REG8_R
         JP      Z, .ldc_ir_src
-.ldc_not_ir_src:
-        ; Existing dispatch
-        CALL    asm_is_imm_tag
-        JP      Z, .ldc_imm
-        ; Check for indexed source: LD r,(IX+d) / LD r,(IY+d)
-        CALL    asm_is_ixiy_indexed
-        JP      Z, .ldc_idx_src
-        ; Check for REG16 source (LD SP,IX / LD SP,IY / LD (nn),rr)
-        CALL    asm_is_reg16_tag
-        JP      Z, .ldc_r16_src
+.ldc_r8_cont:
         ; Register-to-register path — Zilog dst-src: NOS = dst, TOS = src.
         LD      H, B
         LD      L, C
@@ -1805,12 +1815,19 @@ w_LD_COMMA_cf:
         NEXT
 
 ; =====================================================================
-; Story 5.0.5 LD, extensions — new indirect/register forms
+; Story 5.0.5 / 6.5 LD, extensions — indirect/register forms
+;   (handler pairs merged with H-parameter technique in 6.5)
 ; =====================================================================
 
-; --- (BC) as source: LD A,(BC) ---
+; --- (BC)/(DE) as source: LD A,(BC) / LD A,(DE) ---
+; Merged handler — H holds opcode, shared validation below.
 .ldc_ibc_src:
-        ; TOS = (BC) tag. NOS = destination (must be A).
+        LD      H, 0x0A                 ; LD A,(BC) opcode
+        JR      .ldc_ind_a_src
+.ldc_ide_src:
+        LD      H, 0x1A                 ; LD A,(DE) opcode
+        ; fall through
+.ldc_ind_a_src:
         POP     BC                      ; BC = destination tag
         CALL    asm_check_tagged
         CALL    asm_get_class
@@ -1818,22 +1835,7 @@ w_LD_COMMA_cf:
         CALL    asm_get_index
         CP      7                       ; must be A
         JP      NZ, asm_bad_operand
-        LD      A, 0x0A                 ; LD A,(BC)
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-; --- (DE) as source: LD A,(DE) ---
-.ldc_ide_src:
-        ; TOS = (DE) tag. NOS = destination (must be A).
-        POP     BC                      ; BC = destination tag
-        CALL    asm_check_tagged
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand
-        CALL    asm_get_index
-        CP      7
-        JP      NZ, asm_bad_operand
-        LD      A, 0x1A                 ; LD A,(DE)
+        LD      A, H
         CALL    asm_emit_byte
         POP     BC
         NEXT
@@ -1961,23 +1963,19 @@ w_LD_COMMA_cf:
         POP     BC
         NEXT
 
-; --- (BC) as destination: LD (BC),A ---
+; --- (BC)/(DE) as destination: LD (BC),A / LD (DE),A ---
+; Merged handler — H holds opcode, shared validation below.
 .ldc_ibc_dst:
-        ; NOS popped into HL = (BC) tag. asm_tmp = src r-field.
+        LD      H, 0x02                 ; LD (BC),A opcode
+        JR      .ldc_ind_a_dst
+.ldc_ide_dst:
+        LD      H, 0x12                 ; LD (DE),A opcode
+        ; fall through
+.ldc_ind_a_dst:
         LD      A, (asm_tmp)
         CP      7                       ; only A
         JP      NZ, asm_bad_operand
-        LD      A, 0x02                 ; LD (BC),A
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-; --- (DE) as destination: LD (DE),A ---
-.ldc_ide_dst:
-        LD      A, (asm_tmp)
-        CP      7
-        JP      NZ, asm_bad_operand
-        LD      A, 0x12                 ; LD (DE),A
+        LD      A, H
         CALL    asm_emit_byte
         POP     BC
         NEXT
@@ -2060,27 +2058,23 @@ w_LD_COMMA_cf:
         POP     BC
         NEXT
 
-; --- I as destination: LD I,A ---
+; --- I/R as destination: LD I,A / LD R,A ---
+; Merged handler — H holds second opcode byte, shared validation below.
 .ldc_i_dst:
-        ; NOS popped into HL, L has I tag. asm_tmp = src r-field.
+        LD      H, 0x47                 ; LD I,A second byte
+        JR      .ldc_ir_dst
+.ldc_r_dst:
+        LD      H, 0x4F                 ; LD R,A second byte
+        ; fall through
+.ldc_ir_dst:
         LD      A, (asm_tmp)
         CP      7                       ; only A
         JP      NZ, asm_bad_operand
+        PUSH    HL                      ; save H (opcode byte)
         LD      A, 0xED
-        CALL    asm_emit_byte
-        LD      A, 0x47                 ; LD I,A
-        CALL    asm_emit_byte
-        POP     BC
-        NEXT
-
-; --- R as destination: LD R,A ---
-.ldc_r_dst:
-        LD      A, (asm_tmp)
-        CP      7
-        JP      NZ, asm_bad_operand
-        LD      A, 0xED
-        CALL    asm_emit_byte
-        LD      A, 0x4F                 ; LD R,A
+        CALL    asm_emit_byte           ; clobbers HL
+        POP     HL                      ; restore H
+        LD      A, H
         CALL    asm_emit_byte
         POP     BC
         NEXT

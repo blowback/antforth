@@ -87,7 +87,7 @@ development_status:
   6-2-return-stack-push-pop-subroutines: done
   6-3-ix-iy-prefix-pair-merges: done
   6-4-tag-predicate-cleanup-dead-code-removal: done
-  6-5-ld-dispatch-table: backlog
+  6-5-ld-dispatch-table: done
   6-6-register-word-recognizer: backlog
   6-7-misc-dedup: backlog
   epic-6-retrospective: optional
