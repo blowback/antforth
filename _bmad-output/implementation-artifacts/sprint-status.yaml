@@ -92,8 +92,15 @@ development_status:
   6-7-misc-dedup: done
   epic-6-retrospective: done
 
-  epic-7: in-progress
+  epic-7: done
   7-1-exx-for-build-header-words: done
   7-2-exx-for-recognizer: done
   7-3-exx-for-de-only-words: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
+
+  epic-8: in-progress
+  8-1-exx-for-char-and-abort-quote: ready-for-dev
+  8-2-exx-for-dot-and-u-dot: backlog
+  8-3-restructure-dot-r-and-dot-s: backlog
+  8-4-exx-convention-reference: backlog
+  epic-8-retrospective: optional

@@ -1310,3 +1310,163 @@ So that an additional ~15-25 bytes are saved from miscellaneous patterns.
 **Given** any JP instructions within JR range found during the epic
 **When** they are converted to JR
 **Then** each site saves 1 byte and all tests pass
+
+## Epic 7: Shadow Register Optimization
+
+After Epic 6's 1,034-byte reduction (plus a 172-byte `rpop_bc` follow-up), AntForth's binary stands at 14,313 bytes. The Z80's shadow register set (BC'/DE'/HL' via EXX, AF' via EX AF,AF') is entirely unused. Every CODE word that currently saves both DE (IP) and BC (TOS) to the return stack via `CALL rpush_de / CALL rpush_bc` (12 bytes) could use a single `EXX` (1 byte) instead. This epic establishes the shadow-register convention and trims the binary further. Target: ~120-150 bytes saved (~0.9% of binary). Detailed spec: `epic7-shadow-register-optimization.md`.
+
+### Story 7.1: EXX for Build-Header Words
+
+As a system maintainer,
+I want the return-stack save/restore patterns in build-header words replaced with the Z80 EXX instruction,
+So that the binary shrinks by ~100+ bytes while establishing the shadow-register convention for future stories.
+
+**Acceptance Criteria:**
+
+**Given** the 7 standard words (COLON, CREATE, CODE, END-CODE, NEXT,, LABEL, MARKER) each using `CALL rpush_de / CALL rpush_bc` at entry and `CALL rpop_bc / CALL rpop_de` at exit
+**When** each pair is replaced with `EXX` (1 byte) at entry and `EXX` (1 byte) at exit
+**Then** `make test && make test-repl` passes all 265 regression tests with zero failures
+
+**Given** the 5 error-handler paths (.colon_no_name, .create_no_name, .code_no_name, .lbl_no_name, .marker_no_name) each using `CALL rpop_bc / CALL rpop_de` to unwind
+**When** each is replaced with a single `EXX`
+**Then** all tests pass
+
+**Given** w_CONSTANT_cf uses a non-standard exit pattern (manual IX unwind to access the saved value mid-body)
+**When** it is converted to use EXX with appropriate mid-body register access
+**Then** all tests pass and CONSTANT still emits the correct value into the dictionary body
+
+**Given** all changes land
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 80 bytes smaller than the pre-story baseline (14,313 bytes)
+
+### Story 7.2: EXX for Recognizer
+
+As a system maintainer,
+I want the register word recognizer's scratch-variable save/restore pattern replaced with EXX,
+So that the binary shrinks by ~10-15 bytes and the recognizer uses the established shadow-register convention.
+
+**Acceptance Criteria:**
+
+**Given** `w_ASM_RECOGNIZE_cf` currently saves DE (IP) to `.recog_save_ip` via memory loads/stores at entry and every exit path
+**When** the save/restore is replaced with EXX at entry and EXX before each exit
+**Then** `make test && make test-repl` passes all 265 regression tests with zero failures
+
+**Given** the scratch variables `.recog_name` (2 bytes) and `.recog_len` (1 byte) exist because BC/DE/HL are all occupied during the scan loop
+**When** EXX frees main BC/DE/HL for scratch use
+**Then** these variables are eliminated, replaced by registers, and all tests pass
+
+**Given** the `.recog_fast_false` early-exit path does NOT save DE (it short-circuits before the save)
+**When** EXX is used
+**Then** `.recog_fast_false` must NOT execute EXX (DE was never swapped), preserving the current fast-fail behaviour
+
+**Given** all changes land
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 8 bytes smaller than the pre-story baseline
+
+### Story 7.3: EXX for DE-Only Words
+
+As a system maintainer,
+I want the `CALL rpush_de` / `CALL rpop_de` save/restore pattern replaced with EXX (or `PUSH BC`/EXX combinations) in words where the body can tolerate BC and HL also being swapped,
+So that the binary shrinks by ~20-40 bytes while preserving the shadow-register convention from stories 7.1 and 7.2.
+
+**Acceptance Criteria:**
+
+**Given** the eight candidate DE-save words (FILL, MOVE, ROLL, ACCEPT, WORD, >NUMBER, NUMBER?, `(`) each currently use `CALL rpush_de` / `CALL rpop_de`
+**When** each word is individually audited against the EXX leaf-level rule
+**Then** every word either (a) is converted to use EXX or `PUSH BC / EXX` (entry) and `EXX` or `EXX / POP BC` (exit) with matching exit-path coverage, or (b) is documented in Dev Notes with a specific reason it could not be converted
+
+**Given** the "consumes TOS early" words FILL, MOVE, ROLL, and ACCEPT already destroy or transfer BC into working registers before DE must be freed
+**When** converted to EXX
+**Then** these four words compile without a pre-EXX `PUSH BC` and `make test && make test-repl` passes all 265 regression tests
+
+**Given** EXX is a leaf-level technique
+**When** converting each word
+**Then** every CALL target in the converted body is verified not to use EXX itself (includes `do_number`, `bdos_putchar`, `bdos_print_str`, `BDOS_ENTRY`)
+
+**Given** the conversions land
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 16 bytes smaller than the post-7.2 baseline
+
+## Epic 8: Shadow Register Follow-Up
+
+After Epic 7's 208-byte reduction, the binary stands at 14,105 bytes. The shadow-register survey at `docs/shadow-register-followup-survey.md` catalogues remaining opportunities: two simple unconverted save/restore sites (CHAR, (ABORT")), the formatting pipeline (., U., .R, .S) that Epic 7 declared out of scope, and the EXX conventions that live scattered across Epic 7 story Dev Notes but have no central reference. Target: ~30-45 bytes saved. Detailed spec: `epic8-shadow-register-followup.md`.
+
+### Story 8.1: EXX for CHAR and (ABORT") Runtime
+
+As a system maintainer,
+I want the remaining non-formatting `CALL rpush_de` / `CALL rpop_de` save/restore sites converted to EXX (CHAR) or unbalanced-stack-before-ABORT ((ABORT")),
+So that the binary shrinks by ~10-14 bytes and the Epic 7 shadow-register conversion is mechanically complete.
+
+**Acceptance Criteria:**
+
+**Given** `w_CHAR_cf` currently uses `PUSH BC / CALL rpush_de` at entry, `CALL rpop_de` at exit, and a `.char_result` scratch byte to carry the parsed character across PUSH/POP sequences
+**When** the entry is converted to `PUSH BC / EXX`, the exit to `EXX / POP BC`, and the body simplified to use main BC/DE/HL as free scratch
+**Then** all 265 regression tests pass
+
+**Given** the `(ABORT")` runtime path `.paq_abort` currently uses `CALL rpush_de` at entry and `INC IX / INC IX` before `JP w_ABORT_cf` purely for BDOS safety
+**When** the save/restore is replaced with a single `PUSH DE` (no matching POP, since ABORT resets SP via `LD SP, (sp_base)`)
+**Then** all 265 regression tests pass and no other code path depends on the return-stack slot being unwound
+
+**Given** the conversions land
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 8 bytes smaller than the pre-story baseline (14,105 bytes)
+
+### Story 8.2: EXX for DOT and U.
+
+As a system maintainer,
+I want the two simplest formatting words (., U.) converted to the `PUSH BC / EXX / POP BC` entry pattern proven in Epic 7.3 MOVE,
+So that the binary shrinks by ~4 bytes and proves Path 1 (stack-bounce TOS preservation) works for the formatting pipeline.
+
+**Acceptance Criteria:**
+
+**Given** `w_DOT_cf` and `w_U_DOT_cf` each use `CALL rpush_de` / `CALL rpop_de` around a body that calls `print_neg_prefix` and/or `emit_unsigned` (which require BC = value)
+**When** each is converted to `PUSH BC / EXX / POP BC` entry and `EXX` exit
+**Then** `emit_unsigned` receives the correct value in main BC and all 265 regression tests pass
+
+**Given** the formatting helpers (`emit_unsigned`, `u_to_str`, `print_neg_prefix`, `div_bc_by_e`, `digit_to_char`, `bdos_print_str`, `bdos_putchar`, `check_underflow`)
+**When** audited for EXX usage
+**Then** none contain EXX, satisfying the leaf-level rule
+
+**Given** the conversions land
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 2 bytes smaller than the pre-story baseline
+
+### Story 8.3: Restructure .R and .S
+
+As a system maintainer,
+I want the .R and .S formatting words restructured to exploit the EXX-freed main register set — eliminating return-stack data caches and memory scratch variables,
+So that the binary shrinks by ~16-26 bytes and the formatting pipeline's register pressure is relieved.
+
+**Acceptance Criteria:**
+
+**Given** `w_DOT_R_cf` currently uses `CALL rpush_de / CALL rpush_bc` at entry, `LD C, (IX+0) / LD B, (IX+1)` mid-body to recover width, `INC IX / INC IX / CALL rpop_de` at exit, plus `.dotr_neg`, `.dotr_str`, `.dotr_len` scratch variables
+**When** the word is restructured to use EXX at entry, hold width in a persistent main register, and (where feasible) eliminate scratch variables
+**Then** all 265 regression tests pass
+
+**Given** `w_DOT_S_cf` currently uses `CALL rpush_bc` at entry as a functional TOS cache that `.dots_print_tos` reads via `(IX+0)/(IX+1)`
+**When** EXX is used at entry — placing the original TOS in BC' automatically — and `.dots_print_tos` is rewritten to read from the shadow register instead of the return stack
+**Then** the explicit `rpush_bc` / `rpop_bc` pair and the `(IX+0)/(IX+1)` reads are eliminated and all tests pass
+
+**Given** the restructure lands
+**When** `wc -c build/antforth.com` is measured
+**Then** the binary is at least 12 bytes smaller than the pre-story baseline
+
+**Dependency:** Story 8.2 (DOT + U.) should land first — it proves the `PUSH BC / EXX / POP BC` pattern on the formatting pipeline before 8.3's larger restructure.
+
+### Story 8.4: EXX Convention Reference
+
+As a system maintainer,
+I want the shadow-register conventions established across Epic 7 (leaf-level rule, "A survives EXX" staging idiom, "shadow BC' as free TOS-preservation slot") consolidated into a single reference document,
+So that future developers and AI agents can learn the conventions without having to read through every Epic 7 / Epic 8 story Dev Notes.
+
+**Acceptance Criteria:**
+
+**Given** the EXX conventions currently live scattered across story Dev Notes (7.1, 7.2, 7.3, 8.1, 8.2, 8.3)
+**When** they are consolidated into a central reference (`docs/register-conventions.md` or equivalent)
+**Then** the document covers: register contract, shadow register convention, leaf-level rule, exit-staging idiom, shadow BC' as TOS-preservation slot, Group A vs Group B conversion patterns, and a current list of all EXX-using words
+
+**Given** the convention doc lands
+**When** `make test && make test-repl` runs
+**Then** all 265 regression tests pass (trivially — pure documentation story, no code changes)
+
+**Dependency:** Stories 8.1-8.3 should land first so the convention doc captures the complete final list of EXX-using words.
