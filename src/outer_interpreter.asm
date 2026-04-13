@@ -185,10 +185,17 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
 .try_number:
         ; Stack: ( c-addr 0 ) — not found
         DW      w_DROP_cf               ; ( c-addr 0 -- c-addr )
+        DW      w_ASM_RECOGNIZE_cf      ; ( c-addr -- value true | c-addr false )
+        DW      w_QBRANCH_cf
+        DW      .try_real_number - $    ; if false, try NUMBER?
+        DW      w_BRANCH_cf
+        DW      .got_value - $          ; if true, share number handling
+.try_real_number:
         DW      w_NUMBER_Q_cf           ; ( c-addr -- n true | c-addr false )
         DW      w_QBRANCH_cf            ; if false, error
         DW      .not_number - $
-        ; Valid number — check STATE
+.got_value:
+        ; Valid number or recognized tag — check STATE
         DW      w_STATE_cf              ; ( n -- n state-addr )
         DW      w_FETCH_cf              ; ( n state-addr -- n state )
         DW      w_QBRANCH_cf            ; if STATE=0, leave number on stack

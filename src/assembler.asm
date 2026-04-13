@@ -833,162 +833,150 @@ asm_reset_label_state:
         RET
 
 ; =====================================================================
-; Register-tag constants
+; Compact register/condition-code lookup table
 ; =====================================================================
-; Each register word is a DEFCODE that — after asserting asm_mode —
-; pushes its canonical tag byte onto the data stack. All 12 words share
-; one tail helper (asm_push_tag) so each word body is just "LD L = tag,
-; JP asm_push_tag".
+; Used by w_ASM_RECOGNIZE to resolve register names at interpret time.
+; Format: DB name_len, "NAME", tag_byte per entry, terminated by DB 0.
+asm_reg_table:
+        ; REG8 (class 0x00, index = r-field)
+        DB 1, "B", 0x00
+        DB 1, "C", 0x01
+        DB 1, "D", 0x02
+        DB 1, "E", 0x03
+        DB 1, "H", 0x04
+        DB 1, "L", 0x05
+        DB 1, "A", 0x07
+        ; REG16 (class 0x60)
+        DB 2, "BC", 0x60
+        DB 2, "DE", 0x61
+        DB 2, "HL", 0x62
+        DB 2, "AF", 0x63
+        DB 2, "SP", 0x64
+        DB 2, "IX", 0x65
+        DB 2, "IY", 0x66
+        DB 3, "AF'", 0x67
+        ; INDIRECT (class 0x80)
+        DB 4, "(HL)", 0x80
+        DB 4, "(IX)", 0x81
+        DB 4, "(IY)", 0x82
+        DB 4, "(SP)", 0x85
+        DB 3, "(C)", 0x86
+        DB 4, "(BC)", 0x87
+        DB 4, "(DE)", 0x88
+        ; Extended REG8
+        DB 4, "IREG", 0x08
+        DB 4, "RREG", 0x09
+        ; COND (class 0x20)
+        DB 2, "NZ", 0x20
+        DB 1, "Z", 0x21
+        DB 2, "NC", 0x22
+        DB 2, "CS", 0x23
+        DB 2, "PO", 0x24
+        DB 2, "PE", 0x25
+        DB 1, "P", 0x26
+        DB 1, "M", 0x27
+        DB 0                            ; sentinel
 
-; -----------------------------------------------
-; asm_push_tag — Shared tail for register-tag words.
-;   Entry: L = class|index byte (low byte of unified tag)
-;   check_asm_mode preserves L on the pass path.
-; -----------------------------------------------
-asm_push_tag:
-        CALL    check_asm_mode
-        PUSH    BC                      ; save old TOS
-        LD      C, L
-        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF | class|idx
+; =====================================================================
+; ASM-RECOGNIZE ( c-addr -- value true | c-addr false )
+; =====================================================================
+; Recognizer word for register/condition-code names. Scans asm_reg_table
+; for a case-insensitive match. Fast-fails when asm_mode == 0.
+; No dictionary header — only called from INTERPRET thread, not user-visible.
+w_ASM_RECOGNIZE_cf:
+        ; Fast-fail if not in assembler mode — BC still = c-addr here
+        LD      A, (asm_mode)
+        OR      A
+        JR      Z, .recog_fast_false
+
+        ; Save DE (threaded IP) — we need DE as scratch for comparison.
+        LD      (.recog_save_ip), DE
+
+        ; BC = c-addr (TOS). Load counted string length.
+        LD      H, B
+        LD      L, C                    ; HL = c-addr
+        LD      A, (HL)                 ; A = name length (0 = empty, handled by scan)
+        LD      (.recog_len), A         ; save search length
+        INC     HL
+        LD      (.recog_name), HL       ; save name pointer
+
+        ; Scan table
+        LD      HL, asm_reg_table
+.recog_next:
+        LD      A, (HL)                 ; table entry length
+        OR      A
+        JR      Z, .recog_no_match      ; sentinel — no match
+
+        ; Compare lengths
+        LD      B, A                    ; B = entry name length (also loop counter)
+        LD      A, (.recog_len)
+        CP      B
+        JR      NZ, .recog_skip         ; length mismatch → skip entry
+
+        ; Lengths match — compare name bytes (case-insensitive)
+        PUSH    HL                      ; save pointer to length byte
+        INC     HL                      ; HL → table name bytes
+        LD      DE, (.recog_name)       ; DE = search name pointer
+.recog_cmp:
+        LD      A, (DE)                 ; search char
+        UPPER                           ; convert to uppercase (one expansion per parent label only)
+        LD      C, A                    ; C = uppercased search char
+        LD      A, (HL)                 ; table char (already uppercase)
+        CP      C
+        JR      NZ, .recog_cmp_fail
+        INC     HL
+        INC     DE
+        DJNZ    .recog_cmp
+
+        ; Match found! HL points to tag byte.
+        LD      C, (HL)                 ; C = tag byte
+        POP     HL                      ; discard saved length ptr
+        LD      DE, (.recog_save_ip)    ; restore IP
+        ; Push tag value as NOS, TRUE as TOS.
+        LD      B, ASM_TAG_HI           ; BC = 0xFFxx tag value
+        PUSH    BC                      ; push tag value
+        LD      BC, 0xFFFF              ; TRUE
         NEXT
 
-; --- 8-bit registers (tags 0x00..0x07) ---
+.recog_cmp_fail:
+        POP     HL                      ; HL = length byte of this entry
+        LD      B, (HL)                 ; B = full name length (re-read)
+        ; fall through to .recog_skip
+.recog_skip:
+        ; HL at length byte, B = name length.
+        ; Advance past: length(1) + name(B) + tag(1)
+        INC     HL                      ; skip length byte
+        LD      C, B
+        LD      B, 0
+        ADD     HL, BC                  ; skip name bytes
+        INC     HL                      ; skip tag byte
+        JR      .recog_next
 
-w_REG_B:
-        DEFCODE "B", 0
-w_REG_B_cf:
-        LD      L, 0x00
-        JP      asm_push_tag
+.recog_no_match:
+        ; Table exhausted or empty name. Restore DE and c-addr.
+        LD      DE, (.recog_save_ip)    ; restore IP
+        LD      HL, (.recog_name)
+        DEC     HL                      ; HL = c-addr (count byte)
+        LD      B, H
+        LD      C, L                    ; BC = c-addr (restored TOS)
+        PUSH    BC                      ; push c-addr
+        LD      BC, 0                   ; FALSE
+        NEXT
 
-w_REG_C:
-        DEFCODE "C", 0
-w_REG_C_cf:
-        LD      L, 0x01
-        JP      asm_push_tag
+.recog_fast_false:
+        ; BC = c-addr (still valid, DE untouched or restored above)
+        PUSH    BC                      ; push c-addr
+        LD      BC, 0                   ; FALSE
+        NEXT
 
-w_REG_D:
-        DEFCODE "D", 0
-w_REG_D_cf:
-        LD      L, 0x02
-        JP      asm_push_tag
+; Scratch storage for recognizer
+.recog_len:       DB 0
+.recog_name:      DW 0
+.recog_save_ip:   DW 0
 
-w_REG_E:
-        DEFCODE "E", 0
-w_REG_E_cf:
-        LD      L, 0x03
-        JP      asm_push_tag
-
-w_REG_H:
-        DEFCODE "H", 0
-w_REG_H_cf:
-        LD      L, 0x04
-        JP      asm_push_tag
-
-w_REG_L:
-        DEFCODE "L", 0
-w_REG_L_cf:
-        LD      L, 0x05
-        JP      asm_push_tag
-
-w_REG_A:
-        DEFCODE "A", 0
-w_REG_A_cf:
-        LD      L, 0x07
-        JP      asm_push_tag
-
-; --- 16-bit register pairs (class=011, index 0..4) ---
-
-w_REG_BC:
-        DEFCODE "BC", 0
-w_REG_BC_cf:
-        LD      L, ASM_CLASS_REG16 | 0  ; 0x60
-        JP      asm_push_tag
-
-w_REG_DE:
-        DEFCODE "DE", 0
-w_REG_DE_cf:
-        LD      L, ASM_CLASS_REG16 | 1  ; 0x61
-        JP      asm_push_tag
-
-w_REG_HL:
-        DEFCODE "HL", 0
-w_REG_HL_cf:
-        LD      L, ASM_CLASS_REG16 | 2  ; 0x62
-        JP      asm_push_tag
-
-w_REG_AF:
-        DEFCODE "AF", 0
-w_REG_AF_cf:
-        LD      L, ASM_CLASS_REG16 | 3  ; 0x63
-        JP      asm_push_tag
-
-w_REG_SP:
-        DEFCODE "SP", 0
-w_REG_SP_cf:
-        LD      L, ASM_CLASS_REG16 | 4  ; 0x64
-        JP      asm_push_tag
-
-w_REG_IX:
-        DEFCODE "IX", 0
-w_REG_IX_cf:
-        LD      L, ASM_CLASS_REG16 | ASM_IX_INDEX  ; 0x65
-        JP      asm_push_tag
-
-w_REG_IY:
-        DEFCODE "IY", 0
-w_REG_IY_cf:
-        LD      L, ASM_CLASS_REG16 | ASM_IY_INDEX  ; 0x66
-        JP      asm_push_tag
-
-w_REG_AFP:
-        DEFCODE "AF'", 0
-w_REG_AFP_cf:
-        LD      L, ASM_CLASS_REG16 | ASM_AFP_INDEX ; 0x67
-        JP      asm_push_tag
-
-; --- (HL) parsing word — class=100 (indirect), index=0. Opcode words
-;     extract the Z80 r-field (6) from the class, not from the index. ---
-w_REG_IHL:
-        DEFCODE "(HL)", 0
-w_REG_IHL_cf:
-        LD      L, ASM_CLASS_INDIRECT | 0  ; 0x80
-        JP      asm_push_tag
-
-w_REG_IIX:
-        DEFCODE "(IX)", 0
-w_REG_IIX_cf:
-        LD      L, ASM_CLASS_INDIRECT | ASM_IND_IX ; 0x81
-        JP      asm_push_tag
-
-w_REG_IIY:
-        DEFCODE "(IY)", 0
-w_REG_IIY_cf:
-        LD      L, ASM_CLASS_INDIRECT | ASM_IND_IY ; 0x82
-        JP      asm_push_tag
-
-w_REG_ISP:
-        DEFCODE "(SP)", 0
-w_REG_ISP_cf:
-        LD      L, ASM_CLASS_INDIRECT | ASM_IND_SP ; 0x85
-        JP      asm_push_tag
-
-w_REG_IC:
-        DEFCODE "(C)", 0
-w_REG_IC_cf:
-        LD      L, ASM_CLASS_INDIRECT | ASM_IND_C  ; 0x86
-        JP      asm_push_tag
-
-w_REG_IBC:
-        DEFCODE "(BC)", 0
-w_REG_IBC_cf:
-        LD      L, ASM_CLASS_INDIRECT | ASM_IND_BC ; 0x87
-        JP      asm_push_tag
-
-w_REG_IDE:
-        DEFCODE "(DE)", 0
-w_REG_IDE_cf:
-        LD      L, ASM_CLASS_INDIRECT | ASM_IND_DE ; 0x88
-        JP      asm_push_tag
+; =====================================================================
+; Special assembler words with unique bodies (not handled by recognizer)
+; =====================================================================
 
 ; --- () — absolute memory address marker (Story 5.0.5, Task 4)
 ;     Wraps a bare integer address as an indirect-memory tag. Two cells
@@ -1004,20 +992,6 @@ w_ABS_PAREN_cf:
         LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF89
         NEXT
 
-; --- Special registers IREG and RREG (REG8 with extended indices) ---
-;     Named IREG/RREG to avoid shadowing Forth's I (loop index).
-w_REG_I:
-        DEFCODE "IREG", 0
-w_REG_I_cf:
-        LD      L, ASM_CLASS_REG8 | ASM_REG8_I ; 0x08
-        JP      asm_push_tag
-
-w_REG_R:
-        DEFCODE "RREG", 0
-w_REG_R_cf:
-        LD      L, ASM_CLASS_REG8 | ASM_REG8_R ; 0x09
-        JP      asm_push_tag
-
 ; --- Immediate-marker word `#` — pushes 0xFF40 (class=010, index=0)
 ;     on TOS, leaving the value the user just typed in NOS. ---
 w_HASH:
@@ -1028,68 +1002,6 @@ w_HASH_cf:
         LD      C, ASM_CLASS_IMM        ; C = 0x40
         LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF40
         NEXT
-
-; --- Condition-code parsing words ---
-; The carry-set condition is spelled `CS` (6502-style), not Zilog `C`,
-; to avoid colliding with the existing register `C`. The carry-clear
-; condition keeps its Zilog spelling `NC` — `CC` was rejected because
-; CC is a valid hex literal in BASE=16. See story 4.3 Q2 / Q8.
-asm_push_cond_tag:
-        CALL    check_asm_mode
-        PUSH    BC                      ; save old TOS
-        LD      A, L
-        OR      ASM_CLASS_COND          ; A = 0x20 | cc
-        LD      C, A
-        LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF | (0x20|cc)
-        NEXT
-
-w_COND_NZ:
-        DEFCODE "NZ", 0
-w_COND_NZ_cf:
-        LD      L, 0
-        JP      asm_push_cond_tag
-
-w_COND_Z:
-        DEFCODE "Z", 0
-w_COND_Z_cf:
-        LD      L, 1
-        JP      asm_push_cond_tag
-
-w_COND_NC:
-        DEFCODE "NC", 0
-w_COND_NC_cf:
-        LD      L, 2
-        JP      asm_push_cond_tag
-
-w_COND_CS:
-        DEFCODE "CS", 0
-w_COND_CS_cf:
-        LD      L, 3
-        JP      asm_push_cond_tag
-
-w_COND_PO:
-        DEFCODE "PO", 0
-w_COND_PO_cf:
-        LD      L, 4
-        JP      asm_push_cond_tag
-
-w_COND_PE:
-        DEFCODE "PE", 0
-w_COND_PE_cf:
-        LD      L, 5
-        JP      asm_push_cond_tag
-
-w_COND_P:
-        DEFCODE "P", 0
-w_COND_P_cf:
-        LD      L, 6
-        JP      asm_push_cond_tag
-
-w_COND_M:
-        DEFCODE "M", 0
-w_COND_M_cf:
-        LD      L, 7
-        JP      asm_push_cond_tag
 
 ; --- Tag predicates (Z if matching class) — used by LD,, arith, RET,, etc.
 ;     All assume B==0xFF has already been verified (via asm_check_tagged

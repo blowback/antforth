@@ -1139,19 +1139,19 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '(HL)\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'not in CODE ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 128 — (HL) outside CODE rejected, clean recovery"; \
+	if echo "$$OUTPUT" | grep -qE '\(HL\) \?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 128 — (HL) outside CODE rejected (recognizer miss), clean recovery"; \
 	else \
-		echo "FAIL: REPL test 128 — expected 'not in CODE ?' and '3 '"; \
+		echo "FAIL: REPL test 128 — expected '(HL) ?' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'NZ\r\nZ\r\nNC\r\nCS\r\nPO\r\nPE\r\nP\r\nM\r\nHEX\r\nCC .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	ERRCOUNT=$$(echo "$$OUTPUT" | grep -c 'not in CODE ?') && \
+	ERRCOUNT=$$(echo "$$OUTPUT" | grep -cE '^[A-Z]{1,2} \?') && \
 	if [ "$$ERRCOUNT" -ge 8 ] && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'CC '; then \
-		echo "PASS: REPL test 129 — conditions outside CODE rejected; CC literal still parses in HEX"; \
+		echo "PASS: REPL test 129 — conditions outside CODE rejected (recognizer miss); CC literal still parses in HEX"; \
 	else \
-		echo "FAIL: REPL test 129 — expected 8x 'not in CODE ?' and 'CC ' literal"; \
+		echo "FAIL: REPL test 129 — expected 8x '<word> ?' and 'CC ' literal"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -2243,6 +2243,64 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
+	@echo ""
+	@echo "--- Story 6.6: Register word recognizer tests ---"
+	@OUTPUT=$$(printf 'CODE T1 B A LD, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T1 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '71 '; then \
+		echo "PASS: REPL test 259 — recognizer: B A LD, produces correct opcode (0x47 = 71)"; \
+	else \
+		echo "FAIL: REPL test 259 — expected '71 ' (LD B,A = 0x47)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE T2 HL PUSH, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T2 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '229 '; then \
+		echo "PASS: REPL test 260 — recognizer: HL PUSH, produces 0xE5 (229)"; \
+	else \
+		echo "FAIL: REPL test 260 — expected '229 ' (PUSH HL = 0xE5)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE T3 b a LD, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T3 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '71 '; then \
+		echo "PASS: REPL test 261 — recognizer case-insensitive: b a LD, same as B A LD,"; \
+	else \
+		echo "FAIL: REPL test 261 — expected '71 ' (same as test 259)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE T4 NZ RET, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T4 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '192 '; then \
+		echo "PASS: REPL test 262 — recognizer: NZ RET, produces correct opcode (0xC0 = 192)"; \
+	else \
+		echo "FAIL: REPL test 262 — expected '192 ' (RET NZ = 0xC0)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BC\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE 'BC \?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 263 — register outside CODE: recognizer fast-fails, error, clean recovery"; \
+	else \
+		echo "FAIL: REPL test 263 — expected 'BC ?' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE T5 (HL) INC, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T5 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '52 '; then \
+		echo "PASS: REPL test 264 — recognizer: (HL) INC, produces correct opcode (0x34 = 52)"; \
+	else \
+		echo "FAIL: REPL test 264 — expected '52 ' (INC (HL) = 0x34)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "CODE T6 AF AF' EX, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T6 C@ .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '8 '; then \
+		echo "PASS: REPL test 265 — recognizer: AF AF' EX, produces correct opcode (0x08 = 8)"; \
+	else \
+		echo "FAIL: REPL test 265 — expected '8 ' (EX AF,AF' = 0x08)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
