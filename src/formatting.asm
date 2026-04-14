@@ -174,15 +174,12 @@ w_DOT_R:
         DEFCODE ".R", 0
 w_DOT_R_cf:
         CALL    check_underflow_2
-        ; BC = width (TOS), (SP) = n
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
-
-        ; Save width to return stack
-        CALL    rpush_bc
-
-        ; Pop n into BC
-        POP     BC
+        ; Park IP in DE' via shadow registers; rearrange main set so
+        ; main DE = width and main BC = n (consumed for u_to_str).
+        PUSH    BC                      ; width onto SP
+        EXX                             ; IP → DE'
+        POP     DE                      ; main DE = width
+        POP     BC                      ; main BC = n
 
         ; Check sign of n
         BIT     7, B
@@ -201,22 +198,23 @@ w_DOT_R_cf:
         XOR     A
         LD      (.dotr_neg), A
 .dotr_convert:
-        ; BC = unsigned value, convert to string
+        ; BC = |n|, DE = width — preserve width across u_to_str (clobbers DE)
+        PUSH    DE                      ; save width
         CALL    u_to_str                ; HL = string addr, A = length
-        ; Save string info
+        ; Save string info (lives across pad-loop BDOS calls — see Dev Notes)
         LD      (.dotr_str), HL
         LD      (.dotr_len), A
+        POP     DE                      ; restore DE = width
 
-        ; Calculate padding = width - string_length - (1 if negative)
-        LD      C, (IX+0)              ; Recover width from return stack
-        LD      B, (IX+1)
-        ; BC = width
-        LD      E, A                    ; E = string length
+        ; Calculate padding = width_lo - string_length - sign_char
+        LD      B, A                    ; B = string length
         LD      A, (.dotr_neg)
-        ADD     A, E                    ; A = string_length + sign_char
-        LD      E, A
-        LD      A, C                    ; A = width (low byte)
-        SUB     E                       ; A = padding count
+        ADD     A, B                    ; A = string_length + sign_char
+        LD      B, A
+        LD      A, E                    ; A = width (low byte)
+        ; NOTE: only the low 8 bits of width are used for padding (pre-existing
+        ; behaviour); widths >= 256 fall through to .dotr_no_pad via wrap.
+        SUB     B                       ; A = padding count
         ; If padding <= 0, skip
         JR      C, .dotr_no_pad
         JR      Z, .dotr_no_pad
@@ -233,10 +231,8 @@ w_DOT_R_cf:
         LD      A, (.dotr_neg)
         OR      A
         JR      Z, .dotr_emit_digits
-        PUSH    BC
         LD      E, '-'
         CALL    bdos_putchar
-        POP     BC
 .dotr_emit_digits:
         ; Emit digit string
         LD      HL, (.dotr_str)
@@ -244,11 +240,8 @@ w_DOT_R_cf:
         LD      B, A
         CALL    bdos_print_str
 
-        ; Clean up return stack (remove saved width)
-        INC     IX
-        INC     IX
-        ; Restore DE (IP)
-        CALL    rpop_de
+        ; Restore IP from DE' (main BC overwritten by POP BC below)
+        EXX
         ; Pop new TOS
         POP     BC
         NEXT
@@ -269,13 +262,12 @@ w_DOT_R_cf:
 w_DOT_S:
         DEFCODE ".S", 0
 w_DOT_S_cf:
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Park TOS in BC' and IP in DE' via shadow registers; main BC/DE/HL
+        ; are free scratch. Shadow holds TOS+IP for the duration of the word
+        ; (briefly swapped in .dots_print_tos to recover TOS into main BC).
+        EXX
 
-        ; Save BC (TOS) to return stack for safekeeping
-        CALL    rpush_bc
-
-        ; Calculate depth = (S0 - SP) / 2
+        ; Calculate depth = (S0 - SP) / 2 — SP unchanged by EXX
         LD      HL, (sp_base)
         OR      A
         SBC     HL, SP          ; HL = bytes on SP
@@ -347,17 +339,17 @@ w_DOT_S_cf:
         JR      .dots_walk
 
 .dots_print_tos:
-        ; Print TOS (saved on return stack)
-        LD      B, (IX+1)
-        LD      C, (IX+0)      ; BC = original TOS
-        CALL    .dots_print_signed
+        ; Recover original TOS from BC' into main BC via SP stash.
+        ; (No direct BC'→BC opcode; round-trip through SP keeps shadows intact.)
+        EXX                     ; main = entry set: BC=TOS, DE=IP
+        PUSH    BC              ; original TOS to SP
+        EXX                     ; back to body set; BC'/DE' still hold TOS/IP
+        POP     BC              ; main BC = original TOS
+        CALL    .dots_print_signed  ; clobbers BC/DE/HL (body set, OK)
 
 .dots_done:
-        ; Restore BC (TOS) from return stack
-        CALL    rpop_bc
-
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
+        ; Restore TOS into main BC and IP into main DE
+        EXX
         NEXT
 
 ; .dots_print_signed — print BC as signed number with trailing space

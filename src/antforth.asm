@@ -192,7 +192,7 @@ hash_table:
 sp_base:        DW      0               ; Initial SP value, set during cold start (for DEPTH)
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
 str_banner1:    DB      "AntForth v1.1.0 (C) ant.org 2026"
-STR_BANNER1_LEN EQU     31
+STR_BANNER1_LEN EQU     32
 str_banner2:    DB      "MicroBeast - "
 STR_BANNER2_LEN EQU     13
 str_banner3:    DB      "bytes free"
