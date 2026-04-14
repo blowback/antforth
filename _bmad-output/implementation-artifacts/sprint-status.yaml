@@ -100,7 +100,7 @@ development_status:
 
   epic-8: in-progress
   8-1-exx-for-char-and-abort-quote: done
-  8-2-exx-for-dot-and-u-dot: backlog
+  8-2-exx-for-dot-and-u-dot: done
   8-3-restructure-dot-r-and-dot-s: backlog
   8-4-exx-convention-reference: backlog
   epic-8-retrospective: optional

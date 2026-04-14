@@ -49,7 +49,8 @@ div_bc_by_e:
 ;           A  = character count (string length)
 ;   Clobbers: AF, BC (consumed), HL
 ;   Preserves: IX, IY, SP
-;   NOTE: Caller must save DE (IP) before calling — div_bc_by_e clobbers D
+;   NOTE: Caller must preserve DE (IP) across the call — either via rpush_de
+;         or by parking IP in DE' with EXX — since div_bc_by_e clobbers D.
 ; -----------------------------------------------
 u_to_str:
         LD      HL, num_buf + NUM_BUF_SIZE - 1  ; Point to end of buffer
@@ -108,7 +109,8 @@ print_neg_prefix:
 ; -----------------------------------------------
 ; emit_unsigned — Internal helper
 ;   Emit unsigned number from BC followed by trailing space
-;   Caller must have saved DE (IP) to return stack before calling
+;   Caller must preserve DE (IP) across the call — either via rpush_de
+;   or by parking IP in DE' with EXX — since u_to_str clobbers D.
 ;   Input:  BC = unsigned number
 ;   Output: nothing (number + space emitted)
 ;   Clobbers: AF, BC, DE, HL
@@ -131,13 +133,15 @@ w_DOT:
         DEFCODE ".", 0
 w_DOT_cf:
         CALL    check_underflow
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Park IP in DE' via shadow registers; TOS stays in main BC for helpers
+        PUSH    BC
+        EXX
+        POP     BC
         ; Handle sign: emit '-' and negate if negative
         CALL    print_neg_prefix
         CALL    emit_unsigned
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
+        ; Restore IP from DE' (main BC holds garbage — overwritten by POP BC below)
+        EXX
         ; Pop new TOS from parameter stack
         POP     BC
         NEXT
@@ -150,11 +154,13 @@ w_U_DOT:
         DEFCODE "U.", 0
 w_U_DOT_cf:
         CALL    check_underflow
-        ; Save DE (IP) to return stack
-        CALL    rpush_de
+        ; Park IP in DE' via shadow registers; TOS stays in main BC for emit_unsigned
+        PUSH    BC
+        EXX
+        POP     BC
         CALL    emit_unsigned
-        ; Restore DE (IP) from return stack
-        CALL    rpop_de
+        ; Restore IP from DE' (main BC holds garbage — overwritten by POP BC below)
+        EXX
         ; Pop new TOS from parameter stack
         POP     BC
         NEXT
