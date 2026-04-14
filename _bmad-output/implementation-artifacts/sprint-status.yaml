@@ -98,9 +98,9 @@ development_status:
   7-3-exx-for-de-only-words: done
   epic-7-retrospective: done
 
-  epic-8: in-progress
+  epic-8: done
   8-1-exx-for-char-and-abort-quote: done
   8-2-exx-for-dot-and-u-dot: done
   8-3-restructure-dot-r-and-dot-s: done
   8-4-exx-convention-reference: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
