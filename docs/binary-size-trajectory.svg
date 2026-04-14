@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" font-family="monospace" font-size="11">
+  <style>
+    .axis { stroke: #333; stroke-width: 1; fill: none; }
+    .grid { stroke: #ddd; stroke-width: 0.5; fill: none; }
+    .line { stroke: #0066cc; stroke-width: 2; fill: none; }
+    .dot  { fill: #0066cc; stroke: white; stroke-width: 1; }
+    .epic6 { fill: #e8f0ff; }
+    .epic7 { fill: #fff4e0; }
+    .epic8 { fill: #e8ffe8; }
+    .label { font-size: 10px; fill: #555; }
+    .title { font-size: 14px; font-weight: bold; fill: #222; }
+    .annot { font-size: 9px; fill: #666; }
+  </style>
+
+  <!-- Title -->
+  <text x="400" y="24" text-anchor="middle" class="title">AntForth Binary Size — Stories 5.4 → 8.4</text>
+  <text x="400" y="40" text-anchor="middle" class="label">15,519 bytes → 14,030 bytes  (−1,489 bytes, −9.6%)</text>
+
+  <!-- Plot area: x from 60 to 760 (700 wide), y from 70 to 400 (330 tall) -->
+  <!-- Y range: 13900 (bottom, y=400) to 15600 (top, y=70). 1700 bytes = 330 px. 1 byte ≈ 0.194 px. -->
+  <!-- Formula: y = 400 - (bytes - 13900) * 330/1700 -->
+
+  <!-- Epic background bands -->
+  <!-- 15 stories evenly spaced: x = 60 + i*50 (i=0..14), last at 760 -->
+  <!-- Epic 6: stories 6.1-6.7 = indices 1-7 → x 110 to 410 -->
+  <!-- Epic 7: 7.1-7.3 = indices 8-10 → x 460 to 560 -->
+  <!-- Epic 8: 8.1-8.4 = indices 11-14 → x 610 to 760 -->
+  <rect x="85"  y="70" width="325" height="330" class="epic6"/>
+  <rect x="435" y="70" width="150" height="330" class="epic7"/>
+  <rect x="585" y="70" width="175" height="330" class="epic8"/>
+
+  <text x="247" y="62" text-anchor="middle" class="annot" fill="#5577bb">Epic 6 — bulk dedup (−1,034)</text>
+  <text x="510" y="62" text-anchor="middle" class="annot" fill="#bb7755">Epic 7 — EXX (−208)</text>
+  <text x="672" y="62" text-anchor="middle" class="annot" fill="#557755">Epic 8 — EXX follow-up (−75)</text>
+
+  <!-- Gridlines + Y-axis labels -->
+  <line class="grid" x1="60" y1="70"  x2="760" y2="70"/>
+  <line class="grid" x1="60" y1="147" x2="760" y2="147"/>
+  <line class="grid" x1="60" y1="225" x2="760" y2="225"/>
+  <line class="grid" x1="60" y1="302" x2="760" y2="302"/>
+  <line class="grid" x1="60" y1="380" x2="760" y2="380"/>
+  <text x="55" y="73"  text-anchor="end" class="label">15,600</text>
+  <text x="55" y="150" text-anchor="end" class="label">15,200</text>
+  <text x="55" y="228" text-anchor="end" class="label">14,800</text>
+  <text x="55" y="305" text-anchor="end" class="label">14,400</text>
+  <text x="55" y="383" text-anchor="end" class="label">14,000</text>
+
+  <!-- Axes -->
+  <line class="axis" x1="60" y1="70"  x2="60"  y2="400"/>
+  <line class="axis" x1="60" y1="400" x2="760" y2="400"/>
+
+  <!-- Data line (15 points; x = 60 + i*50; y = 400 - (bytes-13900) * 330/1700) -->
+  <polyline class="line" points="
+    60,91.3
+    110,135.4
+    160,203.4
+    210,262.4
+    260,264.7
+    310,274.6
+    360,291.3
+    410,293.8
+    460,353.0
+    510,360.7
+    560,367.7
+    610,376.3
+    660,377.0
+    710,382.2
+    760,382.2
+  "/>
+
+  <!-- Dots -->
+  <circle class="dot" cx="60"  cy="91.3"  r="4"/>
+  <circle class="dot" cx="110" cy="135.4" r="4"/>
+  <circle class="dot" cx="160" cy="203.4" r="4"/>
+  <circle class="dot" cx="210" cy="262.4" r="4"/>
+  <circle class="dot" cx="260" cy="264.7" r="4"/>
+  <circle class="dot" cx="310" cy="274.6" r="4"/>
+  <circle class="dot" cx="360" cy="291.3" r="4"/>
+  <circle class="dot" cx="410" cy="293.8" r="4"/>
+  <circle class="dot" cx="460" cy="353.0" r="4"/>
+  <circle class="dot" cx="510" cy="360.7" r="4"/>
+  <circle class="dot" cx="560" cy="367.7" r="4"/>
+  <circle class="dot" cx="610" cy="376.3" r="4"/>
+  <circle class="dot" cx="660" cy="377.0" r="4"/>
+  <circle class="dot" cx="710" cy="382.2" r="4"/>
+  <circle class="dot" cx="760" cy="382.2" r="4"/>
+
+  <!-- Value labels above dots -->
+  <text x="60"  y="83"  text-anchor="middle" class="annot">15,519</text>
+  <text x="110" y="127" text-anchor="middle" class="annot">15,294</text>
+  <text x="160" y="195" text-anchor="middle" class="annot">14,949</text>
+  <text x="210" y="254" text-anchor="middle" class="annot">14,647</text>
+  <text x="260" y="256" text-anchor="middle" class="annot">14,635</text>
+  <text x="310" y="266" text-anchor="middle" class="annot">14,584</text>
+  <text x="360" y="283" text-anchor="middle" class="annot">14,498</text>
+  <text x="410" y="285" text-anchor="middle" class="annot">14,485</text>
+  <text x="460" y="345" text-anchor="middle" class="annot">14,181</text>
+  <text x="510" y="352" text-anchor="middle" class="annot">14,141</text>
+  <text x="560" y="359" text-anchor="middle" class="annot">14,105</text>
+  <text x="610" y="368" text-anchor="middle" class="annot">14,061</text>
+  <text x="660" y="369" text-anchor="middle" class="annot">14,057</text>
+  <text x="710" y="374" text-anchor="middle" class="annot">14,030</text>
+  <text x="760" y="374" text-anchor="middle" class="annot">14,030</text>
+
+  <!-- X-axis story labels -->
+  <text x="60"  y="418" text-anchor="middle" class="label">5.4</text>
+  <text x="110" y="418" text-anchor="middle" class="label">6.1</text>
+  <text x="160" y="418" text-anchor="middle" class="label">6.2</text>
+  <text x="210" y="418" text-anchor="middle" class="label">6.3</text>
+  <text x="260" y="418" text-anchor="middle" class="label">6.4</text>
+  <text x="310" y="418" text-anchor="middle" class="label">6.5</text>
+  <text x="360" y="418" text-anchor="middle" class="label">6.6</text>
+  <text x="410" y="418" text-anchor="middle" class="label">6.7</text>
+  <text x="460" y="418" text-anchor="middle" class="label">7.1</text>
+  <text x="510" y="418" text-anchor="middle" class="label">7.2</text>
+  <text x="560" y="418" text-anchor="middle" class="label">7.3</text>
+  <text x="610" y="418" text-anchor="middle" class="label">8.1</text>
+  <text x="660" y="418" text-anchor="middle" class="label">8.2</text>
+  <text x="710" y="418" text-anchor="middle" class="label">8.3</text>
+  <text x="760" y="418" text-anchor="middle" class="label">8.4</text>
+
+  <text x="410" y="440" text-anchor="middle" class="label">Story</text>
+  <text x="20" y="235" text-anchor="middle" class="label" transform="rotate(-90 20 235)">Binary size (bytes)</text>
+
+  <!-- Footer -->
+  <text x="60"  y="465" class="annot">Baseline: post-5.4, pre-optimization.  Flat segment at end = 8.4 is pure documentation.</text>
+</svg>

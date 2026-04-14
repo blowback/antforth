@@ -3,6 +3,11 @@
 ;
 ; Contains: DOCOL, EXIT_CODE, LIT, BRANCH, ?BRANCH, EXECUTE
 ; NEXT macro is defined in macros.asm
+;
+; For the register contract (BC=TOS, DE=IP, ...) and shadow-register (EXX)
+; conventions — leaf-level rule, Group A/B entry patterns, "A survives EXX"
+; staging idiom, shadow BC' as TOS-preservation slot — see:
+;   docs/register-conventions.md
 
 ; === DOCOL — Enter colon definition ===
 ; Push IP (DE) onto return stack (IX), set IP to body (following JP DOCOL)
