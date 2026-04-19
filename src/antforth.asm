@@ -126,6 +126,7 @@ cold_thread:
         INCLUDE "control_flow.asm"
         INCLUDE "io.asm"
         INCLUDE "strings.asm"
+        INCLUDE "number_prefixes.asm"
         INCLUDE "formatting.asm"
 
 ; === Higher-level components (depend on primitives) ===

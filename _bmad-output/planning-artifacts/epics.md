@@ -3,1470 +3,1451 @@ stepsCompleted:
   - step-01-validate-prerequisites
   - step-02-design-epics
   - step-03-create-stories
-  - step-04-final-validation
+partyModeNotes:
+  - 'Epic 12: ASSEMBLER.FTH authorship becomes a named story with ≤8 KB soft size budget + hand-migration fallback path (Architecture Finding 3; PRD risk table).'
+  - 'Epic 11: Add a "migration inventory + ordering" story at the front so the ABORT→THROW crawl scope is visible before word-by-word commits begin (E11-D3).'
 inputDocuments:
   - prd.md
   - architecture.md
+  - prd-phase1-epics-1-8.md
+  - architecture-phase1-epics-1-8.md
+  - epics-phase1-epics-1-8.md
+  - product-brief-antforth-2026-04-14.md
+phase: 2
+phaseScope: 'Epics 9-13 — antforth 2.0 release'
 ---
 
-# antforth - Epic Breakdown
+# antforth - Epic Breakdown (Phase 2: Epics 9–13)
 
 ## Overview
 
-This document provides the complete epic and story breakdown for antforth, decomposing the requirements from the PRD and Architecture into implementable stories.
+This document provides the epic and story breakdown for **antforth 2.0** (Phase 2), decomposing the PRD and Architecture into implementable stories for Epics 9 through 13. Phase 1 (Epics 1–8) is complete and preserved in `epics-phase1-epics-1-8.md`; its kernel, REPL, language-extension compiler, built-in Z80 assembler, MARKER, and shadow-register optimisations are the foundation on which Phase 2 builds.
+
+The phase delivers two mutually reinforcing goals — **100% ANS Forth Core compliance** and **on-device source development via the CP/M filesystem** — culminating in the north-star demo (fresh-booted kernel lazy-loads `ASSEMBLER.FTH` on first `CODE`), which tags the 2.0 release.
 
 ## Requirements Inventory
 
 ### Functional Requirements
 
-**Interpreter Core**
-- FR1: User can enter text at an interactive REPL prompt and receive immediate execution results
-- FR2: System can parse input text into whitespace-delimited tokens (words and numbers)
-- FR3: System can look up words in the dictionary via hashed vocabulary search
-- FR4: System can recognise and convert numeric literals (single-precision integers) from input text
-- FR5: System can operate in interpret mode, executing words and pushing numbers to the stack
-- FR6: System can operate in compile mode, compiling words and literals into new definitions
-- FR7: System can switch between interpret and compile modes via `[` and `]`
-- FR8: System can execute compiled threaded code via the direct-threaded inner interpreter
+**Numeric Literal Input (Epic 9)**
+- FR1: Users can enter decimal integer literals using the `#` prefix, regardless of the current `BASE`
+- FR2: Users can enter hexadecimal integer literals using the `$` prefix, regardless of the current `BASE`
+- FR3: Users can enter binary integer literals using the `%` prefix, regardless of the current `BASE`
+- FR4: Users can enter character literals using the `'c'` syntax, yielding the character's numeric value
+- FR5: Users can enter hexadecimal literals using the `0x` prefix as an antforth-specific alternative to `$`
+- FR6: All prefixed numeric literals accept an optional leading `-` sign
+- FR7: All numeric literal prefixes (`#`, `$`, `%`, `0x`) and their hex digits (a–f) are case-insensitive
+- FR8: The interpreter recognises numeric-literal prefixes everywhere ordinary numbers are parsed — interactive REPL, compiled colon definitions, and the built-in Z80 assembler source
+- FR9: Entering a prefixed literal does not mutate the value of the `BASE` variable
 
-**Word Definition & Dictionary**
-- FR9: User can define new colon definitions (`: name ... ;`)
-- FR10: User can define CODE words using the built-in Z80 assembler
-- FR11: User can create variables, constants, and user-defined data structures (CREATE/DOES>)
-- FR12: User can mark words as IMMEDIATE for compile-time execution
-- FR13: User can use POSTPONE to compile the compilation semantics of a word
-- FR14: User can list all defined words in the dictionary (WORDS)
-- FR15: User can snapshot dictionary state with MARKER and restore to that snapshot
-- FR16: System can store and retrieve dictionary entries via XOR-rotate hashed lookup with 64 buckets
+**Core Arithmetic & Numeric Output (Epic 10)**
+- FR10: Users can perform double-precision signed and unsigned integer arithmetic using the ANS Core double-cell word set (`D+`, `D-`, `D*`, `DNEGATE`, `DABS`, `D<`, `D=`, `DMAX`, `DMIN`, `M*`, `UM*`, `M+`, `SM/REM`, `FM/MOD`, `UM/MOD`)
+- FR11: Users can store, fetch, and manipulate double-cell values on the parameter stack using `2@`, `2!`, `2DUP`, `2DROP`, `2SWAP`, `2OVER`
+- FR12: Users can convert between single-cell and double-cell representations using `>D`, `S>D`, `D>S`
+- FR13: Users can construct formatted numeric output using the ANS pictured numeric output wordset (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`)
+- FR14: Users can output numbers using the Core display words (`.`, `U.`, `D.`, `.R`, `U.R`, `D.R`), which are implemented on top of the pictured output system
+- FR15: Users can rely on 100% of the ANS Forth 1994 Core wordset being implemented and behaving per the standard
 
-**Stack Operations**
-- FR17: User can manipulate the parameter stack (DUP, DROP, SWAP, OVER, ROT, PICK, ROLL, DEPTH)
-- FR18: User can inspect the current parameter stack contents (.S)
-- FR19: User can manipulate the return stack (>R, R>, R@)
+**Exception Handling (Epic 11)**
+- FR16: Users can wrap the execution of a word in a `CATCH` frame and receive a THROW code in the event of an error
+- FR17: Users can raise an exception using `THROW` with an arbitrary non-zero integer code
+- FR18: The system defines and honours the ANS standard THROW codes for common errors (stack underflow, undefined word, division by zero, etc.)
+- FR19: Every internal error path in the interpreter, compiler, and primitive words routes through the `THROW` mechanism rather than through `ABORT`
+- FR20: `ABORT` and `ABORT"` behave as wrappers for `-1 THROW` and `-2 THROW` respectively, per the ANS standard
+- FR21: An uncaught THROW returns control to the REPL top level with a diagnostic message that includes the THROW code and (where applicable) a human-readable description
+- FR22: The REPL itself survives any THROW — the user's session, dictionary, and definitions are preserved across errors
 
-**Arithmetic & Logic**
-- FR20: User can perform single-precision integer arithmetic (+, -, *, /, MOD, /MOD, NEGATE, ABS, MIN, MAX)
-- FR21: User can perform comparison operations (=, <, >, 0=, 0<, U<)
-- FR22: User can perform bitwise logic operations (AND, OR, XOR, INVERT, LSHIFT, RSHIFT)
+**Vocabulary & Namespace Management (Epic 12)**
+- FR23: Users can create a new wordlist with `WORDLIST`, receiving a wordlist identifier on the stack
+- FR24: Users can query the current search order with `GET-ORDER` and set it with `SET-ORDER`
+- FR25: Users can query and change the current compilation wordlist with `GET-CURRENT` and `SET-CURRENT`
+- FR26: Users can direct subsequent definitions into the top-of-search-order wordlist using `DEFINITIONS`
+- FR27: Users can reduce the search order to a minimal set with `ONLY`
+- FR28: Users can reference the built-in Forth wordlist with `FORTH-WORDLIST`
+- FR29: Users can search a specific wordlist for a word with `SEARCH-WORDLIST`
+- FR30: The `ASSEMBLER` wordlist is automatically activated on entry to `CODE` and deactivated on exit from `END-CODE`
+- FR31: Users with existing CODE-word source files authored against pre-phase antforth can assemble those files unchanged
 
-**Memory Access**
-- FR23: User can read and write cell-sized values in memory (@, !, +!)
-- FR24: User can read and write byte-sized values in memory (C@, C!)
-- FR25: User can allocate dictionary space (HERE, ALLOT, COMMA, C,, ALIGN, ALIGNED)
-- FR26: User can fill and move memory regions (FILL, MOVE)
+**Source File I/O (Epic 13)**
+- FR32: Users can load a source file from the CP/M filesystem using `INCLUDE <filename>`
+- FR33: Users can load a source file by explicit file identifier using `INCLUDE-FILE`
+- FR34: Users can load a named source file using `INCLUDED`
+- FR35: Users can open a file with `OPEN-FILE`, specifying an access mode (`R/O`, `R/W`, `W/O`, `BIN`)
+- FR36: Users can create a file with `CREATE-FILE`, specifying an access mode
+- FR37: Users can delete a file with `DELETE-FILE`
+- FR38: Users can read bytes from a file with `READ-FILE`
+- FR39: Users can write bytes to a file with `WRITE-FILE`
+- FR40: Users can query and set the current file position with `FILE-POSITION` and `REPOSITION-FILE`
+- FR41: Users can query the size of a file with `FILE-SIZE`
+- FR42: Users can close a file with `CLOSE-FILE`
+- FR43: File operations raise a THROW (not ABORT) on errors such as file-not-found, permission-denied, or disk-full
+- FR44: Users can load source files from either drive A: (ROM filesystem) or B: (ramdisk) without syntactic distinction
 
-**Control Flow**
-- FR27: User can use conditional branching in definitions (IF/ELSE/THEN)
-- FR28: User can use indefinite loops (BEGIN/WHILE/REPEAT, BEGIN/UNTIL)
-- FR29: User can use counted loops (DO/LOOP/+LOOP, LEAVE, I, J)
-- FR30: User can use RECURSE for recursive word definitions
+**System Extensibility & Self-Hosting (Epic 13 capstone)**
+- FR45: A fresh boot of antforth 2.0 starts with the `ASSEMBLER` wordlist empty — no assembler opcodes resident in the kernel dictionary
+- FR46: On the first invocation of `CODE` after boot, the system automatically loads `ASSEMBLER.FTH` from the resolved path to populate the `ASSEMBLER` wordlist
+- FR46a: The load path for `ASSEMBLER.FTH` is resolved as follows: if the user-settable variable `ASSEMBLER-PATH` holds a non-sentinel value, that path is used; otherwise the file is sought on the CP/M current drive (as returned by BDOS function 25)
+- FR46b: Users can override the default lookup location by setting `ASSEMBLER-PATH` to a CP/M file specifier before their first `CODE`
+- FR47: The lazy-load of the assembler is transparent to user code — `CODE` / `END-CODE` semantics are identical to a kernel with opcodes baked in (modulo a brief one-time load pause)
+- FR48: On subsequent invocations of `CODE` within the same boot session, no further loading occurs
+- FR49: If `ASSEMBLER.FTH` cannot be read on first `CODE` at the resolved path, the system raises a THROW with a descriptive diagnostic that includes the path that was attempted
 
-**I/O & String Handling**
-- FR31: User can emit characters and strings to the console (EMIT, TYPE, CR, SPACE, SPACES)
-- FR32: User can read keyboard input (KEY, KEY?)
-- FR33: User can accept line input from the console (ACCEPT)
-- FR34: User can format and display numbers (., U., .R)
-- FR35: User can work with counted strings (COUNT, WORD, FIND)
-- FR36: User can convert text to numbers (>NUMBER)
-- FR37: User can define and use string literals (S", .")
-
-**Built-in Assembler**
-- FR38: User can write Z80 assembly instructions using reverse-polish notation within CODE definitions
-- FR39: User can define new CODE primitives that integrate with the Forth threading model
-- FR40: User can mix assembler and Forth in the same development session
-
-**System & Platform**
-- FR41: System can load and run as a CP/M 2.2 .COM application from A: or B: drive
-- FR42: User can exit antforth cleanly back to CP/M (BYE)
-- FR43: System can perform console I/O via CP/M BDOS calls
-- FR44: User can set and query the numeric base for I/O (BASE, DECIMAL, HEX)
-
-**Error Handling**
-- FR45: System can detect and report undefined words without crashing
-- FR46: System can detect and report stack underflow without crashing
-- FR47: System can discard partial definitions on compilation errors without corrupting the dictionary
-- FR48: System can recover gracefully from errors and return to the REPL prompt
+**Backward Compatibility & Regression (phase-wide constraint)**
+- FR50: All functional behaviour delivered in Epics 1–8 continues to work identically in antforth 2.0 — REPL, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, and existing word semantics
+- FR51: All existing REPL-piped test scripts from Epics 1–8 continue to pass against the antforth 2.0 binary
+- FR52: The unprefixed numeric literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE`, identically to pre-phase antforth
 
 ### NonFunctional Requirements
 
 **Performance**
-- NFR1: REPL input-to-output latency must be imperceptible for interactive use — simple expressions should feel instantaneous at 8 MHz
-- NFR2: Dictionary lookup must remain responsive as the dictionary grows — the 64-bucket hash table provides acceptable O(n/64) average-case lookup
-- NFR3: Inner interpreter threading (NEXT/DOCOL/EXIT) must be cycle-efficient — these are the hottest code paths in the system
-- NFR4: Stack operations (DUP, DROP, SWAP, OVER) must be minimal-cycle implementations — they dominate typical Forth code
+- NFR1: Numeric literal prefix parsing overhead — recognition of a prefixed literal adds no more than ~20 Z80 cycles over the unprefixed parse path for the 99th-percentile literal
+- NFR2: Word lookup across multiple vocabularies — with a search order of up to 8 wordlists, lookup shall not regress by more than 10% of cycle count versus the pre-phase single-vocabulary baseline
+- NFR3: First-`CODE` lazy-load latency ≤ 3 seconds on real MicroBeast hardware (8 MHz Z80, B: ramdisk); subsequent `CODE` invocations in the same session add zero load overhead; sub-1-second load is a post-2.0 optimisation opportunity
+- NFR4: CATCH/THROW overhead — an uncaught `CATCH` frame adds no more than ~15 Z80 cycles; successful THROW unwind completes in bounded time proportional to return-stack depth at THROW time
+- NFR5: Kernel ROM footprint strictly smaller than the pre-phase (post-Epic-8) baseline; each epic logs its delta; net-of-all-epics delta is negative
+- NFR6: Double-precision arithmetic performance — Core double-precision primitives execute within ~20% of hand-rolled Z80 equivalents
 
-**Stability & Correctness**
-- NFR5: The system must never crash or hang due to user input errors — all errors must be caught and reported, returning control to the REPL
-- NFR6: The dictionary must remain consistent after any error — partial definitions must be fully discarded without corruption
-- NFR7: MARKER rollback must restore the system to an exact prior state — no residual side effects
-- NFR8: All ANS Core wordset words must produce correct results per the ANS Forth specification — correctness is non-negotiable, performance is secondary
+**Reliability**
+- NFR7: REPL shall survive any THROW, including stack overflow, division by zero, and undefined-word invocation; dictionary and in-session definitions are preserved
+- NFR8: State integrity after error — no internal data structure (dictionary, wordlists, input buffer, pad, return stack) may be left corrupted after a THROW
+- NFR9: Filesystem error recovery — failures during file operations raise THROW with a specific code and leave the filesystem consistent; no partial writes that corrupt CP/M directory entries; no orphaned file handles
+- NFR10: Regression guarantee — the complete Epic 1–8 test suite shall pass on every antforth 2.0 candidate release; a single regression is a release blocker
 
-**Resource Constraints**
-- NFR9: The complete system (kernel + core wordset + assembler) must fit within the CP/M TPA — approximately 56-58K including dictionary space for user definitions
-- NFR10: The .COM binary must be deliverable on a single CP/M disk (≤230K capacity)
-- NFR11: Stack depths (parameter and return) must be sufficient for typical Forth usage without requiring user configuration
+**Compatibility & Standards Conformance**
+- NFR11: ANS Forth 1994 Core wordset implemented to 100% coverage with behaviour matching the ANS specification (baseline 86% → 100% target)
+- NFR12: Numeric literal prefix syntax implemented verbatim as Forth 2014 §3.4.1.3
+- NFR13: Extension discipline — only non-standard addition this phase is the `0x` hex prefix; clearly flagged as an antforth extension; no silent divergence from standards
+- NFR14: CP/M 2.2 BDOS integration — antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
+- NFR15: CODE-word source file backward compatibility — pre-phase source files assemble correctly and produce byte-identical output under antforth 2.0
+
+**Maintainability**
+- NFR16: Z80 assembly source favours readability over micro-optimisation except where an epic explicitly targets performance; comments on non-obvious logic required; comments re-stating obvious assembly forbidden
+- NFR17: Test-first discipline — every new word in Epics 9–13 has REPL-piped Forth test coverage before being declared done
+- NFR18: Single-source-of-truth for standards references — word behaviours derived from a standard cite the standard section in the source comment
+- NFR19: Epic-level decoupling — each of Epics 9–13 delivers an independently-shippable `antforth 1.x` increment
+
+**Integration (CP/M and Platform)**
+- NFR20: Terminal I/O portability — antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9); no ANSI escape codes, cursor positioning, or colour
+- NFR21: File path conventions — `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename); no wildcards; no Unix-style paths
+- NFR22: Lazy-load default path — `ASSEMBLER.FTH` located via `ASSEMBLER-PATH` variable, defaulting to current drive per BDOS function 25; zero-configuration case preserved
+- NFR23: MicroBeast hardware dependency isolation — no MicroBeast-specific hardware word enters the kernel or ASSEMBLER wordlist during this phase
 
 ### Additional Requirements
 
-**From Architecture — Starter Template / Toolchain:**
-- Project uses sjasmplus assembler, GNU Make build system, cpmtools for disk imaging, iz-cpm for automated testing
-- Project initialisation (Makefile, directory structure, main assembly manifest) should be the first implementation story
+**Starter template (Architecture §Starter Template Evaluation):**
+- Not applicable — the existing Phase 1 kernel is the "starter." All phase-2 architectural decisions build on the Epic 1–8 foundation without replacing any part of it. No new scaffolding, no new toolchain.
 
-**From Architecture — Cold Start Protocol:**
-- .COM entry at 0x0100 must initialise SP, IX, IY, STATE, BASE, hash buckets (64 to 0), HERE, TIB/>IN before entering QUIT loop
-- ABORT resets SP only and falls through to QUIT (not a full cold start)
+**Inherited register conventions (Architecture §Technical Constraints):**
+- BC = TOS; SP = parameter stack pointer; IX = return stack pointer; IY = user area pointer; DE = IP; HL = working register (W)
+- Shadow registers used per Epic 7/8 conventions
+- Direct threading (JP-based) preserved; DEFWORD cf label via `EQU body-3` pointing to `JP DOCOL`
 
-**From Architecture — Register Contract (inviolable):**
-- BC=TOS, DE=IP, SP=parameter stack, IX=return stack, IY=user pointer, HL=W (scratch), AF=scratch
-- Every CODE primitive must preserve this contract
+**Cross-cutting architectural decisions (Architecture §CCD-1 through CCD-4):**
+- CCD-1: Return-stack frame taxonomy with dual chain discipline — `CATCH-TOP` and `INCLUDE-TOP` USER variables; exception frames 8 bytes, INCLUDE source frames 10 bytes
+- CCD-2: THROW code allocation — `-1` to `-58` reserved for ANS standard codes; `-59` to `-255` reserved for future ANS extensions; `-256` to `-32767` for antforth-specific extensions; `+n` reserved for user codes
+- CCD-3: Standards-citation discipline — every standard-derived word carries a one-line comment citing the spec section (e.g., `; Forth 2014 §6.2.2270 CATCH`)
+- CCD-4: Per-epic benchmark gate — each epic includes a final "benchmarks + size delta" story gating completion on NFR envelopes
 
-**From Architecture — Dictionary Construction:**
-- All word definitions via DEFCODE/DEFWORD/DEFIMMED macros — no manual header emission
-- Dictionary entry: [hash-link 2B][count+flags 1B][name nB][code field 3B: JP xxxx][body...]
+**Source-file layout (Architecture §Source file organisation):**
+- `src/number_prefixes.asm` (Epic 9); `src/double.asm`, `src/pictured.asm` (Epic 10); `src/exception.asm` (Epic 11); `src/wordlists.asm` (Epic 12); `src/file_access.asm`, `src/lazy_load.asm` (Epic 13)
+- Existing `src/*.asm` edited in-place for ABORT→THROW migration and multi-vocabulary changes
+- New tests under `tests/*.fth` (REPL-piped Forth); no new assembly test threads
+- New docs: `docs/throw-codes.md` (Epic 11); `docs/ans-forth-core-compliance.md` revised (Epic 10)
+- Example source: `examples/ASSEMBLER.FTH` (Epic 12) deployed alongside `ANTFORTH.COM`
 
-**From Architecture — BDOS Interaction:**
-- All CP/M BDOS calls must use BDOS_SAVE/BDOS_RESTORE macro pair
-- No BDOS calls from colon definitions — only from CODE words
+**Platform constraints (PRD §Target Platform):**
+- Z80 instruction set only — no Z80N, eZ80, or Z180 extensions
+- CP/M 2.2 TPA (`0100h`–`FFFFh` minus BDOS/CCP); kernel lives in bank 0
+- Real-hardware validation required for every epic's final story; no release tag without a pass on real MicroBeast
 
-**From Architecture — Implementation Sequence:**
-1. Memory layout and constants
-2. Threading macros (NEXT, DOCOL, EXIT)
-3. Dictionary entry macros
-4. Core CODE primitives
-5. Outer interpreter (QUIT loop, INTERPRET, number parsing)
-6. Compiler (:, ;, IMMEDIATE, control flow)
-7. Remaining Forth-defined words
-8. Built-in assembler
-9. MARKER and system words
+**Process conventions (Architecture §Process Patterns; inherited memory):**
+- All new error sites use `THROW`, not `ABORT`; existing `ABORT` call sites migrate during Epic 11 (one per commit, each with its own REPL test)
+- REPL-piped Forth scripts are the canonical test format; no new assembly test-thread extensions in phase 2
+- Standards compliance: investigate the standard before defending existing code; never rationalise divergence silently
+- Adversarial review: reviews MUST find things; zero findings is itself suspect
 
-**From Architecture — Testing Strategy:**
-- Three-track: on-device (source of truth), iz-cpm automated regression, Hayes ANS conformance suite
-- `make test` for automated regression via emulator
+**Implementation sequence (locked by dependencies, Architecture §Decision Impact):**
+- Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13
+- CCD-1 prerequisite to Epic 11 and Epic 13
+- E11-D1 (exception frame) prerequisite to E13-D2 (INCLUDE source frame)
+- E12-D1 (per-wordlist hash layout) prerequisite to E13-D5 (lazy-load hook)
+- E13-D4 (ASSEMBLER-PATH sentinel) prerequisite to E13-D5 (first-CODE hook)
 
 ### FR Coverage Map
 
-FR1: Epic 2 - REPL prompt and immediate execution
-FR2: Epic 2 - Parse input into tokens
-FR3: Epic 2 - Dictionary lookup via hash
-FR4: Epic 2 - Numeric literal conversion
-FR5: Epic 2 - Interpret mode execution
-FR6: Epic 3 - Compile mode
-FR7: Epic 3 - Interpret/compile mode switching ([ and ])
-FR8: Epic 1 - Direct-threaded inner interpreter
-FR9: Epic 3 - Colon definitions
-FR10: Epic 4 - CODE word definition via assembler
-FR11: Epic 3 - Variables, constants, CREATE/DOES>
-FR12: Epic 3 - IMMEDIATE words
-FR13: Epic 3 - POSTPONE
-FR14: Epic 3 - WORDS dictionary listing
-FR15: Epic 5 - MARKER snapshot/restore
-FR16: Epic 2 - XOR-rotate hashed dictionary lookup
-FR17: Epic 1 - Parameter stack manipulation
-FR18: Epic 2 - Stack inspection (.S)
-FR19: Epic 1 - Return stack manipulation
-FR20: Epic 1 (CODE: +, -, *, /, MOD, /MOD) + Epic 3 (Forth: NEGATE, ABS, MIN, MAX) - Single-precision arithmetic
-FR21: Epic 1 - Comparison operations
-FR22: Epic 1 - Bitwise logic operations
-FR23: Epic 1 - Cell-sized memory access
-FR24: Epic 1 - Byte-sized memory access
-FR25: Epic 1 - Dictionary space allocation (HERE, ALLOT, etc.)
-FR26: Epic 1 - FILL and MOVE
-FR27: Epic 3 - IF/ELSE/THEN
-FR28: Epic 3 - BEGIN/WHILE/REPEAT, BEGIN/UNTIL
-FR29: Epic 3 - DO/LOOP/+LOOP, LEAVE, I, J
-FR30: Epic 3 - RECURSE
-FR31: Epic 1 - Console output (EMIT, TYPE, CR, SPACE, SPACES)
-FR32: Epic 1 - Keyboard input (KEY, KEY?)
-FR33: Epic 2 - Line input (ACCEPT)
-FR34: Epic 2 - Number formatting (., U., .R)
-FR35: Epic 2 - Counted strings (COUNT, WORD, FIND)
-FR36: Epic 2 - Text to number conversion (>NUMBER)
-FR37: Epic 3 - String literals (S", .")
-FR38: Epic 4 - Z80 assembly in reverse-polish notation
-FR39: Epic 4 - CODE primitives integrating with threading model
-FR40: Epic 4 - Mix assembler and Forth in same session
-FR41: Epic 1 - CP/M .COM application
-FR42: Epic 1 - Clean exit via BYE
-FR43: Epic 1 - Console I/O via BDOS
-FR44: Epic 2 - Numeric base (BASE, DECIMAL, HEX)
-FR45: Epic 2 - Undefined word detection
-FR46: Epic 2 - Stack underflow detection
-FR47: Epic 3 - Compilation error recovery (dictionary consistency)
-FR48: Epic 2 - Graceful error recovery to REPL
+| FR | Epic | Description |
+|---|---|---|
+| FR1 | Epic 9 | `#` decimal prefix |
+| FR2 | Epic 9 | `$` hex prefix |
+| FR3 | Epic 9 | `%` binary prefix |
+| FR4 | Epic 9 | `'c'` character literal |
+| FR5 | Epic 9 | `0x` hex prefix (antforth extension) |
+| FR6 | Epic 9 | Leading `-` sign on prefixed literals |
+| FR7 | Epic 9 | Case-insensitive prefixes and hex digits |
+| FR8 | Epic 9 | Prefixes recognised in REPL, colon bodies, and assembler source |
+| FR9 | Epic 9 | `BASE` not mutated by parsing |
+| FR10 | Epic 10 | Double-cell arithmetic primitives (`D+`, `D-`, `D*`, etc.) |
+| FR11 | Epic 10 | Double-cell stack manipulation (`2@`/`2!`/`2DUP`/`2DROP`/`2SWAP`/`2OVER`) |
+| FR12 | Epic 10 | Single/double conversions (`>D`/`S>D`/`D>S`) |
+| FR13 | Epic 10 | Pictured numeric output wordset (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`) |
+| FR14 | Epic 10 | `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` reimplemented on top of pictured output |
+| FR15 | Epic 10 | 100% ANS Forth 1994 Core compliance |
+| FR16 | Epic 11 | `CATCH` frame execution |
+| FR17 | Epic 11 | `THROW` with arbitrary non-zero code |
+| FR18 | Epic 11 | Standard ANS THROW codes honoured |
+| FR19 | Epic 11 | Internal errors routed through THROW (full migration) |
+| FR20 | Epic 11 | `ABORT`/`ABORT"` as `-1 THROW`/`-2 THROW` wrappers |
+| FR21 | Epic 11 | Uncaught THROW returns to REPL with diagnostic |
+| FR22 | Epic 11 | REPL survives any THROW |
+| FR23 | Epic 12 | `WORDLIST` creates a new wordlist |
+| FR24 | Epic 12 | `GET-ORDER`/`SET-ORDER` |
+| FR25 | Epic 12 | `GET-CURRENT`/`SET-CURRENT` |
+| FR26 | Epic 12 | `DEFINITIONS` |
+| FR27 | Epic 12 | `ONLY` |
+| FR28 | Epic 12 | `FORTH-WORDLIST` |
+| FR29 | Epic 12 | `SEARCH-WORDLIST` |
+| FR30 | Epic 12 | `ASSEMBLER` wordlist auto-activation on `CODE`/`END-CODE` |
+| FR31 | Epic 12 | Pre-phase CODE-word source files assemble unchanged |
+| FR32 | Epic 13 | `INCLUDE <filename>` |
+| FR33 | Epic 13 | `INCLUDE-FILE` |
+| FR34 | Epic 13 | `INCLUDED` |
+| FR35 | Epic 13 | `OPEN-FILE` with access-mode argument |
+| FR36 | Epic 13 | `CREATE-FILE` |
+| FR37 | Epic 13 | `DELETE-FILE` |
+| FR38 | Epic 13 | `READ-FILE` |
+| FR39 | Epic 13 | `WRITE-FILE` |
+| FR40 | Epic 13 | `FILE-POSITION`/`REPOSITION-FILE` |
+| FR41 | Epic 13 | `FILE-SIZE` |
+| FR42 | Epic 13 | `CLOSE-FILE` |
+| FR43 | Epic 13 | File-operation errors raise THROW |
+| FR44 | Epic 13 | Drives A: and B: are equivalent to `INCLUDE`/file ops |
+| FR45 | Epic 13 | Fresh boot: `ASSEMBLER` wordlist empty |
+| FR46 | Epic 13 | First `CODE` triggers `ASSEMBLER.FTH` load |
+| FR46a | Epic 13 | Path resolved via `ASSEMBLER-PATH` or current drive |
+| FR46b | Epic 13 | User override via `ASSEMBLER-PATH!` |
+| FR47 | Epic 13 | Lazy-load transparent to user code |
+| FR48 | Epic 13 | No reload on subsequent `CODE` in same session |
+| FR49 | Epic 13 | Load failure raises descriptive THROW including attempted path |
+| FR50 | Cross-epic regression AC | Phase-1 behavioural compatibility (enforced on every epic's regression story) |
+| FR51 | Cross-epic regression AC | Phase-1 REPL-piped test scripts continue to pass |
+| FR52 | Cross-epic regression AC | Unprefixed `<BASEnum>` numeric-literal form preserved |
 
 ## Epic List
 
-### Epic 1: Execution Engine
-Build the foundational execution engine — project scaffolding, toolchain, inner interpreter, and all CODE primitives. Testable via hardcoded threaded code sequences under iz-cpm. User can build the project, produce a .COM binary, and verify correct execution of primitives.
-**FRs covered:** FR8, FR17, FR19, FR20, FR21, FR22, FR23, FR24, FR25, FR26, FR31, FR32, FR41, FR42, FR43
+### Epic 9: Numeric Literal Prefixes
+Users can enter decimal / hex / binary / character literals using Forth 2014 §3.4.1.3 prefixes (`#`, `$`, `%`, `'c'`) plus the antforth `0x` extension — everywhere numbers are parsed (REPL, colon bodies, assembler source), case-insensitive, with optional sign, without mutating `BASE`. Delivers Raj's first-hour "0xFF just works" moment. Standalone release as antforth 1.9.
+**FRs covered:** FR1, FR2, FR3, FR4, FR5, FR6, FR7, FR8, FR9
 
-### Epic 2: Interactive REPL
-Add the outer interpreter to make the system interactive. User can type expressions at an `ok` prompt, perform arithmetic, inspect the stack, and see results — with graceful error handling for undefined words and stack underflow.
-**FRs covered:** FR1, FR2, FR3, FR4, FR5, FR16, FR18, FR33, FR34, FR35, FR36, FR44, FR45, FR46, FR48
+### Epic 10: Double-Cell Arithmetic, Pictured Output & 100% Core Compliance
+Users can do double-precision signed/unsigned arithmetic, manipulate double-cell stack values, build formatted numeric output via the pictured-output wordset, and rely on 100% of the ANS Forth 1994 Core wordset behaving per the standard (baseline 86% → 100%). `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` reimplemented on pictured-output foundation. Drives the headline "100% ANS Core compliant" release claim. Standalone release as antforth 1.10.
+**FRs covered:** FR10, FR11, FR12, FR13, FR14, FR15
 
-### Epic 3: Language Extension
-Add the compiler and control flow. User can define new words (colon definitions, variables, constants, CREATE/DOES>), use conditionals and loops, and build layered abstractions — the self-extending language moment.
-**FRs covered:** FR6, FR7, FR9, FR11, FR12, FR13, FR14, FR20 (partial: NEGATE, ABS, MIN, MAX), FR27, FR28, FR29, FR30, FR37, FR47
+### Epic 11: Exception Subsystem & Internal Error Migration
+Users can catch errors with `CATCH`/`THROW`, receive standard ANS THROW codes, and keep their REPL session alive across any error; every internal error path in the interpreter, compiler, and primitives is migrated from `ABORT` to `THROW` (word-by-word per E11-D3); `ABORT`/`ABORT"` become standard wrappers for `-1 THROW`/`-2 THROW`. A migration-inventory story at the front of the epic makes the crawl scope visible before the word-by-word work begins. Delivers Mo's "catch a bug without losing the session" moment. Standalone release as antforth 1.11.
+**FRs covered:** FR16, FR17, FR18, FR19, FR20, FR21, FR22
 
-### Epic 4: Built-in Z80 Assembler
-Add the reverse-polish Z80 assembler with labels and data definition support. User can define CODE words from within Forth, writing performance-critical routines at the machine level with proper labels (including forward references), data definitions, and the full Z80 instruction set.
-**FRs covered:** FR10, FR38, FR39, FR40
+### Epic 12: Multi-Vocabulary Search-Order & ASSEMBLER Wordlist
+Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. `ASSEMBLER.FTH` authorship is a named story with an ≤ 8 KB soft size budget (Architecture Finding 3) and a hand-migration fallback path (PRD risk table). Produces the examples/ASSEMBLER.FTH artefact deployed alongside `ANTFORTH.COM`. Standalone release as antforth 1.12.
+**FRs covered:** FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR31
 
-### Epic 5: System Maturity & Compliance
-Z80 assembler completeness audit, comment words for interactive usability, MARKER for dictionary snapshot/restore, and ANS Forth Core word compliance audit. System is verified, documented, and ready for community sharing.
-**FRs covered:** FR15
+### Epic 13: File-Access with Lazy-Load Capstone
+Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Capstone: a fresh boot starts with the `ASSEMBLER` wordlist empty, and the first `CODE` transparently loads `ASSEMBLER.FTH` from the resolved path (`ASSEMBLER-PATH` override or current drive via BDOS fn 25). Exercises every previous epic in one coherent demo. Shipping this tags **antforth 2.0**.
+**FRs covered:** FR32, FR33, FR34, FR35, FR36, FR37, FR38, FR39, FR40, FR41, FR42, FR43, FR44, FR45, FR46, FR46a, FR46b, FR47, FR48, FR49
 
-## Epic 1: Execution Engine
+### Phase-wide regression constraint (not a standalone epic)
+FR50, FR51, FR52 — enforced as cross-cutting acceptance criteria on every epic's regression story per NFR10 and the per-epic benchmark gate (CCD-4). No dedicated "regression epic" — each epic owns its own regression passage.
 
-Build the foundational execution engine — project scaffolding, toolchain, inner interpreter, and all CODE primitives. Testable via hardcoded threaded code sequences under iz-cpm.
+### Implementation Sequence (locked)
+Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13, per Architecture §Decision Impact Analysis. Dependencies: CCD-1 prerequisite to Epic 11 and Epic 13; E11-D1 prerequisite to E13-D2; E12-D1 prerequisite to E13-D5; E12's ASSEMBLER.FTH artefact prerequisite to Epic 13 capstone. Each epic independently shippable as an `antforth 1.x` release per NFR19.
 
-### Story 1.1: Project Scaffolding & Build Toolchain
+## Epic 9: Numeric Literal Prefixes
 
-As a developer,
-I want a complete project structure with build toolchain,
-So that I can assemble Z80 source into a CP/M .COM binary and test it under emulation.
+Users can enter decimal / hex / binary / character literals using Forth 2014 §3.4.1.3 prefixes (`#`, `$`, `%`, `'c'`) plus the antforth `0x` extension — everywhere numbers are parsed (REPL, colon bodies, assembler source), case-insensitive, with optional sign, without mutating `BASE`. Delivers Raj's first-hour "0xFF just works" moment. Shippable as antforth 1.9.
 
-**Acceptance Criteria:**
+### Story 9.1: Numeric-prefix recogniser scaffold + `#` decimal prefix
 
-**Given** a fresh clone of the repository
-**When** I run `make`
-**Then** sjasmplus assembles `src/antforth.asm` into `build/antforth.com`
-**And** the .COM binary entry point is at 0x0100 per CP/M convention
-
-**Given** the assembled .COM binary
-**When** I run it under iz-cpm
-**Then** it exits cleanly back to CP/M (BYE via BDOS function 0)
-
-**Given** the project directory
-**When** I inspect the structure
-**Then** all source files from the architecture spec exist (`constants.asm`, `macros.asm`, `structures.asm`, `antforth.asm`, etc.)
-**And** `constants.asm` defines memory layout equates (TPA start, stack bases, TIB address, HASH_BUCKETS, BDOS_ENTRY)
-**And** `macros.asm` defines NEXT, DOCOL, EXIT, DEFCODE, DEFWORD, DEFIMMED, BDOS_SAVE, BDOS_RESTORE macros
-**And** `.gitignore` excludes `build/`
-
-**Given** a source file change
-**When** I run `make` again
-**Then** only changed files trigger reassembly (incremental build)
-
-### Story 1.2: Inner Interpreter & Threading
-
-As a developer,
-I want a working direct-threaded inner interpreter,
-So that I can execute threaded code sequences and verify the core execution model.
+As a Forth user,
+I want to enter decimal integer literals using the `#` prefix regardless of the current `BASE`,
+So that I can write decimal constants in source or at the REPL without a `DECIMAL` mode toggle.
 
 **Acceptance Criteria:**
 
-**Given** the .COM binary loads under iz-cpm
-**When** the cold start protocol runs
-**Then** SP is set to parameter stack base (top of TPA, below BDOS), IX to return stack base, IY to user variable area, STATE to 0, BASE to 10, HERE to end of kernel, and TIB/>IN to 0
+**Given** a fresh antforth REPL in any `BASE`
+**When** I type `#42 .`
+**Then** the output is `42 ok` and `BASE` is unchanged after the operation.
 
-**Given** a hardcoded thread `LIT 42, LIT 10, EXECUTE(BYE)`
-**When** the inner interpreter runs it
-**Then** NEXT fetches the next cell via DE (IP), loads into HL (W), and jumps via `JP (HL)` to the code field
+**Given** the outer interpreter's unknown-token handler
+**When** a token beginning with `#` reaches the number path
+**Then** control is dispatched through a new `src/number_prefixes.asm` recogniser that strips the prefix and accumulates digits in a working register without writing to `BASE`.
 
-**Given** a hardcoded thread with a colon definition (DOCOL/EXIT)
-**When** the inner interpreter runs it
-**Then** DOCOL pushes IP to the return stack (IX) and sets IP to the body
-**And** EXIT pops IP from the return stack and resumes via NEXT
+**Given** an unprefixed numeric literal (e.g., `42`)
+**When** it is parsed at the REPL
+**Then** the prefix recogniser is bypassed and parsing proceeds exactly as in the pre-Epic-9 code path (FR52 preserved).
 
-**Given** a hardcoded thread with `LIT`
-**When** LIT executes
-**Then** it fetches the inline literal from the thread, pushes it to the parameter stack, and advances IP past the literal
+**Given** the kernel source
+**When** the `#` prefix is implemented
+**Then** the `w_` word-implementation carries a standards-citation comment referencing Forth 2014 §3.4.1.3 (per NFR18/CCD-3).
 
-**Given** a hardcoded thread with `BRANCH` and `?BRANCH`
-**When** BRANCH executes
-**Then** it adds the inline offset to IP (unconditional jump)
-**When** ?BRANCH executes with 0 (false) on stack
-**Then** it branches; with non-zero (true) it falls through
+**Given** the new file `src/number_prefixes.asm`
+**When** the epic proceeds to stories 9.2+
+**Then** the file contains the extensible prefix-dispatch table ready for additional prefix entries.
 
-### Story 1.3: Stack & Memory Primitives
+### Story 9.2: Hex prefixes — `$` (standard) and `0x` (antforth extension)
 
-As a developer,
-I want all stack and memory CODE primitives,
-So that I can manipulate the parameter stack, return stack, and memory in threaded code sequences.
+As a Forth user,
+I want to enter hexadecimal integer literals using either `$` (standard Forth 2014) or `0x` (antforth C-family-friendly extension),
+So that I can match my muscle memory from other languages without mode-toggling to `HEX`.
 
 **Acceptance Criteria:**
 
-**Given** a hardcoded thread exercising stack operations
-**When** DUP executes with value `x` on stack
-**Then** the stack contains `x x`
-**When** DROP executes with `x y` on stack
-**Then** the stack contains `x`
-**When** SWAP executes with `x y` on stack
-**Then** the stack contains `y x`
-**When** OVER executes with `x y` on stack
-**Then** the stack contains `x y x`
-**When** ROT executes with `x y z` on stack
-**Then** the stack contains `y z x`
-**And** PICK, ROLL, DEPTH all produce correct results per ANS spec
+**Given** any current `BASE`
+**When** I type `$ff .` or `$FF .`
+**Then** the output is `255 ok` and `BASE` is unchanged.
 
-**Given** a hardcoded thread exercising return stack operations
-**When** `>R` executes with value on parameter stack
-**Then** the value is moved to the return stack (IX)
-**When** `R>` executes
-**Then** the value is moved back to the parameter stack
-**When** `R@` executes
-**Then** the top of return stack is copied to parameter stack without removing it
+**Given** any current `BASE`
+**When** I type `0xff .` or `0xFF .` or `0XFF .`
+**Then** the output is `255 ok` and `BASE` is unchanged.
 
-**Given** a hardcoded thread exercising memory operations
-**When** `!` stores a cell value at an address and `@` fetches it
-**Then** the fetched value matches the stored value
-**When** `C!` stores a byte and `C@` fetches it
-**Then** the fetched byte matches the stored byte
-**When** `+!` adds a value to a cell at an address
-**Then** the cell contains the original value plus the added value
+**Given** the kernel source
+**When** the `0x` prefix is implemented
+**Then** its source comment explicitly flags it as `; antforth extension — C-style hex prefix` per NFR13/CCD-3; the `$` prefix cites Forth 2014 §3.4.1.3.
 
-**Given** a hardcoded thread exercising dictionary space allocation
-**When** `HERE` executes
-**Then** it pushes the current dictionary pointer
-**When** `ALLOT` allocates n bytes
-**Then** HERE advances by n
-**When** `,` (COMMA) compiles a cell and `C,` compiles a byte
-**Then** the values are stored at HERE and HERE advances accordingly
-**And** ALIGN and ALIGNED produce correctly aligned addresses
+**Given** the prefix dispatch table
+**When** a two-character prefix (`0x`) is recognised
+**Then** the dispatch correctly distinguishes `0x` from a raw digit `0` followed by a token `x…` — no ambiguity regression against the unprefixed path.
 
-**Given** a hardcoded thread exercising FILL and MOVE
-**When** FILL fills a region with a byte value
-**Then** all bytes in the region contain that value
-**When** MOVE copies a region to another address
-**Then** the destination contains an exact copy (handling overlapping regions correctly)
-
-### Story 1.4: Arithmetic, Logic & Comparison
-
-As a developer,
-I want all arithmetic, logic, and comparison CODE primitives,
-So that I can perform calculations in threaded code and verify correctness.
-
-**Acceptance Criteria:**
-
-**Given** a hardcoded thread exercising arithmetic
-**When** `+` executes with 3 and 4 on stack
-**Then** the result is 7
-**When** `-` executes with 10 and 3 on stack
-**Then** the result is 7
-**When** `*` executes with 6 and 7 on stack
-**Then** the result is 42
-**When** `/` executes with 42 and 6 on stack
-**Then** the result is 7
-**When** `MOD` executes with 10 and 3 on stack
-**Then** the result is 1
-**When** `/MOD` executes with 10 and 3 on stack
-**Then** the stack contains quotient 3 and remainder 1
-**And** all arithmetic handles signed two's complement correctly including edge cases (division by zero behaviour, MIN_INT)
-
-**Given** a hardcoded thread exercising logic
-**When** `AND` executes with 0xFF00 and 0x0FF0
-**Then** the result is 0x0F00
-**When** `OR` executes with 0xFF00 and 0x00FF
-**Then** the result is 0xFFFF
-**When** `XOR` executes with 0xFFFF and 0xFF00
-**Then** the result is 0x00FF
-**When** `INVERT` executes with 0xFF00
-**Then** the result is 0x00FF
-**When** `LSHIFT` shifts 1 left by 8
-**Then** the result is 256
-**When** `RSHIFT` shifts 256 right by 8
-**Then** the result is 1
-
-**Given** a hardcoded thread exercising comparisons
-**When** `=` compares 5 and 5
-**Then** the result is -1 (TRUE)
-**When** `<` compares 3 and 5 (signed)
-**Then** the result is -1 (TRUE)
-**When** `>` compares 5 and 3
-**Then** the result is -1 (TRUE)
-**When** `0=` tests 0
-**Then** the result is -1 (TRUE); testing non-zero gives 0 (FALSE)
-**When** `0<` tests -1
-**Then** the result is -1 (TRUE); testing 1 gives 0 (FALSE)
-**When** `U<` compares 1 and 0xFFFF (unsigned)
-**Then** the result is -1 (TRUE)
-
-### Story 1.5: Console I/O Primitives
-
-As a developer,
-I want console I/O CODE primitives,
-So that I can output characters and strings and read keyboard input via CP/M BDOS.
-
-**Acceptance Criteria:**
-
-**Given** a hardcoded thread that calls EMIT with character 65 ('A')
-**When** it runs under iz-cpm
-**Then** the character 'A' appears on the console output
-**And** BDOS_SAVE/BDOS_RESTORE macros preserve DE (IP) and BC (TOS) around the BDOS call
-
-**Given** a hardcoded thread that calls TYPE with an address and length
+**Given** the REPL-piped test script `tests/number_prefixes_tests.fth`
 **When** it runs
-**Then** the specified string is output to the console character by character
+**Then** it covers `$0`, `$FF`, `$ff`, `$1234`, `0x0`, `0xFF`, `0xFFFF` with expected outputs, and verifies `BASE` integrity before/after each case.
 
-**Given** a hardcoded thread that calls CR
+### Story 9.3: Binary `%` and character `'c'` prefixes
+
+As a Forth user,
+I want to enter binary literals via `%` and character-code literals via `'c'` using Forth 2014 syntax,
+So that I can express bit patterns and ASCII codes directly without helper words.
+
+**Acceptance Criteria:**
+
+**Given** any current `BASE`
+**When** I type `%1010 .`
+**Then** the output is `10 ok` and `BASE` is unchanged.
+
+**Given** any current `BASE`
+**When** I type `'A' .`
+**Then** the output is `65 ok` and `BASE` is unchanged.
+
+**Given** a binary literal containing non-binary digits (e.g., `%102`)
+**When** it is parsed
+**Then** it fails the number path and is reported as an undefined word via the existing error path (unchanged behaviour).
+
+**Given** a character literal with an unterminated or overly long sequence (e.g., `'ab'`)
+**When** it is parsed
+**Then** it fails the number path and is reported as an undefined word.
+
+**Given** the kernel source
+**When** `%` and `'c'` are implemented
+**Then** both carry Forth 2014 §3.4.1.3 citation comments per NFR18/CCD-3.
+
+**Given** the REPL test script
 **When** it runs
-**Then** a carriage return and line feed are output
+**Then** it covers `%0`, `%1`, `%1010`, `%11111111`, `'A'`, `'0'`, `' '`, and a failure case per prefix.
 
-**Given** a hardcoded thread that calls SPACE
+### Story 9.4: Leading `-` sign and full case-insensitivity
+
+As a Forth user,
+I want optional leading `-` sign support on all prefixed numeric literals and full case-insensitivity of prefixes and hex digits,
+So that negative constants and typographic casing don't trip up my source.
+
+**Acceptance Criteria:**
+
+**Given** any current `BASE`
+**When** I type `-#42 .`, `-$ff .`, `-%1010 .`, or `-0xFF .`
+**Then** the outputs are `-42 ok`, `-255 ok`, `-10 ok`, and `-255 ok` respectively.
+
+**Given** the `'c'` syntax
+**When** I type `-'A' .`
+**Then** the result is `-65 ok` (sign applies to the character code per FR6).
+
+**Given** a hex literal in either style (`$` or `0x`)
+**When** the digits include any mix of upper- and lower-case (e.g., `$aBcD`, `0xAbCd`)
+**Then** parsing succeeds and the value is identical regardless of case.
+
+**Given** prefix characters themselves
+**When** upper-case variants are used (`0X`, uppercase sensitivity on prefix letters)
+**Then** parsing succeeds identically to the lower-case form; non-letter prefixes (`#`, `$`, `%`) are already case-free.
+
+**Given** the REPL test script
 **When** it runs
-**Then** a single space character is output
-**And** SPACES with count n outputs n space characters
+**Then** it covers every prefix with negative variants and mixed-case variants for `$` / `0x` hex.
 
-**Given** a hardcoded thread that calls KEY
-**When** a character is available from the console
-**Then** KEY pushes the character value to the stack (via BDOS C_READ)
-
-**Given** a hardcoded thread that calls KEY?
-**When** no key is pressed
-**Then** KEY? pushes 0 (FALSE)
-**When** a key is pressed
-**Then** KEY? pushes -1 (TRUE)
-
-## Epic 2: Interactive REPL
-
-Add the outer interpreter to make the system interactive. User can type expressions at an `ok` prompt, perform arithmetic, inspect the stack, and see results — with graceful error handling.
-
-### Story 2.1: Dictionary & Hash Table
+### Story 9.5: Prefix reach — REPL, colon bodies, and assembler source
 
 As a Forth user,
-I want words stored in a searchable dictionary,
-So that the system can look up built-in words by name for execution.
+I want numeric literal prefixes to be recognised everywhere ordinary numbers are parsed — interactive REPL, compiled colon definitions, and inside `CODE` / `END-CODE` blocks,
+So that the prefix grammar is consistent across the whole system (FR8) and my session's `BASE` is never silently mutated (FR9).
 
 **Acceptance Criteria:**
 
-**Given** the cold start protocol runs
-**When** the hash table is initialised
-**Then** all 64 hash buckets are set to 0 (empty chains)
-**And** all CODE words defined via DEFCODE/DEFWORD macros in Epic 1 are linked into the hash table at assembly time
+**Given** an interactive REPL session in `HEX` mode
+**When** I type `: DECNUM #100 . ; DECNUM`
+**Then** the output is `100 ok` (decimal 100), and `BASE` remains `HEX` before and after the definition and call.
 
-**Given** a word name (e.g., "DUP")
-**When** the XOR-rotate hash function processes it
-**Then** it produces a consistent bucket index in the range 0-63
-**And** the hash is case-insensitive per ANS Forth standard
+**Given** an interactive REPL session in `DECIMAL` mode
+**When** I type `: HEXNUM $ff . ; HEXNUM`
+**Then** the output is `255 ok`, and `BASE` remains `DECIMAL`.
 
-**Given** a word name that exists in the dictionary (e.g., "SWAP")
-**When** FIND searches for it
-**Then** it returns the dictionary entry address and a flag indicating found (+1 for immediate, -1 for non-immediate)
+**Given** a `CODE` / `END-CODE` block
+**When** a prefixed literal appears in the assembler source (e.g., a byte constant `0xFF C,`)
+**Then** the prefix is recognised by the assembler source's number-parse path identically to the REPL path.
 
-**Given** a word name that does NOT exist in the dictionary
-**When** FIND searches for it
-**Then** it returns the original string address and 0 (not found)
+**Given** any prefix parse in either interpret or compile state
+**When** the parse completes (success or failure)
+**Then** `BASE` holds the same value it held immediately before the parse began (FR9, NFR2-adjacent integrity check).
 
-**Given** multiple words hashing to the same bucket
-**When** FIND searches for any of them
-**Then** it traverses the hash-link chain and finds the correct entry
-**And** lookup time remains responsive due to the 64-bucket distribution
+**Given** the REPL test script
+**When** it runs
+**Then** it includes cases for each parse context (interactive, colon body, `CODE` block) with before/after `BASE` snapshots asserted equal.
 
-### Story 2.2: Outer Interpreter & REPL Loop
+### Story 9.6: Epic 9 benchmark, standards citation audit, and regression gate (CCD-4)
 
-As a Forth user,
-I want to type expressions at a prompt and see them execute,
-So that I can interact with the system in real time.
+As an antforth maintainer,
+I want Epic 9 to close with explicit benchmark measurements, a standards-citation audit, and a full regression pass on the Phase-1 test suite,
+So that NFR1 (prefix overhead), NFR5 (ROM delta), NFR10 (regression guarantee), NFR12 (spec conformance), NFR18 (citation discipline), and FR50–52 (backward compatibility) are verified before the epic is marked done and `antforth 1.9` can be tagged.
 
 **Acceptance Criteria:**
 
-**Given** antforth boots on iz-cpm or MicroBeast
-**When** the cold start completes and QUIT enters the outer interpreter loop
-**Then** the system displays the `ok` prompt and waits for input
+**Given** the pre-Epic-9 baseline cycle counts for the unprefixed parse path
+**When** the Epic-9 benchmark thread runs on the emulator against the same inputs
+**Then** the unprefixed parse path's cycle count is unchanged within noise (≤ ~1% drift) — unprefixed hot path untouched per E9-D1.
 
-**Given** the system is at the `ok` prompt
-**When** the user types a line of text and presses Enter
-**Then** ACCEPT fills the TIB via BDOS C_READSTR and sets >IN to 0
+**Given** the prefixed parse path cycle measurement
+**When** a representative prefix (e.g., `#42`) is benchmarked against an equivalent unprefixed literal
+**Then** the delta is **≤ 20 Z80 cycles** per NFR1 — recorded in the epic's benchmark notes.
 
-**Given** input text in the TIB
-**When** WORD parses the next whitespace-delimited token
-**Then** it advances >IN past the token and stores the counted string at HERE
+**Given** the Epic-9 kernel ROM size
+**When** measured against the post-Epic-8 baseline
+**Then** the delta is recorded (contribution toward NFR5 net-negative target; an *increase* is permitted for a single epic as long as later epics can recover it).
 
-**Given** a parsed token that matches a dictionary word (e.g., "DUP")
-**When** INTERPRET processes it in interpret mode (STATE=0)
-**Then** the word is executed immediately
+**Given** the full Phase-1 REPL-piped test suite (`tests/core_tests.fth` + all Epic 1–8 tests)
+**When** run against the Epic-9 binary
+**Then** every test passes — zero regressions per NFR10 / FR51.
 
-**Given** a parsed token that does NOT match a dictionary word
-**When** INTERPRET attempts number conversion via >NUMBER
-**Then** if the token is a valid number in the current BASE, it is pushed to the parameter stack
-**And** if the token is neither a word nor a valid number, an error is raised
+**Given** an unprefixed numeric literal like `42` in any `BASE`
+**When** parsed under the Epic-9 binary
+**Then** behaviour is bit-identical to the post-Epic-8 baseline — FR52 verified by dedicated regression test.
 
-**Given** the user types `2 3 + .`
-**When** the line is interpreted
-**Then** 2 and 3 are pushed to the stack, `+` adds them, `.` prints `5`, and `ok` is displayed on the next prompt
+**Given** every word added in `src/number_prefixes.asm`
+**When** audited by a reviewer
+**Then** each standard-derived word carries a Forth 2014 §3.4.1.3 citation; the `0x` extension carries the `; antforth extension` flag — NFR18 / CCD-3 compliance verified.
 
-**Given** all tokens on a line have been processed
-**When** INTERPRET reaches the end of the input
-**Then** `ok` is printed (in interpret mode) and the system waits for the next line
+**Given** a real-MicroBeast-hardware smoke test
+**When** `tests/number_prefixes_tests.fth` is piped into the `.COM` on real hardware
+**Then** it passes — PRD MVP rule satisfied; `antforth 1.9` release can be tagged.
 
-### Story 2.3: Number Formatting & Stack Inspection
+## Epic 10: Double-Cell Arithmetic, Pictured Output & 100% Core Compliance
 
-As a Forth user,
-I want to display numbers and inspect the stack,
-So that I can see the results of my computations and debug my work.
+Users can do double-precision signed/unsigned arithmetic, manipulate double-cell stack values, build formatted numeric output via the pictured-output wordset, and rely on 100% of the ANS Forth 1994 Core wordset behaving per the standard (baseline 86% → 100%). `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` are reimplemented on the pictured-output foundation. Drives the headline "100% ANS Core compliant" release claim. Shippable as antforth 1.10.
 
-**Acceptance Criteria:**
+### Story 10.1: ANS Core compliance gap survey + implementation plan
 
-**Given** the value 42 on the stack
-**When** `.` (dot) executes
-**Then** `42 ` is printed to the console (number followed by a space) using the current BASE
-
-**Given** the unsigned value 65535 on the stack
-**When** `U.` executes
-**Then** `65535 ` is printed (unsigned interpretation)
-
-**Given** the value 42 on the stack and a field width of 6
-**When** `.R` executes
-**Then** `    42` is printed (right-justified in 6 characters)
-
-**Given** the stack contains values 1, 2, 3 (3 on top)
-**When** `.S` executes
-**Then** the output shows the stack depth and contents (e.g., `<3> 1 2 3`) without consuming the stack
-
-**Given** the system is in decimal mode (default)
-**When** the user types `HEX`
-**Then** BASE is set to 16 and subsequent number I/O uses hexadecimal
-**When** the user types `DECIMAL`
-**Then** BASE is set to 10 and subsequent number I/O uses decimal
-
-**Given** BASE is set to 16
-**When** the user types `FF .`
-**Then** `255 ` is printed (interpreting FF as hex, displaying in current base)
-
-### Story 2.4: Error Handling & Recovery
-
-As a Forth user,
-I want clear error messages and graceful recovery,
-So that mistakes don't crash the system and I can continue working.
+As an antforth maintainer,
+I want a systematic survey of the remaining ~14% of the ANS Forth 1994 Core wordset not yet implemented,
+So that Epic 10's implementation stories are driven by an authoritative, cross-referenced inventory rather than partial memory (per `feedback_systematic_reference_check`).
 
 **Acceptance Criteria:**
 
-**Given** the user types an undefined word (e.g., `FOO`)
-**When** INTERPRET fails to find it in the dictionary and it's not a valid number
-**Then** the system prints `FOO ?` and calls ABORT
-**And** ABORT resets the parameter stack (SP to initial value) and falls through to QUIT
-**And** QUIT resets the return stack (IX to initial value), sets STATE to interpret, and displays `ok`
-
-**Given** the user executes a word that causes stack underflow (e.g., `+` with empty stack)
-**When** the underflow is detected
-**Then** the system prints `? Stack underflow` and calls ABORT
-**And** the system returns to the `ok` prompt ready for input
-
-**Given** an error occurs during any operation
-**When** ABORT executes
-**Then** only SP is reset (not a full cold start — hash table, HERE, dictionary remain intact)
-**And** any values the user had on the stack are lost (expected ABORT behaviour)
-
-**Given** the user types a line with mixed valid and invalid tokens (e.g., `2 3 + BADWORD`)
-**When** the invalid token is reached
-**Then** the error is reported for that specific token
-**And** earlier operations on that line have already executed (standard Forth behaviour — no line-level transaction)
-
-**Given** repeated errors
-**When** the user makes multiple consecutive mistakes
-**Then** the system recovers cleanly each time without memory leaks, dictionary corruption, or stack residue
-
-## Epic 3: Language Extension
-
-Add the compiler and control flow. User can define new words, use conditionals and loops, and build layered abstractions — the self-extending language moment.
-
-### Story 3.0: Test Thread Modularisation
-
-As a developer,
-I want the monolithic test thread broken into multiple smaller independent test groups,
-So that a failure in one group doesn't block all subsequent tests and test maintenance is manageable.
-
-**Acceptance Criteria:**
-
-**Given** the current single test_thread in antforth.asm with 62+ sequential test characters
-**When** the test infrastructure is modularised
-**Then** tests are split into logical groups (e.g., per-module or per-epic)
-**And** each group can fail independently without blocking others
-**And** `make test` still runs all groups and reports pass/fail
-**And** all existing tests continue to pass
-
-**Given** the REPL test infrastructure from Epic 2
-**When** new tests are considered
-**Then** REPL-piped Forth scripts are the preferred approach for new word testing going forward
-
-### Story 3.1: Colon Definitions & Compiler
-
-As a Forth user,
-I want to define new words using colon definitions,
-So that I can extend the language and build abstractions.
-
-**Acceptance Criteria:**
-
-**Given** the user types `: SQUARE DUP * ;`
-**When** the definition completes
-**Then** SQUARE is added to the dictionary and `ok` is displayed
-**And** typing `7 SQUARE .` outputs `49`
-
-**Given** `:` is executed
-**When** the compiler begins a new definition
-**Then** STATE is set to compile mode, HERE is saved for error recovery, and the SMUDGE flag is set on the new header (hiding it from FIND during compilation)
-
-**Given** the system is in compile mode
-**When** the user types a known word (e.g., `DUP`)
-**Then** the word's execution token is compiled into the definition (appended as a cell at HERE)
-**And** when the user types a number (e.g., `42`)
-**Then** `LIT` followed by the number value is compiled into the definition
-
-**Given** `;` is executed
-**When** the definition completes successfully
-**Then** `EXIT` is compiled, the SMUDGE flag is cleared (making the word findable), and STATE is set back to interpret mode
-
-**Given** the user types `[` during compilation
-**When** it executes
-**Then** STATE switches to interpret mode temporarily
-**And** when `]` is typed, STATE returns to compile mode
-
-**Given** a compilation error occurs (e.g., undefined word inside a definition)
-**When** the error is detected
-**Then** HERE is restored to the saved value (discarding the partial definition), the SMUDGE flag entry is removed from the hash chain, and ABORT is called
-**And** the dictionary remains consistent with no residual partial entries
-
-**Given** the user defines `: CUBE DUP SQUARE * ;` (using a previously defined word)
-**When** CUBE is called with `3 CUBE .`
-**Then** the output is `27` (nested colon definitions work correctly)
-
-**Given** the compiler is working
-**When** the Forth-defined arithmetic words are loaded (NEGATE, ABS, MIN, MAX)
-**Then** `5 NEGATE .` outputs `-5` and `-3 NEGATE .` outputs `3`
-**And** `-7 ABS .` outputs `7` and `7 ABS .` outputs `7`
-**And** `3 5 MIN .` outputs `3` and `3 5 MAX .` outputs `5`
-
-### Story 3.2: Variables, Constants & CREATE/DOES>
-
-As a Forth user,
-I want to create variables, constants, and custom defining words,
-So that I can manage data and build higher-level data structures.
-
-**Acceptance Criteria:**
-
-**Given** the user types `VARIABLE COUNTER`
-**When** the definition completes
-**Then** COUNTER is added to the dictionary with `JP DOVAR` code field and a 2-byte body initialised to 0
-**And** typing `COUNTER` pushes the address of the body to the stack
-**And** `42 COUNTER !` stores 42, and `COUNTER @` retrieves 42
-
-**Given** the user types `99 CONSTANT LIMIT`
-**When** the definition completes
-**Then** LIMIT is added to the dictionary with `JP DOCON` code field and the value 99 in the body
-**And** typing `LIMIT .` outputs `99`
-
-**Given** the user types `CREATE BUFFER 100 ALLOT`
-**When** the definition completes
-**Then** BUFFER is added to the dictionary with `JP DOVAR` code field
-**And** typing `BUFFER` pushes the address of the 100-byte allocated region
-
-**Given** the user defines a custom defining word using CREATE/DOES>
-**When** e.g., `: ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ;`
-**Then** `10 ARRAY MYDATA` creates a 10-cell array
-**And** `42 3 MYDATA !` stores 42 at index 3
-**And** `3 MYDATA @ .` outputs `42`
-
-**Given** DOES> executes within a defining word
-**When** a child word created by that defining word is called
-**Then** DOES> switches from CREATE-time behaviour to run-time behaviour, pushing the body address and executing the DOES> code
-
-### Story 3.3: Conditionals & Indefinite Loops
-
-As a Forth user,
-I want conditional branching and indefinite loops in my definitions,
-So that I can write logic that makes decisions and repeats.
-
-**Acceptance Criteria:**
-
-**Given** a definition using IF/THEN: `: POS? DUP 0> IF ." POSITIVE" THEN ;`
-**When** `5 POS?` is executed
-**Then** `POSITIVE` is printed
-**When** `-3 POS?` is executed
-**Then** nothing is printed (the IF branch is skipped)
-
-**Given** a definition using IF/ELSE/THEN: `: SIGN DUP 0< IF ." NEG" ELSE ." POS" THEN ;`
-**When** `-1 SIGN` is executed
-**Then** `NEG` is printed
-**When** `1 SIGN` is executed
-**Then** `POS` is printed
-
-**Given** a definition using BEGIN/UNTIL: `: COUNTDOWN BEGIN DUP . 1 - DUP 0= UNTIL DROP ;`
-**When** `5 COUNTDOWN` is executed
-**Then** `5 4 3 2 1` is printed (loop runs until condition is true)
-
-**Given** a definition using BEGIN/WHILE/REPEAT: `: COUNTUP BEGIN DUP 5 < WHILE DUP . 1 + REPEAT DROP ;`
-**When** `1 COUNTUP` is executed
-**Then** `1 2 3 4` is printed (loop runs while condition is true)
-
-**Given** nested conditionals (IF inside IF)
-**When** executed
-**Then** each IF matches its correct THEN and branches resolve correctly
-
-**Given** IF, ELSE, THEN, BEGIN, WHILE, REPEAT, UNTIL are all IMMEDIATE words
-**When** used outside of a colon definition (in interpret mode)
-**Then** a compile-only error is reported (e.g., `IF ? compile only`)
-
-### Story 3.4: Counted Loops & RECURSE
-
-As a Forth user,
-I want counted loops and recursion in my definitions,
-So that I can iterate over ranges and write recursive algorithms.
-
-**Acceptance Criteria:**
-
-**Given** a definition using DO/LOOP: `: TENS 10 0 DO I . LOOP ;`
-**When** `TENS` is executed
-**Then** `0 1 2 3 4 5 6 7 8 9` is printed
-
-**Given** a definition using +LOOP: `: EVENS 10 0 DO I . 2 +LOOP ;`
-**When** `EVENS` is executed
-**Then** `0 2 4 6 8` is printed
-
-**Given** a definition using LEAVE: `: FIND5 10 0 DO I 5 = IF I . LEAVE THEN LOOP ;`
-**When** `FIND5` is executed
-**Then** `5` is printed and the loop exits early
-
-**Given** a definition using I (inner loop index)
-**When** the loop body executes
-**Then** I pushes the current loop index to the parameter stack
-
-**Given** nested DO/LOOPs using I and J
-**When** the inner loop body executes
-**Then** I returns the inner loop index and J returns the outer loop index
-
-**Given** a definition using RECURSE: `: FACTORIAL DUP 1 > IF DUP 1 - RECURSE * THEN ;`
-**When** `5 FACTORIAL .` is executed
-**Then** `120` is printed
-
-**Given** DO, LOOP, +LOOP, LEAVE are IMMEDIATE words
-**When** used outside of a colon definition
-**Then** a compile-only error is reported
-
-### Story 3.5: IMMEDIATE, POSTPONE, String Literals & WORDS
-
-As a Forth user,
-I want to create compile-time words, use string literals, and browse the dictionary,
-So that I can write sophisticated macros and use strings in my programs.
-
-**Acceptance Criteria:**
-
-**Given** the user defines a word and then types `IMMEDIATE`
-**When** the most recent definition is marked IMMEDIATE
-**Then** the IMMEDIATE flag is set in the dictionary entry's count+flags byte
-**And** when that word is encountered during compilation, it executes immediately instead of being compiled
-
-**Given** a definition that uses POSTPONE with a non-IMMEDIATE word: `: COMP-DUP POSTPONE DUP ; IMMEDIATE`
-**When** `COMP-DUP` is used inside another definition
-**Then** DUP is compiled into that definition (POSTPONE defers the compilation)
-
-**Given** a definition that uses POSTPONE with an IMMEDIATE word
-**When** POSTPONE is used
-**Then** the compilation semantics (not execution semantics) of the IMMEDIATE word are compiled
-
-**Given** a definition using S": `: GREET S" Hello" TYPE ;`
-**When** `GREET` is executed
-**Then** `Hello` is printed
-**And** S" compiles an inline counted string (runtime word + count byte + string bytes) into the definition
-
-**Given** a definition using .": `: HI ." Hello World" ;`
-**When** `HI` is executed
-**Then** `Hello World` is printed
-
-**Given** S" used in interpret mode
-**When** `S" test" TYPE` is typed at the REPL
-**Then** `test` is printed (S" works in both interpret and compile mode per ANS)
-
-**Given** the user types `WORDS`
-**When** WORDS executes
-**Then** all words in the dictionary are listed to the console (traversing all 64 hash buckets)
-
-## Epic 4: Built-in Z80 Assembler
-
-Add the reverse-polish Z80 assembler with labels and data definition support. User can define CODE words from within Forth, writing performance-critical routines at the machine level with proper labels (including forward references), data definitions, and the full Z80 instruction set.
-
-### Story 4.0: Startup Banner
-
-As a Forth user,
-I want to see a startup banner when the system boots,
-So that I know which version I'm running and how much memory is available.
-
-**Acceptance Criteria:**
-
-**Given** the user starts antforth (either on iz-cpm or MicroBeast hardware)
-**When** the cold start completes
-**Then** a banner is displayed before the first `ok` prompt:
-```
-AntForth v1.00 (c) ant.org 2026
-MicroBeast - xxxx bytes available
-```
-**And** `xxxx` shows the actual number of free bytes (dictionary space between HERE and the stack area)
-
-### Story 4.1: CODE Word Framework & Basic Instructions
-
-As a Forth user,
-I want to define CODE words with basic Z80 assembly,
-So that I can write performance-critical primitives from within Forth.
-
-**Acceptance Criteria:**
-
-**Given** the user types `CODE MYDUP`
-**When** CODE executes
-**Then** a new dictionary entry is created with the name MYDUP
-**And** the assembler vocabulary becomes active for subsequent input
-**And** HERE points to where machine code will be assembled
-
-**Given** the user is inside a CODE definition
-**When** they type Z80 instructions in reverse-polish notation (e.g., `BC PUSH,` for `PUSH BC`)
-**Then** the correct Z80 opcode bytes are assembled at HERE and HERE advances
-
-**Given** a CODE definition with basic register-to-register loads
-**When** e.g., `B A LD,` is typed
-**Then** the correct opcode for `LD A, B` is assembled
-
-**Given** a CODE definition with 8-bit arithmetic
-**When** e.g., `B ADD,` (ADD A, B), `C SUB,` (SUB C), `D AND,` (AND D), `E OR,` (OR E), `H XOR,` (XOR H), `L CP,` (CP L) are typed
-**Then** the correct opcodes are assembled for each instruction
-
-**Given** a CODE definition with stack push/pop
-**When** e.g., `BC PUSH,`, `DE POP,` are typed
-**Then** the correct opcodes for PUSH BC and POP DE are assembled
-
-**Given** the user types `END-CODE` (or `NEXT,` followed by `END-CODE`)
-**When** the CODE definition completes
-**Then** the word is finalised in the dictionary and the assembler vocabulary is deactivated
-**And** the word is callable from Forth like any other word
-
-**Given** the user defines a working CODE word:
-```
-CODE MYDUP
-  BC PUSH,
-  NEXT,
-END-CODE
-```
-**When** `5 MYDUP . .` is executed
-**Then** `5 5` is printed (MYDUP duplicates TOS, equivalent to DUP)
-**And** the register contract is preserved (BC=TOS, DE=IP intact through NEXT)
-
-**Given** a CODE word that doesn't end with NEXT (or JP/RET equivalent)
-**When** it executes
-**Then** behaviour is undefined (this is the user's responsibility, matching standard Forth assembler conventions)
-
-### Story 4.2: Labels & Data Definition Words
-
-As a Forth user,
-I want labels (including forward references) and data definition words in the assembler,
-So that I can write readable assembly code without manually counting bytes for jump offsets, and embed data tables in CODE words.
-
-**Acceptance Criteria:**
-
-**Given** a CODE definition using a backward label
-**When** e.g., `L: LOOP-START` defines a label and `LOOP-START JR,` jumps back to it
-**Then** the correct signed displacement is calculated and assembled
-
-**Given** a CODE definition using a forward label
-**When** e.g., `SKIP JR,` references a label before it is defined, and `L: SKIP` later defines it
-**Then** the forward reference is resolved and the correct displacement is patched in
-
-**Given** a CODE definition using `DB`
-**When** e.g., `0x42 DB,` is typed
-**Then** the byte 0x42 is assembled at HERE and HERE advances by 1
-
-**Given** a CODE definition using `DW`
-**When** e.g., `0x1234 DW,` is typed
-**Then** the 16-bit value 0x1234 is assembled at HERE (little-endian) and HERE advances by 2
-
-**Given** a CODE definition using `DS`
-**When** e.g., `10 DS,` is typed
-**Then** 10 bytes of space are reserved at HERE (filled with 0) and HERE advances by 10
-
-**Given** the user uses `EQU` to define a named constant
-**When** e.g., `0x42 EQU PORT-A`
-**Then** PORT-A is available as a constant value in subsequent assembler expressions
-
-### Story 4.3: Basic Z80 Opcodes
-
-As a Forth user,
-I want the core Z80 instruction set available in the assembler,
-So that I can write most common CODE words with loads, arithmetic, jumps, and calls.
-
-**Acceptance Criteria:**
-
-**Given** a CODE definition using 16-bit loads
-**When** e.g., `0x1234 # BC LD,` (LD BC, 0x1234) is typed
-**Then** the correct 3-byte opcode sequence is assembled
-
-**Given** a CODE definition using indirect addressing
-**When** e.g., `(HL) A LD,` (LD A, (HL)), `A (HL) LD,` (LD (HL), A) are typed
-**Then** the correct opcodes for indirect memory access are assembled
-
-**Given** a CODE definition using jumps and calls
-**When** e.g., `0x1234 JP,`, `NZ 0x1234 JP,` (conditional JP NZ), `0x1234 CALL,`, `RET,`, `Z RET,` (conditional RET) are typed
-**Then** the correct opcode sequences are assembled for each
-
-**Given** a CODE definition using relative jumps
-**When** e.g., forward and backward `JR,` instructions are used with labels
-**Then** the correct signed displacement byte is calculated and assembled
-
-**Given** a CODE definition using immediate operands
-**When** `0x42 # A LD,` (LD A, 0x42), `0x0F # AND,` (AND 0x0F) are typed
-**Then** the correct opcodes with inline immediate bytes are assembled
-
-**Given** the user writes a non-trivial CODE word for hardware interaction:
-```
-CODE LED!  ( char port -- )
-  BC PUSH,          \ save TOS (port)
-  SP 2 +D L LD,     \ get char from stack
-  C A LD,            \ port number to A
-  A C LD,            \ port to C for OUT
-  L A LD,            \ char to A
-  (C) A OUT,         \ output to port
-  BC POP,            \ restore stack
-  BC POP,            \ pop to new TOS
-  NEXT,
-END-CODE
-```
-**When** `65 0x42 LED!` is executed
-**Then** the byte 65 is written to I/O port 0x42
-
-**Given** the user is in a normal Forth session (not inside CODE)
-**When** they use assembler words alongside Forth words
-**Then** the assembler vocabulary is only active inside CODE/END-CODE and does not interfere with normal Forth interpretation
-
-### Story 4.3.5: Stack Tag Encoding Refactor
-
-As an antforth assembler user,
-I want operand type errors (like `A 0 LD,` instead of `A 0 # LD,`) to be caught at assemble time with a clear message,
-So that I cannot silently produce machine code that does the wrong thing.
-
-**Background:**
-The original tag encoding (story 4.1/4.2/4.3) used three sentinel high bytes
-(`0xFF` label, `0xFE` condition, `0xFD` immediate) and tagged 8-bit registers as
-`0x00nn`. This made bare integer 0 indistinguishable from register B and burned
-~768 reserved cell values. This story unifies the encoding and adds typo
-detection without changing user-facing syntax.
-
-**Acceptance Criteria:**
-
-**Given** any tagged operand (register, condition, label, immediate marker,
-addressing mode) on the data stack
-**When** examined
-**Then** the high byte of the cell is exactly `0xFF` and the low byte holds a
-3-bit class field (top) and a 5-bit index field (bottom)
-
-**Given** an operand-consuming assembler word receives an operand
-**When** the operand cell's high byte is not `0xFF`
-**Then** the word raises a clear error (e.g. `expected tagged operand, got
-bare integer N — did you mean #N ?`) and does not assemble any bytes
-
-**Given** an immediate operand
-**When** `42 # A LD,` is typed
-**Then** the stack picture during `LD,` execution is `[..., 42, <imm-tag>, A-tag]`
-(two cells for the immediate: marker cell with class=immediate, value cell
-directly below) and the assembled bytes are `0x3E 0x2A`
-
-**Given** a 16-bit immediate operand
-**When** `0x1234 # BC LD,` is typed
-**Then** the assembled bytes are `0x01 0x34 0x12` (the value cell holds the
-full 16-bit value, no longer bottled into the low byte of a sentinel)
-
-**Given** the user types `A 0 LD,` (forgetting the `#`)
-**When** `LD,` examines its operands
-**Then** an error is raised pointing at the bare integer 0, and no bytes are
-assembled
-
-**Given** the existing story 4.1, 4.2, and 4.3 test suite
-**When** re-run after the encoding refactor
-**Then** every existing test continues to pass (modulo migration of any test
-that hand-constructs `0xFD`/`0xFE` literal sentinels)
-
-**Given** new REPL-piped test scripts covering the typo-detection path
-**When** run against the refactored assembler
-**Then** all "forgot the #" cases produce clear errors and all "correctly
-written" cases assemble identically to before
-
-**Given** the architecture document
-**When** updated as part of this story
-**Then** it contains a new subsection describing the tag-cell format
-(`0xFF <class:3><index:5>`), the class table, the two-cell layout for
-immediates and displacements, and a worked example showing `LD A, #42` and
-`LD A, B` side by side
-
-### Story 4.4: Extended Z80 Opcodes
-
-As a Forth user,
-I want the extended Z80 instruction set (CB/DD/FD-prefixed) available in the assembler,
-So that I can use bit operations, rotates/shifts, and IX/IY indexed addressing in CODE words.
-
-**Acceptance Criteria:**
-
-**Given** a CODE definition using IX/IY indexed addressing with displacement
-**When** e.g., `(IX) 5 +D A LD,` (LD A, (IX+5)) is typed
-**Then** the correct DD-prefixed opcode with displacement byte is assembled
-
-**Given** a CODE definition using bit operations
-**When** `3 # A BIT,` (BIT 3, A), `5 # B SET,` (SET 5, B), `7 # C RES,` (RES 7, C) are typed
-**Then** the correct CB-prefixed opcodes are assembled
-**And** bit numbers outside 0..7 raise a clear range error at assemble time
-
-**Given** a CODE definition using bit operations on indexed memory
-**When** e.g., `3 # (IX) 5 +D BIT,` (BIT 3, (IX+5)) is typed
-**Then** the correct DDCB-prefixed opcode sequence is assembled
-**And** the three-operand stack picture (bit-immediate + indexed-addr-tag + displacement-cell)
-is consumed correctly by `BIT,` / `SET,` / `RES,`
-
-**Given** a CODE definition using rotates and shifts
-**When** `A RLC,`, `B RRC,`, `C RL,`, `D RR,`, `E SLA,`, `H SRA,`, `L SRL,` are typed
-**Then** the correct CB-prefixed opcodes are assembled
-
-**Given** a CODE definition using I/O instructions
-**When** `(C) A IN,` (IN A, (C)), `A (C) OUT,` (OUT (C), A), `0x42 # A IN,` (IN A, (0x42)) are typed
-**Then** the correct opcodes are assembled for port I/O
-
-**Given** a CODE definition using block transfer and search instructions
-**When** `LDIR,`, `LDDR,`, `CPIR,`, `CPDR,` are typed
-**Then** the correct ED-prefixed opcodes are assembled
-
-## Epic 5: System Maturity & Compliance
-
-Z80 assembler completeness audit, comment words for interactive usability, MARKER for dictionary snapshot/restore, and ANS Forth Core word compliance audit.
-
-### Story 5.0: Z80 Instruction Set Completeness Survey
-
-As a Forth assembler user,
-I want a systematic audit of every documented Z80 opcode against the antforth assembler,
-So that I know exactly which instructions are supported and which (if any) are missing.
-
-**Acceptance Criteria:**
-
-**Given** the complete Z80 instruction set as documented in the Zilog Z80 CPU User Manual
-**When** each instruction is checked against the antforth assembler's available words
-**Then** a report is produced listing every Z80 opcode, whether it can be assembled, and the exact antforth syntax
-
-**Given** the report is complete
+**Given** the current `docs/ans-forth-core-compliance.md`
+**When** the surveyor cross-references every Core word against the current antforth dictionary
+**Then** a categorised inventory is produced — (a) double-cell family, (b) pictured-output family, (c) other single-cell gaps — with every missing Core word named, specified to its ANS §, and assigned an implementation story (10.2–10.9).
+
+**Given** the inventory
 **When** reviewed
-**Then** it covers all instruction categories: 8-bit loads, 16-bit loads, 8-bit arithmetic/logic, 16-bit arithmetic, rotates/shifts, bit operations, jumps, calls/returns, I/O, block transfers, exchange, and miscellaneous (ED-prefix)
+**Then** every Core word is either marked "present" (with its source location) or "gap — assigned to Story 10.x"; nothing is left as "unsure."
 
-**Given** any gaps are identified
-**When** the report is reviewed by the project lead
-**Then** each gap includes the Z80 mnemonic, opcode bytes, and a note on whether it's a deliberate omission or an oversight
+**Given** the refreshed `docs/ans-forth-core-compliance.md`
+**When** the epic starts
+**Then** the file records the pre-Epic-10 baseline coverage percentage (expected ≈ 86%) and the per-story coverage increments that will take it to 100%.
 
-**Note:** This is an audit/report story only — no implementation of missing opcodes within this story.
-
-### Story 5.0.5: Z80 Instruction Gap Closure
-
-As a Forth assembler user,
-I want every documented Z80 instruction to be assembler-supported,
-So that I never need `DB,` workarounds for standard Z80 opcodes.
-
-**Background:**
-Story 5.0's completeness survey found 27 missing instruction forms (82.9% coverage). This story closes all gaps to reach 100%.
-
-**Acceptance Criteria:**
-
-**Given** the 27 missing Z80 instruction forms identified in Story 5.0
-**When** all are implemented and tested
-**Then** the assembler supports 158/158 documented Z80 instruction forms (100% coverage)
-**And** all existing 178 REPL tests continue to pass
-**And** new REPL tests verify correct opcode bytes for every added instruction
-
-**Missing instructions to add:**
-- 12 single-byte zero-operand: NOP, HALT, DI, EI, DAA, CPL, SCF, CCF, RLCA, RRCA, RLA, RRA
-- ADC, and SBC, (8-bit with carry): register, (HL), immediate, indexed forms
-- 16-bit arithmetic: ADD HL,rr / ADC HL,rr / SBC HL,rr / ADD IX,rr / ADD IY,rr
-- Missing LD forms: LD A,(BC) / LD A,(DE) / LD (BC),A / LD (DE),A / LD A,(nn) / LD (nn),A / LD HL,(nn) / LD (nn),HL / ED 16-bit memory loads / LD IX,(nn) / LD (nn),IX / LD A,I / LD A,R / LD I,A / LD R,A
-- DJNZ, RST,
-- RLD, RRD
-
-### Story 5.1: Comment Words
+### Story 10.2: Double-cell stack foundation (`2@`, `2!`, `2DUP`, `2DROP`, `2SWAP`, `2OVER`)
 
 As a Forth user,
-I want comment words available during interactive sessions,
-So that I can annotate my code inline and write readable definitions.
+I want to push, drop, duplicate, swap, and copy double-cell values on the parameter stack using the standard `2*` wordset,
+So that I have a working stack foundation for all subsequent double-precision work.
 
 **Acceptance Criteria:**
 
-**Given** the user types `( this is a comment )` at the Forth prompt or inside a definition
-**When** `(` executes
-**Then** all text up to and including the next `)` is consumed and ignored
-**And** the closing `)` is required (missing `)` raises an error)
-**And** `(` is an IMMEDIATE word (works in both interpret and compile mode)
+**Given** E10-D1's byte-order decision (low cell on TOS, high cell below)
+**When** `2@` fetches a 32-bit value from an address
+**Then** the low cell is on top of stack and the high cell is second on stack — ANS Forth 1994 §6.1.0290 behaviour.
 
-**Given** the user types `\ this is a line comment` at the Forth prompt or inside a definition
-**When** `\` executes
-**Then** all text from `\` to the end of the current input line is consumed and ignored
-**And** `\` is an IMMEDIATE word (works in both interpret and compile mode)
+**Given** `2DUP`, `2DROP`, `2SWAP`, `2OVER`
+**When** executed against a two-cell pair
+**Then** each produces the standard ANS-specified result, preserving double-cell order integrity.
 
-**Given** comment words are used inside colon definitions
-**When** the definition is compiled and executed
-**Then** the comments have no effect on the compiled code — they are purely parse-time
+**Given** the new `src/double.asm` or modified `src/stack_ops.asm`
+**When** each word is implemented
+**Then** its source carries an ANS Forth 1994 §<section> citation per NFR18/CCD-3, and a stack-effect comment on its DEFCODE line.
 
-**Given** comment words are used inside CODE definitions
-**When** the assembler is active
-**Then** comments work identically (they consume input text, not assembled bytes)
+**Given** `tests/double_tests.fth`
+**When** run
+**Then** it verifies every double-cell stack op with known-value round-trip tests (write via `2!`, read via `2@`, confirm both cells via `2SWAP`/`2DROP` patterns).
 
-### Story 5.2: MARKER Snapshot & Restore
+### Story 10.3: Single ↔ double conversions (`S>D`, `D>S`, `>D` if applicable)
 
 As a Forth user,
-I want to snapshot the dictionary state and restore to it later,
-So that I can experiment freely knowing I can undo everything and return to a known-good state.
+I want to convert cleanly between single-cell and double-cell representations,
+So that I can feed single-cell inputs into double-precision arithmetic and extract single-cell results out.
 
 **Acceptance Criteria:**
 
-**Given** the user types `MARKER CHECKPOINT`
-**When** MARKER executes
-**Then** a new word CHECKPOINT is added to the dictionary
-**And** CHECKPOINT records the current HERE value and the current state of all 64 hash bucket head pointers
+**Given** a single-cell signed value `n` on TOS
+**When** I execute `S>D`
+**Then** the result is the sign-extended double-cell value (low cell = original, high cell = 0 if `n ≥ 0` else `-1`) per ANS §6.1.0290 behaviour.
 
-**Given** the user has created CHECKPOINT and then defines additional words (e.g., `: TEST1 ... ;`, `: TEST2 ... ;`)
-**When** the user types `CHECKPOINT`
-**Then** HERE is restored to the value saved at MARKER creation time
-**And** all 64 hash bucket head pointers are restored to their saved values
-**And** TEST1, TEST2, and CHECKPOINT itself are effectively removed from the dictionary
-**And** the memory they occupied is reclaimed (available for new definitions)
+**Given** a double-cell value whose high cell is a pure sign extension of the low cell
+**When** I execute `D>S`
+**Then** the result is the original signed single cell; when the high cell does not represent a pure sign extension, behaviour matches ANS semantics (implementation-defined truncation — documented in source).
 
-**Given** the user creates nested markers: `MARKER M1`, defines words, `MARKER M2`, defines more words
-**When** `M2` is executed
-**Then** only the state back to M2's creation is restored (M1 and words defined before M2 remain)
-**When** `M1` is then executed
-**Then** state is restored to M1's creation point (everything after M1 is removed, including M2)
+**Given** `tests/double_tests.fth`
+**When** it runs
+**Then** it covers positive, negative, and zero boundary values for every conversion; round-trip `S>D D>S` preserves value.
 
-**Given** MARKER has saved the system state
-**When** the user restores to that state
-**Then** no residual side effects remain — the system behaves identically to how it did at the moment MARKER was created
-**And** user variables (BASE, STATE) are NOT affected by MARKER restore (MARKER covers dictionary state only)
+### Story 10.4: Double-precision arithmetic — additive, sign, compare, mixed (`D+`, `D-`, `DNEGATE`, `DABS`, `D=`, `D<`, `DMAX`, `DMIN`, `M+`)
 
-**Given** the user creates a MARKER, defines words that include VARIABLE and CONSTANT definitions
-**When** the MARKER is executed to restore
-**Then** those variables and constants are removed from the dictionary along with all other definitions made after the marker
-
-### Story 5.3: ANS Forth Core Word Compliance Survey
-
-As a Forth standards enthusiast,
-I want a systematic audit of antforth against the ANS Forth Core word set,
-So that I know exactly how compliant the system is and which words (if any) are missing.
+As a Forth user,
+I want the full additive/comparison suite of ANS double-precision arithmetic words,
+So that I can do 32-bit signed and unsigned math using the standard vocabulary.
 
 **Acceptance Criteria:**
 
-**Given** the ANS Forth (DPANS94) Core word set
-**When** each required Core word is checked against the antforth dictionary
-**Then** a report is produced listing every Core word, whether antforth implements it, and any semantic differences from the standard
+**Given** each implemented word
+**When** invoked against boundary inputs (zero, max positive, max negative, equal-magnitude pair)
+**Then** results match the ANS §6.1.* spec exactly; `D=` returns standard true/false flag convention.
 
-**Given** the report is complete
-**When** reviewed
-**Then** it includes a compliance percentage and categorises any gaps as: (a) deliberately omitted, (b) oversight, or (c) partially implemented with noted differences
+**Given** `M+` (mixed single + double → double)
+**When** the single is added to the double
+**Then** the result matches the ANS §8.6.1.1830 spec including sign-extended carry propagation.
 
-**Given** any Core Extension words that antforth happens to implement
-**When** the report is produced
-**Then** these are listed as bonus coverage beyond the Core requirement
+**Given** the source
+**When** each word is implemented
+**Then** ANS Forth 1994 §<section> citations per NFR18/CCD-3 appear; stack-effect comments appear on every DEFCODE.
 
-**Note:** This is an audit/report story only — no implementation of missing words within this story.
+**Given** `tests/double_tests.fth`
+**When** it runs
+**Then** every additive/compare/sign word has a table-driven test with at least 6 inputs covering positive/negative/zero/overflow/equality/inequality.
 
-## Epic 6: Code Size Optimization
+### Story 10.5: Double multiplication (`D*`, `M*`, `UM*`)
 
-AntForth reached MVP at 15,518 bytes. Every kilobyte the compiler uses is a kilobyte less for user programs on a 64K machine. This epic trims mechanical repetition, dead code, and redundant patterns through refactoring — no feature cuts, no architectural compromises. Target: ~600-700 bytes saved (~4% of binary).
-
-### Story 6.1: BDOS Output Helpers
-
-As a system maintainer,
-I want repeated BDOS character-output patterns extracted into shared subroutines,
-So that the binary shrinks by ~160-180 bytes without changing any observable behaviour.
+As a Forth user,
+I want standard Core multiplication primitives for double-cell and mixed-precision values,
+So that I can compute 32-bit products from single- and double-cell inputs per ANS semantics.
 
 **Acceptance Criteria:**
 
-**Given** the new `bdos_putchar` subroutine in `src/io.asm`
-**When** any code calls it with E = character
-**Then** BDOS function 2 (C_WRITE) is invoked and the subroutine returns
+**Given** `M*` (signed single × signed single → signed double)
+**When** invoked
+**Then** ANS §6.1.1810 behaviour is satisfied including correct sign of the double result.
 
-**Given** all 47 inline `LD C, C_WRITE / CALL BDOS_ENTRY` sequences across 9 source files
-**When** each is replaced with `CALL bdos_putchar` (or `JP bdos_putchar` for tail-call sites)
-**Then** `make test && make test-repl` passes all regression tests with zero failures
+**Given** `UM*` (unsigned single × unsigned single → unsigned double)
+**When** invoked
+**Then** ANS §6.1.2360 behaviour is satisfied.
 
-**Given** the new `bdos_crlf` subroutine
-**When** inline CR+LF output sequences are replaced with `CALL bdos_crlf` (or `JP bdos_crlf` for tail calls)
-**Then** all tests pass
+**Given** `D*` (signed double × signed double → signed double, truncating to 32 bits)
+**When** invoked
+**Then** ANS §8.6.1.1140 behaviour is satisfied.
 
-**Given** `asm_print_str` promoted from `assembler.asm` to `io.asm` as `bdos_print_str`
-**When** inline print-string loops matching its contract (HL = string, B = length) are replaced with `CALL bdos_print_str`
-**Then** all tests pass
-**And** `asm_print_str` in assembler.asm becomes `asm_print_str EQU bdos_print_str`
+**Given** the source
+**When** the implementations are written
+**Then** they use the existing Z80 register conventions (BC-TOS discipline preserved; EXX convention followed per Epic 7/8 memory entries); citations + stack-effect comments present.
 
-**Given** `asm_print_q_crlf` promoted to `io.asm` as `bdos_print_q_crlf`
-**When** inline ` ?` + CR/LF sequences are replaced with `CALL bdos_print_q_crlf` (or `JP` for tail calls)
-**Then** all tests pass
+**Given** `tests/double_tests.fth`
+**When** it runs
+**Then** multiplications are verified by `M*` `UM*` `D*` with pairs whose expected results span: zero, one-operand zero, signed-positive, signed-negative, unsigned overflow crossing the single-cell boundary.
 
-**Given** all layers are complete
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 140 bytes smaller than the pre-story baseline (15,519 bytes)
+### Story 10.6: Double/mixed-precision division (`SM/REM`, `FM/MOD`, `UM/MOD`)
 
-### Story 6.2: Return-Stack Push/Pop Subroutines
-
-As a system maintainer,
-I want the repeated 8-byte inline return-stack push/pop patterns extracted into shared subroutines,
-So that the binary shrinks by ~245 bytes without changing any observable behaviour.
+As a Forth user,
+I want the ANS Core division primitives for double-cell dividends,
+So that I can do 32/16 → 16 remainder+quotient math in both signed (symmetric and floored) and unsigned forms.
 
 **Acceptance Criteria:**
 
-**Given** three new subroutines in `src/inner_interpreter.asm`: `rpush_de`, `rpop_de`, `rpush_bc`
-**When** each is called with the appropriate register pair
-**Then** it pushes to or pops from the return stack (IX) correctly
+**Given** `SM/REM` (symmetric division: signed double ÷ signed single → signed remainder, signed quotient)
+**When** invoked against a mixed-sign dividend/divisor pair
+**Then** ANS §6.1.2214 symmetric-division rules are satisfied (quotient rounded toward zero; remainder's sign matches dividend).
 
-**Given** all 57 inline return-stack push/pop sequences across 10 source files
-**When** each is replaced with `CALL rpush_de` / `CALL rpop_de` / `CALL rpush_bc`
-**Then** `make test && make test-repl` passes all regression tests with zero failures
+**Given** `FM/MOD` (floored division: same signature)
+**When** invoked against a mixed-sign pair
+**Then** ANS §6.1.1561 floored-division rules are satisfied (quotient rounded toward negative infinity; remainder's sign matches divisor).
 
-**Given** DOCOL and EXIT are the hottest paths in the system
-**When** return-stack subroutines are introduced
-**Then** DOCOL and EXIT retain their inline sequences (not refactored)
+**Given** `UM/MOD` (unsigned double ÷ unsigned single → unsigned remainder, unsigned quotient)
+**When** invoked
+**Then** ANS §6.1.2370 is satisfied.
 
-**Given** all replacements are complete
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 200 bytes smaller than the pre-story baseline
+**Given** division by zero on any of these primitives
+**When** invoked
+**Then** the behaviour matches the Epic-1–8 baseline (ABORT pre-Epic-11; Epic 11 will migrate this path to `THROW -10` per ANS §9.3.5).
 
-### Story 6.3: IX/IY Prefix Pair Merges
+**Given** `tests/double_tests.fth`
+**When** it runs
+**Then** division cases cover: positive/positive, positive/negative, negative/positive, negative/negative, boundary-magnitude dividends, plus the symmetric-vs-floored discrimination case required by the standard.
 
-As a system maintainer,
-I want the nine duplicated IX/IY code pairs in the assembler merged into shared handlers,
-So that the binary shrinks by ~70-90 bytes without changing any observable behaviour.
+### Story 10.7: Pictured numeric output primitives (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`)
 
-**Acceptance Criteria:**
-
-**Given** nine code pairs in `src/assembler.asm` that differ only by `0xDD` vs `0xFD` prefix
-**When** each pair is merged into a single handler that calls `asm_emit_ixiy_prefix` then a shared emit sequence
-**Then** `make test && make test-repl` passes all regression tests with zero failures
-
-**Given** all six LD-family pairs and three non-LD pairs are merged
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 60 bytes smaller than the pre-story baseline
-
-### Story 6.4: Tag Predicate Cleanup + Dead Code Removal
-
-As a system maintainer,
-I want dead code removed and remaining tag predicates refactored to share a common tail,
-So that the binary shrinks by ~11 bytes and unnecessary code is eliminated.
+As a Forth user,
+I want the ANS pictured-numeric-output wordset so I can build formatted number strings,
+So that I can author custom display formats and so the Core `.`/`U.`/`D.`/`.R` family can be rebuilt on a standards-compliant foundation.
 
 **Acceptance Criteria:**
 
-**Given** `asm_is_cond_tag` is defined but never called
-**When** it is removed
-**Then** `make test && make test-repl` passes all regression tests with zero failures
+**Given** E10-D2's design (40-byte buffer in user area, USER variable `HLD`, IY-relative addressing)
+**When** `<#` is invoked
+**Then** `HLD` is reset to the buffer's high end; subsequent `#` / `#S` / `HOLD` / `SIGN` / `HOLDS` calls build leftward into the buffer.
 
-**Given** the remaining 4 tag predicates share identical bodies
-**When** they are refactored to JR-into-shared-tail
-**Then** all tests pass and the binary is at least 8 bytes smaller than the pre-story baseline
+**Given** a number of any supported type (single or double) on the stack
+**When** `<# #S #>` is invoked
+**Then** a `(c-addr u)` pair is returned pointing to the formatted digit string per ANS §6.1.0490 / §6.1.0030 / §6.1.2210 / §6.1.0750 / §6.1.0040.
 
-### Story 6.5: LD, Dispatch Table
+**Given** the 40-byte buffer size
+**When** the longest double-precision decimal output (20 digits + sign + radix) is formatted
+**Then** no overflow occurs; a test case exercises a 20-digit worst-case.
 
-As a system maintainer,
-I want the LD, dispatch preamble replaced with a class-indexed jump table,
-So that the binary shrinks by ~25-50 bytes and dispatch is cleaner.
+**Given** new file `src/pictured.asm`
+**When** each word is implemented
+**Then** ANS citations + stack-effect comments per NFR18/CCD-3; Forth 2014's `HOLDS` carries a Forth 2014 §6.2.1625 citation (it is a 2014 addition to the standard).
 
-**Acceptance Criteria:**
+**Given** `tests/pictured_tests.fth`
+**When** it runs
+**Then** it covers single and double values, positive/negative, base-2/-10/-16 output, custom format patterns, and the 20-digit worst case.
 
-**Given** the current linear chain of CALL/JP pairs in the LD, dispatch preamble
-**When** it is replaced with a class-indexed jump table using the class field of the tag encoding
-**Then** `make test && make test-repl` passes all regression tests with zero failures
+### Story 10.8: Number-output words on pictured foundation (`.`, `U.`, `D.`, `.R`, `U.R`, `D.R`)
 
-**Given** the jump table implementation is complete
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 20 bytes smaller than the pre-story baseline
-
-**Dependency:** Story 6.4 (tag predicates) should land first.
-
-### Story 6.6: Register Word Recognizer
-
-As a system maintainer,
-I want the 32 individual DEFCODE register/indirect/condition-code dictionary entries replaced with a single recognizer,
-So that the binary shrinks by ~130-140 bytes without changing any observable behaviour.
+As a Forth user,
+I want the Core number-display words reimplemented on top of the new pictured-output primitives,
+So that the whole display family behaves consistently with user-defined pictured formatters, and so Epic 10 removes the pre-phase hand-rolled decimal/hex-specific output paths.
 
 **Acceptance Criteria:**
 
-**Given** a new recognizer word `w_ASM_RECOGNIZE` (~50-60 bytes)
-**When** it is checked during INTERPRET between FIND failure and NUMBER?
-**Then** register, indirect, and condition-code words are recognised from a compact lookup table
+**Given** the pictured-output primitives from Story 10.7
+**When** `.`, `U.`, `D.`, `.R`, `U.R`, `D.R` are rewritten atop `<# ... #>`
+**Then** they produce byte-for-byte identical output to the pre-Epic-10 implementations for all input cases covered by the Epic 1–8 regression tests (zero regression per NFR10).
 
-**Given** `asm_mode` is 0 (normal Forth, outside CODE definition)
-**When** the recognizer is called
-**Then** it returns false immediately with zero overhead to normal Forth operation
+**Given** `src/formatting.asm`
+**When** edited to redirect these words onto pictured output
+**Then** the pre-Epic-10 hand-rolled paths are removed (ROM size contribution toward NFR5 negative target).
 
-**Given** all 32 DEFCODE register entries are removed and replaced by the recognizer
-**When** `make test && make test-repl` passes all regression tests with zero failures
-**Then** register words still function correctly inside CODE definitions
+**Given** ANS Core semantics
+**When** `.R n` is called with `n < string-width`
+**Then** the output is not truncated; `u < n` widths are left-padded with spaces per §6.1.0310.
 
-**Given** the recognizer is complete
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 100 bytes smaller than the pre-story baseline
+**Given** `tests/core_gap_tests.fth` (or extended `tests/core_tests.fth`)
+**When** it runs
+**Then** every display word has a regression suite that was green pre-Epic-10 and stays green post-Epic-10; new cases exercise the pictured-output path explicitly (e.g., redefine `HOLD` in a user wordlist and see `.` unaffected — standard-compliance check).
 
-**Trade-offs:** `WORDS` will no longer show register names (acceptable — they only work inside CODE). Case-insensitive comparison reuses UPPER logic from FIND.
+### Story 10.9: Remaining Core gap words (inventory-driven from Story 10.1)
 
-**Dependency:** Stories 6.1-6.5 should land first (capstone story).
-
-### Story 6.7: Misc Dedup
-
-As a system maintainer,
-I want remaining small deduplication opportunities cleaned up,
-So that an additional ~15-25 bytes are saved from miscellaneous patterns.
+As a Forth user,
+I want the remaining single-cell Core gap words identified by Story 10.1's survey (outside the double-cell and pictured-output families) implemented,
+So that the Core wordset reaches 100% coverage with behaviour matching ANS Forth 1994.
 
 **Acceptance Criteria:**
 
-**Given** the sign-negation pattern duplicated in `formatting.asm` (`w_DOT` and `.dots_print_signed`)
-**When** a shared helper is extracted
-**Then** all tests pass and the binary shrinks
+**Given** the inventory produced by Story 10.1
+**When** this story begins
+**Then** each identified gap word is implemented in the epic-appropriate source file per Architecture §Source-file organisation; each carries an ANS §<section> citation and stack-effect comment per NFR18/CCD-3.
 
-**Given** any `CALL foo / RET` sequences found during the epic
-**When** they are converted to `JP foo` tail calls
-**Then** each site saves 1 byte and all tests pass
+**Given** each newly implemented word
+**When** exercised against the behaviour specified in its ANS clause
+**Then** a REPL-piped test case in `tests/core_gap_tests.fth` passes, asserting the standard-specified behaviour (happy path + at least one edge case).
 
-**Given** any JP instructions within JR range found during the epic
-**When** they are converted to JR
-**Then** each site saves 1 byte and all tests pass
+**Given** `docs/ans-forth-core-compliance.md`
+**When** updated at the end of this story
+**Then** every previously-"gap" word is now marked "present" with its source location and test reference.
 
-## Epic 7: Shadow Register Optimization
+**Given** the story is larger than a single dev session (possible depending on inventory size)
+**When** development begins
+**Then** it is sharded into 10.9a / 10.9b / etc. by capability sub-family, each independently completable; the shard boundaries are recorded in the sprint-status tracking.
 
-After Epic 6's 1,034-byte reduction (plus a 172-byte `rpop_bc` follow-up), AntForth's binary stands at 14,313 bytes. The Z80's shadow register set (BC'/DE'/HL' via EXX, AF' via EX AF,AF') is entirely unused. Every CODE word that currently saves both DE (IP) and BC (TOS) to the return stack via `CALL rpush_de / CALL rpush_bc` (12 bytes) could use a single `EXX` (1 byte) instead. This epic establishes the shadow-register convention and trims the binary further. Target: ~120-150 bytes saved (~0.9% of binary). Detailed spec: `epic7-shadow-register-optimization.md`.
+### Story 10.10: Epic 10 compliance audit, benchmark + regression gate (CCD-4)
 
-### Story 7.1: EXX for Build-Header Words
-
-As a system maintainer,
-I want the return-stack save/restore patterns in build-header words replaced with the Z80 EXX instruction,
-So that the binary shrinks by ~100+ bytes while establishing the shadow-register convention for future stories.
-
-**Acceptance Criteria:**
-
-**Given** the 7 standard words (COLON, CREATE, CODE, END-CODE, NEXT,, LABEL, MARKER) each using `CALL rpush_de / CALL rpush_bc` at entry and `CALL rpop_bc / CALL rpop_de` at exit
-**When** each pair is replaced with `EXX` (1 byte) at entry and `EXX` (1 byte) at exit
-**Then** `make test && make test-repl` passes all 265 regression tests with zero failures
-
-**Given** the 5 error-handler paths (.colon_no_name, .create_no_name, .code_no_name, .lbl_no_name, .marker_no_name) each using `CALL rpop_bc / CALL rpop_de` to unwind
-**When** each is replaced with a single `EXX`
-**Then** all tests pass
-
-**Given** w_CONSTANT_cf uses a non-standard exit pattern (manual IX unwind to access the saved value mid-body)
-**When** it is converted to use EXX with appropriate mid-body register access
-**Then** all tests pass and CONSTANT still emits the correct value into the dictionary body
-
-**Given** all changes land
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 80 bytes smaller than the pre-story baseline (14,313 bytes)
-
-### Story 7.2: EXX for Recognizer
-
-As a system maintainer,
-I want the register word recognizer's scratch-variable save/restore pattern replaced with EXX,
-So that the binary shrinks by ~10-15 bytes and the recognizer uses the established shadow-register convention.
+As an antforth maintainer,
+I want Epic 10 to close with a verified 100% Core compliance measurement, a double-precision benchmark, and a full Phase-1 + Epic-9 regression pass,
+So that NFR6 (double-precision performance), NFR10 (regression), NFR11 (100% Core), NFR5 (ROM delta), and FR15 are demonstrably satisfied and `antforth 1.10` can be tagged as the "100% ANS Core" release.
 
 **Acceptance Criteria:**
 
-**Given** `w_ASM_RECOGNIZE_cf` currently saves DE (IP) to `.recog_save_ip` via memory loads/stores at entry and every exit path
-**When** the save/restore is replaced with EXX at entry and EXX before each exit
-**Then** `make test && make test-repl` passes all 265 regression tests with zero failures
+**Given** the updated `docs/ans-forth-core-compliance.md`
+**When** the compliance methodology is re-run
+**Then** coverage is **100%** of the ANS Forth 1994 Core wordset — the headline FR15/NFR11 deliverable.
 
-**Given** the scratch variables `.recog_name` (2 bytes) and `.recog_len` (1 byte) exist because BC/DE/HL are all occupied during the scan loop
-**When** EXX frees main BC/DE/HL for scratch use
-**Then** these variables are eliminated, replaced by registers, and all tests pass
+**Given** representative double-precision primitives (`D+`, `D-`, `M*`, `UM/MOD`)
+**When** benchmarked against hand-rolled Z80 equivalents
+**Then** the measured cycle counts are within ~20% of the hand-rolled baselines per NFR6; results recorded in the epic's benchmark notes.
 
-**Given** the `.recog_fast_false` early-exit path does NOT save DE (it short-circuits before the save)
-**When** EXX is used
-**Then** `.recog_fast_false` must NOT execute EXX (DE was never swapped), preserving the current fast-fail behaviour
+**Given** the kernel ROM size after Epic 10
+**When** compared against the post-Epic-9 baseline
+**Then** the delta is recorded; Epic 10 adds net functionality, so a temporary increase is acceptable (Epics 12 and 13 are the planned ROM-shrinking epics).
 
-**Given** all changes land
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 8 bytes smaller than the pre-story baseline
+**Given** the full Phase-1 + Epic-9 REPL-piped test suites
+**When** run against the Epic-10 binary
+**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
 
-### Story 7.3: EXX for DE-Only Words
+**Given** the `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` family reimplemented on pictured output
+**When** run against the Epic 1–8 display-output test cases
+**Then** output is byte-identical to the pre-Epic-10 baseline — FR50 verified.
 
-As a system maintainer,
-I want the `CALL rpush_de` / `CALL rpop_de` save/restore pattern replaced with EXX (or `PUSH BC`/EXX combinations) in words where the body can tolerate BC and HL also being swapped,
-So that the binary shrinks by ~20-40 bytes while preserving the shadow-register convention from stories 7.1 and 7.2.
+**Given** a real-MicroBeast-hardware smoke test
+**When** the full Epic-10 test suite is piped into the `.COM` on hardware
+**Then** it passes — PRD MVP rule satisfied; `antforth 1.10` release can be tagged.
 
-**Acceptance Criteria:**
+## Epic 11: Exception Subsystem & Internal Error Migration
 
-**Given** the eight candidate DE-save words (FILL, MOVE, ROLL, ACCEPT, WORD, >NUMBER, NUMBER?, `(`) each currently use `CALL rpush_de` / `CALL rpop_de`
-**When** each word is individually audited against the EXX leaf-level rule
-**Then** every word either (a) is converted to use EXX or `PUSH BC / EXX` (entry) and `EXX` or `EXX / POP BC` (exit) with matching exit-path coverage, or (b) is documented in Dev Notes with a specific reason it could not be converted
+Users can catch errors with `CATCH`/`THROW`, receive standard ANS THROW codes, and keep their REPL session alive across any error; every internal error path in the interpreter, compiler, and primitives is migrated from `ABORT` to `THROW` (word-by-word per E11-D3); `ABORT`/`ABORT"` become standard wrappers for `-1 THROW`/`-2 THROW`. A migration-inventory story at the front of the epic makes the crawl scope visible before the word-by-word work begins. Delivers Mo's "catch a bug without losing the session" moment. Shippable as antforth 1.11.
 
-**Given** the "consumes TOS early" words FILL, MOVE, ROLL, and ACCEPT already destroy or transfer BC into working registers before DE must be freed
-**When** converted to EXX
-**Then** these four words compile without a pre-EXX `PUSH BC` and `make test && make test-repl` passes all 265 regression tests
+### Story 11.1: ABORT-site migration inventory + THROW code table + code EQUs
 
-**Given** EXX is a leaf-level technique
-**When** converting each word
-**Then** every CALL target in the converted body is verified not to use EXX itself (includes `do_number`, `bdos_putchar`, `bdos_print_str`, `BDOS_ENTRY`)
-
-**Given** the conversions land
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 16 bytes smaller than the post-7.2 baseline
-
-## Epic 8: Shadow Register Follow-Up
-
-After Epic 7's 208-byte reduction, the binary stands at 14,105 bytes. The shadow-register survey at `docs/shadow-register-followup-survey.md` catalogues remaining opportunities: two simple unconverted save/restore sites (CHAR, (ABORT")), the formatting pipeline (., U., .R, .S) that Epic 7 declared out of scope, and the EXX conventions that live scattered across Epic 7 story Dev Notes but have no central reference. Target: ~30-45 bytes saved. Detailed spec: `epic8-shadow-register-followup.md`.
-
-### Story 8.1: EXX for CHAR and (ABORT") Runtime
-
-As a system maintainer,
-I want the remaining non-formatting `CALL rpush_de` / `CALL rpop_de` save/restore sites converted to EXX (CHAR) or unbalanced-stack-before-ABORT ((ABORT")),
-So that the binary shrinks by ~10-14 bytes and the Epic 7 shadow-register conversion is mechanically complete.
+As an antforth maintainer,
+I want the full inventory of every existing `ABORT` call site across all `*.asm` files, a complete ANS + antforth THROW code table, and the THROW code EQUs pre-populated in `src/constants.asm`,
+So that the word-by-word migration in stories 11.4–11.6 has clear, non-colliding numerical references and predictable ordering, and so Epic 11's scope is visible before the crawl begins (party-mode note).
 
 **Acceptance Criteria:**
 
-**Given** `w_CHAR_cf` currently uses `PUSH BC / CALL rpush_de` at entry, `CALL rpop_de` at exit, and a `.char_result` scratch byte to carry the parsed character across PUSH/POP sequences
-**When** the entry is converted to `PUSH BC / EXX`, the exit to `EXX / POP BC`, and the body simplified to use main BC/DE/HL as free scratch
-**Then** all 265 regression tests pass
+**Given** every file under `src/*.asm`
+**When** surveyed for `ABORT`, `ABORT"`, or equivalent error-emission paths
+**Then** each call site is catalogued by file, word, error condition, and proposed ANS THROW code (or antforth extension code); the inventory is recorded in `docs/throw-codes.md`.
 
-**Given** the `(ABORT")` runtime path `.paq_abort` currently uses `CALL rpush_de` at entry and `INC IX / INC IX` before `JP w_ABORT_cf` purely for BDOS safety
-**When** the save/restore is replaced with a single `PUSH DE` (no matching POP, since ABORT resets SP via `LD SP, (sp_base)`)
-**Then** all 265 regression tests pass and no other code path depends on the return-stack slot being unwound
+**Given** the ANS Forth 2014 §9.3.5 THROW code table
+**When** transcribed into `docs/throw-codes.md`
+**Then** all 58 standard codes (`-1` through `-58`) appear with their human-readable names and brief descriptions per CCD-2.
 
-**Given** the conversions land
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 8 bytes smaller than the pre-story baseline (14,105 bytes)
+**Given** any antforth-specific THROW code identified by the survey
+**When** allocated
+**Then** it lands in the `-256` to `-32767` antforth extension range per CCD-2 with a one-line rationale in `docs/throw-codes.md`.
 
-### Story 8.2: EXX for DOT and U.
+**Given** `src/constants.asm`
+**When** updated
+**Then** it contains EQU symbols for every THROW code used in the codebase (e.g., `THROW_STACK_UNDERFLOW EQU -4`, each with a citation comment per NFR18/CCD-3).
 
-As a system maintainer,
-I want the two simplest formatting words (., U.) converted to the `PUSH BC / EXX / POP BC` entry pattern proven in Epic 7.3 MOVE,
-So that the binary shrinks by ~4 bytes and proves Path 1 (stack-bounce TOS preservation) works for the formatting pipeline.
+**Given** the inventory
+**When** complete
+**Then** it proposes a migration ordering (leaf primitives → compiler/dictionary → REPL → `ABORT`/`ABORT"` last per E11-D3 rationale) that is consumed by Stories 11.4–11.7.
 
-**Acceptance Criteria:**
+### Story 11.2: Exception frame infrastructure + `CATCH` word
 
-**Given** `w_DOT_cf` and `w_U_DOT_cf` each use `CALL rpush_de` / `CALL rpop_de` around a body that calls `print_neg_prefix` and/or `emit_unsigned` (which require BC = value)
-**When** each is converted to `PUSH BC / EXX / POP BC` entry and `EXX` exit
-**Then** `emit_unsigned` receives the correct value in main BC and all 265 regression tests pass
-
-**Given** the formatting helpers (`emit_unsigned`, `u_to_str`, `print_neg_prefix`, `div_bc_by_e`, `digit_to_char`, `bdos_print_str`, `bdos_putchar`, `check_underflow`)
-**When** audited for EXX usage
-**Then** none contain EXX, satisfying the leaf-level rule
-
-**Given** the conversions land
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 2 bytes smaller than the pre-story baseline
-
-### Story 8.3: Restructure .R and .S
-
-As a system maintainer,
-I want the .R and .S formatting words restructured to exploit the EXX-freed main register set — eliminating return-stack data caches and memory scratch variables,
-So that the binary shrinks by ~16-26 bytes and the formatting pipeline's register pressure is relieved.
+As a Forth user,
+I want to wrap the execution of any execution token in a `CATCH` frame and receive `0` when the word exits normally,
+So that I have a safety harness around user code — the foundation for every subsequent error-handling workflow.
 
 **Acceptance Criteria:**
 
-**Given** `w_DOT_R_cf` currently uses `CALL rpush_de / CALL rpush_bc` at entry, `LD C, (IX+0) / LD B, (IX+1)` mid-body to recover width, `INC IX / INC IX / CALL rpop_de` at exit, plus `.dotr_neg`, `.dotr_str`, `.dotr_len` scratch variables
-**When** the word is restructured to use EXX at entry, hold width in a persistent main register, and (where feasible) eliminate scratch variables
-**Then** all 265 regression tests pass
+**Given** CCD-1's dual-chain discipline
+**When** the kernel boots
+**Then** a new USER variable `CATCH-TOP` exists, initialised to `0`.
 
-**Given** `w_DOT_S_cf` currently uses `CALL rpush_bc` at entry as a functional TOS cache that `.dots_print_tos` reads via `(IX+0)/(IX+1)`
-**When** EXX is used at entry — placing the original TOS in BC' automatically — and `.dots_print_tos` is rewritten to read from the shadow register instead of the return stack
-**Then** the explicit `rpush_bc` / `rpop_bc` pair and the `(IX+0)/(IX+1)` reads are eliminated and all tests pass
+**Given** E11-D1's 8-byte exception frame layout (saved SP, saved IX, catching-IP, previous-CATCH-TOP)
+**When** `CATCH` is invoked with an xt on TOS
+**Then** it pushes an 8-byte frame onto the IX return stack in that layout, sets `CATCH-TOP` to the new frame's address, and executes the xt.
 
-**Given** the restructure lands
-**When** `wc -c build/antforth.com` is measured
-**Then** the binary is at least 12 bytes smaller than the pre-story baseline
+**Given** the xt returns normally (no THROW)
+**When** `CATCH` resumes
+**Then** it restores `CATCH-TOP` from the frame's prev-link, pops the 8-byte frame, and pushes `0` onto the parameter stack per ANS §6.1.0875 / Forth 2014 §9.6.1.0875.
 
-**Dependency:** Story 8.2 (DOT + U.) should land first — it proves the `PUSH BC / EXX / POP BC` pattern on the formatting pipeline before 8.3's larger restructure.
+**Given** new file `src/exception.asm`
+**When** `CATCH` is implemented
+**Then** its source carries a Forth 2014 §9.6.1.0875 / §6.1.0875 citation per NFR18/CCD-3; stack-effect comment `( xt -- exception-code | 0 )` on its DEFCODE.
 
-### Story 8.4: EXX Convention Reference
+**Given** `tests/exception_tests.fth`
+**When** it runs
+**Then** `CATCH` is tested with normal-return xts of varying stack effects (pure, producing, consuming), nested CATCH frames (inner then outer both normal-return), and empty-body xts — all must return 0 and leave `CATCH-TOP` at its entry-time value.
 
-As a system maintainer,
-I want the shadow-register conventions established across Epic 7 (leaf-level rule, "A survives EXX" staging idiom, "shadow BC' as free TOS-preservation slot") consolidated into a single reference document,
-So that future developers and AI agents can learn the conventions without having to read through every Epic 7 / Epic 8 story Dev Notes.
+### Story 11.3: `THROW` word + uncaught-THROW REPL handler
+
+As a Forth user,
+I want to raise a non-zero THROW code and have it caught by the nearest enclosing `CATCH` — or, if uncaught, see a clean diagnostic and return to a live REPL with my session and dictionary intact,
+So that error handling is composable and the REPL survives any error (FR22, NFR7).
 
 **Acceptance Criteria:**
 
-**Given** the EXX conventions currently live scattered across story Dev Notes (7.1, 7.2, 7.3, 8.1, 8.2, 8.3)
-**When** they are consolidated into a central reference (`docs/register-conventions.md` or equivalent)
-**Then** the document covers: register contract, shadow register convention, leaf-level rule, exit-staging idiom, shadow BC' as TOS-preservation slot, Group A vs Group B conversion patterns, and a current list of all EXX-using words
+**Given** E11-D2's THROW algorithm (O(1) `CATCH-TOP` access; `INCLUDE-TOP` chain walk — empty at this epic, per CCD-1 designed-for-future)
+**When** `THROW` is invoked with a non-zero code and `CATCH-TOP` ≠ 0
+**Then** the algorithm walks the (currently empty) `INCLUDE-TOP` chain to the target frame (a no-op), restores SP and IX from the target frame, pushes the THROW code, restores `CATCH-TOP` from the frame's prev-link, pops the exception frame, and resumes at the frame's catching-IP.
 
-**Given** the convention doc lands
-**When** `make test && make test-repl` runs
-**Then** all 265 regression tests pass (trivially — pure documentation story, no code changes)
+**Given** `CATCH-TOP = 0`
+**When** `THROW` is invoked with a non-zero code
+**Then** the uncaught-THROW handler: (a) prints a diagnostic of the form `error N: <description>` using `docs/throw-codes.md` table entries; (b) resets the parameter stack to empty, return stack to empty, input buffer to fresh state; (c) prints the REPL prompt; (d) dictionary and in-session definitions remain intact (NFR7, NFR8).
 
-**Dependency:** Stories 8.1-8.3 should land first so the convention doc captures the complete final list of EXX-using words.
+**Given** `THROW 0`
+**When** invoked
+**Then** nothing happens (ANS §9.6.1.2275 no-op for zero).
+
+**Given** `src/exception.asm`
+**When** `THROW` is implemented
+**Then** Forth 2014 §9.6.1.2275 citation per NFR18/CCD-3; stack-effect `( n -- )`.
+
+**Given** `tests/exception_tests.fth`
+**When** it runs
+**Then** it covers: (a) `' word CATCH THROW` round-trip returning the code on stack; (b) nested `CATCH`es where the inner catches and the outer doesn't see anything; (c) nested `CATCH`es where only the outer catches; (d) uncaught THROW re-enters the REPL with session state verified intact by subsequent `WORDS` / constant-value checks.
+
+### Story 11.4: Internal error migration — stack, arithmetic, memory primitives
+
+As a Forth user,
+I want the error paths in stack, arithmetic, and memory primitives to raise standard ANS THROW codes rather than `ABORT`,
+So that I can catch these errors with `CATCH` and handle them programmatically (partial FR19 delivery).
+
+**Acceptance Criteria:**
+
+**Given** every stack primitive (`DUP`, `DROP`, `SWAP`, `OVER`, `ROT`, etc.) in `src/stack_ops.asm`
+**When** invoked with insufficient stack depth
+**Then** the word raises `-4 THROW` (stack underflow, ANS §9.3.5); `CATCH`-ing it yields `-4` on stack.
+
+**Given** arithmetic primitives in `src/arithmetic.asm` (division, mod, and any division-producing-word)
+**When** invoked with a zero divisor
+**Then** the word raises `-10 THROW` (division by zero, ANS §9.3.5); `CATCH`-ing it yields `-10`.
+
+**Given** memory primitives in `src/memory.asm` (`@`, `!`, `C@`, `C!`, `+!`, `FILL`, `MOVE`) where stack-underflow is possible
+**When** invoked with insufficient arguments
+**Then** `-4 THROW` is raised consistently.
+
+**Given** each migrated primitive (per E11-D3 one-commit-per-migration discipline)
+**When** the migration commit lands
+**Then** `tests/throw_migration_tests.fth` gains a new case asserting the correct THROW code via `CATCH`; all prior tests continue to pass.
+
+**Given** the `TOS-in-register & DEPTH` discipline (project memory)
+**When** a stack-underflow THROW fires from BC=TOS territory
+**Then** the post-THROW state satisfies the DEPTH invariant (BC may be phantom; `DEPTH = 0` semantics preserved).
+
+### Story 11.5: Internal error migration — dictionary, compiler, control flow
+
+As a Forth user,
+I want error paths in dictionary lookup, the compiler, and control-flow constructs to raise standard ANS THROW codes,
+So that compile-time errors and lookup failures compose with `CATCH` (partial FR19 delivery).
+
+**Acceptance Criteria:**
+
+**Given** an undefined word at the outer interpreter
+**When** encountered during INTERPRET
+**Then** `-13 THROW` (undefined word, ANS §9.3.5) is raised; `CATCH`-ing around `EVALUATE` or `INTERPRET` yields `-13`.
+
+**Given** compile-state violations in `src/compiler.asm` (attempt to compile outside a definition, `;` without matching `:`, etc.)
+**When** encountered
+**Then** appropriate ANS THROW codes are raised (e.g., `-14` interpreting a compile-only word, `-22` control structure mismatched, etc., per `docs/throw-codes.md`).
+
+**Given** control-flow words in `src/control_flow.asm` (`IF`/`ELSE`/`THEN`, `BEGIN`/`UNTIL`, `DO`/`LOOP` at compile time)
+**When** mismatched (e.g., `ELSE` without `IF`, `LOOP` without `DO`)
+**Then** `-22 THROW` (control structure mismatched) is raised; `CATCH`-ing it in a compilation test yields `-22`.
+
+**Given** each migrated site
+**When** the migration commit lands
+**Then** `tests/throw_migration_tests.fth` gains cases asserting the correct code; all prior tests continue to pass.
+
+### Story 11.6: Internal error migration — strings, I/O, remaining error sites
+
+As a Forth user,
+I want the remaining error paths (string operations, I/O, any uncovered sites) to raise standard ANS THROW codes,
+So that all kernel error emission is uniformly THROW-based before `ABORT` is retargeted in Story 11.7 (completes FR19 pre-`ABORT`-retarget).
+
+**Acceptance Criteria:**
+
+**Given** the inventory from Story 11.1 filtered to remaining unmigrated sites
+**When** the survey is re-run after Stories 11.4 and 11.5
+**Then** only string-ops, I/O, and miscellaneous sites remain; this story migrates each.
+
+**Given** string-op primitives in `src/strings.asm` where bounds violations are possible
+**When** a bounds violation occurs
+**Then** the appropriate ANS THROW code is raised (e.g., `-18` parse-string range error).
+
+**Given** I/O paths in `src/io.asm`, `src/formatting.asm` that raise errors (e.g., invalid radix in `BASE`)
+**When** an error condition arises
+**Then** a documented THROW code is raised.
+
+**Given** `tests/throw_migration_tests.fth`
+**When** Story 11.6 is complete
+**Then** every site in Story 11.1's inventory (except `ABORT` and `ABORT"` themselves — Story 11.7) is represented by a catch-and-assert test case.
+
+**Given** Story 11.1's inventory
+**When** re-checked after this story
+**Then** zero ABORT sites remain outside of `ABORT` and `ABORT"` themselves — the migration is complete except for the last step.
+
+### Story 11.7: `ABORT` and `ABORT"` retargeted as THROW wrappers (capstone)
+
+As a Forth user,
+I want `ABORT` and `ABORT"` to become standard ANS wrappers for `-1 THROW` and `-2 THROW` respectively,
+So that all kernel error emission, including the two legacy user-facing error words, is fully unified under the exception mechanism (FR20).
+
+**Acceptance Criteria:**
+
+**Given** `src/system.asm`
+**When** `ABORT` is reimplemented
+**Then** it is equivalent to `-1 THROW` per ANS §6.1.0670 / Forth 2014 §9.6.2.0670; any prior ad-hoc stack/state resets embedded in `ABORT` are gone (now handled by the uncaught-THROW REPL handler from Story 11.3).
+
+**Given** `ABORT"` at runtime
+**When** invoked with a truthy flag
+**Then** it emits the stored message and raises `-2 THROW` per ANS §6.1.0680 / Forth 2014 §9.6.2.0680.
+
+**Given** the full regression suite (Phase-1 + Epic-9 + Epic-10 + Epic-11 prior stories)
+**When** run
+**Then** every test passes — previously-ABORT-emitting code paths now go through `-1 THROW` / `-2 THROW` and end up in the same REPL-reset behaviour.
+
+**Given** `CATCH`-ing `ABORT`
+**When** invoked (`' some-word-that-ABORTs CATCH`)
+**Then** `-1` is returned on stack — caught-ABORT now just works per ANS.
+
+**Given** this story being explicitly *last* in the migration sequence per E11-D3
+**When** it lands
+**Then** no path in the kernel double-throws (no `ABORT` → `-1 THROW` → second `ABORT`).
+
+### Story 11.8: Epic 11 benchmark, survivability stress + regression gate (CCD-4)
+
+As an antforth maintainer,
+I want Epic 11 to close with an NFR4 overhead measurement, a REPL-survivability stress suite (NFR7), a state-integrity verification (NFR8), and a full regression pass,
+So that the exception subsystem's performance, correctness, and safety envelopes are verified before `antforth 1.11` is tagged.
+
+**Acceptance Criteria:**
+
+**Given** an empty-body xt wrapped in `CATCH` with normal return
+**When** the NFR4 benchmark thread runs against it on the emulator
+**Then** the measured CATCH-frame push + pop + `CATCH-TOP` update overhead is **≤ ~15 Z80 cycles** per NFR4; recorded in the epic's benchmark notes.
+
+**Given** a `THROW` triggered from nested depth N
+**When** the unwind completes
+**Then** the cycle count is bounded and proportional to N (no hidden exponential paths per NFR4 bounded-time requirement).
+
+**Given** a REPL survivability stress test (`tests/exception_tests.fth` extended)
+**When** each of the following errors is induced: stack underflow, stack overflow, division by zero, undefined word, compile-state mismatch, `ABORT"` with truthy flag
+**Then** every error returns the REPL to a live prompt; `WORDS` still lists user definitions; `MARKER`-saved state is recoverable; `BASE` is unchanged (FR22 / NFR7 / NFR8).
+
+**Given** the post-THROW integrity audit
+**When** checked after each induced error
+**Then** input buffer, dictionary HERE, parameter stack, return stack, `CATCH-TOP`, and USER-area invariants are all in consistent states (NFR8).
+
+**Given** the kernel ROM size
+**When** compared against post-Epic-10 baseline
+**Then** delta recorded; Epic 11 is expected to add some ROM (exception subsystem); Epics 12/13 plan to recover it per NFR5 phase-wide negative target.
+
+**Given** the full Phase-1 + Epic-9 + Epic-10 test suites
+**When** run against the Epic-11 binary
+**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+
+**Given** a real-MicroBeast-hardware smoke test
+**When** the full Epic-11 test suite (including the stress suite) is piped into the `.COM` on hardware
+**Then** it passes — PRD MVP rule satisfied; `antforth 1.11` release can be tagged.
+
+## Epic 12: Multi-Vocabulary Search-Order & ASSEMBLER Wordlist
+
+Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. `ASSEMBLER.FTH` authorship is a named story migrating **every** opcode from the kernel into Forth source; if the ≤ 8 KB soft budget is missed, `ASSEMBLER.FTH` itself becomes the focus of future optimisation rather than leaving opcodes in the kernel. Produces the `examples/ASSEMBLER.FTH` artefact deployed alongside `ANTFORTH.COM`. Shippable as antforth 1.12.
+
+### Story 12.1: Wordlist struct + hash parameterisation + `FORTH-WORDLIST` bootstrap
+
+As an antforth maintainer,
+I want the per-wordlist 130-byte struct defined, the dictionary hash lookup parameterised on a wordlist-struct address, and the existing flat dictionary migrated to live inside a canonical `FORTH-WORDLIST`,
+So that the kernel has a working multi-vocabulary infrastructure before any user-facing wordlist words are introduced (FR28 delivered; FR23–FR30 unblocked).
+
+**Acceptance Criteria:**
+
+**Given** E12-D1's layout (2-byte next-wordlist chain pointer + 64-entry × 2-byte hash-bucket array)
+**When** the kernel boots
+**Then** a pre-built `FORTH-WORDLIST` struct exists in known-address kernel memory, populated with all existing kernel primitives' dictionary entries across its 64 buckets.
+
+**Given** `src/hash.asm`
+**When** the XOR-rotate 64-bucket lookup is refactored
+**Then** it takes a wordlist-struct address as a parameter (HL or equivalent per register conventions) and hashes into *that* struct's bucket array — no global fixed bucket table remaining.
+
+**Given** `src/dictionary.asm`
+**When** word insertion runs
+**Then** it inserts into a caller-supplied wordlist struct (by default `FORTH-WORDLIST`); no more hard-wired single-table assumptions.
+
+**Given** the kernel at boot
+**When** FORTH-WORDLIST is the only wordlist in the initial search order
+**Then** every pre-Epic-12 word is findable exactly as before — zero lookup regression for the single-wordlist case (NFR2 tested as a per-story gate, full envelope in Story 12.8).
+
+**Given** new file `src/wordlists.asm`
+**When** the struct and supporting macros are defined
+**Then** `WORDLIST_SIZE EQU 130`, `WORDLIST_BUCKETS EQU 64`, and layout-offset constants are defined for use by subsequent stories; each has a citation comment per NFR18/CCD-3 where applicable.
+
+**Given** `tests/wordlist_tests.fth`
+**When** it runs at this story's completion
+**Then** it confirms `FORTH-WORDLIST` (implemented in Story 12.3 as a user-facing word — for now accessed via its known address) is the current compilation and search wordlist; every Phase-1 + Epic-9/10/11 test still passes (NFR10).
+
+### Story 12.2: `WORDLIST` and `SEARCH-WORDLIST`
+
+As a Forth user,
+I want to create new empty wordlists at runtime and search any specific wordlist by identifier,
+So that I can partition my definitions into named namespaces (FR23) and perform targeted lookups (FR29).
+
+**Acceptance Criteria:**
+
+**Given** `WORDLIST` per ANS §16.6.1.2460
+**When** I invoke `WORDLIST`
+**Then** it `ALLOT`s 130 bytes at `HERE`, initialises all 64 bucket entries to `$0000` and the next-wordlist chain pointer to `0`, and returns the struct's address on TOS as the wordlist identifier (`wid`).
+
+**Given** `SEARCH-WORDLIST` per ANS §16.6.1.2192
+**When** I invoke `c-addr u wid SEARCH-WORDLIST`
+**Then** it searches only the specified wordlist (not the search order) and returns either `(xt 1 | -1 | 0)` per the standard's stack effect.
+
+**Given** a freshly created wordlist
+**When** it is searched before any definitions are added to it
+**Then** `SEARCH-WORDLIST` returns `0` (not found).
+
+**Given** the source
+**When** both words are implemented
+**Then** ANS §16.6.1.2460 and §16.6.1.2192 citations appear per NFR18/CCD-3; stack-effect comments on DEFCODE lines.
+
+**Given** `tests/wordlist_tests.fth`
+**When** it runs
+**Then** it covers: creating a wordlist, attempting lookup (miss), adding a definition (via SET-CURRENT + `:` — Story 12.4) or via low-level primitive, re-lookup (hit, returns correct xt), and lookup collision-chain behaviour.
+
+### Story 12.3: Search-order infrastructure — `GET-ORDER`, `SET-ORDER`, `FORTH-WORDLIST`
+
+As a Forth user,
+I want to read and write the current search order and reference the built-in Forth wordlist by name,
+So that I can compose multi-wordlist lookup strategies (FR24, FR28).
+
+**Acceptance Criteria:**
+
+**Given** E12-D2's design (16-slot array in user area + `SEARCH-ORDER-DEPTH` USER variable)
+**When** the kernel boots
+**Then** the array holds `FORTH-WORDLIST` at slot 0 and `SEARCH-ORDER-DEPTH` = 1.
+
+**Given** `GET-ORDER` per ANS §16.6.1.1647
+**When** invoked
+**Then** it pushes the wordlists onto the parameter stack top-of-search-order-first followed by the depth (count): `( -- widn ... wid1 n )`.
+
+**Given** `SET-ORDER` per ANS §16.6.1.2195
+**When** invoked with `( widn ... wid1 n -- )`
+**Then** it writes those wordlists back into the search-order array in the same order and updates `SEARCH-ORDER-DEPTH`; a depth > 16 raises `-49 THROW` (search-order overflow, ANS §9.3.5).
+
+**Given** `SET-ORDER -1`
+**When** invoked
+**Then** the implementation-defined minimum search order is installed — for antforth, this is `FORTH-WORDLIST` at slot 0, depth 1 per ANS option.
+
+**Given** `FORTH-WORDLIST` per ANS §16.6.1.1595
+**When** invoked
+**Then** it pushes the canonical Forth wordlist's struct address onto TOS.
+
+**Given** the outer interpreter's word-lookup path
+**When** a token is parsed
+**Then** the lookup walks the search order from top (slot 0) down, hashing into each wordlist's bucket array and stopping at the first hit; NFR2's 10% regression budget is measured in Story 12.8 against this path.
+
+**Given** `tests/wordlist_tests.fth`
+**When** extended
+**Then** it covers: `GET-ORDER` initial state; `SET-ORDER` round-trip; search with 2+ wordlists where the same word name lives in multiple and top-of-order wins; attempt to set depth > 16 catches `-49`.
+
+### Story 12.4: Compilation wordlist control — `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`
+
+As a Forth user,
+I want to control which wordlist new definitions are added to,
+So that I can partition my definitions by subsystem without polluting the default `FORTH-WORDLIST` (FR25, FR26).
+
+**Acceptance Criteria:**
+
+**Given** a USER variable `CURRENT-WORDLIST` (or equivalent) that tracks the compilation wordlist
+**When** the kernel boots
+**Then** it is set to `FORTH-WORDLIST`.
+
+**Given** `GET-CURRENT` per ANS §16.6.1.1643
+**When** invoked
+**Then** it returns the current compilation wordlist's wid on TOS.
+
+**Given** `SET-CURRENT` per ANS §16.6.1.2193
+**When** invoked with a wid on TOS
+**Then** subsequent definitions (`:`, `CODE`, `CREATE`, `VARIABLE`, `CONSTANT`, `MARKER`, etc.) are placed into that wordlist's hash table.
+
+**Given** `DEFINITIONS` per ANS §16.6.1.1180
+**When** invoked
+**Then** `SET-CURRENT` is called with the wid at slot 0 of the search order — i.e., "direct subsequent definitions into the top wordlist."
+
+**Given** a freshly created wordlist `W` and sequence `W SET-CURRENT : FOO ; FORTH-WORDLIST SET-CURRENT`
+**When** `FOO` is looked up with only `FORTH-WORDLIST` in the search order
+**Then** lookup fails; when `W` is added to the search order, lookup succeeds — confirming the definition landed in `W` rather than `FORTH-WORDLIST`.
+
+**Given** `tests/wordlist_tests.fth`
+**When** extended
+**Then** it covers the round-trip above, `DEFINITIONS`-driven partitioning with 2+ wordlists, and that standard word definitions (e.g., `VARIABLE`, `CONSTANT`) all honour the current compilation wordlist.
+
+### Story 12.5: `ONLY`
+
+As a Forth user,
+I want to reduce my search order to a minimal standards-specified set,
+So that I can clear out accumulated cruft and reset namespace visibility (FR27).
+
+**Acceptance Criteria:**
+
+**Given** `ONLY` per ANS §16.6.2.1965
+**When** invoked
+**Then** it sets the search order to the implementation-defined minimal set; for antforth, this is `FORTH-WORDLIST` at slot 0 with depth 1 (per ANS option).
+
+**Given** `ONLY` is in the ANS Search-Order Extension wordset (§16.6.2)
+**When** the source is authored
+**Then** its citation comment is `; ANS Forth 1994 §16.6.2.1965 ONLY` per NFR18/CCD-3.
+
+**Given** `tests/wordlist_tests.fth`
+**When** extended
+**Then** it confirms `SET-ORDER` to a 5-wordlist state followed by `ONLY` yields a depth of 1 with `FORTH-WORDLIST` at slot 0.
+
+### Story 12.6: `ASSEMBLER` wordlist + auto-activation in `CODE`/`END-CODE`
+
+As a Forth user,
+I want the `ASSEMBLER` wordlist to activate automatically inside `CODE`/`END-CODE` blocks and deactivate cleanly afterwards,
+So that opcode words are visible exactly where they're needed — no `ALSO ASSEMBLER` incantation required at every `CODE` site (FR30).
+
+**Acceptance Criteria:**
+
+**Given** the kernel boot sequence
+**When** it completes
+**Then** an `ASSEMBLER` wordlist struct exists (created via `WORDLIST`); at this story's completion it is still populated with opcode words built into the kernel (Story 12.7 moves them to `ASSEMBLER.FTH`).
+
+**Given** E12-D4's save/restore pattern
+**When** `CODE` is invoked
+**Then** it pushes the current `SEARCH-ORDER-DEPTH` onto the rstack (or a dedicated save slot), adds `ASSEMBLER` to the top of the search order, and sets `CURRENT-WORDLIST` to `ASSEMBLER` so assembler-level CODE helpers compile into it.
+
+**Given** `END-CODE`
+**When** invoked
+**Then** it restores the pre-`CODE` search order and `CURRENT-WORDLIST`.
+
+**Given** nested `CODE`/`END-CODE` blocks (unusual but well-defined)
+**When** invoked
+**Then** the save/restore composes correctly — outer restores pre-outer state, inner restores outer state.
+
+**Given** `tests/assembler_wordlist_tests.fth`
+**When** it runs
+**Then** it verifies: (a) assembler opcodes are invisible outside `CODE`/`END-CODE`; (b) they are visible inside; (c) `END-CODE` correctly restores pre-block search order; (d) every pre-phase CODE source file assembles unchanged (FR31, NFR15 — full coverage in Story 12.8).
+
+### Story 12.7: `ASSEMBLER.FTH` authorship — full migration of all opcodes
+
+As an antforth maintainer,
+I want **every** Z80 opcode word from `src/assembler.asm` (all 168+) rewritten as pure Forth source in `examples/ASSEMBLER.FTH`, with zero opcodes left behind in the kernel,
+So that the assembler becomes fully user-inspectable Forth source and Epic 13's lazy-load capstone has a complete target — a ≤ 8 KB soft budget is preferred, but if the budget is missed, `ASSEMBLER.FTH` itself becomes the focus of future optimisation effort rather than leaving opcodes in the kernel (directive from project lead; party-mode note; Architecture Finding 3; PRD risk table).
+
+**Acceptance Criteria:**
+
+**Given** every opcode word currently implemented in `src/assembler.asm` (the complete 168+ inherited from Epics 4/4.3.5/4.4)
+**When** this story completes
+**Then** every single opcode word is implemented in Forth inside `examples/ASSEMBLER.FTH` — zero opcodes remain in `src/assembler.asm`. Partial migration is **not** acceptable.
+
+**Given** `src/assembler.asm`
+**When** inspected after this story
+**Then** it retains only the `CODE`/`END-CODE` auto-activation hooks from Story 12.6 (and, in Epic 13, the lazy-load hook); all opcode-producing words are gone from the kernel.
+
+**Given** the ≤ 8 KB soft target from Architecture Finding 3
+**When** `examples/ASSEMBLER.FTH` is built
+**Then** its size is recorded; if > 8 KB, the overage is documented in the story log and logged as a post-2.0 optimisation ticket — **but the story is still complete**, because all opcodes have migrated and `ASSEMBLER.FTH` is the canonical assembler source going forward.
+
+**Given** a size overage
+**When** documented
+**Then** the note explicitly identifies `ASSEMBLER.FTH` as the future optimisation target (dense factoring, table-driven dispatch, shared encoding helpers, etc.) — not the kernel.
+
+**Given** every pre-phase-2 CODE source file used in the Epic 4 / 4.3.5 / 4.4 test corpus
+**When** assembled against the Epic-12 binary (with the full `ASSEMBLER.FTH` kernel-sourced at build time)
+**Then** byte-identical output is produced (NFR15, FR31); this AC is the hard gate — backward compatibility is non-negotiable regardless of size outcome.
+
+**Given** NFR23 (MicroBeast hardware isolation)
+**When** `ASSEMBLER.FTH` is reviewed
+**Then** no MicroBeast-specific hardware word appears in it — pure Z80 opcode implementation only.
+
+**Given** the authored Forth source
+**When** reviewed for discipline
+**Then** it uses the Zilog dst-src operand order (memory rule), `LABEL`/`FIX` label convention (memory rule), and cites the Z80 instruction reference where non-obvious encoding decisions were made.
+
+**Given** `tests/assembler_wordlist_tests.fth`
+**When** it runs
+**Then** it covers a representative sample across every opcode family (LD variants, arithmetic, control flow, bit ops, shift/rotate, IX/IY prefixes, block ops, I/O) with byte-sequence assertions matching the pre-phase-2 reference output; no opcode family is untested.
+
+### Story 12.8: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
+
+As an antforth maintainer,
+I want Epic 12 to close with NFR2 measurement, an exhaustive CODE-source-file backward-compat suite, ROM delta accounting, and a full regression pass,
+So that multi-vocabulary lookup performance, byte-identical CODE assembly, and overall correctness are verified before `antforth 1.12` is tagged.
+
+**Acceptance Criteria:**
+
+**Given** a benchmark with the search order populated to 8 wordlists (most lookups missing the top wordlists and falling through to `FORTH-WORDLIST`)
+**When** the word-lookup cycle count is measured
+**Then** the regression vs the pre-Epic-12 single-vocabulary baseline is **≤ 10%** per NFR2; results recorded in the epic's benchmark notes.
+
+**Given** a benchmark with a hit at slot 0 of the search order
+**When** measured
+**Then** the regression vs the pre-Epic-12 baseline is near-zero (the common case should not suffer).
+
+**Given** every pre-phase-2 CODE source file in the project's test corpus
+**When** assembled against the Epic-12 binary
+**Then** output is byte-identical to the pre-phase-2 reference — FR31, NFR15 verified comprehensively.
+
+**Given** the kernel ROM size
+**When** measured against the post-Epic-11 baseline
+**Then** a material reduction is measured — all 168+ ASSEMBLER opcodes have moved out of `src/assembler.asm` into `examples/ASSEMBLER.FTH` per Story 12.7; the delta is recorded as a major positive contribution toward NFR5's net-negative target.
+
+**Given** the full Phase-1 + Epics 9/10/11 test suites
+**When** run against the Epic-12 binary
+**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+
+**Given** a real-MicroBeast-hardware smoke test
+**When** the full Epic-12 test suite runs on hardware
+**Then** it passes — PRD MVP rule satisfied; `antforth 1.12` release can be tagged.
+
+## Epic 13: File-Access with Lazy-Load Capstone
+
+Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Capstone: a fresh boot starts with the `ASSEMBLER` wordlist empty, and the first `CODE` transparently loads `ASSEMBLER.FTH` from the resolved path (`ASSEMBLER-PATH` override or current drive via BDOS fn 25). Exercises every previous epic in one coherent demo. Shipping this tags **antforth 2.0**.
+
+### Story 13.1: File I/O sanity — FCB pool + BDOS wrapper layer (PRD risk mitigation)
+
+As an antforth maintainer,
+I want the 288-byte FCB pool and the internal BDOS wrapper layer implemented and exercised against a known-good CP/M image *before* any user-facing file-access words are introduced,
+So that CP/M 128-byte record boundaries, EOF handling, and BDOS call conventions are validated on their own terms — avoiding mid-epic surprises called out in the PRD risk table.
+
+**Acceptance Criteria:**
+
+**Given** E13-D1's decision (kernel-resident static array)
+**When** new file `src/file_access.asm` is built
+**Then** it contains `fcb_pool: ds 288` (8 × 36-byte FCBs) as a labelled byte region, linked into the `.COM` binary at build time, accessed by absolute address; `FCB_SIZE EQU 36` and `FCB_POOL_COUNT EQU 8` are defined.
+
+**Given** E13-D3's BDOS wrapper layer
+**When** `src/file_access.asm` is authored
+**Then** it exposes private helpers for: open (BDOS 15), close (16), delete (19), create (22), read sequential record (20), write sequential record (21), read random record (33), write random record (34), compute file size (35), get current drive (25); plus a byte-oriented read/write layer that handles the 128-byte record impedance using an in-FCB buffer.
+
+**Given** NFR14 (BDOS allow-list)
+**When** the wrapper layer is authored
+**Then** every BDOS call uses a function number from the NFR14 allow-list; a source-level comment at each call site cites the BDOS function number and its purpose.
+
+**Given** the pool-acquire primitive
+**When** invoked with all 8 FCBs in use
+**Then** it raises `-69 THROW` (ANS §9.3.5 "file access method") with citation per CCD-2 / NFR18.
+
+**Given** a known-good CP/M 2.2 disk image in the project's `disk/` directory
+**When** an internal test thread exercises: open, read 200 bytes (spans a record boundary), seek via internal primitive, read across EOF, close, delete
+**Then** every step behaves exactly as the CP/M 2.2 BDOS spec documents; the test thread's output matches a pre-recorded reference trace.
+
+**Given** any wrapper that holds an FCB across a BDOS call
+**When** the call returns
+**Then** the FCB state is well-defined — either fully opened, fully closed, or returned to the pool's free list; no intermediate leaks.
+
+**Given** `tests/file_access_tests.fth` stub
+**When** it runs at this story's completion
+**Then** user-facing file-access words are not yet present (those are Story 13.2+), but the story's own internal-primitive test harness prints a pass summary and halts.
+
+### Story 13.2: Core File-Access wordset — `OPEN-FILE`, `CREATE-FILE`, `CLOSE-FILE`, `DELETE-FILE`, `READ-FILE`, `WRITE-FILE`
+
+As a Forth user,
+I want the core ANS File-Access wordset for opening, closing, creating, deleting, and byte-oriented reading/writing of files against the CP/M 2.2 filesystem,
+So that I can read and write source files and data files from my antforth session (FR35–FR39, FR42).
+
+**Acceptance Criteria:**
+
+**Given** `OPEN-FILE` per ANS §11.6.1.1970 with stack effect `( c-addr u fam -- fileid ior )`
+**When** I open an existing file with mode `R/O`, `R/W`, `W/O`, or `BIN`
+**Then** a FID is returned with `ior = 0` on success, or `0 <error>` with an ANS-standard `ior` code on failure.
+
+**Given** `CREATE-FILE` per ANS §11.6.1.1010
+**When** invoked with a non-existent filename and an access mode
+**Then** the file is created (or truncated if it exists) and a valid FID is returned.
+
+**Given** `DELETE-FILE` per ANS §11.6.1.1190
+**When** invoked with a filename
+**Then** the file is deleted if present; the appropriate `ior` is returned per the standard.
+
+**Given** `READ-FILE` per ANS §11.6.1.2080 `( c-addr u1 fileid -- u2 ior )`
+**When** reading `u1` bytes across a 128-byte record boundary
+**Then** `u2` bytes (≤ `u1`) are returned in the user buffer with `ior = 0`; on EOF, `u2` reflects the number actually read (may be zero) with `ior = 0`.
+
+**Given** `WRITE-FILE` per ANS §11.6.1.2480
+**When** writing into a R/W or W/O file
+**Then** bytes are buffered through the wrapper layer's in-FCB buffer, flushed on record boundaries, and on `CLOSE-FILE`; a subsequent read of the same file returns the written bytes verbatim.
+
+**Given** `CLOSE-FILE` per ANS §11.6.1.0900
+**When** invoked on a FID
+**Then** buffered writes (if any) are flushed, the FCB is returned to the pool, and the FID becomes invalid; subsequent operations on that FID raise `-70 THROW` (file access method).
+
+**Given** FR43 (file-op errors use THROW, not ABORT)
+**When** a lower-level BDOS error occurs during any File-Access word
+**Then** the word raises a THROW with an ANS-standard code from `docs/throw-codes.md`; `ior` return values are non-zero only for recoverable-by-design cases (not for catastrophic errors which throw).
+
+**Given** `tests/file_access_tests.fth`
+**When** it runs
+**Then** it covers: create + write + close + reopen + read-back (round-trip integrity); delete + reopen (confirm gone); read across record boundary; read across EOF; pool-exhaustion (open 9 files → 9th catches `-69`); R/O-write-attempt (catches standard ior).
+
+### Story 13.3: File positioning — `FILE-POSITION`, `REPOSITION-FILE`, `FILE-SIZE`
+
+As a Forth user,
+I want to query and set the current byte position in a file and query a file's size,
+So that I can do random-access reads/writes and progress-bar-style file consumption (FR40, FR41).
+
+**Acceptance Criteria:**
+
+**Given** `FILE-POSITION` per ANS §11.6.1.1520 `( fileid -- ud ior )`
+**When** invoked on an open FID
+**Then** it returns the current byte position as a double-cell unsigned value.
+
+**Given** `REPOSITION-FILE` per ANS §11.6.1.2142 `( ud fileid -- ior )`
+**When** invoked with a byte position within the file
+**Then** subsequent `READ-FILE` / `WRITE-FILE` operate starting at that position.
+
+**Given** `FILE-SIZE` per ANS §11.6.1.1522 `( fileid -- ud ior )`
+**When** invoked
+**Then** it returns the file's size in bytes as a double-cell unsigned value.
+
+**Given** CP/M's 128-byte record model
+**When** `REPOSITION-FILE` crosses a record boundary
+**Then** the in-FCB buffer is correctly invalidated/reloaded so the subsequent byte-oriented read returns the correct byte.
+
+**Given** `tests/file_access_tests.fth` extended
+**When** it runs
+**Then** it covers: write known bytes at known offsets, `REPOSITION-FILE` + `READ-FILE` round-trip, `FILE-SIZE` matches the total bytes written, boundary positions at record edges (127/128/129 bytes).
+
+### Story 13.4: Source-input nesting — `INCLUDED` / `INCLUDE-FILE` / `INCLUDE` with INCLUDE-TOP chain discipline
+
+As a Forth user,
+I want to load Forth source from a file into my running session — with nested `INCLUDE` support, correct EOF handling, and guaranteed file-handle cleanup on any THROW (no orphaned FIDs),
+So that I can build sessions from multiple source files and recover cleanly from errors (FR32, FR33, FR34, NFR9).
+
+**Acceptance Criteria:**
+
+**Given** E13-D2's 10-byte INCLUDE source frame layout (prev-link + saved SOURCE-ID + saved input-buffer-addr + saved input-buffer-length + saved `>IN`)
+**When** `INCLUDED` per ANS §11.6.1.1718 is invoked with `c-addr u` (filename)
+**Then** it opens the file, pushes the 10-byte frame, links via `INCLUDE-TOP`, switches SOURCE-ID to the new FID, and returns control to the outer interpreter which now parses from the file.
+
+**Given** EOF during `INCLUDED`
+**When** the outer interpreter hits end-of-file
+**Then** the current FID is closed, parent input state is restored from the frame, `INCLUDE-TOP` is set to the frame's prev-link, the 10-byte frame is popped, and parsing resumes on the parent source.
+
+**Given** `INCLUDE-FILE` per ANS §11.6.1.1717
+**When** invoked with an already-open FID
+**Then** the same frame-push sequence happens but without an initial `OPEN-FILE`; the caller retains ownership of the FID for ongoing file operations but the outer interpreter reads it as SOURCE.
+
+**Given** `INCLUDE` per ANS §11.6.2.1717 (Forth 2014 extension)
+**When** invoked with a filename token (parsed from the input stream)
+**Then** it behaves as `BL WORD COUNT INCLUDED`.
+
+**Given** a THROW occurring mid-INCLUDE
+**When** Story 11.3's THROW algorithm walks the `INCLUDE-TOP` chain to the target exception frame
+**Then** each INCLUDE source frame above the target is cleaned up: FID closed, frame popped, `INCLUDE-TOP` chain relinked — satisfying NFR9 (no orphaned FIDs after THROW).
+
+**Given** FR44 (drive equivalence)
+**When** the filename argument contains a CP/M drive letter (`A:FOO.FTH`, `B:FOO.FTH`) or no drive letter
+**Then** `INCLUDE` / `INCLUDED` work identically across drives with no syntactic distinction.
+
+**Given** NFR21 (CP/M path syntax)
+**When** filenames are passed
+**Then** CP/M 2.2 8.3 syntax + optional drive letter is accepted; wildcards and Unix-style paths are not supported; malformed paths raise an appropriate THROW.
+
+**Given** `tests/file_access_tests.fth` extended
+**When** it runs
+**Then** it covers: single `INCLUDE` of a known file; nested `INCLUDE` (A includes B includes C); `INCLUDE` that runs a THROW mid-file → FID closed, REPL live, state intact; `INCLUDED` with a bad filename → `-38 THROW` (file not found); pool stress — deep nesting up to 8 FIDs.
+
+### Story 13.5: `ASSEMBLER-PATH` USER variable + path resolver
+
+As a Forth user,
+I want a user-settable `ASSEMBLER-PATH` variable that defaults to "current drive + ASSEMBLER.FTH" but allows override,
+So that the lazy-load in Story 13.6 has a zero-configuration default while still letting power users point to a different location (FR46a, FR46b, NFR22).
+
+**Acceptance Criteria:**
+
+**Given** E13-D4's design (counted-string address, sentinel 0 = current drive + `ASSEMBLER.FTH`)
+**When** the kernel boots
+**Then** `ASSEMBLER-PATH` USER variable exists, initialised to 0 (sentinel).
+
+**Given** the path resolver in `src/lazy_load.asm`
+**When** invoked with `ASSEMBLER-PATH = 0`
+**Then** it queries BDOS function 25 for the current drive letter and constructs `<drive>:ASSEMBLER.FTH` in an internal buffer, returning the resulting counted-string address.
+
+**Given** `ASSEMBLER-PATH` ≠ 0
+**When** the resolver is invoked
+**Then** it returns the counted-string address stored in `ASSEMBLER-PATH` as-is.
+
+**Given** a helper word `ASSEMBLER-PATH!` per FR46b's usage pattern (`S" B:MYASM.FTH" ASSEMBLER-PATH!`)
+**When** invoked
+**Then** it copies the source string into a dedicated 16-byte buffer in the user area and stores the buffer's address into `ASSEMBLER-PATH` — the user's transient string is not captured by reference.
+
+**Given** `tests/lazy_load_tests.fth`
+**When** it runs
+**Then** it covers: default sentinel resolves to current-drive path; `S" B:OTHER.FTH" ASSEMBLER-PATH!` round-trip; override persists across multiple queries; clearing via `0 ASSEMBLER-PATH!` reverts to sentinel behaviour.
+
+**Given** `src/lazy_load.asm`
+**When** authored
+**Then** `ASSEMBLER-PATH` and its resolver carry citation comments per NFR18/CCD-3 — `ASSEMBLER-PATH` is an antforth-specific extension with rationale pointing to Architecture §E13-D4 and PRD NFR22.
+
+### Story 13.6: First-`CODE` lazy-load hook (north-star capstone)
+
+As a Forth user,
+I want my first `CODE` invocation after a fresh boot to transparently load `ASSEMBLER.FTH` from the resolved path — with a visible disk-blink, a successful assembly, and an identical user experience from that point on,
+So that the kernel boots smaller yet becomes fully capable on demand; this is the north-star demo that tags **antforth 2.0** (FR45, FR46, FR47, FR48, FR49).
+
+**Acceptance Criteria:**
+
+**Given** a fresh boot of the Epic-13 binary
+**When** I inspect the `ASSEMBLER` wordlist before any `CODE` invocation
+**Then** it is empty — zero opcode words resident in the kernel dictionary (FR45).
+
+**Given** E13-D5's hook in `src/assembler.asm`'s `CODE`
+**When** `CODE` is invoked for the first time in a boot session
+**Then** the hook: (a) detects the `ASSEMBLER` wordlist is empty; (b) calls the path resolver (Story 13.5); (c) invokes `INCLUDED` on the resolved path to load `ASSEMBLER.FTH`; (d) proceeds with Epic 12's normal `CODE` wordlist-activation logic.
+
+**Given** the load completes successfully
+**When** `CODE` continues
+**Then** the user experience from that point on is identical to a pre-phase-2 kernel with assembler baked in — no new syntax, no changed error messages (FR47).
+
+**Given** subsequent `CODE` invocations in the same session
+**When** the hook runs
+**Then** the `ASSEMBLER` wordlist is non-empty, so no re-load occurs — zero load overhead after the first use (FR48).
+
+**Given** a failing path resolution (file not found, drive not ready, I/O error)
+**When** `INCLUDED` raises a THROW
+**Then** the THROW propagates with a diagnostic that includes the path that was attempted — e.g., `error -38: file not found (tried "A:ASSEMBLER.FTH")` (FR49).
+
+**Given** `ASSEMBLER-PATH!` set to a custom path before the first `CODE`
+**When** `CODE` is invoked
+**Then** the load reads from the custom path, not the default (FR46b).
+
+**Given** the release disk image builder under `disk/`
+**When** an Epic-13 release disk image is produced
+**Then** both `ANTFORTH.COM` and `ASSEMBLER.FTH` are present on the image, on the same drive by default, ready for the zero-configuration workflow (NFR22).
+
+**Given** `tests/lazy_load_tests.fth`
+**When** it runs
+**Then** it covers: fresh boot (`ASSEMBLER` empty) → first `CODE` → `ASSEMBLER` populated → emit a simple CODE word → execute it correctly; second `CODE` invocation → no re-load; `ASSEMBLER-PATH!` override → load from alternate path; missing file → descriptive THROW with path; THROW during `ASSEMBLER.FTH` load (malformed source) → REPL recovers cleanly.
+
+### Story 13.7: Epic 13 lazy-load latency, FS stress, BDOS audit + antforth 2.0 release gate (CCD-4)
+
+As an antforth maintainer,
+I want Epic 13 to close with an NFR3 lazy-load latency measurement on real hardware, a filesystem-error stress suite (NFR9), a BDOS-function-allow-list audit (NFR14), ROM delta accounting for the phase as a whole (NFR5), and a full Phase-1 + Epics 9–12 regression pass,
+So that every quantitative envelope set by the PRD is verified, the north-star demo is runnable on real hardware, and `antforth 2.0` can be tagged — completing the phase.
+
+**Acceptance Criteria:**
+
+**Given** a real MicroBeast at 8 MHz with the release disk image on B: ramdisk
+**When** the fresh boot → first `CODE` lazy-load sequence is measured from invocation to `ok` prompt
+**Then** the elapsed time is **≤ 3 seconds** per NFR3 (revised); the measurement is recorded in the epic's benchmark notes; sub-1-second load is flagged as a post-2.0 optimisation opportunity per PRD.
+
+**Given** a filesystem-error stress suite (`tests/file_access_tests.fth` extended)
+**When** each of the following is induced: disk-full during `WRITE-FILE`; attempt to open 9th file (pool exhausted, `-69`); read from a closed FID (`-70`); `WRITE-FILE` to an `R/O` file; `DELETE-FILE` on a non-existent file
+**Then** each error raises a descriptive THROW, the filesystem remains consistent (no corrupted directory entries), and no FID is orphaned in the FCB pool (NFR9).
+
+**Given** an `INCLUDE`-mid-THROW stress test
+**When** a THROW fires inside a file being `INCLUDED` from inside another file being `INCLUDED`
+**Then** the `INCLUDE-TOP` chain walk closes both FIDs in order, the FCB pool returns to its pre-INCLUDE state, and the REPL is live with state intact (E11+E13 coordination verified).
+
+**Given** NFR14's BDOS function allow-list (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
+**When** the final binary is audited for BDOS call sites
+**Then** every call uses a function number from the allow-list; any call outside the list is a blocker.
+
+**Given** the kernel ROM size
+**When** compared against the pre-phase (post-Epic-8) baseline
+**Then** a **net reduction** is measured per NFR5 — the phase-wide negative-delta target is achieved; the delta attributed primarily to Story 12.7's opcode migration.
+
+**Given** the full Phase-1 + Epics 9–12 REPL-piped test suites
+**When** run against the Epic-13 binary
+**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+
+**Given** the north-star demo as an executable test (per `tests/lazy_load_tests.fth`)
+**When** run end-to-end on real MicroBeast hardware
+**Then** the sequence passes: fresh boot → `ASSEMBLER` empty → `: BLINK 0xF0 @ 1 XOR 0xF0 ! ;` parses numeric prefix (Epic 9), triggers lazy-load (Epic 13), assembles via `ASSEMBLER.FTH` (Epic 12), executes without error (Epic 11 survivability), emits expected output.
+
+**Given** a "save-source / INCLUDE-back" round-trip on real hardware
+**When** the user defines words, saves source to B: via `WRITE-FILE`, reboots, and `INCLUDE`s the saved file
+**Then** the words are restored identically — the on-device edit/test/persist loop is demonstrated working (Journey 1 PRD success criterion).
+
+**Given** a phase-wide compliance re-audit
+**When** `docs/ans-forth-core-compliance.md` is re-run
+**Then** coverage remains 100% — no Epic-13 change regressed Core compliance.
+
+**Given** all the above AC met
+**When** the release is tagged
+**Then** the project is **antforth 2.0** — the five-epic phase is complete.

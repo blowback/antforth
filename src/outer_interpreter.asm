@@ -181,7 +181,13 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_DROP_cf               ; ( c-addr 0 -- c-addr )
         DW      w_ASM_RECOGNIZE_cf      ; ( c-addr -- value true | c-addr false )
         DW      w_QBRANCH_cf
-        DW      .try_real_number - $    ; if false, try NUMBER?
+        DW      .try_prefix_num - $     ; if false, try prefix recogniser
+        DW      w_BRANCH_cf
+        DW      .got_value - $          ; if true, share number handling
+.try_prefix_num:                         ; Epic 9 — NUMBER-PREFIX?
+        DW      w_NUMBER_PREFIX_Q_cf    ; ( c-addr -- n true | c-addr false )
+        DW      w_QBRANCH_cf
+        DW      .try_real_number - $    ; if false, fall through to NUMBER?
         DW      w_BRANCH_cf
         DW      .got_value - $          ; if true, share number handling
 .try_real_number:
