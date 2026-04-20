@@ -60,13 +60,12 @@ The phase pursues two mutually reinforcing goals:
 1. **100% ANS Forth Core compliance** — driving from the current ~86% to full coverage, the headline credibility win for prospective users of the project
 2. **On-device source development via the CP/M filesystem** — unblocking the edit / test / persist cycle directly on the MicroBeast hardware, the personal success moment for the project's primary persona
 
-The phase's acceptance criterion is a single capstone demo (the "north-star demo"): a fresh-booted kernel in which the assembler opcodes are *absent* from the dictionary, until the user's first `CODE` triggers a transparent on-demand load of `ASSEMBLER.FTH` from the current drive (or from the path in `ASSEMBLER-PATH` if overridden). That demo exercises every piece of new infrastructure built during the phase — numeric literal prefixes, Core gap words, CATCH/THROW, multi-vocabulary Search-Order, and File-Access — in one coherent story. Shipping it tags the 2.0 release.
+The phase ships as antforth 2.0 when both goals are met and all inter-epic infrastructure (numeric literal prefixes, Core gap words, CATCH/THROW, multi-vocabulary Search-Order + `ASSEMBLER` wordlist, File-Access) is operational and exercised by REPL-piped Forth test scripts against a real MicroBeast. The built-in Z80 assembler (Epics 4 / 4.3.5 / 4.4) is retained unchanged in Phase 2 and is simply wired under the new `ASSEMBLER` wordlist.
 
 ### What Makes This Special
 
 - **Purpose-built for MicroBeast** — no generic CP/M Forth supports the platform's unique I/O and display hardware, or the upcoming VideoBeast / AudioBeast expansion modules
 - **Modern ANS standard** (Forth 2014 for numeric literals specifically) — vs the FIG-Forth / Forth-79 implementations typically available for CP/M
-- **Core insight driving this phase:** Forth's self-hosting nature, combined with on-device file access, lets the kernel ROM get *smaller* as the system gets *more capable* — each feature moved out of ROM into Forth source on disk is another thing users can inspect, modify, and extend. antforth 2.0 is the first release where this direction of travel is visible in the product itself.
 - **Learning-driven quality** — the project exists to deepen expertise in Forth and Z80 simultaneously; every design decision is optimised for understanding, not just shipping
 - **Standards-grounded** — numeric literal prefixes, Core wordset, Exception semantics, Search-Order, and File-Access all follow the ANS Forth 2014 standard text directly
 
@@ -84,7 +83,7 @@ The phase's acceptance criterion is a single capstone demo (the "north-star demo
 **For "The OG" (experienced retrocomputing enthusiast):**
 
 - User loads a Forth source file from B: ramdisk via `INCLUDE`, modifies a word at the REPL, and saves it back — full edit / test / persist cycle on the device, no cross-compiler involved
-- User defines `CODE` words using the inline assembler without noticing that it is now lazy-loaded from disk (the load pause is imperceptible or single-second order on first use, zero on subsequent uses within a session)
+- User defines `CODE` words using the inline assembler; opcode words are visible only inside `CODE`/`END-CODE` thanks to the `ASSEMBLER` wordlist auto-activation, and invisible outside (no accidental opcode-word collisions with user words)
 - User catches and handles errors in their own code via `CATCH` rather than having the REPL `ABORT`
 - User organises their own words into named vocabularies using `WORDLIST` and `DEFINITIONS`
 
@@ -113,10 +112,9 @@ All items below are hard, verifiable acceptance criteria for the phase:
 - **`CATCH` / `THROW`** operational; **every internal error path** migrated through the exception mechanism — no remaining ABORT paths outside the standard `-1 THROW` / `-2 THROW` wrappers for `ABORT` / `ABORT"`
 - **Multiple vocabularies** operational (`WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`); the **`ASSEMBLER` wordlist auto-activates** inside `CODE` / `END-CODE` and deactivates afterwards; **all existing CODE-word source files continue to assemble correctly** (backward-compatibility AC)
 - **File-Access wordset** operational against CP/M 2.2 BDOS (A: ROM, B: ramdisk); `INCLUDE` loads source files; source can be saved back to B:
-- **North-star demo passes end-to-end:** assembler opcodes absent from the fresh-boot dictionary; first `CODE` triggers transparent on-demand load of `ASSEMBLER.FTH` from the current drive (or `ASSEMBLER-PATH` override); subsequent CODE-word definitions assemble identically to pre-phase behaviour
 - **All new functionality exercised by REPL-piped Forth test scripts** (per project testing conventions)
 - **All existing Epic 1–8 test suites continue to pass** — regression guarantee
-- **Kernel ROM footprint decreases** by the end of Epic 13 relative to the pre-phase baseline — the system concretely demonstrates the "kernel shrinks, capability grows" direction of travel
+- **Kernel ROM footprint tracked per-epic** with a strict per-epic budget; any growth is justified against the Phase-2 capability added in that epic (see NFR4)
 
 ### Measurable Outcomes
 
@@ -128,16 +126,16 @@ All items below are hard, verifiable acceptance criteria for the phase:
 | CATCH / THROW | Not implemented | Operational, all internal errors migrated |
 | Vocabulary model | Single flat | Full Search-Order + `ASSEMBLER` wordlist |
 | CP/M file load/save | Not implemented | `INCLUDE` operational; save to B: operational |
-| Assembler opcodes in kernel ROM | Baked in | Lazy-loaded from disk on demand |
+| Assembler opcodes | Baked into kernel dictionary | Baked into kernel, reachable under `ASSEMBLER` wordlist inside `CODE`/`END-CODE` |
 | External users | 0 (mild interest) | ≥ 1 active non-author user |
-| Kernel ROM footprint | Current size | Strictly smaller |
+| Kernel ROM footprint | Current size | Tracked per-epic; per-epic budgets maintained |
 | Numeric literal prefixes | Only `<BASEnum>` | Forth 2014 §3.4.1.3 + `0x` extension |
 
 ## Product Scope
 
 ### MVP — Minimum Viable Product
 
-The **antforth 2.0** release (end of Epic 13) is the MVP for this phase. It ships when all items listed under *Technical Success* above pass as acceptance criteria. Any subset that excludes the north-star demo (lazy-loaded assembler end-to-end) does not constitute MVP delivery — partial compliance without the capstone demo leaves the infrastructure unjustified.
+The **antforth 2.0** release (end of Epic 13) is the MVP for this phase. It ships when all items listed under *Technical Success* above pass as acceptance criteria — specifically: 100% ANS Core compliance, CATCH/THROW with full internal-error migration, Search-Order + `ASSEMBLER` wordlist auto-activation (with all pre-phase CODE sources assembling unchanged), File-Access operational against CP/M 2.2, numeric-literal prefixes system-wide, and all Epic 1–8 regressions intact.
 
 ### Growth Features (Post-MVP)
 
@@ -169,17 +167,17 @@ Medium- and long-term platform evolution:
 
 antforth is a **single-user interactive REPL** running on personal retrocomputer hardware. There is no network surface, no multi-tenant model, no authentication, and no API layer. The traditional PRD categories of *admin*, *support*, *moderator*, and *API consumer* do not apply — the user **is** the admin of their own machine. Accordingly, the journeys below cover the two primary personas from the 2026-04-14 product brief ("The OG" and "The Newb") across happy-path and edge-case flows, plus the one secondary persona (the Hardware / Peripheral Developer). This is the full human-interaction surface of the product.
 
-### Journey 1 — Mo and the First `CODE` After 2.0 (OG, happy path, north-star flow)
+### Journey 1 — Mo's On-Device Session (OG, happy path)
 
 **Opening scene.** Mo has been building and hacking on 8-bit machines for thirty years. She helped eight other people on the MicroBeast forum build their own kits. She's been following antforth's development on the project's Discord and downloaded the 2.0 release this morning. She boots it cold on her MicroBeast.
 
-**Rising action.** The banner reads `antforth 2.0 — ok`. Second nature: she types `HEX`, then `: BLINK 0xF0 @ 1 XOR 0xF0 ! ;`. Hits return. The disk light on the MicroBeast blinks once — a quarter-second pause, maybe less — and the prompt comes back `ok`. She types `BLINK BLINK BLINK` and sees the LED on the bench flick three times. Only after a moment does she realise what just happened: she just used the inline assembler for the first time this boot, and the assembler opcodes weren't actually in ROM — they were loaded transparently from `ASSEMBLER.FTH` on the current drive on first `CODE`. The disk blink was the entire 2.0 story, happening in real time.
+**Rising action.** The banner reads `antforth 2.0 — ok`. Second nature: she types `HEX`, then `: BLINK 0xF0 @ 1 XOR 0xF0 ! ;`. Hits return. `ok`. She types `BLINK BLINK BLINK` and sees the LED on the bench flick three times. No disk activity — the opcode definitions live in the kernel as they always have, but now they're only visible inside `CODE`/`END-CODE` thanks to the `ASSEMBLER` wordlist's auto-activation. Outside a `CODE` block, her user words can't collide with opcode names anymore.
 
-**Climax.** She types `WORDS` in the `ASSEMBLER` wordlist and sees all the familiar opcode words populated. Pulls up the source for `ASSEMBLER.FTH` with her text editor (on a different machine, via the ROM swap tool), sees it's just Forth — she could modify it herself. The kernel ROM got smaller, the system got more open. "This is what I wanted a Forth to be."
+**Climax.** She loads her own work-in-progress driver from B: with `INCLUDE B:SPRITES.FTH`, picks up where she left off yesterday. Edits a word at the REPL — `MARKER -OLD`, redefines, tests. It works. Saves the updated source back to B: with `SAVE-SOURCE`. Tomorrow she'll `INCLUDE` it again. The machine is finally a development environment, not a relic.
 
-**Resolution.** She spends the afternoon writing a VideoBeast sprite-test word in Forth, dropping into CODE for the tight loop, saving the source to B:\SPRITES.FTH via `SAVE-SOURCE`. Tomorrow, she `INCLUDE`s it again and picks up where she left off. The machine is finally a development environment, not a relic.
+**Resolution.** Later in the afternoon, a bug in her ring-buffer code surfaces. Instead of the ABORT that would have wiped her session on pre-2.0 antforth, she wraps the failing word in `CATCH`, gets a clean error code back, fixes the issue, re-tests — all without losing her dictionary. Errors are survivable.
 
-**Requirements surfaced:** Epic 9 (hex prefixes in her CODE definition), Epic 12 (ASSEMBLER wordlist auto-activation), Epic 13 (`INCLUDE` on first CODE, `SAVE-SOURCE` to B:), Core stability (word lookup across vocabularies, prompt semantics unchanged).
+**Requirements surfaced:** Epic 9 (hex prefixes in her CODE definition), Epic 11 (CATCH for error survivability), Epic 12 (`ASSEMBLER` wordlist auto-activation, no opcode leakage outside `CODE`/`END-CODE`), Epic 13 (`INCLUDE` / `SAVE-SOURCE` for on-device edit/test/persist).
 
 ### Journey 2 — Mo Catches a Bug (OG, edge case)
 
@@ -228,7 +226,6 @@ The four journeys above collectively surface the following PRD-level capability 
 | `CATCH` / `THROW` + THROW codes | | ✓ | | ✓ | Epic 11 |
 | Multiple vocabularies / `ASSEMBLER` wordlist | ✓ | | | ✓ | Epic 12 |
 | `INCLUDE` / `SAVE-SOURCE` on CP/M filesystem | ✓ | ✓ | | ✓ | Epic 13 |
-| Transparent lazy-load of ASSEMBLER.FTH on first CODE | ✓ | | | | Epic 13 (capstone) |
 | Existing REPL / compiler behaviour stable | ✓ | ✓ | ✓ | ✓ | Regression AC |
 
 Every capability delivered by Epics 9–13 traces to at least one journey; every journey is covered by a coherent set of Epic deliverables. No orphan requirements, no uncovered users.
@@ -260,14 +257,13 @@ antforth is distributed as a **CP/M 2.2 `.COM` executable** that runs on the Mic
 ### Installation & Distribution
 
 - **Artifact:** single `.COM` file, Z80 machine code, assembled from the antforth source tree
-- **Installation:** copy `.COM` (and, post-2.0, `ASSEMBLER.FTH`) to the same CP/M drive (typically A: ROM or B: ramdisk) via whatever file-transfer mechanism the user has available (serial transfer, EPROM programmer, SD-card adapter, etc.). The `.COM` and `.FTH` must live on the same drive unless the user sets `ASSEMBLER-PATH` explicitly.
+- **Installation:** copy `ANTFORTH.COM` to a CP/M drive (typically A: ROM or B: ramdisk) via whatever file-transfer mechanism the user has available (serial transfer, EPROM programmer, SD-card adapter, etc.). Single-file install.
 - **Update mechanism:** replace the `.COM` file. No in-place upgrade, no migration tooling. Because antforth's state is user-source on disk, sessions survive interpreter updates as long as the dictionary layout is compatible
 - **Versioning:** semantic versioning. Epics 9–12 ship as 1.x incremental releases; Epic 13 completion tags 2.0. Breaking dictionary layout changes require a major version bump
 
 ### Runtime Model
 
-- **Boot flow (pre-2.0):** `.COM` loaded by CP/M → banner → REPL prompt. Full assembler opcodes baked into the dictionary from ROM
-- **Boot flow (post-2.0):** `.COM` loaded by CP/M → banner → REPL prompt. Assembler opcodes absent from the dictionary; on first `CODE`, the system resolves the `ASSEMBLER-PATH` variable (defaulting to `ASSEMBLER.FTH` on the current drive, per BDOS function 25), opens the file via `INCLUDED`, and populates the `ASSEMBLER` wordlist transparently
+- **Boot flow:** `.COM` loaded by CP/M → banner → REPL prompt. Assembler opcodes baked into the kernel dictionary, reachable under the `ASSEMBLER` wordlist (auto-activated inside `CODE`/`END-CODE`). Unchanged across pre-2.0 and 2.0.
 - **Persistence:** user words live in RAM until the machine is powered off. Persistence across sessions is achieved by saving source to B: and `INCLUDE`-ing on next boot. There is no image-save mechanism; this is by design (keeps the source-of-truth in the user's files, not in the interpreter's state)
 - **MARKER:** still the in-session rollback mechanism. Unchanged by this phase.
 
@@ -287,7 +283,7 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 - **Source-of-truth boundary:** kernel written in Z80 assembly (builds with the external cross-assembler toolchain); system words written in Forth that the running interpreter reads on boot (post-2.0). The boundary of what is kernel vs what is Forth source shifts leftward over time — Epic 13 moves the assembler across this boundary
 - **Test harness:** REPL-piped Forth test scripts (per established project testing conventions since Epic 3). Continues as the canonical test format for all new functionality in Epics 9–13
 - **Cross-tooling:** build and test happen on a modern host (emulator + cross-assembler); final validation happens on real MicroBeast hardware. Both surfaces must be exercised before a release is tagged
-- **ROM-size budget:** strict. Each epic must track kernel size delta and justify increases; Epic 13's lazy-load pattern is expected to *reduce* kernel size net-of-additions
+- **ROM-size budget:** strict per-epic. Each epic logs its kernel-size delta and justifies increases against the Phase-2 capability added. Phase-2 additions will grow the kernel relative to the Epic-8 baseline; size-reduction opportunities are spawned as dedicated follow-up stories (Epic-6 precedent).
 
 ## Project Scoping & Phased Development
 
@@ -297,13 +293,13 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 
 **Resource Requirements:** single developer (Ant), supported by the BMAD agent workflow for planning, story authoring, dev execution, and QA. No external dependencies, no contractor time, no third-party integrations to schedule.
 
-**Success Philosophy:** ship the complete five-epic sequence — 9, 10, 11, 12, 13 — in order, with the north-star demo as the acceptance signal. Partial delivery (e.g., Core to 100% without File-Access) is a legitimate 1.x release but does not constitute MVP delivery for this phase. The phase is defined by the 2.0 gate.
+**Success Philosophy:** ship the complete five-epic sequence — 9, 10, 11, 12, 13 — in order, with the Epic-13 release gate (100% Core + CATCH/THROW + Search-Order + File-Access + full regression) as the acceptance signal. Partial delivery (e.g., Core to 100% without File-Access) is a legitimate 1.x release but does not constitute MVP delivery for this phase. The phase is defined by the 2.0 gate.
 
 ### MVP Feature Set (Phase 1 — antforth 2.0)
 
 **Core user journeys supported at MVP:**
 
-- Journey 1 (Mo, north-star flow) — full support at 2.0; the demo IS the MVP gate
+- Journey 1 (Mo's on-device session) — full support at 2.0 (Epic 9 + Epic 11 + Epic 12 + Epic 13)
 - Journey 2 (Mo catching a bug) — full support when Epic 11 + 13 ship
 - Journey 3 (Raj's first hour) — full support when Epic 9 ships (earliest value delivery of the phase)
 - Journey 4 (Pete validates prototype) — full support when Epics 11, 12, 13 ship
@@ -315,8 +311,8 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 | **Epic 9** | Forth 2014 §3.4.1.3 numeric literals + `0x` extension; case-insensitive; system-wide | First — every subsequent epic's test scripts and source benefit immediately |
 | **Epic 10** | Double-precision arithmetic; pictured numeric output; all remaining Core gap words; 100% Core compliance | Second — pictured output depends on double-precision; Core gaps unblock tests for later epics |
 | **Epic 11** | `CATCH` / `THROW`; all internal error paths migrated; standard THROW codes | Third — File-Access and Search-Order both benefit from throw-based error handling |
-| **Epic 12** | `WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`; `ASSEMBLER` wordlist auto-activation; `ASSEMBLER.FTH` authored | Fourth — the lazy-load capstone requires both Search-Order and an `ASSEMBLER.FTH` source file to exist |
-| **Epic 13** | Full File-Access wordset; `INCLUDE` / save to B:; **capstone: kernel boots without assembler, lazy-loads `ASSEMBLER.FTH` from the current drive (or `ASSEMBLER-PATH`) on first `CODE`** | Fifth — consumes everything above; the capstone demo tags 2.0 |
+| **Epic 12** | `WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`; `ASSEMBLER` wordlist created with all built-in opcodes registered; `ASSEMBLER` auto-activation inside `CODE` / `END-CODE`; all pre-phase CODE source files assemble unchanged | Fourth — consumes the exception infrastructure from Epic 11; delivers the vocabulary/namespace capability called out in Mo's and Pete's journeys |
+| **Epic 13** | Full File-Access wordset; `INCLUDE` / `SAVE-SOURCE` against B: ramdisk and A: ROM; Phase-2 regression gate; BDOS-function-allow-list audit; ROM-delta accounting | Fifth — consumes everything above; tags antforth 2.0 on pass |
 
 **MVP rule:** no epic is considered done until its tests pass on real MicroBeast hardware (not just emulator) AND all prior epics' tests still pass. Regression is a blocker, not a deferrable.
 
@@ -351,9 +347,8 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 | Core gap words require more effort than estimated (scope creep inside Epic 10) | Medium | Medium | Mid-Epic-10 survey against `docs/ans-forth-core-compliance.md`; if >30% over estimate, propose sprint-change with reduced scope + follow-up epic |
 | Internal error migration to CATCH/THROW breaks many untested edge paths | Medium | High | Regression test suites from Epics 1–8 are the net; migration proceeds word-by-word, not en-masse; each migration is a distinct commit with dedicated REPL tests |
 | Multi-vocabulary dictionary changes regress existing word lookup performance | Low | Medium | Benchmark kernel-speed tests from Epic 7/8 are retained; any >10% degradation is a blocker |
-| `ASSEMBLER.FTH` authorship (Epic 12) turns out to be a research project, not a task | Medium | High | Epic 12 has a dedicated story for this; if that story runs long, fall back to hand-migration story-by-story rather than build-time extraction |
 | CP/M file I/O edge cases (record boundaries, 128-byte blocks, EOF handling) burn Epic 13 time | Medium | Medium | Allocate a dedicated "file I/O sanity" story at the start of Epic 13 before implementing INCLUDE; tests against a known-good CP/M image |
-| Kernel ROM footprint grows despite lazy-load — 2.0 ends up bigger than 1.x | Low | Medium | Per-epic ROM-size budget; quarterly size-reduction opportunities spawned as their own stories (as happened in Epic 6) |
+| Kernel ROM footprint grows materially from Phase-2 additions without offset opportunities | Medium | Low | Per-epic ROM-size budget; size-reduction opportunities spawned as dedicated stories (Epic-6 precedent); the Phase-2 additions are strictly ANS-Core-compliance + standards-grounded capability, not optional features |
 | Real-hardware bugs surface late (emulator-only development misses Z80 edge cases) | Medium | Medium | Each epic's final story includes a hardware-validation task; no release tag without a pass on real MicroBeast |
 
 **Market / adoption risks:**
@@ -434,21 +429,11 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 - **FR43:** File operations raise a THROW (not ABORT) on errors such as file-not-found, permission-denied, or disk-full
 - **FR44:** Users can load source files from either drive A: (ROM filesystem) or B: (ramdisk) without syntactic distinction
 
-### System Extensibility & Self-Hosting (Epic 13 capstone)
-
-- **FR45:** A fresh boot of antforth 2.0 starts with the `ASSEMBLER` wordlist empty — no assembler opcodes resident in the kernel dictionary
-- **FR46:** On the first invocation of `CODE` after boot, the system automatically loads `ASSEMBLER.FTH` from the resolved path (see FR46a) to populate the `ASSEMBLER` wordlist
-- **FR46a:** The load path for `ASSEMBLER.FTH` is resolved as follows: if the user-settable variable `ASSEMBLER-PATH` holds a non-sentinel value, that path is used; otherwise the file is sought on the CP/M current drive (as returned by BDOS function 25)
-- **FR46b:** Users can override the default lookup location by setting `ASSEMBLER-PATH` to a CP/M file specifier (e.g., `S" B:ASSEMBLER.FTH" ASSEMBLER-PATH!`) before their first `CODE`
-- **FR47:** The lazy-load of the assembler is transparent to user code — `CODE` / `END-CODE` semantics are identical to a kernel with opcodes baked in (modulo a brief one-time load pause)
-- **FR48:** On subsequent invocations of `CODE` within the same boot session, no further loading occurs
-- **FR49:** If `ASSEMBLER.FTH` cannot be read on first `CODE` at the resolved path, the system raises a THROW with a descriptive diagnostic that includes the path that was attempted
-
 ### Backward Compatibility & Regression (phase-wide constraint)
 
-- **FR50:** All functional behaviour delivered in Epics 1–8 continues to work identically in antforth 2.0 — REPL, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, and existing word semantics
-- **FR51:** All existing REPL-piped test scripts from Epics 1–8 continue to pass against the antforth 2.0 binary
-- **FR52:** The unprefixed numeric literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE`, identically to pre-phase antforth
+- **FR45:** All functional behaviour delivered in Epics 1–8 continues to work identically in antforth 2.0 — REPL, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, and existing word semantics
+- **FR46:** All existing REPL-piped test scripts from Epics 1–8 continue to pass against the antforth 2.0 binary
+- **FR47:** The unprefixed numeric literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE`, identically to pre-phase antforth
 
 **Self-validation summary:**
 
@@ -457,7 +442,7 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 - ✅ **Altitude** — FRs describe WHAT users can do, not HOW the system implements it; many FRs could be implemented multiple ways
 - ✅ **Testability** — every FR can be verified by an observable outcome (word exists, word does X on input Y, error arrives with expected code)
 - ✅ **Independence** — each FR is understandable in isolation; no FR depends on reading another to be intelligible
-- ✅ **Completeness bar** — if the system satisfies all 52 FRs, the north-star demo passes and antforth 2.0 ships
+- ✅ **Completeness bar** — if the system satisfies all 47 FRs, antforth 2.0 ships
 
 ## Non-Functional Requirements
 
@@ -467,36 +452,34 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 
 - **NFR1: Numeric literal prefix parsing overhead.** Recognition of a prefixed numeric literal (`#`, `$`, `%`, `0x`, `'c'`) adds no more than **~20 Z80 cycles** over the unprefixed parse path for the 99th-percentile literal (bare integer with no prefix). Measured at the `INTERPRET` / number-conversion hot path against the Epic 7/8 benchmark suite.
 - **NFR2: Word lookup across multiple vocabularies.** With a search order of up to 8 wordlists, word lookup shall not regress by more than **10%** of cycle count versus the pre-phase single-vocabulary baseline. Baseline is the existing XOR-rotate 64-bucket hash lookup benchmark. Measured with the standard benchmark script on real MicroBeast hardware.
-- **NFR3: First-`CODE` lazy-load latency.** On first `CODE` after boot, the time from `CODE` invocation to the following `ok` prompt shall complete in **≤ 3 seconds** on real MicroBeast hardware (8 MHz Z80, B: ramdisk). Subsequent `CODE` invocations in the same session add zero load overhead. Sub-1-second load is a post-2.0 optimisation opportunity (likely via a tokenised or pre-compiled `ASSEMBLER.FTH` format), not an MVP blocker. ASSEMBLER.FTH has a soft size target of ≤ 8 KB to keep NFR3 comfortably satisfied; going over is acceptable if it is the trade-off for delivering all phase-2 functionality on schedule.
-- **NFR4: CATCH / THROW overhead.** An uncaught `CATCH` frame adds no more than **~15 Z80 cycles** to the protected word's execution (frame setup + teardown on normal exit). A successful THROW unwind back to the catching frame shall complete in bounded time proportional to the return-stack depth at THROW time.
-- **NFR5: Kernel ROM footprint.** antforth 2.0 kernel ROM size is **strictly smaller** than the pre-phase (post-Epic-8) baseline. Each epic logs its delta; net-of-all-epics delta is negative. This is the concrete expression of "kernel shrinks, capability grows."
-- **NFR6: Double-precision arithmetic performance.** Core double-precision primitives (`D+`, `D-`, `M*`, `UM/MOD`) execute in time comparable to hand-rolled Z80 equivalents (within ~20% — no algorithmic-class gap).
+- **NFR3: CATCH / THROW overhead.** An uncaught `CATCH` frame adds no more than **~15 Z80 cycles** to the protected word's execution (frame setup + teardown on normal exit). A successful THROW unwind back to the catching frame shall complete in bounded time proportional to the return-stack depth at THROW time.
+- **NFR4: Kernel ROM footprint budget.** Each Phase-2 epic logs its kernel-size delta and justifies any increase against the capability delivered. Net-of-Phase-2 delta is expected to be positive (the new Phase-2 capabilities — double-cell + pictured output, exception wordset, Search-Order, File-Access — all add code that was not in the Epic-8 baseline). Size-reduction opportunities are spawned as dedicated follow-up stories rather than gated per epic.
+- **NFR5: Double-precision arithmetic performance.** Core double-precision primitives (`D+`, `D-`, `M*`, `UM/MOD`) execute in time comparable to hand-rolled Z80 equivalents (within ~20% — no algorithmic-class gap).
 
 ### Reliability
 
-- **NFR7: REPL survivability.** The REPL shall survive any THROW, including stack overflow, division by zero, and undefined-word invocation. User's dictionary, in-session definitions, and working state are preserved across errors. (Corollary of FR22, re-stated as a quality attribute.)
-- **NFR8: State integrity after error.** No internal data structure (dictionary, wordlists, input buffer, pad, return stack) may be left in a corrupted or inconsistent state after a THROW. Standard ANS catch-frame cleanup semantics apply.
-- **NFR9: Filesystem error recovery.** Failures during file operations (disk full, file locked, I/O error from BDOS) raise a THROW with a specific code and leave the filesystem in a consistent state — no partial writes that corrupt CP/M directory entries, no orphaned file handles.
-- **NFR10: Regression guarantee.** The complete Epic 1–8 test suite shall pass on every antforth 2.0 candidate release. A single regression is a release blocker.
+- **NFR6: REPL survivability.** The REPL shall survive any THROW, including stack overflow, division by zero, and undefined-word invocation. User's dictionary, in-session definitions, and working state are preserved across errors. (Corollary of FR22, re-stated as a quality attribute.)
+- **NFR7: State integrity after error.** No internal data structure (dictionary, wordlists, input buffer, pad, return stack) may be left in a corrupted or inconsistent state after a THROW. Standard ANS catch-frame cleanup semantics apply.
+- **NFR8: Filesystem error recovery.** Failures during file operations (disk full, file locked, I/O error from BDOS) raise a THROW with a specific code and leave the filesystem in a consistent state — no partial writes that corrupt CP/M directory entries, no orphaned file handles.
+- **NFR9: Regression guarantee.** The complete Epic 1–8 test suite shall pass on every antforth 2.0 candidate release. A single regression is a release blocker.
 
 ### Compatibility & Standards Conformance
 
-- **NFR11: ANS Forth 1994 Core compliance.** The Core wordset (as enumerated in `docs/ans-forth-core-compliance.md`) is implemented to **100%** coverage with behaviour matching the ANS specification. Compliance is measured by the existing survey methodology; 86% → 100% is the phase's compliance progression.
-- **NFR12: Forth 2014 §3.4.1.3 conformance.** Numeric literal prefix syntax is implemented verbatim as specified in the Forth 2014 standard, section 3.4.1.3.
-- **NFR13: Extension discipline.** The only non-standard addition in this phase is the `0x` hex prefix. It is clearly flagged as an antforth-specific extension in all source comments and (post-phase) in user documentation. No silent divergence from the standards.
-- **NFR14: CP/M 2.2 BDOS integration.** antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40). No CP/M Plus, MP/M, or extended BIOS-level calls. Portability across CP/M 2.2 implementations is preserved.
-- **NFR15: CODE-word source file backward compatibility.** CODE-word source files written against pre-phase antforth assemble correctly and produce byte-identical output under antforth 2.0.
+- **NFR10: ANS Forth 1994 Core compliance.** The Core wordset (as enumerated in `docs/ans-forth-core-compliance.md`) is implemented to **100%** coverage with behaviour matching the ANS specification. Compliance is measured by the existing survey methodology; 86% → 100% is the phase's compliance progression.
+- **NFR11: Forth 2014 §3.4.1.3 conformance.** Numeric literal prefix syntax is implemented verbatim as specified in the Forth 2014 standard, section 3.4.1.3.
+- **NFR12: Extension discipline.** The only non-standard addition in this phase is the `0x` hex prefix. It is clearly flagged as an antforth-specific extension in all source comments and (post-phase) in user documentation. No silent divergence from the standards.
+- **NFR13: CP/M 2.2 BDOS integration.** antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40). No CP/M Plus, MP/M, or extended BIOS-level calls. Portability across CP/M 2.2 implementations is preserved.
+- **NFR14: CODE-word source file backward compatibility.** CODE-word source files written against pre-phase antforth assemble correctly and produce byte-identical output under antforth 2.0.
 
 ### Maintainability
 
-- **NFR16: Code density and readability.** Z80 assembly source shall favour readability over micro-optimisation, except where the epic explicitly targets performance (Epics 7–8 precedent). Comments on non-obvious logic are required; comments re-stating what assembly already says are forbidden.
-- **NFR17: Test-first discipline.** Every new word introduced in Epics 9–13 has REPL-piped Forth test coverage before being declared done (per established project convention since Epic 3). Test scripts are the canonical regression surface.
-- **NFR18: Single-source-of-truth for standards references.** Word behaviours that derive from a standard cite the standard section in the source comment (e.g., `; Forth 2014 §6.2.2270 CATCH`). This enables future re-audits.
-- **NFR19: Epic-level decoupling.** Each of Epics 9–13 delivers an independently-shippable `antforth 1.x` increment. Intermediate releases after Epics 9, 10, 11, 12 are each a legitimate release artifact — not merely an internal milestone.
+- **NFR15: Code density and readability.** Z80 assembly source shall favour readability over micro-optimisation, except where the epic explicitly targets performance (Epics 7–8 precedent). Comments on non-obvious logic are required; comments re-stating what assembly already says are forbidden.
+- **NFR16: Test-first discipline.** Every new word introduced in Epics 9–13 has REPL-piped Forth test coverage before being declared done (per established project convention since Epic 3). Test scripts are the canonical regression surface.
+- **NFR17: Single-source-of-truth for standards references.** Word behaviours that derive from a standard cite the standard section in the source comment (e.g., `; Forth 2014 §6.2.2270 CATCH`). This enables future re-audits.
+- **NFR18: Epic-level decoupling.** Each of Epics 9–13 delivers an independently-shippable `antforth 1.x` increment. Intermediate releases after Epics 9, 10, 11, 12 are each a legitimate release artifact — not merely an internal milestone.
 
 ### Integration (CP/M and Platform)
 
-- **NFR20: Terminal I/O portability.** antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9). No assumption of ANSI escape codes, cursor positioning, line-mode vs raw-mode toggles, or colour support. The interpreter runs on any CP/M 2.2 terminal.
-- **NFR21: File path conventions.** `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename) exactly. No wildcards in the PRD-scoped implementation; no Unix-style paths.
-- **NFR22: Lazy-load default path.** `ASSEMBLER.FTH` is located via the `ASSEMBLER-PATH` variable, defaulting to "current drive" (the CP/M drive active when antforth started, per BDOS function 25). This keeps the zero-configuration case working for users who copy `ANTFORTH.COM` and `ASSEMBLER.FTH` to the same drive, while giving the power user explicit control via `ASSEMBLER-PATH!`.
-- **NFR23: MicroBeast hardware dependency isolation.** No MicroBeast-specific hardware word enters the kernel or the ASSEMBLER wordlist during this phase. The MicroBeast hardware vocabulary is a post-2.0 epic and must be loadable as pure Forth source from disk, not kernel-resident.
+- **NFR19: Terminal I/O portability.** antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9). No assumption of ANSI escape codes, cursor positioning, line-mode vs raw-mode toggles, or colour support. The interpreter runs on any CP/M 2.2 terminal.
+- **NFR20: File path conventions.** `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename) exactly. No wildcards in the PRD-scoped implementation; no Unix-style paths.
+- **NFR21: MicroBeast hardware dependency isolation.** No MicroBeast-specific hardware word enters the kernel or the ASSEMBLER wordlist during this phase. The MicroBeast hardware vocabulary is a post-2.0 epic and must be loadable as pure Forth source from disk, not kernel-resident.

@@ -4,8 +4,8 @@ stepsCompleted:
   - step-02-design-epics
   - step-03-create-stories
 partyModeNotes:
-  - 'Epic 12: ASSEMBLER.FTH authorship becomes a named story with ≤8 KB soft size budget + hand-migration fallback path (Architecture Finding 3; PRD risk table).'
   - 'Epic 11: Add a "migration inventory + ordering" story at the front so the ABORT→THROW crawl scope is visible before word-by-word commits begin (E11-D3).'
+  - 'Sprint change 2026-04-20: Retained built-in Z80 assembler; removed ASSEMBLER.FTH authorship and lazy-load capstone (FR45–49, NFR3, NFR22, E13-D4/D5). See sprint-change-proposal-2026-04-20.md.'
 inputDocuments:
   - prd.md
   - architecture.md
@@ -23,7 +23,7 @@ phaseScope: 'Epics 9-13 — antforth 2.0 release'
 
 This document provides the epic and story breakdown for **antforth 2.0** (Phase 2), decomposing the PRD and Architecture into implementable stories for Epics 9 through 13. Phase 1 (Epics 1–8) is complete and preserved in `epics-phase1-epics-1-8.md`; its kernel, REPL, language-extension compiler, built-in Z80 assembler, MARKER, and shadow-register optimisations are the foundation on which Phase 2 builds.
 
-The phase delivers two mutually reinforcing goals — **100% ANS Forth Core compliance** and **on-device source development via the CP/M filesystem** — culminating in the north-star demo (fresh-booted kernel lazy-loads `ASSEMBLER.FTH` on first `CODE`), which tags the 2.0 release.
+The phase delivers two mutually reinforcing goals — **100% ANS Forth Core compliance** and **on-device source development via the CP/M filesystem**. The built-in Z80 assembler is retained unchanged; Epic 12 wires the existing opcode words under a new `ASSEMBLER` wordlist with auto-activation inside `CODE`/`END-CODE`. The 2.0 release is tagged when the Epic 13 regression gate passes against a real MicroBeast.
 
 ## Requirements Inventory
 
@@ -83,54 +83,43 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 - FR43: File operations raise a THROW (not ABORT) on errors such as file-not-found, permission-denied, or disk-full
 - FR44: Users can load source files from either drive A: (ROM filesystem) or B: (ramdisk) without syntactic distinction
 
-**System Extensibility & Self-Hosting (Epic 13 capstone)**
-- FR45: A fresh boot of antforth 2.0 starts with the `ASSEMBLER` wordlist empty — no assembler opcodes resident in the kernel dictionary
-- FR46: On the first invocation of `CODE` after boot, the system automatically loads `ASSEMBLER.FTH` from the resolved path to populate the `ASSEMBLER` wordlist
-- FR46a: The load path for `ASSEMBLER.FTH` is resolved as follows: if the user-settable variable `ASSEMBLER-PATH` holds a non-sentinel value, that path is used; otherwise the file is sought on the CP/M current drive (as returned by BDOS function 25)
-- FR46b: Users can override the default lookup location by setting `ASSEMBLER-PATH` to a CP/M file specifier before their first `CODE`
-- FR47: The lazy-load of the assembler is transparent to user code — `CODE` / `END-CODE` semantics are identical to a kernel with opcodes baked in (modulo a brief one-time load pause)
-- FR48: On subsequent invocations of `CODE` within the same boot session, no further loading occurs
-- FR49: If `ASSEMBLER.FTH` cannot be read on first `CODE` at the resolved path, the system raises a THROW with a descriptive diagnostic that includes the path that was attempted
-
 **Backward Compatibility & Regression (phase-wide constraint)**
-- FR50: All functional behaviour delivered in Epics 1–8 continues to work identically in antforth 2.0 — REPL, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, and existing word semantics
-- FR51: All existing REPL-piped test scripts from Epics 1–8 continue to pass against the antforth 2.0 binary
-- FR52: The unprefixed numeric literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE`, identically to pre-phase antforth
+- FR45: All functional behaviour delivered in Epics 1–8 continues to work identically in antforth 2.0 — REPL, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, and existing word semantics
+- FR46: All existing REPL-piped test scripts from Epics 1–8 continue to pass against the antforth 2.0 binary
+- FR47: The unprefixed numeric literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE`, identically to pre-phase antforth
 
 ### NonFunctional Requirements
 
 **Performance**
 - NFR1: Numeric literal prefix parsing overhead — recognition of a prefixed literal adds no more than ~20 Z80 cycles over the unprefixed parse path for the 99th-percentile literal
 - NFR2: Word lookup across multiple vocabularies — with a search order of up to 8 wordlists, lookup shall not regress by more than 10% of cycle count versus the pre-phase single-vocabulary baseline
-- NFR3: First-`CODE` lazy-load latency ≤ 3 seconds on real MicroBeast hardware (8 MHz Z80, B: ramdisk); subsequent `CODE` invocations in the same session add zero load overhead; sub-1-second load is a post-2.0 optimisation opportunity
-- NFR4: CATCH/THROW overhead — an uncaught `CATCH` frame adds no more than ~15 Z80 cycles; successful THROW unwind completes in bounded time proportional to return-stack depth at THROW time
-- NFR5: Kernel ROM footprint strictly smaller than the pre-phase (post-Epic-8) baseline; each epic logs its delta; net-of-all-epics delta is negative
-- NFR6: Double-precision arithmetic performance — Core double-precision primitives execute within ~20% of hand-rolled Z80 equivalents
+- NFR3: CATCH/THROW overhead — an uncaught `CATCH` frame adds no more than ~15 Z80 cycles; successful THROW unwind completes in bounded time proportional to return-stack depth at THROW time
+- NFR4: Kernel ROM footprint budget — each Phase-2 epic logs its kernel-size delta and justifies any increase against the capability delivered; net-of-Phase-2 delta is expected to be positive; size-reduction opportunities spawned as dedicated follow-up stories
+- NFR5: Double-precision arithmetic performance — Core double-precision primitives execute within ~20% of hand-rolled Z80 equivalents
 
 **Reliability**
-- NFR7: REPL shall survive any THROW, including stack overflow, division by zero, and undefined-word invocation; dictionary and in-session definitions are preserved
-- NFR8: State integrity after error — no internal data structure (dictionary, wordlists, input buffer, pad, return stack) may be left corrupted after a THROW
-- NFR9: Filesystem error recovery — failures during file operations raise THROW with a specific code and leave the filesystem consistent; no partial writes that corrupt CP/M directory entries; no orphaned file handles
-- NFR10: Regression guarantee — the complete Epic 1–8 test suite shall pass on every antforth 2.0 candidate release; a single regression is a release blocker
+- NFR6: REPL shall survive any THROW, including stack overflow, division by zero, and undefined-word invocation; dictionary and in-session definitions are preserved
+- NFR7: State integrity after error — no internal data structure (dictionary, wordlists, input buffer, pad, return stack) may be left corrupted after a THROW
+- NFR8: Filesystem error recovery — failures during file operations raise THROW with a specific code and leave the filesystem consistent; no partial writes that corrupt CP/M directory entries; no orphaned file handles
+- NFR9: Regression guarantee — the complete Epic 1–8 test suite shall pass on every antforth 2.0 candidate release; a single regression is a release blocker
 
 **Compatibility & Standards Conformance**
-- NFR11: ANS Forth 1994 Core wordset implemented to 100% coverage with behaviour matching the ANS specification (baseline 86% → 100% target)
-- NFR12: Numeric literal prefix syntax implemented verbatim as Forth 2014 §3.4.1.3
-- NFR13: Extension discipline — only non-standard addition this phase is the `0x` hex prefix; clearly flagged as an antforth extension; no silent divergence from standards
-- NFR14: CP/M 2.2 BDOS integration — antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
-- NFR15: CODE-word source file backward compatibility — pre-phase source files assemble correctly and produce byte-identical output under antforth 2.0
+- NFR10: ANS Forth 1994 Core wordset implemented to 100% coverage with behaviour matching the ANS specification (baseline 86% → 100% target)
+- NFR11: Numeric literal prefix syntax implemented verbatim as Forth 2014 §3.4.1.3
+- NFR12: Extension discipline — only non-standard addition this phase is the `0x` hex prefix; clearly flagged as an antforth extension; no silent divergence from standards
+- NFR13: CP/M 2.2 BDOS integration — antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
+- NFR14: CODE-word source file backward compatibility — pre-phase source files assemble correctly and produce byte-identical output under antforth 2.0
 
 **Maintainability**
-- NFR16: Z80 assembly source favours readability over micro-optimisation except where an epic explicitly targets performance; comments on non-obvious logic required; comments re-stating obvious assembly forbidden
-- NFR17: Test-first discipline — every new word in Epics 9–13 has REPL-piped Forth test coverage before being declared done
-- NFR18: Single-source-of-truth for standards references — word behaviours derived from a standard cite the standard section in the source comment
-- NFR19: Epic-level decoupling — each of Epics 9–13 delivers an independently-shippable `antforth 1.x` increment
+- NFR15: Z80 assembly source favours readability over micro-optimisation except where an epic explicitly targets performance; comments on non-obvious logic required; comments re-stating obvious assembly forbidden
+- NFR16: Test-first discipline — every new word in Epics 9–13 has REPL-piped Forth test coverage before being declared done
+- NFR17: Single-source-of-truth for standards references — word behaviours derived from a standard cite the standard section in the source comment
+- NFR18: Epic-level decoupling — each of Epics 9–13 delivers an independently-shippable `antforth 1.x` increment
 
 **Integration (CP/M and Platform)**
-- NFR20: Terminal I/O portability — antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9); no ANSI escape codes, cursor positioning, or colour
-- NFR21: File path conventions — `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename); no wildcards; no Unix-style paths
-- NFR22: Lazy-load default path — `ASSEMBLER.FTH` located via `ASSEMBLER-PATH` variable, defaulting to current drive per BDOS function 25; zero-configuration case preserved
-- NFR23: MicroBeast hardware dependency isolation — no MicroBeast-specific hardware word enters the kernel or ASSEMBLER wordlist during this phase
+- NFR19: Terminal I/O portability — antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9); no ANSI escape codes, cursor positioning, or colour
+- NFR20: File path conventions — `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename); no wildcards; no Unix-style paths
+- NFR21: MicroBeast hardware dependency isolation — no MicroBeast-specific hardware word enters the kernel or ASSEMBLER wordlist during this phase
 
 ### Additional Requirements
 
@@ -149,11 +138,10 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 - CCD-4: Per-epic benchmark gate — each epic includes a final "benchmarks + size delta" story gating completion on NFR envelopes
 
 **Source-file layout (Architecture §Source file organisation):**
-- `src/number_prefixes.asm` (Epic 9); `src/double.asm`, `src/pictured.asm` (Epic 10); `src/exception.asm` (Epic 11); `src/wordlists.asm` (Epic 12); `src/file_access.asm`, `src/lazy_load.asm` (Epic 13)
-- Existing `src/*.asm` edited in-place for ABORT→THROW migration and multi-vocabulary changes
+- `src/number_prefixes.asm` (Epic 9); `src/double.asm`, `src/pictured.asm` (Epic 10); `src/exception.asm` (Epic 11); `src/wordlists.asm` (Epic 12); `src/file_access.asm` (Epic 13)
+- Existing `src/*.asm` edited in-place for ABORT→THROW migration, multi-vocabulary changes, and `ASSEMBLER` wordlist registration
 - New tests under `tests/*.fth` (REPL-piped Forth); no new assembly test threads
 - New docs: `docs/throw-codes.md` (Epic 11); `docs/ans-forth-core-compliance.md` revised (Epic 10)
-- Example source: `examples/ASSEMBLER.FTH` (Epic 12) deployed alongside `ANTFORTH.COM`
 
 **Platform constraints (PRD §Target Platform):**
 - Z80 instruction set only — no Z80N, eZ80, or Z180 extensions
@@ -170,8 +158,6 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 - Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13
 - CCD-1 prerequisite to Epic 11 and Epic 13
 - E11-D1 (exception frame) prerequisite to E13-D2 (INCLUDE source frame)
-- E12-D1 (per-wordlist hash layout) prerequisite to E13-D5 (lazy-load hook)
-- E13-D4 (ASSEMBLER-PATH sentinel) prerequisite to E13-D5 (first-CODE hook)
 
 ### FR Coverage Map
 
@@ -221,16 +207,9 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 | FR42 | Epic 13 | `CLOSE-FILE` |
 | FR43 | Epic 13 | File-operation errors raise THROW |
 | FR44 | Epic 13 | Drives A: and B: are equivalent to `INCLUDE`/file ops |
-| FR45 | Epic 13 | Fresh boot: `ASSEMBLER` wordlist empty |
-| FR46 | Epic 13 | First `CODE` triggers `ASSEMBLER.FTH` load |
-| FR46a | Epic 13 | Path resolved via `ASSEMBLER-PATH` or current drive |
-| FR46b | Epic 13 | User override via `ASSEMBLER-PATH!` |
-| FR47 | Epic 13 | Lazy-load transparent to user code |
-| FR48 | Epic 13 | No reload on subsequent `CODE` in same session |
-| FR49 | Epic 13 | Load failure raises descriptive THROW including attempted path |
-| FR50 | Cross-epic regression AC | Phase-1 behavioural compatibility (enforced on every epic's regression story) |
-| FR51 | Cross-epic regression AC | Phase-1 REPL-piped test scripts continue to pass |
-| FR52 | Cross-epic regression AC | Unprefixed `<BASEnum>` numeric-literal form preserved |
+| FR45 | Cross-epic regression AC | Phase-1 behavioural compatibility (enforced on every epic's regression story) |
+| FR46 | Cross-epic regression AC | Phase-1 REPL-piped test scripts continue to pass |
+| FR47 | Cross-epic regression AC | Unprefixed `<BASEnum>` numeric-literal form preserved |
 
 ## Epic List
 
@@ -247,18 +226,18 @@ Users can catch errors with `CATCH`/`THROW`, receive standard ANS THROW codes, a
 **FRs covered:** FR16, FR17, FR18, FR19, FR20, FR21, FR22
 
 ### Epic 12: Multi-Vocabulary Search-Order & ASSEMBLER Wordlist
-Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. `ASSEMBLER.FTH` authorship is a named story with an ≤ 8 KB soft size budget (Architecture Finding 3) and a hand-migration fallback path (PRD risk table). Produces the examples/ASSEMBLER.FTH artefact deployed alongside `ANTFORTH.COM`. Standalone release as antforth 1.12.
+Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. The `ASSEMBLER` wordlist is populated from the existing kernel-resident opcode words; opcodes are not relocated to a Forth-source file during Phase 2. Standalone release as antforth 1.12.
 **FRs covered:** FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR31
 
-### Epic 13: File-Access with Lazy-Load Capstone
-Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Capstone: a fresh boot starts with the `ASSEMBLER` wordlist empty, and the first `CODE` transparently loads `ASSEMBLER.FTH` from the resolved path (`ASSEMBLER-PATH` override or current drive via BDOS fn 25). Exercises every previous epic in one coherent demo. Shipping this tags **antforth 2.0**.
-**FRs covered:** FR32, FR33, FR34, FR35, FR36, FR37, FR38, FR39, FR40, FR41, FR42, FR43, FR44, FR45, FR46, FR46a, FR46b, FR47, FR48, FR49
+### Epic 13: File-Access
+Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Closes with the Phase-2 release gate — full regression of Epics 1–12, BDOS-function-allow-list audit, filesystem-error stress suite, kernel ROM-delta accounting, and MicroBeast hardware validation. Passing the gate tags **antforth 2.0**.
+**FRs covered:** FR32, FR33, FR34, FR35, FR36, FR37, FR38, FR39, FR40, FR41, FR42, FR43, FR44
 
 ### Phase-wide regression constraint (not a standalone epic)
-FR50, FR51, FR52 — enforced as cross-cutting acceptance criteria on every epic's regression story per NFR10 and the per-epic benchmark gate (CCD-4). No dedicated "regression epic" — each epic owns its own regression passage.
+FR45, FR46, FR47 — enforced as cross-cutting acceptance criteria on every epic's regression story per NFR9 and the per-epic benchmark gate (CCD-4). No dedicated "regression epic" — each epic owns its own regression passage.
 
 ### Implementation Sequence (locked)
-Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13, per Architecture §Decision Impact Analysis. Dependencies: CCD-1 prerequisite to Epic 11 and Epic 13; E11-D1 prerequisite to E13-D2; E12-D1 prerequisite to E13-D5; E12's ASSEMBLER.FTH artefact prerequisite to Epic 13 capstone. Each epic independently shippable as an `antforth 1.x` release per NFR19.
+Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13, per Architecture §Decision Impact Analysis. Dependencies: CCD-1 prerequisite to Epic 11 and Epic 13; E11-D1 prerequisite to E13-D2. Each epic independently shippable as an `antforth 1.x` release per NFR18.
 
 ## Epic 9: Numeric Literal Prefixes
 
@@ -282,11 +261,11 @@ So that I can write decimal constants in source or at the REPL without a `DECIMA
 
 **Given** an unprefixed numeric literal (e.g., `42`)
 **When** it is parsed at the REPL
-**Then** the prefix recogniser is bypassed and parsing proceeds exactly as in the pre-Epic-9 code path (FR52 preserved).
+**Then** the prefix recogniser is bypassed and parsing proceeds exactly as in the pre-Epic-9 code path (FR47 preserved).
 
 **Given** the kernel source
 **When** the `#` prefix is implemented
-**Then** the `w_` word-implementation carries a standards-citation comment referencing Forth 2014 §3.4.1.3 (per NFR18/CCD-3).
+**Then** the `w_` word-implementation carries a standards-citation comment referencing Forth 2014 §3.4.1.3 (per NFR17/CCD-3).
 
 **Given** the new file `src/number_prefixes.asm`
 **When** the epic proceeds to stories 9.2+
@@ -310,7 +289,7 @@ So that I can match my muscle memory from other languages without mode-toggling 
 
 **Given** the kernel source
 **When** the `0x` prefix is implemented
-**Then** its source comment explicitly flags it as `; antforth extension — C-style hex prefix` per NFR13/CCD-3; the `$` prefix cites Forth 2014 §3.4.1.3.
+**Then** its source comment explicitly flags it as `; antforth extension — C-style hex prefix` per NFR12/CCD-3; the `$` prefix cites Forth 2014 §3.4.1.3.
 
 **Given** the prefix dispatch table
 **When** a two-character prefix (`0x`) is recognised
@@ -346,7 +325,7 @@ So that I can express bit patterns and ASCII codes directly without helper words
 
 **Given** the kernel source
 **When** `%` and `'c'` are implemented
-**Then** both carry Forth 2014 §3.4.1.3 citation comments per NFR18/CCD-3.
+**Then** both carry Forth 2014 §3.4.1.3 citation comments per NFR17/CCD-3.
 
 **Given** the REPL test script
 **When** it runs
@@ -412,7 +391,7 @@ So that the prefix grammar is consistent across the whole system (FR8) and my se
 
 As an antforth maintainer,
 I want Epic 9 to close with explicit benchmark measurements, a standards-citation audit, and a full regression pass on the Phase-1 test suite,
-So that NFR1 (prefix overhead), NFR5 (ROM delta), NFR10 (regression guarantee), NFR12 (spec conformance), NFR18 (citation discipline), and FR50–52 (backward compatibility) are verified before the epic is marked done and `antforth 1.9` can be tagged.
+So that NFR1 (prefix overhead), NFR4 (ROM delta), NFR9 (regression guarantee), NFR11 (spec conformance), NFR17 (citation discipline), and FR45–47 (backward compatibility) are verified before the epic is marked done and `antforth 1.9` can be tagged.
 
 **Acceptance Criteria:**
 
@@ -430,15 +409,15 @@ So that NFR1 (prefix overhead), NFR5 (ROM delta), NFR10 (regression guarantee), 
 
 **Given** the full Phase-1 REPL-piped test suite (`tests/core_tests.fth` + all Epic 1–8 tests)
 **When** run against the Epic-9 binary
-**Then** every test passes — zero regressions per NFR10 / FR51.
+**Then** every test passes — zero regressions per NFR9 / FR46.
 
 **Given** an unprefixed numeric literal like `42` in any `BASE`
 **When** parsed under the Epic-9 binary
-**Then** behaviour is bit-identical to the post-Epic-8 baseline — FR52 verified by dedicated regression test.
+**Then** behaviour is bit-identical to the post-Epic-8 baseline — FR47 verified by dedicated regression test.
 
 **Given** every word added in `src/number_prefixes.asm`
 **When** audited by a reviewer
-**Then** each standard-derived word carries a Forth 2014 §3.4.1.3 citation; the `0x` extension carries the `; antforth extension` flag — NFR18 / CCD-3 compliance verified.
+**Then** each standard-derived word carries a Forth 2014 §3.4.1.3 citation; the `0x` extension carries the `; antforth extension` flag — NFR17 / CCD-3 compliance verified.
 
 **Given** a real-MicroBeast-hardware smoke test
 **When** `tests/number_prefixes_tests.fth` is piped into the `.COM` on real hardware
@@ -486,7 +465,7 @@ So that I have a working stack foundation for all subsequent double-precision wo
 
 **Given** the new `src/double.asm` or modified `src/stack_ops.asm`
 **When** each word is implemented
-**Then** its source carries an ANS Forth 1994 §<section> citation per NFR18/CCD-3, and a stack-effect comment on its DEFCODE line.
+**Then** its source carries an ANS Forth 1994 §<section> citation per NFR17/CCD-3, and a stack-effect comment on its DEFCODE line.
 
 **Given** `tests/double_tests.fth`
 **When** run
@@ -530,7 +509,7 @@ So that I can do 32-bit signed and unsigned math using the standard vocabulary.
 
 **Given** the source
 **When** each word is implemented
-**Then** ANS Forth 1994 §<section> citations per NFR18/CCD-3 appear; stack-effect comments appear on every DEFCODE.
+**Then** ANS Forth 1994 §<section> citations per NFR17/CCD-3 appear; stack-effect comments appear on every DEFCODE.
 
 **Given** `tests/double_tests.fth`
 **When** it runs
@@ -614,7 +593,7 @@ So that I can author custom display formats and so the Core `.`/`U.`/`D.`/`.R` f
 
 **Given** new file `src/pictured.asm`
 **When** each word is implemented
-**Then** ANS citations + stack-effect comments per NFR18/CCD-3; Forth 2014's `HOLDS` carries a Forth 2014 §6.2.1625 citation (it is a 2014 addition to the standard).
+**Then** ANS citations + stack-effect comments per NFR17/CCD-3; Forth 2014's `HOLDS` carries a Forth 2014 §6.2.1625 citation (it is a 2014 addition to the standard).
 
 **Given** `tests/pictured_tests.fth`
 **When** it runs
@@ -630,7 +609,7 @@ So that the whole display family behaves consistently with user-defined pictured
 
 **Given** the pictured-output primitives from Story 10.7
 **When** `.`, `U.`, `D.`, `.R`, `U.R`, `D.R` are rewritten atop `<# ... #>`
-**Then** they produce byte-for-byte identical output to the pre-Epic-10 implementations for all input cases covered by the Epic 1–8 regression tests (zero regression per NFR10).
+**Then** they produce byte-for-byte identical output to the pre-Epic-10 implementations for all input cases covered by the Epic 1–8 regression tests (zero regression per NFR9).
 
 **Given** `src/formatting.asm`
 **When** edited to redirect these words onto pictured output
@@ -654,7 +633,7 @@ So that the Core wordset reaches 100% coverage with behaviour matching ANS Forth
 
 **Given** the inventory produced by Story 10.1
 **When** this story begins
-**Then** each identified gap word is implemented in the epic-appropriate source file per Architecture §Source-file organisation; each carries an ANS §<section> citation and stack-effect comment per NFR18/CCD-3.
+**Then** each identified gap word is implemented in the epic-appropriate source file per Architecture §Source-file organisation; each carries an ANS §<section> citation and stack-effect comment per NFR17/CCD-3.
 
 **Given** each newly implemented word
 **When** exercised against the behaviour specified in its ANS clause
@@ -672,13 +651,13 @@ So that the Core wordset reaches 100% coverage with behaviour matching ANS Forth
 
 As an antforth maintainer,
 I want Epic 10 to close with a verified 100% Core compliance measurement, a double-precision benchmark, and a full Phase-1 + Epic-9 regression pass,
-So that NFR6 (double-precision performance), NFR10 (regression), NFR11 (100% Core), NFR5 (ROM delta), and FR15 are demonstrably satisfied and `antforth 1.10` can be tagged as the "100% ANS Core" release.
+So that NFR5 (double-precision performance), NFR9 (regression), NFR10 (100% Core), NFR4 (ROM delta), and FR15 are demonstrably satisfied and `antforth 1.10` can be tagged as the "100% ANS Core" release.
 
 **Acceptance Criteria:**
 
 **Given** the updated `docs/ans-forth-core-compliance.md`
 **When** the compliance methodology is re-run
-**Then** coverage is **100%** of the ANS Forth 1994 Core wordset — the headline FR15/NFR11 deliverable.
+**Then** coverage is **100%** of the ANS Forth 1994 Core wordset — the headline FR15/NFR10 deliverable.
 
 **Given** representative double-precision primitives (`D+`, `D-`, `M*`, `UM/MOD`)
 **When** benchmarked against hand-rolled Z80 equivalents
@@ -690,11 +669,11 @@ So that NFR6 (double-precision performance), NFR10 (regression), NFR11 (100% Cor
 
 **Given** the full Phase-1 + Epic-9 REPL-piped test suites
 **When** run against the Epic-10 binary
-**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
 
 **Given** the `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` family reimplemented on pictured output
 **When** run against the Epic 1–8 display-output test cases
-**Then** output is byte-identical to the pre-Epic-10 baseline — FR50 verified.
+**Then** output is byte-identical to the pre-Epic-10 baseline — FR45 verified.
 
 **Given** a real-MicroBeast-hardware smoke test
 **When** the full Epic-10 test suite is piped into the `.COM` on hardware
@@ -726,7 +705,7 @@ So that the word-by-word migration in stories 11.4–11.6 has clear, non-collidi
 
 **Given** `src/constants.asm`
 **When** updated
-**Then** it contains EQU symbols for every THROW code used in the codebase (e.g., `THROW_STACK_UNDERFLOW EQU -4`, each with a citation comment per NFR18/CCD-3).
+**Then** it contains EQU symbols for every THROW code used in the codebase (e.g., `THROW_STACK_UNDERFLOW EQU -4`, each with a citation comment per NFR17/CCD-3).
 
 **Given** the inventory
 **When** complete
@@ -754,7 +733,7 @@ So that I have a safety harness around user code — the foundation for every su
 
 **Given** new file `src/exception.asm`
 **When** `CATCH` is implemented
-**Then** its source carries a Forth 2014 §9.6.1.0875 / §6.1.0875 citation per NFR18/CCD-3; stack-effect comment `( xt -- exception-code | 0 )` on its DEFCODE.
+**Then** its source carries a Forth 2014 §9.6.1.0875 / §6.1.0875 citation per NFR17/CCD-3; stack-effect comment `( xt -- exception-code | 0 )` on its DEFCODE.
 
 **Given** `tests/exception_tests.fth`
 **When** it runs
@@ -782,7 +761,7 @@ So that error handling is composable and the REPL survives any error (FR22, NFR7
 
 **Given** `src/exception.asm`
 **When** `THROW` is implemented
-**Then** Forth 2014 §9.6.1.2275 citation per NFR18/CCD-3; stack-effect `( n -- )`.
+**Then** Forth 2014 §9.6.1.2275 citation per NFR17/CCD-3; stack-effect `( n -- )`.
 
 **Given** `tests/exception_tests.fth`
 **When** it runs
@@ -926,7 +905,7 @@ So that the exception subsystem's performance, correctness, and safety envelopes
 
 **Given** the full Phase-1 + Epic-9 + Epic-10 test suites
 **When** run against the Epic-11 binary
-**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
 
 **Given** a real-MicroBeast-hardware smoke test
 **When** the full Epic-11 test suite (including the stress suite) is piped into the `.COM` on hardware
@@ -934,7 +913,7 @@ So that the exception subsystem's performance, correctness, and safety envelopes
 
 ## Epic 12: Multi-Vocabulary Search-Order & ASSEMBLER Wordlist
 
-Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. `ASSEMBLER.FTH` authorship is a named story migrating **every** opcode from the kernel into Forth source; if the ≤ 8 KB soft budget is missed, `ASSEMBLER.FTH` itself becomes the focus of future optimisation rather than leaving opcodes in the kernel. Produces the `examples/ASSEMBLER.FTH` artefact deployed alongside `ANTFORTH.COM`. Shippable as antforth 1.12.
+Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. The `ASSEMBLER` wordlist is populated from the existing kernel-resident opcode words (no migration to a Forth-source file is planned for Phase 2). Shippable as antforth 1.12.
 
 ### Story 12.1: Wordlist struct + hash parameterisation + `FORTH-WORDLIST` bootstrap
 
@@ -962,11 +941,11 @@ So that the kernel has a working multi-vocabulary infrastructure before any user
 
 **Given** new file `src/wordlists.asm`
 **When** the struct and supporting macros are defined
-**Then** `WORDLIST_SIZE EQU 130`, `WORDLIST_BUCKETS EQU 64`, and layout-offset constants are defined for use by subsequent stories; each has a citation comment per NFR18/CCD-3 where applicable.
+**Then** `WORDLIST_SIZE EQU 130`, `WORDLIST_BUCKETS EQU 64`, and layout-offset constants are defined for use by subsequent stories; each has a citation comment per NFR17/CCD-3 where applicable.
 
 **Given** `tests/wordlist_tests.fth`
 **When** it runs at this story's completion
-**Then** it confirms `FORTH-WORDLIST` (implemented in Story 12.3 as a user-facing word — for now accessed via its known address) is the current compilation and search wordlist; every Phase-1 + Epic-9/10/11 test still passes (NFR10).
+**Then** it confirms `FORTH-WORDLIST` (implemented in Story 12.3 as a user-facing word — for now accessed via its known address) is the current compilation and search wordlist; every Phase-1 + Epic-9/10/11 test still passes (NFR9).
 
 ### Story 12.2: `WORDLIST` and `SEARCH-WORDLIST`
 
@@ -990,7 +969,7 @@ So that I can partition my definitions into named namespaces (FR23) and perform 
 
 **Given** the source
 **When** both words are implemented
-**Then** ANS §16.6.1.2460 and §16.6.1.2192 citations appear per NFR18/CCD-3; stack-effect comments on DEFCODE lines.
+**Then** ANS §16.6.1.2460 and §16.6.1.2192 citations appear per NFR17/CCD-3; stack-effect comments on DEFCODE lines.
 
 **Given** `tests/wordlist_tests.fth`
 **When** it runs
@@ -1078,7 +1057,7 @@ So that I can clear out accumulated cruft and reset namespace visibility (FR27).
 
 **Given** `ONLY` is in the ANS Search-Order Extension wordset (§16.6.2)
 **When** the source is authored
-**Then** its citation comment is `; ANS Forth 1994 §16.6.2.1965 ONLY` per NFR18/CCD-3.
+**Then** its citation comment is `; ANS Forth 1994 §16.6.2.1965 ONLY` per NFR17/CCD-3.
 
 **Given** `tests/wordlist_tests.fth`
 **When** extended
@@ -1094,7 +1073,7 @@ So that opcode words are visible exactly where they're needed — no `ALSO ASSEM
 
 **Given** the kernel boot sequence
 **When** it completes
-**Then** an `ASSEMBLER` wordlist struct exists (created via `WORDLIST`); at this story's completion it is still populated with opcode words built into the kernel (Story 12.7 moves them to `ASSEMBLER.FTH`).
+**Then** an `ASSEMBLER` wordlist struct exists (created via `WORDLIST`); every built-in Z80 opcode word from `src/assembler.asm` is registered under the `ASSEMBLER` wordlist rather than `FORTH-WORDLIST`. Opcodes remain kernel-resident for the life of Phase 2 — no relocation to a Forth-source file is planned.
 
 **Given** E12-D4's save/restore pattern
 **When** `CODE` is invoked
@@ -1110,49 +1089,9 @@ So that opcode words are visible exactly where they're needed — no `ALSO ASSEM
 
 **Given** `tests/assembler_wordlist_tests.fth`
 **When** it runs
-**Then** it verifies: (a) assembler opcodes are invisible outside `CODE`/`END-CODE`; (b) they are visible inside; (c) `END-CODE` correctly restores pre-block search order; (d) every pre-phase CODE source file assembles unchanged (FR31, NFR15 — full coverage in Story 12.8).
+**Then** it verifies: (a) assembler opcodes are invisible outside `CODE`/`END-CODE`; (b) they are visible inside; (c) `END-CODE` correctly restores pre-block search order; (d) every pre-phase CODE source file assembles unchanged (FR31, NFR14 — full coverage in Story 12.7).
 
-### Story 12.7: `ASSEMBLER.FTH` authorship — full migration of all opcodes
-
-As an antforth maintainer,
-I want **every** Z80 opcode word from `src/assembler.asm` (all 168+) rewritten as pure Forth source in `examples/ASSEMBLER.FTH`, with zero opcodes left behind in the kernel,
-So that the assembler becomes fully user-inspectable Forth source and Epic 13's lazy-load capstone has a complete target — a ≤ 8 KB soft budget is preferred, but if the budget is missed, `ASSEMBLER.FTH` itself becomes the focus of future optimisation effort rather than leaving opcodes in the kernel (directive from project lead; party-mode note; Architecture Finding 3; PRD risk table).
-
-**Acceptance Criteria:**
-
-**Given** every opcode word currently implemented in `src/assembler.asm` (the complete 168+ inherited from Epics 4/4.3.5/4.4)
-**When** this story completes
-**Then** every single opcode word is implemented in Forth inside `examples/ASSEMBLER.FTH` — zero opcodes remain in `src/assembler.asm`. Partial migration is **not** acceptable.
-
-**Given** `src/assembler.asm`
-**When** inspected after this story
-**Then** it retains only the `CODE`/`END-CODE` auto-activation hooks from Story 12.6 (and, in Epic 13, the lazy-load hook); all opcode-producing words are gone from the kernel.
-
-**Given** the ≤ 8 KB soft target from Architecture Finding 3
-**When** `examples/ASSEMBLER.FTH` is built
-**Then** its size is recorded; if > 8 KB, the overage is documented in the story log and logged as a post-2.0 optimisation ticket — **but the story is still complete**, because all opcodes have migrated and `ASSEMBLER.FTH` is the canonical assembler source going forward.
-
-**Given** a size overage
-**When** documented
-**Then** the note explicitly identifies `ASSEMBLER.FTH` as the future optimisation target (dense factoring, table-driven dispatch, shared encoding helpers, etc.) — not the kernel.
-
-**Given** every pre-phase-2 CODE source file used in the Epic 4 / 4.3.5 / 4.4 test corpus
-**When** assembled against the Epic-12 binary (with the full `ASSEMBLER.FTH` kernel-sourced at build time)
-**Then** byte-identical output is produced (NFR15, FR31); this AC is the hard gate — backward compatibility is non-negotiable regardless of size outcome.
-
-**Given** NFR23 (MicroBeast hardware isolation)
-**When** `ASSEMBLER.FTH` is reviewed
-**Then** no MicroBeast-specific hardware word appears in it — pure Z80 opcode implementation only.
-
-**Given** the authored Forth source
-**When** reviewed for discipline
-**Then** it uses the Zilog dst-src operand order (memory rule), `LABEL`/`FIX` label convention (memory rule), and cites the Z80 instruction reference where non-obvious encoding decisions were made.
-
-**Given** `tests/assembler_wordlist_tests.fth`
-**When** it runs
-**Then** it covers a representative sample across every opcode family (LD variants, arithmetic, control flow, bit ops, shift/rotate, IX/IY prefixes, block ops, I/O) with byte-sequence assertions matching the pre-phase-2 reference output; no opcode family is untested.
-
-### Story 12.8: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
+### Story 12.7: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
 
 As an antforth maintainer,
 I want Epic 12 to close with NFR2 measurement, an exhaustive CODE-source-file backward-compat suite, ROM delta accounting, and a full regression pass,
@@ -1170,23 +1109,23 @@ So that multi-vocabulary lookup performance, byte-identical CODE assembly, and o
 
 **Given** every pre-phase-2 CODE source file in the project's test corpus
 **When** assembled against the Epic-12 binary
-**Then** output is byte-identical to the pre-phase-2 reference — FR31, NFR15 verified comprehensively.
+**Then** output is byte-identical to the pre-phase-2 reference — FR31, NFR14 verified comprehensively.
 
 **Given** the kernel ROM size
 **When** measured against the post-Epic-11 baseline
-**Then** a material reduction is measured — all 168+ ASSEMBLER opcodes have moved out of `src/assembler.asm` into `examples/ASSEMBLER.FTH` per Story 12.7; the delta is recorded as a major positive contribution toward NFR5's net-negative target.
+**Then** the Epic-12 kernel-size delta is recorded; the additions (Search-Order machinery, per-wordlist hash layout, `ASSEMBLER` wordlist registration, `CODE`/`END-CODE` auto-activation hooks) are expected to grow the kernel, and the growth is justified line-by-line against NFR4 (per-epic budget, not a net-negative gate).
 
 **Given** the full Phase-1 + Epics 9/10/11 test suites
 **When** run against the Epic-12 binary
-**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
 
 **Given** a real-MicroBeast-hardware smoke test
 **When** the full Epic-12 test suite runs on hardware
 **Then** it passes — PRD MVP rule satisfied; `antforth 1.12` release can be tagged.
 
-## Epic 13: File-Access with Lazy-Load Capstone
+## Epic 13: File-Access
 
-Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Capstone: a fresh boot starts with the `ASSEMBLER` wordlist empty, and the first `CODE` transparently loads `ASSEMBLER.FTH` from the resolved path (`ASSEMBLER-PATH` override or current drive via BDOS fn 25). Exercises every previous epic in one coherent demo. Shipping this tags **antforth 2.0**.
+Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Closes with the Phase-2 release gate — full regression of Epics 1–12, BDOS-function-allow-list audit, filesystem-error stress suite, kernel ROM-delta accounting, and MicroBeast hardware validation. Passing the gate tags **antforth 2.0**.
 
 ### Story 13.1: File I/O sanity — FCB pool + BDOS wrapper layer (PRD risk mitigation)
 
@@ -1204,13 +1143,13 @@ So that CP/M 128-byte record boundaries, EOF handling, and BDOS call conventions
 **When** `src/file_access.asm` is authored
 **Then** it exposes private helpers for: open (BDOS 15), close (16), delete (19), create (22), read sequential record (20), write sequential record (21), read random record (33), write random record (34), compute file size (35), get current drive (25); plus a byte-oriented read/write layer that handles the 128-byte record impedance using an in-FCB buffer.
 
-**Given** NFR14 (BDOS allow-list)
+**Given** NFR13 (BDOS allow-list)
 **When** the wrapper layer is authored
-**Then** every BDOS call uses a function number from the NFR14 allow-list; a source-level comment at each call site cites the BDOS function number and its purpose.
+**Then** every BDOS call uses a function number from the NFR13 allow-list; a source-level comment at each call site cites the BDOS function number and its purpose.
 
 **Given** the pool-acquire primitive
 **When** invoked with all 8 FCBs in use
-**Then** it raises `-69 THROW` (ANS §9.3.5 "file access method") with citation per CCD-2 / NFR18.
+**Then** it raises `-69 THROW` (ANS §9.3.5 "file access method") with citation per CCD-2 / NFR17.
 
 **Given** a known-good CP/M 2.2 disk image in the project's `disk/` directory
 **When** an internal test thread exercises: open, read 200 bytes (spans a record boundary), seek via internal primitive, read across EOF, close, delete
@@ -1332,121 +1271,45 @@ So that I can build sessions from multiple source files and recover cleanly from
 **When** it runs
 **Then** it covers: single `INCLUDE` of a known file; nested `INCLUDE` (A includes B includes C); `INCLUDE` that runs a THROW mid-file → FID closed, REPL live, state intact; `INCLUDED` with a bad filename → `-38 THROW` (file not found); pool stress — deep nesting up to 8 FIDs.
 
-### Story 13.5: `ASSEMBLER-PATH` USER variable + path resolver
-
-As a Forth user,
-I want a user-settable `ASSEMBLER-PATH` variable that defaults to "current drive + ASSEMBLER.FTH" but allows override,
-So that the lazy-load in Story 13.6 has a zero-configuration default while still letting power users point to a different location (FR46a, FR46b, NFR22).
-
-**Acceptance Criteria:**
-
-**Given** E13-D4's design (counted-string address, sentinel 0 = current drive + `ASSEMBLER.FTH`)
-**When** the kernel boots
-**Then** `ASSEMBLER-PATH` USER variable exists, initialised to 0 (sentinel).
-
-**Given** the path resolver in `src/lazy_load.asm`
-**When** invoked with `ASSEMBLER-PATH = 0`
-**Then** it queries BDOS function 25 for the current drive letter and constructs `<drive>:ASSEMBLER.FTH` in an internal buffer, returning the resulting counted-string address.
-
-**Given** `ASSEMBLER-PATH` ≠ 0
-**When** the resolver is invoked
-**Then** it returns the counted-string address stored in `ASSEMBLER-PATH` as-is.
-
-**Given** a helper word `ASSEMBLER-PATH!` per FR46b's usage pattern (`S" B:MYASM.FTH" ASSEMBLER-PATH!`)
-**When** invoked
-**Then** it copies the source string into a dedicated 16-byte buffer in the user area and stores the buffer's address into `ASSEMBLER-PATH` — the user's transient string is not captured by reference.
-
-**Given** `tests/lazy_load_tests.fth`
-**When** it runs
-**Then** it covers: default sentinel resolves to current-drive path; `S" B:OTHER.FTH" ASSEMBLER-PATH!` round-trip; override persists across multiple queries; clearing via `0 ASSEMBLER-PATH!` reverts to sentinel behaviour.
-
-**Given** `src/lazy_load.asm`
-**When** authored
-**Then** `ASSEMBLER-PATH` and its resolver carry citation comments per NFR18/CCD-3 — `ASSEMBLER-PATH` is an antforth-specific extension with rationale pointing to Architecture §E13-D4 and PRD NFR22.
-
-### Story 13.6: First-`CODE` lazy-load hook (north-star capstone)
-
-As a Forth user,
-I want my first `CODE` invocation after a fresh boot to transparently load `ASSEMBLER.FTH` from the resolved path — with a visible disk-blink, a successful assembly, and an identical user experience from that point on,
-So that the kernel boots smaller yet becomes fully capable on demand; this is the north-star demo that tags **antforth 2.0** (FR45, FR46, FR47, FR48, FR49).
-
-**Acceptance Criteria:**
-
-**Given** a fresh boot of the Epic-13 binary
-**When** I inspect the `ASSEMBLER` wordlist before any `CODE` invocation
-**Then** it is empty — zero opcode words resident in the kernel dictionary (FR45).
-
-**Given** E13-D5's hook in `src/assembler.asm`'s `CODE`
-**When** `CODE` is invoked for the first time in a boot session
-**Then** the hook: (a) detects the `ASSEMBLER` wordlist is empty; (b) calls the path resolver (Story 13.5); (c) invokes `INCLUDED` on the resolved path to load `ASSEMBLER.FTH`; (d) proceeds with Epic 12's normal `CODE` wordlist-activation logic.
-
-**Given** the load completes successfully
-**When** `CODE` continues
-**Then** the user experience from that point on is identical to a pre-phase-2 kernel with assembler baked in — no new syntax, no changed error messages (FR47).
-
-**Given** subsequent `CODE` invocations in the same session
-**When** the hook runs
-**Then** the `ASSEMBLER` wordlist is non-empty, so no re-load occurs — zero load overhead after the first use (FR48).
-
-**Given** a failing path resolution (file not found, drive not ready, I/O error)
-**When** `INCLUDED` raises a THROW
-**Then** the THROW propagates with a diagnostic that includes the path that was attempted — e.g., `error -38: file not found (tried "A:ASSEMBLER.FTH")` (FR49).
-
-**Given** `ASSEMBLER-PATH!` set to a custom path before the first `CODE`
-**When** `CODE` is invoked
-**Then** the load reads from the custom path, not the default (FR46b).
-
-**Given** the release disk image builder under `disk/`
-**When** an Epic-13 release disk image is produced
-**Then** both `ANTFORTH.COM` and `ASSEMBLER.FTH` are present on the image, on the same drive by default, ready for the zero-configuration workflow (NFR22).
-
-**Given** `tests/lazy_load_tests.fth`
-**When** it runs
-**Then** it covers: fresh boot (`ASSEMBLER` empty) → first `CODE` → `ASSEMBLER` populated → emit a simple CODE word → execute it correctly; second `CODE` invocation → no re-load; `ASSEMBLER-PATH!` override → load from alternate path; missing file → descriptive THROW with path; THROW during `ASSEMBLER.FTH` load (malformed source) → REPL recovers cleanly.
-
-### Story 13.7: Epic 13 lazy-load latency, FS stress, BDOS audit + antforth 2.0 release gate (CCD-4)
+### Story 13.5: Epic 13 FS stress, BDOS audit, ROM delta + antforth 2.0 release gate (CCD-4)
 
 As an antforth maintainer,
-I want Epic 13 to close with an NFR3 lazy-load latency measurement on real hardware, a filesystem-error stress suite (NFR9), a BDOS-function-allow-list audit (NFR14), ROM delta accounting for the phase as a whole (NFR5), and a full Phase-1 + Epics 9–12 regression pass,
-So that every quantitative envelope set by the PRD is verified, the north-star demo is runnable on real hardware, and `antforth 2.0` can be tagged — completing the phase.
+I want Epic 13 to close with a filesystem-error stress suite (NFR8), a BDOS-function-allow-list audit (NFR13), ROM delta accounting for the phase as a whole (NFR4), and a full Phase-1 + Epics 9–12 regression pass on real MicroBeast hardware,
+So that every quantitative envelope set by the PRD is verified and `antforth 2.0` can be tagged — completing the phase.
 
 **Acceptance Criteria:**
-
-**Given** a real MicroBeast at 8 MHz with the release disk image on B: ramdisk
-**When** the fresh boot → first `CODE` lazy-load sequence is measured from invocation to `ok` prompt
-**Then** the elapsed time is **≤ 3 seconds** per NFR3 (revised); the measurement is recorded in the epic's benchmark notes; sub-1-second load is flagged as a post-2.0 optimisation opportunity per PRD.
 
 **Given** a filesystem-error stress suite (`tests/file_access_tests.fth` extended)
 **When** each of the following is induced: disk-full during `WRITE-FILE`; attempt to open 9th file (pool exhausted, `-69`); read from a closed FID (`-70`); `WRITE-FILE` to an `R/O` file; `DELETE-FILE` on a non-existent file
-**Then** each error raises a descriptive THROW, the filesystem remains consistent (no corrupted directory entries), and no FID is orphaned in the FCB pool (NFR9).
+**Then** each error raises a descriptive THROW, the filesystem remains consistent (no corrupted directory entries), and no FID is orphaned in the FCB pool (NFR8).
 
 **Given** an `INCLUDE`-mid-THROW stress test
 **When** a THROW fires inside a file being `INCLUDED` from inside another file being `INCLUDED`
 **Then** the `INCLUDE-TOP` chain walk closes both FIDs in order, the FCB pool returns to its pre-INCLUDE state, and the REPL is live with state intact (E11+E13 coordination verified).
 
-**Given** NFR14's BDOS function allow-list (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
+**Given** NFR13's BDOS function allow-list (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
 **When** the final binary is audited for BDOS call sites
 **Then** every call uses a function number from the allow-list; any call outside the list is a blocker.
 
 **Given** the kernel ROM size
 **When** compared against the pre-phase (post-Epic-8) baseline
-**Then** a **net reduction** is measured per NFR5 — the phase-wide negative-delta target is achieved; the delta attributed primarily to Story 12.7's opcode migration.
+**Then** the Phase-2 kernel-size delta is recorded; it is expected to be positive (the additions — double-cell + pictured output, exception wordset, Search-Order, File-Access — all add code with no offsetting migration). Per-epic deltas are summed and justified against NFR4 (per-epic budget discipline, not a net-negative gate).
 
 **Given** the full Phase-1 + Epics 9–12 REPL-piped test suites
 **When** run against the Epic-13 binary
-**Then** every test passes — zero regressions per NFR10 / FR50 / FR51.
+**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
 
-**Given** the north-star demo as an executable test (per `tests/lazy_load_tests.fth`)
-**When** run end-to-end on real MicroBeast hardware
-**Then** the sequence passes: fresh boot → `ASSEMBLER` empty → `: BLINK 0xF0 @ 1 XOR 0xF0 ! ;` parses numeric prefix (Epic 9), triggers lazy-load (Epic 13), assembles via `ASSEMBLER.FTH` (Epic 12), executes without error (Epic 11 survivability), emits expected output.
-
-**Given** a "save-source / INCLUDE-back" round-trip on real hardware
+**Given** a "define / save-source / INCLUDE-back" round-trip on real hardware
 **When** the user defines words, saves source to B: via `WRITE-FILE`, reboots, and `INCLUDE`s the saved file
 **Then** the words are restored identically — the on-device edit/test/persist loop is demonstrated working (Journey 1 PRD success criterion).
 
 **Given** a phase-wide compliance re-audit
 **When** `docs/ans-forth-core-compliance.md` is re-run
 **Then** coverage remains 100% — no Epic-13 change regressed Core compliance.
+
+**Given** a real-MicroBeast hardware smoke test
+**When** the full Epic-13 test suite runs on hardware (Phase-1 regressions + Epics 9–12 regressions + new Epic-13 file-access tests + FS stress suite)
+**Then** every test passes — PRD MVP rule satisfied.
 
 **Given** all the above AC met
 **When** the release is tagged

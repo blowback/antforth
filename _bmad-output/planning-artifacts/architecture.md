@@ -39,28 +39,25 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Functional Requirements:**
 
-The 2026-04-14 PRD specifies **52 Functional Requirements** organised into 7 capability areas, each tagged to the epic that delivers it:
+The 2026-04-20-revised PRD specifies **47 Functional Requirements** organised into 6 capability areas, each tagged to the epic that delivers it:
 
 - **FR1–FR9 (Epic 9):** Numeric-literal prefix recognition (Forth 2014 §3.4.1.3 + `0x` extension). Architectural impact: extension of the outer-interpreter number-parsing path — a single hot loop touched by every token.
 - **FR10–FR15 (Epic 10):** Double-precision arithmetic, pictured numeric output, Core-gap word completion to 100%. Architectural impact: new data-type handling on the parameter stack (double-cells), a dedicated output-formatting buffer, and a scattering of primitive additions across existing modules.
 - **FR16–FR22 (Epic 11):** Exception wordset (`CATCH`/`THROW`) with **full internal error migration** — every error path in the interpreter, compiler, and primitives routes through THROW. Architectural impact: deep — touches the return stack discipline (exception frames), every error-raising primitive, and the REPL top-level loop.
-- **FR23–FR31 (Epic 12):** Multi-vocabulary Search-Order wordset (`WORDLIST`, `SET-ORDER`, `DEFINITIONS`, ...) plus `ASSEMBLER` wordlist auto-activation. Architectural impact: generalisation of the existing single-vocabulary hash dictionary into per-wordlist hash tables; new search-order data structure consumed by word lookup on every token.
-- **FR32–FR44 (Epic 13, part 1):** File-Access wordset against CP/M 2.2 BDOS. Architectural impact: new kernel subsystem for file-handle management, byte-stream I/O abstracted over CP/M's 128-byte record model.
-- **FR45–FR49 (Epic 13 capstone):** Lazy-load of `ASSEMBLER.FTH` on first `CODE`, resolved via the user-settable `ASSEMBLER-PATH` variable (defaulting to current drive per BDOS fn 25). Architectural impact: `CODE` becomes a recogniser hook that may trigger file I/O; reshapes the boot-to-first-CODE flow.
-- **FR50–FR52 (phase-wide constraint):** Backward compatibility with all Epics 1–8 behaviour and test suites.
+- **FR23–FR31 (Epic 12):** Multi-vocabulary Search-Order wordset (`WORDLIST`, `SET-ORDER`, `DEFINITIONS`, ...) plus `ASSEMBLER` wordlist auto-activation. Architectural impact: generalisation of the existing single-vocabulary hash dictionary into per-wordlist hash tables; new search-order data structure consumed by word lookup on every token. Built-in opcode words remain kernel-resident; the wordlist merely re-scopes their visibility to `CODE`/`END-CODE` blocks.
+- **FR32–FR44 (Epic 13):** File-Access wordset against CP/M 2.2 BDOS. Architectural impact: new kernel subsystem for file-handle management, byte-stream I/O abstracted over CP/M's 128-byte record model.
+- **FR45–FR47 (phase-wide constraint):** Backward compatibility with all Epics 1–8 behaviour and test suites.
 
 **Non-Functional Requirements:**
 
-The PRD specifies **23 NFRs** across five categories, with the architecturally load-bearing ones being:
+The PRD specifies **21 NFRs** across five categories, with the architecturally load-bearing ones being:
 
 - **NFR1 (prefix parse overhead ≤ ~20 cycles), NFR2 (multi-vocab lookup regression ≤ 10%)** — constrain the hot-path designs for the number recogniser and the word-lookup fan-out
-- **NFR3 (first-`CODE` lazy-load ≤ 1 second)** — drives the `ASSEMBLER.FTH` format choice (pure Forth source, not tokenised or compiled image) and the INCLUDED throughput
-- **NFR4 (CATCH/THROW overhead ≤ ~15 cycles uncaught)** — constrains the exception-frame implementation on the return stack
-- **NFR5 (kernel ROM strictly smaller than pre-phase baseline)** — forces the lazy-load epic to deliver net negative size, not just new functionality
-- **NFR7 / NFR8 (REPL survivability, state integrity after THROW)** — architectural discipline: every error-raising site has a defined unwind protocol
-- **NFR9 (filesystem error recovery, no orphaned handles)** — file-handle lifecycle discipline
-- **NFR14 (CP/M 2.2 BDOS function allow-list, specific functions including 25)** — constrains the BDOS integration
-- **NFR22 (`ASSEMBLER-PATH` variable, current-drive default)** — specific design contract for the lazy-load resolver
+- **NFR3 (CATCH/THROW overhead ≤ ~15 cycles uncaught)** — constrains the exception-frame implementation on the return stack
+- **NFR4 (kernel ROM footprint budget, per-epic)** — each epic logs its delta and justifies increases; Phase-2 net-delta is expected to be positive (no lazy-load offset); size-reduction opportunities are post-2.0 dedicated stories
+- **NFR6 / NFR7 (REPL survivability, state integrity after THROW)** — architectural discipline: every error-raising site has a defined unwind protocol
+- **NFR8 (filesystem error recovery, no orphaned handles)** — file-handle lifecycle discipline
+- **NFR13 (CP/M 2.2 BDOS function allow-list, specific functions)** — constrains the BDOS integration
 
 **Scale & Complexity:**
 
@@ -71,7 +68,7 @@ The PRD specifies **23 NFRs** across five categories, with the architecturally l
   2. **Double-precision primitive suite + pictured-output buffer** — mostly new primitives on existing register conventions
   3. **Exception subsystem** — new return-stack frame type + pervasive error-path retargeting
   4. **Multi-vocabulary dictionary** — generalisation of existing XOR-rotate 64-bucket hash scheme
-  5. **File-Access subsystem** — new BDOS integration layer + INCLUDE parser + lazy-load hook
+  5. **File-Access subsystem** — new BDOS integration layer + INCLUDE parser
 
 ### Technical Constraints & Dependencies
 
@@ -101,8 +98,7 @@ The PRD specifies **23 NFRs** across five categories, with the architecturally l
 
 **New dependencies introduced this phase:**
 
-- **BDOS function 25** (get current drive) — newly required for NFR22 lazy-load default
-- **BDOS functions 15, 16, 19, 20, 21, 22, 26, 27, 33, 34, 35, 36, 40** — required for File-Access wordset (Epic 13)
+- **BDOS functions 15, 16, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40** — required for File-Access wordset (Epic 13); function 25 resolves the current drive letter for filenames without an explicit drive prefix
 - No new external software dependencies — everything is in-tree source
 
 **Backward-compatibility contract:**
@@ -121,13 +117,11 @@ These concerns span multiple epics and warrant dedicated architectural decisions
 
 3. **Error-code allocation.** ANS standard THROW codes (Epic 11) must coexist with any antforth-specific codes. A **throw-code allocation scheme** is needed (standard `-1`–`-58` reserved, extension range designated).
 
-4. **Kernel-vs-Forth source boundary.** Epic 13's lazy-load shifts assembler opcodes from kernel ROM to Forth source on disk. Future epics may do similar migrations. A **source-boundary policy** (what lives where, how the boundary moves) is an architectural concern that benefits future epics beyond this phase.
+4. **File-handle lifecycle.** Epic 13 introduces file handles (FIDs). These are finite resources on CP/M 2.2. Handle acquisition, release on THROW, and the relationship between `INCLUDE` nesting and file-handle depth need a clear contract. A **file-handle lifecycle policy** is needed.
 
-5. **File-handle lifecycle.** Epic 13 introduces file handles (FIDs). These are finite resources on CP/M 2.2. Handle acquisition, release on THROW, and the relationship between `INCLUDE` nesting and file-handle depth need a clear contract. A **file-handle lifecycle policy** is needed.
+5. **Performance regression surface.** NFR1, NFR2, NFR3, NFR4, NFR5 all set performance envelopes. The existing benchmark suite (Epic 7/8) is the regression net. A **per-epic benchmark gate** (epic done only when benchmarks pass) formalises the discipline.
 
-6. **Performance regression surface.** NFR1, NFR2, NFR4, NFR5, NFR6 all set performance envelopes. The existing benchmark suite (Epic 7/8) is the regression net. A **per-epic benchmark gate** (epic done only when benchmarks pass) formalises the discipline.
-
-7. **Standards-citation discipline.** NFR18 requires every standard-derived behaviour to cite its spec section in source. This is a writing-convention concern that applies across Epics 9, 10, 11, 12, 13.
+6. **Standards-citation discipline.** NFR17 requires every standard-derived behaviour to cite its spec section in source. This is a writing-convention concern that applies across Epics 9, 10, 11, 12, 13.
 
 These cross-cutting concerns will be addressed in the subsequent architectural decision steps.
 
@@ -155,7 +149,6 @@ All phase-2 architectural decisions build on this foundation without replacing a
 - Exception frame layout on the return stack (blocks Epic 11)
 - Per-wordlist hash table layout + search-order storage (blocks Epic 12)
 - File-handle representation + INCLUDE nesting (blocks Epic 13)
-- Lazy-load hook location and `ASSEMBLER-PATH` variable type (blocks Epic 13 capstone)
 
 **Important Decisions (shape the architecture significantly):**
 - Numeric recogniser integration point (Epic 9)
@@ -165,7 +158,6 @@ All phase-2 architectural decisions build on this foundation without replacing a
 - THROW code allocation scheme
 
 **Deferred Decisions (post-2.0):**
-- Kernel-vs-Forth source boundary policy beyond the ASSEMBLER case — revisit when a second migration candidate emerges
 - Whether to expose `TRAVERSE-WORDLIST` as part of Epic 12 or defer — lean defer; not in PRD scope
 - Second-platform portability concerns — explicitly post-2.0 per PRD
 
@@ -343,7 +335,7 @@ CATCH's implementation:
 
 ---
 
-### Epic 13 — File-Access & Lazy-Load
+### Epic 13 — File-Access
 
 #### E13-D1: File-handle representation
 
@@ -387,18 +379,6 @@ On THROW: handled by the unwind in E11-D2 (walks `INCLUDE-TOP` chain, closing ea
 
 **Rationale:** Hides the 128-byte record awkwardness from Forth code; single place to update if the BDOS call conventions ever need to change. Minimal layer — not full abstraction, just impedance matching.
 
-#### E13-D4: `ASSEMBLER-PATH` variable
-
-**Decision:** `ASSEMBLER-PATH` is a USER variable holding a counted-string address (c-addr of a length-prefixed string). Default value: `0` (the sentinel meaning "use current drive, file name `ASSEMBLER.FTH`"). Users set it via `S" B:MYASM.FTH" ASSEMBLER-PATH!` or similar — where `ASSEMBLER-PATH!` is a helper word that copies the string into a dedicated 16-byte buffer in the user area and stores the buffer address into `ASSEMBLER-PATH`.
-
-**Rationale:** Counted string is the natural Forth representation of a filename. Sentinel `0` makes the default case (current drive) zero-configuration. Dedicated buffer prevents the user's transient string from being clobbered by later input.
-
-#### E13-D5: First-CODE lazy-load hook
-
-**Decision:** `CODE` (already IMMEDIATE) checks whether the `ASSEMBLER` wordlist is empty. If empty, it resolves `ASSEMBLER-PATH` (sentinel → current-drive + `ASSEMBLER.FTH`; non-sentinel → use as-is), calls `INCLUDED`, then proceeds with its normal wordlist-activation logic from E12-D4. If the INCLUDED fails (file not found, read error), the THROW propagates — user sees the diagnostic with the path that was attempted (FR49).
-
-**Rationale:** Hook lives in one place (`CODE`), runs once per session (subsequent CODE calls see a populated wordlist), zero cost on the hot path after first-use. Failure is user-visible and actionable.
-
 ---
 
 ### Decision Impact Analysis
@@ -408,15 +388,13 @@ On THROW: handled by the unwind in E11-D2 (walks `INCLUDE-TOP` chain, closing ea
 1. **Epic 9 first** — numeric prefixes; zero dependencies on other decisions
 2. **Epic 10 second** — double-cell + pictured output; needed by several Core gap words and by later test scripts
 3. **Epic 11 third** — CATCH/THROW; exception frames land; internal errors migrate; preq for Epic 13 error paths
-4. **Epic 12 fourth** — multi-vocabulary dictionary; ASSEMBLER wordlist (empty at this point) defined; search-order auto-activation wired for CODE
-5. **Epic 13 last** — File-Access on top of the new exception system; lazy-load uses wordlists from E12 + files from E13
+4. **Epic 12 fourth** — multi-vocabulary dictionary; `ASSEMBLER` wordlist created and populated from the existing kernel opcode words; auto-activation in `CODE`/`END-CODE` wired
+5. **Epic 13 last** — File-Access on top of the new exception system
 
 **Cross-component dependencies:**
 
 - CCD-1 (return-stack frame taxonomy) is prerequisite to E11-D1, E13-D2. Write it into the architecture doc before Epic 11 starts, not discovered mid-sprint.
 - E11-D1 (exception frame) must be defined before E13-D2 (INCLUDE source frame) — so THROW unwind logic knows how to skip over source frames.
-- E12-D1 (per-wordlist hash layout) must land before E13-D5 (lazy-load hook) — hook needs to test "is the ASSEMBLER wordlist empty?"
-- E13-D4 (ASSEMBLER-PATH sentinel) must land before E13-D5 (first-CODE hook) — hook's resolver is the consumer
 
 ## Implementation Patterns & Consistency Rules
 
@@ -443,14 +421,14 @@ The potential sources of cross-invocation divergence in an antforth epic are:
 
 - **Standard-defined words** use their exact ANS/Forth-2014 spelling, case-insensitive in source (upper by convention): `CATCH`, `THROW`, `INCLUDED`, `WORDLIST`
 - **antforth-extension words** carry no special prefix but are clearly flagged in their source comment as extensions: `; antforth extension   0x     — C-style hex prefix`
-- **Internal helper words** (not user-facing) use a `(paren)` convention per Forth tradition: `(CATCH-FRAME-POP)`, `(RESOLVE-ASM-PATH)`
-- **USER variables** use UPPER-CASE with hyphens: `ASSEMBLER-PATH`, `SEARCH-ORDER-DEPTH`, `HLD`
+- **Internal helper words** (not user-facing) use a `(paren)` convention per Forth tradition: `(CATCH-FRAME-POP)`, `(INCLUDE-FRAME-POP)`
+- **USER variables** use UPPER-CASE with hyphens: `SEARCH-ORDER-DEPTH`, `HLD`, `CATCH-TOP`, `INCLUDE-TOP`
 
 #### Assembly label naming
 
-- **Word implementations** use `w_` prefix followed by the lowercased word name with underscores replacing non-identifier characters: `w_catch`, `w_throw`, `w_search_wordlist`, `w_assembler_path`
+- **Word implementations** use `w_` prefix followed by the lowercased word name with underscores replacing non-identifier characters: `w_catch`, `w_throw`, `w_search_wordlist`
 - **Code field labels** (for DEFWORDs) use `w_XXX_cf`, computed via `EQU body - 3` to point at the `JP DOCOL` (**per project memory: `feedback_defword_cf_label.md`**)
-- **Internal subroutines** (not dictionary entries) use descriptive snake_case: `resolve_asm_path`, `find_catch_frame`, `cpm_bdos`
+- **Internal subroutines** (not dictionary entries) use descriptive snake_case: `find_catch_frame`, `cpm_bdos`
 - **Constants / EQU** use UPPER_SNAKE_CASE: `FCB_SIZE EQU 36`, `WORDLIST_SIZE EQU 130`, `THROW_STACK_UNDERFLOW EQU -4`
 
 #### Source file organisation
@@ -465,7 +443,6 @@ New phase-2 code goes into dedicated source files matching its epic:
 | `src/exception.asm` | 11 | `CATCH`, `THROW`, exception-frame management |
 | `src/wordlists.asm` | 12 | Multi-vocabulary Search-Order, `WORDLIST`, `SET-ORDER`, etc. |
 | `src/file_access.asm` | 13 | File-Access wordset, FCB pool, INCLUDE, BDOS file wrapper |
-| `src/lazy_load.asm` | 13 | First-CODE lazy-load hook, `ASSEMBLER-PATH` resolver |
 
 Existing source files (`outer_interpreter.asm`, `assembler.asm`, `dictionary.asm`, etc.) are edited in-place when the change is a modification rather than a new subsystem — e.g., migrating `ABORT` paths to `THROW` in Epic 11 touches every existing `.asm` file.
 
@@ -682,7 +659,7 @@ antforth/
 ├── src/                               # kernel source (Z80 assembly)
 │   ├── antforth.asm                   # top-level kernel entry / banner
 │   ├── arithmetic.asm                 # [edit] Epic 10 — migrate error paths to THROW
-│   ├── assembler.asm                  # [edit] Epic 12 — remove opcodes, move to ASSEMBLER.FTH
+│   ├── assembler.asm                  # [edit] Epic 12 — add ASSEMBLER-wordlist auto-activation hooks to CODE/END-CODE (opcodes unchanged)
 │   ├── bootstrap.asm                  # kernel init, initial dictionary setup
 │   ├── compiler.asm                   # [edit] Epic 11 — migrate compile-error ABORT to THROW
 │   ├── constants.asm                  # [edit] Epic 11 — add ANS THROW code EQUs
@@ -709,7 +686,6 @@ antforth/
 │   ├── exception.asm                  # [new] Epic 11 — CATCH, THROW, exception-frame mgmt
 │   ├── wordlists.asm                  # [new] Epic 12 — WORDLIST, SET-ORDER, DEFINITIONS, etc.
 │   ├── file_access.asm                # [new] Epic 13 — OPEN-FILE, READ-FILE, INCLUDE, FCB pool, BDOS file wrapper
-│   ├── lazy_load.asm                  # [new] Epic 13 — ASSEMBLER-PATH resolver, first-CODE hook
 │   │
 │   └── tests/                         # legacy assembly test threads (pre-Epic 3)
 │       ├── test_arithmetic.asm
@@ -730,17 +706,11 @@ antforth/
 │   ├── throw_migration_tests.fth      # [new] Epic 11 (per-migrated-primitive REPL tests)
 │   ├── wordlist_tests.fth             # [new] Epic 12
 │   ├── assembler_wordlist_tests.fth   # [new] Epic 12 (ASSEMBLER auto-activation)
-│   ├── file_access_tests.fth          # [new] Epic 13
-│   └── lazy_load_tests.fth            # [new] Epic 13 (north-star demo as executable test)
+│   └── file_access_tests.fth          # [new] Epic 13
 ├── examples/                          # demo source files, user-facing
 │   ├── extended-asm-demo.fth          # existing
-│   ├── extended-asm-demo-annotated.fth
-│   │
-│   │   # --- [new] phase-2 additions ---
-│   └── ASSEMBLER.FTH                  # [new] Epic 12 — the Forth-source form of the ASSEMBLER wordlist
-│                                       #   Built-into-release artifact: deployed to the same drive as ANTFORTH.COM.
+│   └── extended-asm-demo-annotated.fth
 ├── disk/                              # CP/M disk images for emulation/release
-│   │                                   # [edit] Epic 13 — add ASSEMBLER.FTH to the release disk image builder
 ├── build/                             # build artefacts (gitignored)
 ├── blog/                              # project blog / devlog
 ├── images/                            # design docs images
@@ -772,7 +742,7 @@ SP  ─────────────
                    Return stack grows downward (at IX)
                    ↑
 IX  ─────────────
-                   User area (USER variables including ASSEMBLER-PATH, HLD, FCB pool)
+                   User area (USER variables including HLD, SEARCH-ORDER, CATCH-TOP, INCLUDE-TOP)
 FFFFh ──────────── Top of memory minus BDOS
 ```
 
@@ -781,7 +751,7 @@ FFFFh ──────────── Top of memory minus BDOS
 - Kernel code is read-only at runtime (no self-modifying code; a rule since Epic 1)
 - Dictionary grows **only upward** via `HERE` / `ALLOT` / `,` / `C,` — no gap reuse
 - Parameter stack and return stack grow **downward** toward each other (collision = stack overflow, detected lazily as an invariant violation → THROW)
-- User area is fixed-size and fixed-location; additions this phase (ASSEMBLER-PATH, HLD, SEARCH-ORDER array, FCB pool) require recompile but don't move existing offsets
+- User area is fixed-size and fixed-location; additions this phase (HLD, SEARCH-ORDER array, CATCH-TOP, INCLUDE-TOP) require recompile but don't move existing offsets. (FCB pool sits in early TPA above the kernel, not in USER area — see E13-D1.)
 
 #### Source-file responsibility boundaries
 
@@ -801,8 +771,8 @@ Each `src/*.asm` file owns a coherent subsystem. Boundary rules:
 | Epic 9 | `src/number_prefixes.asm`; `tests/number_prefixes_tests.fth` | `src/outer_interpreter.asm` (wire recogniser) |
 | Epic 10 | `src/double.asm`, `src/pictured.asm`; `tests/{double,pictured,core_gap}_tests.fth` | `src/stack_ops.asm` (2DUP etc.); `src/formatting.asm` (migrate `.`/`U.` onto pictured); `src/arithmetic.asm` (possible M*/UM* shared code); `docs/ans-forth-core-compliance.md` |
 | Epic 11 | `src/exception.asm`; `docs/throw-codes.md`; `tests/{exception,throw_migration}_tests.fth` | `src/constants.asm` (THROW code EQUs); `src/system.asm` (ABORT retarget); **every other `*.asm` with ABORT paths** (phased migration per E11-D3) |
-| Epic 12 | `src/wordlists.asm`; `examples/ASSEMBLER.FTH`; `tests/{wordlist,assembler_wordlist}_tests.fth` | `src/dictionary.asm` (multi-vocab); `src/hash.asm` (per-wordlist bucket array); `src/assembler.asm` (move opcodes to ASSEMBLER.FTH Forth source) |
-| Epic 13 | `src/file_access.asm`, `src/lazy_load.asm`; `tests/{file_access,lazy_load}_tests.fth` | `src/io.asm` (factor BDOS helpers); `src/assembler.asm` (CODE becomes lazy-load hook); `disk/` (ship ASSEMBLER.FTH in release disk image) |
+| Epic 12 | `src/wordlists.asm`; `tests/{wordlist,assembler_wordlist}_tests.fth` | `src/dictionary.asm` (multi-vocab); `src/hash.asm` (per-wordlist bucket array); `src/assembler.asm` (register opcode words under the `ASSEMBLER` wordlist + `CODE`/`END-CODE` auto-activation hooks; no opcode migration) |
+| Epic 13 | `src/file_access.asm`; `tests/file_access_tests.fth` | `src/io.asm` (factor BDOS helpers) |
 
 **Cross-cutting concerns (not epic-specific):**
 
@@ -824,74 +794,39 @@ Each `src/*.asm` file owns a coherent subsystem. Boundary rules:
 - **MicroBeast hardware** (14-segment displays, I/O ports) — **no direct integration in phase 2**; reserved for post-2.0 hardware-vocabulary epic
 - **Cross-assembler toolchain** — invoked by `Makefile`; out of architectural scope for this phase
 
-#### Data flow — lazy-load capstone
-
-The north-star demo's data flow, as a concrete trace:
-
-```
-User types `CODE`
-    │
-    ▼
-outer_interpreter.asm → word lookup → finds CODE (IMMEDIATE)
-    │
-    ▼
-assembler.asm : CODE handler
-    │
-    ├── lazy_load.asm : check if ASSEMBLER wordlist empty
-    │       │ (empty)
-    │       ▼
-    │   lazy_load.asm : resolve ASSEMBLER-PATH
-    │       │ (sentinel 0 → "ASSEMBLER.FTH" + current drive)
-    │       ▼
-    │   file_access.asm : INCLUDED "ASSEMBLER.FTH"
-    │       │
-    │       ├── BDOS open, read, eval-each-line, close
-    │       │   (any error → THROW with path in message, per FR49)
-    │       ▼
-    │   wordlists.asm : ASSEMBLER wordlist now populated
-    │
-    ▼
-assembler.asm : CODE continues — push search order, activate ASSEMBLER wordlist
-    │
-    ▼
-(normal CODE semantics from here, identical to pre-phase)
-```
-
 ### File Organisation Patterns
 
 (Already specified in Implementation Patterns section; not repeated here. See "Source file organisation" subsection.)
 
 ### Development Workflow Integration
 
-- **Build:** `make` — cross-assembles `src/*.asm` into `build/ANTFORTH.COM` plus an emulation-ready disk image containing `ANTFORTH.COM` and (post-Epic 12) `ASSEMBLER.FTH`
+- **Build:** `make` — cross-assembles `src/*.asm` into `build/ANTFORTH.COM` plus an emulation-ready disk image containing `ANTFORTH.COM`
 - **Test (REPL):** `make test` — pipes `tests/*.fth` into the emulated antforth, captures output, compares against expected
 - **Test (bench, legacy):** `make bench` — runs assembly test threads (Epic 7/8 benchmark suite); phase 2 adds no new assembly tests but consumes the outputs for CCD-4 size/cycle gates
-- **Real-hardware validation:** each epic's final story copies `build/ANTFORTH.COM` + `ASSEMBLER.FTH` to the MicroBeast via the project's usual transfer mechanism and runs a smoke test. No release tag without this pass (per MVP rule in PRD)
+- **Real-hardware validation:** each epic's final story copies `build/ANTFORTH.COM` to the MicroBeast via the project's usual transfer mechanism and runs a smoke test. No release tag without this pass (per MVP rule in PRD)
 - **Development:** Ant edits `src/*.asm` and `tests/*.fth` files; `make` rebuilds; `make test` runs REPL tests; iteration is fast on the emulator, final validation happens on real hardware
 
 ## Architecture Validation Results
 
 ### Coherence Validation
 
-**Decisions internally consistent:** All cross-decision dependencies identified in "Decision Impact Analysis" (§ Core Architectural Decisions) sequence cleanly — CCD-1 before Epic 11, E12-D1 before Epic 13, E13-D4 before E13-D5, etc. No contradictions found between decisions themselves.
+**Decisions internally consistent:** All cross-decision dependencies identified in "Decision Impact Analysis" (§ Core Architectural Decisions) sequence cleanly — CCD-1 before Epic 11, E11-D1 before E13-D2, etc. No contradictions found between decisions themselves.
 
 **Patterns support decisions:** The Implementation Patterns section's source-file layout matches the Epic-to-file mapping in Project Structure. Naming conventions (w_ prefix for word implementations, UPPER-CASE-HYPHEN for USER variables) consistent across every decision that named a concrete artefact. Standards-citation discipline is specified at both the pattern level (format template) and enforced at the decision level (CCD-3, NFR18).
 
-**Structure supports architecture:** The seven new source files (number_prefixes / double / pictured / exception / wordlists / file_access / lazy_load) each correspond exactly to one or two decisions; no decision lacks a home, no file is orphaned.
+**Structure supports architecture:** The six new source files (number_prefixes / double / pictured / exception / wordlists / file_access) each correspond exactly to one or two decisions; no decision lacks a home, no file is orphaned.
 
 ### Requirements Coverage Validation
 
-**All 52 FRs traced to architectural support:** spot-checked the critical cases:
+**All 47 FRs traced to architectural support:** spot-checked the critical cases:
 
 - FR9 (BASE unchanged by parsing) → E9-D2 explicitly forbids BASE mutation
-- FR22 (REPL survives THROW) → E11-D2 + NFR7
+- FR22 (REPL survives THROW) → E11-D2 + NFR6
 - FR31 (pre-phase CODE files assemble unchanged) → E12-D4 save/restore; Implementation Patterns #8
 - FR43 (file-I/O errors raise THROW not ABORT) → E13-D3 + error-raising process pattern
-- FR46a/b (ASSEMBLER-PATH sentinel + user override) → E13-D4
-- FR49 (THROW on lazy-load failure, with path in message) → E13-D5
-- FR50–52 (backward compat) → NFR10 gate + E9-D1 preserving unprefixed path
+- FR45–47 (backward compat) → NFR9 gate + E9-D1 preserving unprefixed path
 
-**All 23 NFRs addressed.** NFR1/2/4/6 performance envelopes → CCD-4 benchmark gate. NFR5 ROM size → CCD-4 delta tracking. NFR3 lazy-load ≤ 1s → see "Finding 3" below. NFR7–10 reliability → E11-D1/D2 + regression gate. NFR11–15 standards → CCD-3 + E10-D1 + NFR14 BDOS allow-list. NFR16–19 maintainability → Implementation Patterns. NFR20–23 integration → Project Structure memory-region boundaries + BDOS gatekeepers.
+**All 21 NFRs addressed.** NFR1/2/3/5 performance envelopes → CCD-4 benchmark gate. NFR4 ROM size → CCD-4 per-epic delta tracking (no net-negative gate). NFR6–9 reliability → E11-D1/D2 + regression gate. NFR10–14 standards → CCD-3 + E10-D1 + NFR13 BDOS allow-list. NFR15–18 maintainability → Implementation Patterns. NFR19–21 integration → Project Structure memory-region boundaries + BDOS gatekeepers.
 
 ### Findings (genuine issues requiring resolution)
 
@@ -913,14 +848,6 @@ assembler.asm : CODE continues — push search order, activate ASSEMBLER wordlis
 
 **Resolution:** Locate the FCB pool in **early TPA, just above the kernel**, accessed by absolute address. Rationale: FCB pool is system-wide (open files survive task switches in a future multitasker); it belongs with system state, not per-task USER area. Small concrete cost: one additional fixed-address symbol in `constants.asm`. **Action: lock this in when revising the architecture.**
 
-#### Finding 3 — NFR3 (lazy-load ≤ 1s) has no ASSEMBLER.FTH size budget
-
-**Issue:** 1 second on an 8 MHz Z80 is ~8 million T-states. Parsing and executing Forth source through `INCLUDED` typically runs at roughly ~1–5 KB/s of source text on a Z80 (dependent on primitive complexity). A 5-10 KB `ASSEMBLER.FTH` would take 1–10 seconds — borderline or over the NFR.
-
-**Impact:** If Epic 12's ASSEMBLER.FTH authoring produces a large source file (likely — ~168 Z80 opcodes + support code), the NFR fails at Epic 13 capstone acceptance.
-
-**Resolution:** Add an architectural constraint: **ASSEMBLER.FTH must be ≤ 4 KB of Forth source text.** Achievable by dense factoring (e.g., a table-driven opcode dispatch rather than one DEFWORD per opcode). Epic 12's ASSEMBLER.FTH authorship story adopts this as a hard budget. Alternative: if the 4 KB budget proves infeasible, downgrade NFR3 to ≤ 3 seconds in a sprint-change proposal — a 3 s load pause is still "imperceptible" in hobbyist UX terms, just not "instantaneous." **Action: flag for Epic 12 story planning.**
-
 #### Finding 4 — Phase-1 architecture reference is implicit, not explicit
 
 **Issue:** This architecture document describes phase-2 additions and changes, but **does not duplicate the foundational design from phase 1** (inner interpreter details, DOCOL/EXIT semantics, hash algorithm specifics, CREATE/DOES> machinery, MARKER implementation). A dev agent reading only this document would be missing canonical descriptions of the layers their code must integrate with.
@@ -936,7 +863,6 @@ assembler.asm : CODE continues — push search order, activate ASSEMBLER wordlis
 
 **Important gaps (resolve before or during Epic 13):**
 - Finding 2: FCB pool location — lockable now, preferably before Epic 13 starts
-- Finding 3: ASSEMBLER.FTH size budget — must be called out in Epic 12's ASSEMBLER.FTH authorship story AC
 
 **Nice-to-have (improves dev-agent experience):**
 - Finding 4: Explicit phase-1 architecture cross-reference
@@ -948,13 +874,13 @@ assembler.asm : CODE continues — push search order, activate ASSEMBLER wordlis
 - [x] Project context thoroughly analysed
 - [x] Scale and complexity assessed (5 new subsystems, brownfield additive)
 - [x] Technical constraints identified (inherited + new BDOS 25 + file-access BDOS set)
-- [x] Cross-cutting concerns mapped (7 cross-cutting concerns; 4 resolved to CCDs)
+- [x] Cross-cutting concerns mapped (6 cross-cutting concerns; 4 resolved to CCDs)
 
 **Architectural Decisions**
 
 - [x] Critical decisions documented with rationale — **pending Findings 1 and 2 resolution**
 - [x] Phase-2 new-subsystem decisions specified (CCDs 1–4; E9 through E13 decision sets)
-- [x] Performance considerations addressed (CCD-4 benchmark gate; NFR1/2/3/4/5/6 mapped to decisions)
+- [x] Performance considerations addressed (CCD-4 benchmark gate; NFR1/2/3/4/5 mapped to decisions)
 - [x] Standards citations specified (CCD-3 format; NFR18 coverage)
 
 **Implementation Patterns**
@@ -968,21 +894,21 @@ assembler.asm : CODE continues — push search order, activate ASSEMBLER wordlis
 
 - [x] Complete directory structure defined with [new]/[edit] annotations
 - [x] Component boundaries established (memory-region boundaries; source-file responsibility boundaries)
-- [x] Integration points mapped (BDOS gatekeepers; lazy-load data flow)
+- [x] Integration points mapped (BDOS gatekeepers)
 - [x] Requirements-to-structure mapping complete (Epic-to-file table)
 
 **Findings**
 
 - [x] **Finding 1 resolved** — CCD-1 rewritten with dual LIFO chains (`CATCH-TOP`, `INCLUDE-TOP`); E11-D1 exception frame expanded to 8 bytes with prev-link; E11-D2 CATCH/THROW mechanism rewritten as O(1) `CATCH-TOP` access + `INCLUDE-TOP` chain walk for cleanup; E13-D2 INCLUDE source frame specified as fixed-layout 10 bytes with prev-link (see updated decisions above).
 - [x] **Finding 2 resolved** — E13-D1 FCB pool placed as kernel-resident static array (`fcb_pool:` in `src/file_access.asm`, absolute addressing, 288 bytes linked into `.COM`).
-- [x] **Finding 3 resolved** — ASSEMBLER.FTH soft target is **≤ 8 KB** (not a hard gate). PRD NFR3 is correspondingly relaxed from "≤ 1 second" to "≤ 3 seconds" for first-CODE lazy-load, with sub-1-second treated as a post-2.0 optimisation opportunity rather than an MVP blocker.
+- [x] **Finding 3 superseded** — The ASSEMBLER.FTH lazy-load was removed from scope on 2026-04-20 (see `sprint-change-proposal-2026-04-20.md`); the built-in assembler is retained in kernel. The size-budget concern no longer applies.
 - [x] **Finding 4 resolved** — Explicit cross-reference to `architecture-phase1-epics-1-8.md` added at top of Core Architectural Decisions.
 
 ### Architecture Readiness Assessment
 
-**Overall Status:** READY FOR IMPLEMENTATION — all four findings resolved.
+**Overall Status:** READY FOR IMPLEMENTATION — all four findings resolved or superseded.
 
-**Confidence level:** **High.** The four findings surfaced by adversarial review have been resolved inline (see decisions CCD-1, E11-D1, E11-D2, E13-D1, E13-D2 for Findings 1 and 2; the cross-reference note at the top of Core Architectural Decisions for Finding 4; and the NFR3 revision noted below for Finding 3). Architecture is now self-consistent and ready to drive epic breakdown.
+**Confidence level:** **High.** The four findings surfaced by adversarial review have been resolved inline (see decisions CCD-1, E11-D1, E11-D2, E13-D1, E13-D2 for Findings 1 and 2; the cross-reference note at the top of Core Architectural Decisions for Finding 4; Finding 3 superseded by the 2026-04-20 removal of the lazy-load capstone). Architecture is now self-consistent and ready to drive epic breakdown.
 
 **Key strengths:**
 
@@ -990,7 +916,6 @@ assembler.asm : CODE continues — push search order, activate ASSEMBLER wordlis
 - Epic sequencing is locked by concrete dependencies, not just preference
 - Conventions are grounded in existing project memory, not invented
 - Standards-citation discipline enables future ANS re-audits without archaeology
-- The north-star demo has an explicit data-flow diagram that crosses every new subsystem
 - Adversarial review caught four real issues (consistent with the memory rule that reviews must find things)
 
 **Areas for future enhancement:**

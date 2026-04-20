@@ -108,10 +108,10 @@ development_status:
   epic-9: in-progress
   9-1-numeric-prefix-recogniser-scaffold-decimal-prefix: done
   9-2-hex-prefixes-standard-and-0x-antforth-extension: done
-  9-3-binary-and-character-prefixes: backlog
-  9-4-leading-sign-and-full-case-insensitivity: backlog
-  9-5-prefix-reach-repl-colon-bodies-and-assembler-source: backlog
-  9-6-epic-9-benchmark-standards-citation-audit-and-regression-gate-ccd-4: backlog
+  9-3-binary-and-character-prefixes: done
+  9-4-leading-sign-and-full-case-insensitivity: done
+  9-5-prefix-reach-repl-colon-bodies-and-assembler-source: done
+  9-6-epic-9-benchmark-standards-citation-audit-and-regression-gate-ccd-4: review
   epic-9-retrospective: optional
 
   epic-10: backlog
@@ -145,8 +145,7 @@ development_status:
   12-4-compilation-wordlist-control: backlog
   12-5-only: backlog
   12-6-assembler-wordlist-and-auto-activation-in-code-end-code: backlog
-  12-7-assembler-fth-authorship-full-migration-of-all-opcodes: backlog
-  12-8-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: backlog
+  12-7-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: backlog
   epic-12-retrospective: optional
 
   epic-13: backlog
@@ -154,7 +153,5 @@ development_status:
   13-2-core-file-access-wordset: backlog
   13-3-file-positioning: backlog
   13-4-source-input-nesting-include-top-chain-discipline: backlog
-  13-5-assembler-path-user-variable-and-path-resolver: backlog
-  13-6-first-code-lazy-load-hook-north-star-capstone: backlog
-  13-7-epic-13-lazy-load-latency-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: backlog
+  13-5-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: backlog
   epic-13-retrospective: optional
