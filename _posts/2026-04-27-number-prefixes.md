@@ -14,7 +14,7 @@ both the "input" and output of numbers, which is oft-times inconvenient.
 ![Changing the radix](/antforth/assets/images/2026-04-27/base.png)
 
 This sprint add code that lets us prefix a hex number with `$` or `0x`, a 
-binary number with `%`, a decimla number with `#`, and it also understands 
+binary number with `%`, a decimal number with `#`, and it also understands 
 character literals by putting single characters inside single quotes like 
 this `'A'`.
 
@@ -70,5 +70,13 @@ As I said at the start, `HEX` and `DECIMAL` change `BASE` both for input and out
 of numbers, and 16 in hex is, of course 0x10...
 
 
+Still not convinced? Perhaps this will make it clearer:
+
+
+![Proof it's not a bug](/antforth/assets/images/2026-04-27/proof.png)
+
+Here we create a variable `old_base`, switch to `HEX`,  store a copy of `BASE` in
+`old_base`, switch back to `DECMINAL`, and finally fetch and print out `old_base`
+in the current number base, which is of course decimal.
 
 
