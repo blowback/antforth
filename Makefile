@@ -2581,6 +2581,929 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@echo ""
+	@echo "--- Story 9.3: Binary %% and character 'c' prefix tests ---"
+	@echo "--- (see tests/number_prefixes_tests.fth for the authoritative source list) ---"
+	@OUTPUT=$$(printf '%%0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%0 ?'; then \
+		echo "PASS: REPL test 300 — '%0 .' outputs '0  ok' (bare '%0' parses as binary 0)"; \
+	else \
+		echo "FAIL: REPL test 300 — expected '0  ok' AND no '%0 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%1 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '1  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%1 ?'; then \
+		echo "PASS: REPL test 301 — '%1 .' outputs '1  ok' (binary 1 = decimal 1)"; \
+	else \
+		echo "FAIL: REPL test 301 — expected '1  ok' AND no '%1 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%1010 ?'; then \
+		echo "PASS: REPL test 302 — '%1010 .' outputs '10  ok' (binary 1010 = decimal 10)"; \
+	else \
+		echo "FAIL: REPL test 302 — expected '10  ok' AND no '%1010 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%11111111 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
+		echo "PASS: REPL test 303 — '%11111111 .' outputs '255  ok' (8-bit all-ones in DECIMAL)"; \
+	else \
+		echo "FAIL: REPL test 303 — expected '255  ok' AND no '%11111111 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%1111111111111111 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65535  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%1111111111111111 ?'; then \
+		echo "PASS: REPL test 304 — '%1111111111111111 U.' outputs '65535  ok' (max unsigned 16-bit)"; \
+	else \
+		echo "FAIL: REPL test 304 — expected '65535  ok' AND no '%1111111111111111 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HEX %%11111111 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
+		echo "PASS: REPL test 305 — 'HEX %11111111 DROP BASE @ .' outputs '10  ok' (BASE=16 preserved, printed in hex)"; \
+	else \
+		echo "FAIL: REPL test 305 — expected '10  ok' AND no '%11111111 ?' error (BASE must not be mutated by % prefix)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL %%1010 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%1010 ?'; then \
+		echo "PASS: REPL test 306 — 'DECIMAL %1010 DROP BASE @ .' outputs '10  ok' (BASE=10 preserved)"; \
+	else \
+		echo "FAIL: REPL test 306 — expected '10  ok' AND no '%1010 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%-1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%-1010 ?'; then \
+		echo "PASS: REPL test 307 — '%-1010 .' outputs '-10  ok' (sign-in-body, NUMBER? parity)"; \
+	else \
+		echo "FAIL: REPL test 307 — expected '-10  ok' AND no '%-1010 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HEX %%11111111 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'FF  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
+		echo "PASS: REPL test 308 — 'HEX %11111111 .' outputs 'FF  ok' (decimal 255 printed in hex)"; \
+	else \
+		echo "FAIL: REPL test 308 — expected 'FF  ok' AND no '%11111111 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%102\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '%102 ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 309 — '%102' falls through to '%102 ?' (non-binary digit)"; \
+	else \
+		echo "FAIL: REPL test 309 — expected '%102 ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '% ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 310 — bare '%' falls through to '% ?' (undefined word)"; \
+	else \
+		echo "FAIL: REPL test 310 — expected '% ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%%-\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '%- ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 311 — '%-' falls through to '%- ?' (bare sign)"; \
+	else \
+		echo "FAIL: REPL test 311 — expected '%- ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047A\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'A' ?"; then \
+		echo "PASS: REPL test 312 — \"'A' .\" outputs '65  ok' (ASCII 'A' = 65)"; \
+	else \
+		echo "FAIL: REPL test 312 — expected '65  ok' AND no \"'A' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\0470\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '48  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'0' ?"; then \
+		echo "PASS: REPL test 313 — \"'0' .\" outputs '48  ok' (digit char, ASCII 48)"; \
+	else \
+		echo "FAIL: REPL test 313 — expected '48  ok' AND no \"'0' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047a\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '97  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'a' ?"; then \
+		echo "PASS: REPL test 314 — \"'a' .\" outputs '97  ok' (lower-case 'a' = 97)"; \
+	else \
+		echo "FAIL: REPL test 314 — expected '97  ok' AND no \"'a' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\0479\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '57  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'9' ?"; then \
+		echo "PASS: REPL test 315 — \"'9' .\" outputs '57  ok' (digit '9' = 57)"; \
+	else \
+		echo "FAIL: REPL test 315 — expected '57  ok' AND no \"'9' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047+\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'+' ?"; then \
+		echo "PASS: REPL test 316 — \"'+' .\" outputs '43  ok' (non-alphanumeric byte)"; \
+	else \
+		echo "FAIL: REPL test 316 — expected '43  ok' AND no \"'+' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047*\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'\*' ?"; then \
+		echo "PASS: REPL test 317 — \"'*' .\" outputs '42  ok' (non-alphanumeric byte)"; \
+	else \
+		echo "FAIL: REPL test 317 — expected '42  ok' AND no \"'*' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HEX \047A\047 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'A' ?"; then \
+		echo "PASS: REPL test 318 — \"HEX 'A' DROP BASE @ .\" outputs '10  ok' (BASE=16 preserved)"; \
+	else \
+		echo "FAIL: REPL test 318 — expected '10  ok' AND no \"'A' ?\" error (BASE must not be mutated by 'c' prefix)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047ab\047\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "'ab' ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 319 — \"'ab'\" falls through to \"'ab' ?\" (too long)"; \
+	else \
+		echo "FAIL: REPL test 319 — expected \"'ab' ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047a\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "'a ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 320 — \"'a\" falls through to \"'a ?\" (no closing quote)"; \
+	else \
+		echo "FAIL: REPL test 320 — expected \"'a ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047\047\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "'' ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 321 — \"''\" falls through to \"'' ?\" (empty middle, count=2)"; \
+	else \
+		echo "FAIL: REPL test 321 — expected \"'' ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047abc\047\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "'abc' ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 322 — \"'abc'\" falls through to \"'abc' ?\" (count=5, too long)"; \
+	else \
+		echo "FAIL: REPL test 322 — expected \"'abc' ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '\047 DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]+  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'DROP ?'; then \
+		echo "PASS: REPL test 323 — \"' DROP .\" still invokes TICK (xt printed, no undefined-word error)"; \
+	else \
+		echo "FAIL: REPL test 323 — expected xt address  ok AND no 'DROP ?' error (bare ' must still reach TICK via FIND)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': GETTEN %%1010 ; GETTEN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'GETTEN ?'; then \
+		echo "PASS: REPL test 324 — '%1010' works inside a colon body (compile-time LIT)"; \
+	else \
+		echo "FAIL: REPL test 324 — expected '10  ok' AND no 'GETTEN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': GETA \047A\047 ; GETA .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'GETA ?'; then \
+		echo "PASS: REPL test 325 — \"'A'\" works inside a colon body (compile-time LIT)"; \
+	else \
+		echo "FAIL: REPL test 325 — expected '65  ok' AND no 'GETA ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '#42 %%-1010 . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10 42 '; then \
+		echo "PASS: REPL test 326 — '#42 %-1010 . .' outputs '-10 42 ' (.pref_negate reset across #/% handlers)"; \
+	else \
+		echo "FAIL: REPL test 326 — expected '-10 42 ' (cross-handler sign-flag must not leak between # and %)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "\047\047\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '39  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "''' ?"; then \
+		echo "PASS: REPL test 327 — \"''' .\" outputs '39  ok' (apostrophe-as-char-literal, ASCII 39)"; \
+	else \
+		echo "FAIL: REPL test 327 — expected '39  ok' AND no \"''' ?\" error (''' is a legal char literal for ' itself)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "\047\047\047\047\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "'''' ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 328 — \"''''\" falls through to \"'''' ?\" (count=4, CP 3 fails)"; \
+	else \
+		echo "FAIL: REPL test 328 — expected \"'''' ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-%%1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%1010 ?'; then \
+		echo "PASS: REPL test 329 — '-%1010 .' outputs '-10  ok' (9.4 sign-before-prefix now captures this; flipped from 9.3's fall-through)"; \
+	else \
+		echo "FAIL: REPL test 329 — expected '-10  ok' AND no '%1010 ?' error (9.4 sign-before-prefix should parse this)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "--- Story 9.4: leading '-' sign + case-insensitivity tests ---"
+	@echo "--- (see tests/number_prefixes_tests.fth for the authoritative source list) ---"
+	@OUTPUT=$$(printf -- '-#42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '#42 ?'; then \
+		echo "PASS: REPL test 330 — '-#42 .' outputs '-42  ok' (outer sign + '#' prefix)"; \
+	else \
+		echo "FAIL: REPL test 330 — expected '-42  ok' AND no '#42 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-#0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '^[^?]*\b0  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '#0 ?'; then \
+		echo "PASS: REPL test 331 — '-#0 .' outputs '0  ok' (negative zero collapses)"; \
+	else \
+		echo "FAIL: REPL test 331 — expected '0  ok' AND no '#0 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-$$FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '\$$FF ?'; then \
+		echo "PASS: REPL test 332 — '-\$$FF .' outputs '-255  ok' (outer sign + '\$$' prefix)"; \
+	else \
+		echo "FAIL: REPL test 332 — expected '-255  ok' AND no '\$$FF ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-$$ff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '\$$ff ?'; then \
+		echo "PASS: REPL test 333 — '-\$$ff .' outputs '-255  ok' (sign + lower-case hex digits)"; \
+	else \
+		echo "FAIL: REPL test 333 — expected '-255  ok' AND no '\$$ff ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-0xFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0xFF ?'; then \
+		echo "PASS: REPL test 334 — '-0xFF .' outputs '-255  ok' (outer sign + '0x' prefix)"; \
+	else \
+		echo "FAIL: REPL test 334 — expected '-255  ok' AND no '0xFF ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-0XFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0XFF ?'; then \
+		echo "PASS: REPL test 335 — '-0XFF .' outputs '-255  ok' (upper-case X, sign applied)"; \
+	else \
+		echo "FAIL: REPL test 335 — expected '-255  ok' AND no '0XFF ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-0xff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0xff ?'; then \
+		echo "PASS: REPL test 336 — '-0xff .' outputs '-255  ok' (sign + all-lower)"; \
+	else \
+		echo "FAIL: REPL test 336 — expected '-255  ok' AND no '0xff ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-%%11111111 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
+		echo "PASS: REPL test 337 — '-%11111111 .' outputs '-255  ok' (outer sign + '%' prefix)"; \
+	else \
+		echo "FAIL: REPL test 337 — expected '-255  ok' AND no '%11111111 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- "-\047A\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-65  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'A' ?"; then \
+		echo "PASS: REPL test 338 — \"-'A' .\" outputs '-65  ok' (outer sign + ''c'' char literal)"; \
+	else \
+		echo "FAIL: REPL test 338 — expected '-65  ok' AND no \"'A' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- "-\047a\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-97  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'a' ?"; then \
+		echo "PASS: REPL test 339 — \"-'a' .\" outputs '-97  ok' (sign + lower-case char)"; \
+	else \
+		echo "FAIL: REPL test 339 — expected '-97  ok' AND no \"'a' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- "-\0470\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-48  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'0' ?"; then \
+		echo "PASS: REPL test 340 — \"-'0' .\" outputs '-48  ok' (sign + digit char)"; \
+	else \
+		echo "FAIL: REPL test 340 — expected '-48  ok' AND no \"'0' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- "-\047+\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-43  ok' && \
+	   ! echo "$$OUTPUT" | grep -q "'+' ?"; then \
+		echo "PASS: REPL test 341 — \"-'+' .\" outputs '-43  ok' (sign + non-alphanum char)"; \
+	else \
+		echo "FAIL: REPL test 341 — expected '-43  ok' AND no \"'+' ?\" error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-#-5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b5  ok' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-5  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '#-5 ?'; then \
+		echo "PASS: REPL test 342 — '-#-5 .' outputs '5  ok' (double-sign XOR composition)"; \
+	else \
+		echo "FAIL: REPL test 342 — expected '5  ok' AND neither '-5  ok' nor '#-5 ?' (outer + in-body sign must XOR)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-$$-FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b255  ok' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '\$$-FF ?'; then \
+		echo "PASS: REPL test 343 — '-\$$-FF .' outputs '255  ok' (double-sign XOR)"; \
+	else \
+		echo "FAIL: REPL test 343 — expected '255  ok' AND no '-255  ok' and no '\$$-FF ?'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-0x-FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b255  ok' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0x-FF ?'; then \
+		echo "PASS: REPL test 344 — '-0x-FF .' outputs '255  ok' (double-sign XOR)"; \
+	else \
+		echo "FAIL: REPL test 344 — expected '255  ok' AND no '-255  ok' and no '0x-FF ?'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-%%-1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b10  ok' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '%-1010 ?'; then \
+		echo "PASS: REPL test 345 — '-%-1010 .' outputs '10  ok' (double-sign XOR)"; \
+	else \
+		echo "FAIL: REPL test 345 — expected '10  ok' AND no '-10  ok' and no '%-1010 ?'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'HEX -#42 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '#42 ?'; then \
+		echo "PASS: REPL test 346 — 'HEX -#42 DROP BASE @ .' outputs '10  ok' (BASE=16 preserved under outer sign)"; \
+	else \
+		echo "FAIL: REPL test 346 — expected '10  ok' AND no '#42 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'DECIMAL -$$FF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '\$$FF ?'; then \
+		echo "PASS: REPL test 347 — 'DECIMAL -\$$FF DROP BASE @ .' outputs '10  ok' (BASE=10 preserved)"; \
+	else \
+		echo "FAIL: REPL test 347 — expected '10  ok' AND no '\$$FF ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '$$ABCD U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'ABCD ?'; then \
+		echo "PASS: REPL test 348 — '\$$ABCD U.' outputs '43981  ok' (hex digits, all upper-case)"; \
+	else \
+		echo "FAIL: REPL test 348 — expected '43981  ok' AND no 'ABCD ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '$$abcd U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'abcd ?'; then \
+		echo "PASS: REPL test 349 — '\$$abcd U.' outputs '43981  ok' (hex digits, all lower-case)"; \
+	else \
+		echo "FAIL: REPL test 349 — expected '43981  ok' AND no 'abcd ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0xABCD U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0xABCD ?'; then \
+		echo "PASS: REPL test 350 — '0xABCD U.' outputs '43981  ok' (0x + upper-case hex)"; \
+	else \
+		echo "FAIL: REPL test 350 — expected '43981  ok' AND no '0xABCD ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0xabcd U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0xabcd ?'; then \
+		echo "PASS: REPL test 351 — '0xabcd U.' outputs '43981  ok' (0x + lower-case hex)"; \
+	else \
+		echo "FAIL: REPL test 351 — expected '43981  ok' AND no '0xabcd ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0xAbCd U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '0xAbCd ?'; then \
+		echo "PASS: REPL test 352 — '0xAbCd U.' outputs '43981  ok' (0x + mixed-case hex)"; \
+	else \
+		echo "FAIL: REPL test 352 — expected '43981  ok' AND no '0xAbCd ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '\-42 ?'; then \
+		echo "PASS: REPL test 353 — '-42 .' (DECIMAL) outputs '-42  ok' (FR47 regression: NUMBER? owns '-42', not the pre-pass)"; \
+	else \
+		echo "FAIL: REPL test 353 — expected '-42  ok' AND no '-42 ?' error (FR47 regression — pre-pass MUST fall through)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'HEX -2A . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-2A  ok' && \
+	   ! echo "$$OUTPUT" | grep -q '\-2A ?'; then \
+		echo "PASS: REPL test 354 — 'HEX -2A .' outputs '-2A  ok' (FR47 regression: NUMBER? parses hex literal)"; \
+	else \
+		echo "FAIL: REPL test 354 — expected '-2A  ok' AND no '-2A ?' error (HEX NUMBER? must still own '-2A')"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-foo\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-foo ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 355 — '-foo' falls through to '-foo ?' (not a number, not a prefix)"; \
+	else \
+		echo "FAIL: REPL test 355 — expected '-foo ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-ABC\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-ABC ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 356 — '-ABC' (DECIMAL) falls through to '-ABC ?' (DECIMAL doesn't take A-F)"; \
+	else \
+		echo "FAIL: REPL test 356 — expected '-ABC ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-#\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-# ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 357 — '-#' falls through to '-# ?' (outer sign + bare prefix)"; \
+	else \
+		echo "FAIL: REPL test 357 — expected '-# ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-$$\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-\$$ ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 358 — '-\$$' falls through to '-\$$ ?' (outer sign + bare prefix)"; \
+	else \
+		echo "FAIL: REPL test 358 — expected '-\$$ ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-%%\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-% ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 359 — '-%' falls through to '-% ?' (outer sign + bare prefix)"; \
+	else \
+		echo "FAIL: REPL test 359 — expected '-% ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-0x\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-0x ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 360 — '-0x' falls through to '-0x ?' (bare 0x after sign)"; \
+	else \
+		echo "FAIL: REPL test 360 — expected '-0x ?' error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- "-\047\047\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "\-'' ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 361 — \"-''\" falls through to \"-'' ?\" (outer sign + empty char literal, count=3)"; \
+	else \
+		echo "FAIL: REPL test 361 — expected \"-'' ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- "-\047ab\047\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q "\-'ab' ?" && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 362 — \"-'ab'\" falls through to \"-'ab' ?\" (outer sign + long char literal, count=5)"; \
+	else \
+		echo "FAIL: REPL test 362 — expected \"-'ab' ?\" error AND no bare numeric success"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-#42 -$$-FF . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 \-42 '; then \
+		echo "PASS: REPL test 363 — '-#42 -\$$-FF . .' outputs '255 -42 ' (dispatch-level one-time reset: token 1 sign doesn't leak to token 2)"; \
+	else \
+		echo "FAIL: REPL test 363 — expected '255 -42 ' (cross-handler carry-over check: .pref_negate must reset per token)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 9.5 colon-body tests (364..378) ---
+	@# Verifies prefix + sign recognition inside ':' definitions via the
+	@# single shared INTERPRET thread (src/outer_interpreter.asm:.try_number).
+	@OUTPUT=$$(printf ': F_CH #42 ; F_CH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CH ?'; then \
+		echo "PASS: REPL test 364 — ': F_CH #42 ; F_CH .' outputs '42  ok' (# prefix in colon body)"; \
+	else \
+		echo "FAIL: REPL test 364 — expected '42  ok' AND no 'F_CH ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': F_CHN -#42 ; F_CHN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CHN ?'; then \
+		echo "PASS: REPL test 365 — ': F_CHN -#42 ; F_CHN .' outputs '-42  ok' (outer-sign + # in colon body)"; \
+	else \
+		echo "FAIL: REPL test 365 — expected '-42  ok' AND no 'F_CHN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf ': F_CHS $$-FF ; F_CHS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CHS ?'; then \
+		echo "PASS: REPL test 366 — ': F_CHS \$$-FF ; F_CHS .' outputs '-255  ok' (inner sign on \$$ arm, colon body)"; \
+	else \
+		echo "FAIL: REPL test 366 — expected '-255  ok' AND no 'F_CHS ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- ': F_CDS -$$FF ; F_CDS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CDS ?'; then \
+		echo "PASS: REPL test 367 — ': F_CDS -\$$FF ; F_CDS .' outputs '-255  ok' (outer sign + \$$ in colon body)"; \
+	else \
+		echo "FAIL: REPL test 367 — expected '-255  ok' AND no 'F_CDS ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- ': F_CX -0xFF ; F_CX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CX ?'; then \
+		echo "PASS: REPL test 368 — ': F_CX -0xFF ; F_CX .' outputs '-255  ok' (outer sign + 0x in colon body)"; \
+	else \
+		echo "FAIL: REPL test 368 — expected '-255  ok' AND no 'F_CX ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- ': F_CBN -%%1010 ; F_CBN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CBN ?'; then \
+		echo "PASS: REPL test 369 — ': F_CBN -%%1010 ; F_CBN .' outputs '-10  ok' (outer sign + %% in colon body)"; \
+	else \
+		echo "FAIL: REPL test 369 — expected '-10  ok' AND no 'F_CBN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- ': F_CQN -\047A\047 ; F_CQN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-65  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_CQN ?'; then \
+		echo "PASS: REPL test 370 — \": F_CQN -'A' ; F_CQN .\" outputs '-65  ok' (outer sign + 'c' in colon body)"; \
+	else \
+		echo "FAIL: REPL test 370 — expected '-65  ok' AND no 'F_CQN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Colon body: BASE-cross (prefix parse is BASE-independent) ---
+	@OUTPUT=$$(printf 'HEX : F_DH #100 . ; F_DH DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '64  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_DH ?'; then \
+		echo "PASS: REPL test 371 — 'HEX : F_DH #100 . ; F_DH DECIMAL' prints '64  ok' (100 decimal printed in HEX)"; \
+	else \
+		echo "FAIL: REPL test 371 — expected '64  ok' AND no 'F_DH ?' error (# prefix parses decimal regardless of HEX)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL : F_HD $$ff . ; F_HD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_HD ?'; then \
+		echo "PASS: REPL test 372 — 'DECIMAL : F_HD \$$ff . ; F_HD' prints '255  ok' (\$$ff parses hex regardless of DECIMAL)"; \
+	else \
+		echo "FAIL: REPL test 372 — expected '255  ok' AND no 'F_HD ?' error (\$$ prefix parses hex regardless of DECIMAL)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Colon body: BASE integrity across define + invoke (4 snapshots) ---
+	@# Snapshot pattern: before-define, after-define, computed-value, after-invoke.
+	@# In DECIMAL, BASE @ prints as '10' (= 10 in decimal).
+	@OUTPUT=$$(printf 'BASE @ . : F_BH #42 ; BASE @ . F_BH . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 42 10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_BH ?'; then \
+		echo "PASS: REPL test 373 — '# colon-body BASE integrity' 4-snapshot outputs '10 10 42 10  ok'"; \
+	else \
+		echo "FAIL: REPL test 373 — expected '10 10 42 10  ok' AND no 'F_BH ?' (BASE must be unchanged before/after define/invoke)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BASE @ . : F_BD $$FF ; BASE @ . F_BD . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 255 10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_BD ?'; then \
+		echo "PASS: REPL test 374 — '\$$ colon-body BASE integrity' 4-snapshot outputs '10 10 255 10  ok'"; \
+	else \
+		echo "FAIL: REPL test 374 — expected '10 10 255 10  ok' AND no 'F_BD ?' (BASE must be unchanged before/after define/invoke)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BASE @ . : F_BX 0xFF ; BASE @ . F_BX . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 255 10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_BX ?'; then \
+		echo "PASS: REPL test 375 — '0x colon-body BASE integrity' 4-snapshot outputs '10 10 255 10  ok'"; \
+	else \
+		echo "FAIL: REPL test 375 — expected '10 10 255 10  ok' AND no 'F_BX ?' (BASE must be unchanged before/after define/invoke)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BASE @ . : F_BB %%1010 ; BASE @ . F_BB . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 10 10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_BB ?'; then \
+		echo "PASS: REPL test 376 — '%% colon-body BASE integrity' 4-snapshot outputs '10 10 10 10  ok'"; \
+	else \
+		echo "FAIL: REPL test 376 — expected '10 10 10 10  ok' AND no 'F_BB ?' (BASE must be unchanged before/after define/invoke)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BASE @ . : F_BQ \047A\047 ; BASE @ . F_BQ . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 65 10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F_BQ ?'; then \
+		echo "PASS: REPL test 377 — \"'c' colon-body BASE integrity\" 4-snapshot outputs '10 10 65 10  ok'"; \
+	else \
+		echo "FAIL: REPL test 377 — expected '10 10 65 10  ok' AND no 'F_BQ ?' (BASE must be unchanged before/after define/invoke)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Colon body: compile-error on malformed prefix + no survivor (AC #6) ---
+	@# Two-line REPL: ': F_BAD #ABC ;' triggers COMP_ERROR -> ABORT, unlinks F_BAD.
+	@# Subsequent 'F_BAD .' must ALSO error as undefined word — no survivor.
+	@OUTPUT=$$(printf ': F_BAD #ABC ;\r\nF_BAD .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '#ABC ?' && \
+	   echo "$$OUTPUT" | grep -q 'F_BAD ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 378 — malformed prefix in colon body errors '#ABC ?', F_BAD unlinked (follow-on 'F_BAD ?')"; \
+	else \
+		echo "FAIL: REPL test 378 — expected '#ABC ?' AND 'F_BAD ?' AND no spurious numeric ok (compile error unlink)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 9.5 CODE-block tests (379..393) ---
+	@# Verifies prefix + sign recognition inside CODE..END-CODE blocks.
+	@# Immediate LD, operand order is Zilog dst-first: 'C 0xFF # LD,' = LD C, 0xFF.
+	@OUTPUT=$$(printf 'CODE MK_FF BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_FF ?'; then \
+		echo "PASS: REPL test 379 — CODE MK_FF with 0xFF prefix: MK_FF . outputs '255  ok'"; \
+	else \
+		echo "FAIL: REPL test 379 — expected '255  ok' AND no 'MK_FF ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_FFu BC PUSH, C 0XFF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_FFu .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_FFu ?'; then \
+		echo "PASS: REPL test 380 — CODE MK_FFu with 0XFF (upper-X): MK_FFu . outputs '255  ok'"; \
+	else \
+		echo "FAIL: REPL test 380 — expected '255  ok' AND no 'MK_FFu ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_D100 BC PUSH, C #100 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_D100 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '100  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_D100 ?'; then \
+		echo "PASS: REPL test 381 — CODE MK_D100 with #100 prefix: MK_D100 . outputs '100  ok'"; \
+	else \
+		echo "FAIL: REPL test 381 — expected '100  ok' AND no 'MK_D100 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_NEG BC PUSH, C -#5 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_NEG .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-5  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_NEG ?'; then \
+		echo "PASS: REPL test 382 — CODE MK_NEG with -#5 prefix (sign-extended): MK_NEG . outputs '-5  ok'"; \
+	else \
+		echo "FAIL: REPL test 382 — expected '-5  ok' AND no 'MK_NEG ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_DS BC PUSH, C $$FF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_DS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_DS ?'; then \
+		echo "PASS: REPL test 383 — CODE MK_DS with \$$FF prefix: MK_DS . outputs '255  ok'"; \
+	else \
+		echo "FAIL: REPL test 383 — expected '255  ok' AND no 'MK_DS ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_DSN BC PUSH, C $$-FF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_DSN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_DSN ?'; then \
+		echo "PASS: REPL test 384 — CODE MK_DSN with \$$-FF prefix (inner sign): MK_DSN . outputs '-255  ok'"; \
+	else \
+		echo "FAIL: REPL test 384 — expected '-255  ok' AND no 'MK_DSN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'CODE MK_DSO BC PUSH, C -$$FF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_DSO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_DSO ?'; then \
+		echo "PASS: REPL test 384a — CODE MK_DSO with -\$$FF prefix (outer sign on \$$ arm): MK_DSO . outputs '-255  ok'"; \
+	else \
+		echo "FAIL: REPL test 384a — expected '-255  ok' AND no 'MK_DSO ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_X BC PUSH, C -0xFF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_X .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_X ?'; then \
+		echo "PASS: REPL test 385 — CODE MK_X with -0xFF prefix (outer sign + 0x): MK_X . outputs '-255  ok'"; \
+	else \
+		echo "FAIL: REPL test 385 — expected '-255  ok' AND no 'MK_X ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_B BC PUSH, C %%1010 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_B .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_B ?'; then \
+		echo "PASS: REPL test 386 — CODE MK_B with %%1010 prefix: MK_B . outputs '10  ok'"; \
+	else \
+		echo "FAIL: REPL test 386 — expected '10  ok' AND no 'MK_B ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'CODE MK_BN BC PUSH, C -%%1010 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_BN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_BN ?'; then \
+		echo "PASS: REPL test 386a — CODE MK_BN with -%%1010 prefix (outer sign on %% arm): MK_BN . outputs '-10  ok'"; \
+	else \
+		echo "FAIL: REPL test 386a — expected '-10  ok' AND no 'MK_BN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE MK_Q BC PUSH, C \047A\047 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_Q .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_Q ?'; then \
+		echo "PASS: REPL test 387 — CODE MK_Q with 'A' prefix: MK_Q . outputs '65  ok'"; \
+	else \
+		echo "FAIL: REPL test 387 — expected '65  ok' AND no 'MK_Q ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'CODE MK_QN BC PUSH, C -\047A\047 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_QN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-65  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_QN ?'; then \
+		echo "PASS: REPL test 388 — CODE MK_QN with -'A' prefix (outer sign + 'c'): MK_QN . outputs '-65  ok'"; \
+	else \
+		echo "FAIL: REPL test 388 — expected '-65  ok' AND no 'MK_QN ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- CODE block: 16-bit BC immediate load with 0x1234 prefix ---
+	@OUTPUT=$$(printf 'CODE MK_1234 BC PUSH, BC 0x1234 # LD, NEXT, END-CODE\r\nMK_1234 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '4660  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_1234 ?'; then \
+		echo "PASS: REPL test 389 — CODE MK_1234 with 16-bit 0x1234 prefix: MK_1234 . outputs '4660  ok'"; \
+	else \
+		echo "FAIL: REPL test 389 — expected '4660  ok' AND no 'MK_1234 ?' error"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- CODE block: BASE-cross tests (prefix parse is BASE-independent) ---
+	@OUTPUT=$$(printf 'HEX CODE MK_CDEC BC PUSH, C #100 # LD, B 0 # LD, NEXT, END-CODE MK_CDEC . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '64  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_CDEC ?'; then \
+		echo "PASS: REPL test 390 — CODE MK_CDEC in HEX with #100: MK_CDEC . outputs '64  ok' (100 decimal printed in HEX)"; \
+	else \
+		echo "FAIL: REPL test 390 — expected '64  ok' AND no 'MK_CDEC ?' error (# prefix parses decimal regardless of HEX)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL CODE MK_CHEX BC PUSH, C $$ff # LD, B 0 # LD, NEXT, END-CODE MK_CHEX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_CHEX ?'; then \
+		echo "PASS: REPL test 391 — CODE MK_CHEX in DECIMAL with \$$ff: MK_CHEX . outputs '255  ok'"; \
+	else \
+		echo "FAIL: REPL test 391 — expected '255  ok' AND no 'MK_CHEX ?' error (\$$ prefix parses hex regardless of DECIMAL)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- CODE block: BASE integrity snapshots (before CODE, after END-CODE, after invoke) ---
+	@OUTPUT=$$(printf 'BASE @ . CODE MK_BS BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE BASE @ . MK_BS . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 255 10  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_BS ?'; then \
+		echo "PASS: REPL test 392 — CODE-block BASE integrity 4-snapshot outputs '10 10 255 10  ok'"; \
+	else \
+		echo "FAIL: REPL test 392 — expected '10 10 255 10  ok' AND no 'MK_BS ?' (BASE must be unchanged before CODE / after END-CODE / after invoke)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- CODE block: ABORT on malformed prefix (asm_cleanup rollback, no survivor) ---
+	@OUTPUT=$$(printf 'CODE C_BAD #ABC BC PUSH, NEXT, END-CODE\r\nC_BAD .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '#ABC ?' && \
+	   echo "$$OUTPUT" | grep -q 'C_BAD ?' && \
+	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
+		echo "PASS: REPL test 393 — malformed prefix in CODE block errors '#ABC ?', C_BAD unlinked via asm_cleanup"; \
+	else \
+		echo "FAIL: REPL test 393 — expected '#ABC ?' AND 'C_BAD ?' AND no spurious numeric ok (asm_cleanup rollback)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 9.5 cross-context + FR47 regression guards (394..396) ---
+	@# Mixed-context single session: REPL prefix, colon-body prefix, CODE-block prefix.
+	@# Verifies asm_mode and .pref_negate do not leak across context boundaries.
+	@OUTPUT=$$(printf '#42 . : F_MIX $$FF ; F_MIX . CODE C_MIX BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE C_MIX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 255 255  ok' && \
+	   ! echo "$$OUTPUT" | grep -qE '(F_MIX|C_MIX) \?'; then \
+		echo "PASS: REPL test 394 — mixed-context (REPL + colon + CODE) outputs '42 255 255  ok' (no state leakage)"; \
+	else \
+		echo "FAIL: REPL test 394 — expected '42 255 255  ok' AND no F_MIX/C_MIX error markers (asm_mode / .pref_negate leak)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# FR47 regression: bare '-42' in colon body must reach NUMBER?, not the sign pre-pass.
+	@OUTPUT=$$(printf ': F42N -42 ; F42N .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'F42N ?'; then \
+		echo "PASS: REPL test 395 — FR47 colon-body: ': F42N -42 ; F42N .' outputs '-42  ok' (bare signed literal via NUMBER?)"; \
+	else \
+		echo "FAIL: REPL test 395 — expected '-42  ok' AND no 'F42N ?' error (FR47: sign pre-pass must not capture '-42')"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# FR47 regression: bare unprefixed '42' in CODE block via NUMBER? fallthrough.
+	@OUTPUT=$$(printf 'CODE MK_42 BC PUSH, C 42 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42  ok' && \
+	   ! echo "$$OUTPUT" | grep -q 'MK_42 ?'; then \
+		echo "PASS: REPL test 396 — FR47 CODE-block: unprefixed '42' via NUMBER? fallthrough: MK_42 . outputs '42  ok'"; \
+	else \
+		echo "FAIL: REPL test 396 — expected '42  ok' AND no 'MK_42 ?' error (FR47: NUMBER? fallthrough inside CODE)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
