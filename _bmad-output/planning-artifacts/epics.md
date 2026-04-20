@@ -457,7 +457,7 @@ So that I have a working stack foundation for all subsequent double-precision wo
 
 **Given** E10-D1's byte-order decision (low cell on TOS, high cell below)
 **When** `2@` fetches a 32-bit value from an address
-**Then** the low cell is on top of stack and the high cell is second on stack — ANS Forth 1994 §6.1.0290 behaviour.
+**Then** the low cell is on top of stack and the high cell is second on stack — ANS Forth 1994 §6.1.0350 behaviour.
 
 **Given** `2DUP`, `2DROP`, `2SWAP`, `2OVER`
 **When** executed against a two-cell pair
@@ -481,7 +481,7 @@ So that I can feed single-cell inputs into double-precision arithmetic and extra
 
 **Given** a single-cell signed value `n` on TOS
 **When** I execute `S>D`
-**Then** the result is the sign-extended double-cell value (low cell = original, high cell = 0 if `n ≥ 0` else `-1`) per ANS §6.1.0290 behaviour.
+**Then** the result is the sign-extended double-cell value (low cell = original, high cell = 0 if `n ≥ 0` else `-1`) per ANS §6.1.2170 (`S>D`) behaviour.
 
 **Given** a double-cell value whose high cell is a pure sign extension of the low cell
 **When** I execute `D>S`
@@ -626,26 +626,37 @@ So that the whole display family behaves consistently with user-defined pictured
 ### Story 10.9: Remaining Core gap words (inventory-driven from Story 10.1)
 
 As a Forth user,
-I want the remaining single-cell Core gap words identified by Story 10.1's survey (outside the double-cell and pictured-output families) implemented,
-So that the Core wordset reaches 100% coverage with behaviour matching ANS Forth 1994.
+I want the remaining single-cell Core gap words identified by Story 10.1's survey (outside the double-cell and pictured-output families) implemented — specifically `*/`, `*/MOD`, `EVALUATE`, and `ENVIRONMENT?` —
+So that the §6.1 Core wordset reaches 100% coverage (133 of 133 words) with behaviour matching ANS Forth 1994, with no deliberate omissions.
+
+**Scope (set by Story 10.1 + party-mode decision 2026-04-20):**
+
+- `*/` (§6.1.0100) — mixed-precision multiply-divide; depends on Stories 10.5 (`M*`) and 10.6 (`SM/REM`).
+- `*/MOD` (§6.1.0110) — mixed-precision multiply-divide-modulo; same dependency.
+- `EVALUATE` (§6.1.1360) — interpret from a string; save/restore input source.
+- `ENVIRONMENT?` (§6.1.1345) — query implementation-defined limits. Previously classified "deliberately omitted" by Story 5.3 and upheld by Story 10.1; **reclassified as an in-scope Story 10.9 deliverable on 2026-04-20** (party-mode decision) so that FR15 / NFR10's "100% of the ANS Forth 1994 Core wordset" claim holds without deliberate-omission asterisks.
 
 **Acceptance Criteria:**
 
-**Given** the inventory produced by Story 10.1
+**Given** the inventory produced by Story 10.1 (four words: `*/`, `*/MOD`, `EVALUATE`, `ENVIRONMENT?`)
 **When** this story begins
-**Then** each identified gap word is implemented in the epic-appropriate source file per Architecture §Source-file organisation; each carries an ANS §<section> citation and stack-effect comment per NFR17/CCD-3.
+**Then** each of the four gap words is implemented in the epic-appropriate source file per Architecture §Source-file organisation; each carries an ANS §<section> citation and stack-effect comment per NFR17/CCD-3.
 
 **Given** each newly implemented word
 **When** exercised against the behaviour specified in its ANS clause
 **Then** a REPL-piped test case in `tests/core_gap_tests.fth` passes, asserting the standard-specified behaviour (happy path + at least one edge case).
 
+**Given** `ENVIRONMENT?` specifically
+**When** queried against the DPANS94 §3.2.6 standard query keys — `/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS` —
+**Then** each known key returns the correct implementation-defined value and `true`; any unknown key returns `false`; the query-key table lives alongside the word and is citable in the compliance doc.
+
 **Given** `docs/ans-forth-core-compliance.md`
 **When** updated at the end of this story
-**Then** every previously-"gap" word is now marked "present" with its source location and test reference.
+**Then** every previously-"gap" word is marked "present" with its source location; the `ENVIRONMENT?` row is moved from Gap Analysis (a) to the implemented list; Gap Analysis (a) (deliberate omissions) is deleted entirely; the post-Epic-10 count is 133 / 133 (100.0%).
 
-**Given** the story is larger than a single dev session (possible depending on inventory size)
-**When** development begins
-**Then** it is sharded into 10.9a / 10.9b / etc. by capability sub-family, each independently completable; the shard boundaries are recorded in the sprint-status tracking.
+**Given** the story scope is bounded at four words
+**When** development proceeds
+**Then** sharding is not anticipated; if complexity surfaces a larger scope, the story may be sharded into 10.9a / 10.9b by capability sub-family (each independently completable; shard boundaries recorded in sprint-status tracking).
 
 ### Story 10.10: Epic 10 compliance audit, benchmark + regression gate (CCD-4)
 

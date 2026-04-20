@@ -249,7 +249,7 @@ All phase-2 architectural decisions build on this foundation without replacing a
 
 **Decision:** **Low cell on top of stack, high cell below** (i.e., `2@` fetches low cell first into TOS, high cell becomes second-on-stack). This is the ANS Forth convention. `S>D` pushes high cell (zero or sign-extended) under the original single cell, which then becomes the low cell.
 
-**Rationale:** Locked by the standard — the stack diagrams in ANS Forth 1994 §6.1.0290 (`2@`) and related specifications dictate this order. Any other choice breaks portability. Implementation cost is neutral either way.
+**Rationale:** Locked by the standard — the stack diagrams in ANS Forth 1994 §6.1.0350 (`2@`) and related specifications dictate this order. Any other choice breaks portability. Implementation cost is neutral either way.
 
 #### E10-D2: Pictured-output buffer placement
 

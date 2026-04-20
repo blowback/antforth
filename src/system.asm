@@ -314,6 +314,54 @@ check_underflow_2:
         JP      do_underflow_error
 
 ; -----------------------------------------------
+; check_underflow_3 — Internal subroutine (not a Forth word)
+;   Verify DEPTH >= 3 (at least 3 cells on machine stack)
+;   For ternary ops needing 3 user items (e.g. 2!).
+;   Threshold: sp_base - SP_measured >= 8
+;   (2 for CALL ret addr + 6 for three cells)
+;
+;   Clobbers: AF, HL
+;   Preserves: BC (TOS), DE (IP), IX, IY, SP
+; -----------------------------------------------
+check_underflow_3:
+        LD      HL, (sp_base)
+        OR      A               ; Clear carry
+        SBC     HL, SP          ; HL = sp_base - SP_measured
+        JR      C, .underflow3  ; sp_base < SP = corrupt
+        LD      A, H
+        OR      A
+        RET     NZ              ; HL >= 256, plenty of stack
+        LD      A, L
+        CP      8               ; Need >= 8 (2 ret addr + 6 for three cells)
+        RET     NC              ; HL >= 8, OK
+.underflow3:
+        JP      do_underflow_error
+
+; -----------------------------------------------
+; check_underflow_4 — Internal subroutine (not a Forth word)
+;   Verify DEPTH >= 4 (at least 4 cells on machine stack)
+;   For quaternary ops needing 4 user items (e.g. 2SWAP, 2OVER).
+;   Threshold: sp_base - SP_measured >= 10
+;   (2 for CALL ret addr + 8 for four cells)
+;
+;   Clobbers: AF, HL
+;   Preserves: BC (TOS), DE (IP), IX, IY, SP
+; -----------------------------------------------
+check_underflow_4:
+        LD      HL, (sp_base)
+        OR      A               ; Clear carry
+        SBC     HL, SP          ; HL = sp_base - SP_measured
+        JR      C, .underflow4  ; sp_base < SP = corrupt
+        LD      A, H
+        OR      A
+        RET     NZ              ; HL >= 256, plenty of stack
+        LD      A, L
+        CP      10              ; Need >= 10 (2 ret addr + 8 for four cells)
+        RET     NC              ; HL >= 10, OK
+.underflow4:
+        JP      do_underflow_error
+
+; -----------------------------------------------
 ; do_underflow_error — Internal subroutine (not a Forth word)
 ;   Print "? Stack underflow" + CR/LF via direct BDOS calls
 ;   then jump to ABORT. Never returns.

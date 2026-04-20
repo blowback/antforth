@@ -1,6 +1,6 @@
 # Story 9.6: Epic 9 benchmark, standards citation audit, and regression gate (CCD-4)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

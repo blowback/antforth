@@ -38,10 +38,12 @@ w_CHARS_cf:
 ; -----------------------------------------------
 ; @ ( addr -- x )
 ;   Fetch cell (16-bit) from memory
+; ANS Forth 1994 §6.1.0650   @   — single-cell fetch
 ; -----------------------------------------------
 w_FETCH:
         DEFCODE "@", 0
 w_FETCH_cf:
+        CALL    check_underflow
         LD      H, B
         LD      L, C            ; HL = addr
         LD      C, (HL)

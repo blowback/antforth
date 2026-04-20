@@ -3504,6 +3504,225 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 10.2 double-cell stack foundation (397..421) ---
+	@# 2DUP value/depth checks
+	@OUTPUT=$$(printf '1 2 2DUP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<4> 1 2 1 2 '; then \
+		echo "PASS: REPL test 397 — '1 2 2DUP .S' outputs '<4> 1 2 1 2 '"; \
+	else \
+		echo "FAIL: REPL test 397 — expected '<4> 1 2 1 2 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 0 2DUP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<4> 0 0 0 0 '; then \
+		echo "PASS: REPL test 398 — '0 0 2DUP .S' outputs '<4> 0 0 0 0 '"; \
+	else \
+		echo "FAIL: REPL test 398 — expected '<4> 0 0 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 -2 2DUP .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<4> -1 -2 -1 -2 '; then \
+		echo "PASS: REPL test 399 — '-1 -2 2DUP .S' outputs '<4> -1 -2 -1 -2 '"; \
+	else \
+		echo "FAIL: REPL test 399 — expected '<4> -1 -2 -1 -2 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# 2DROP depth/residual checks
+	@OUTPUT=$$(printf '1 2 3 4 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 2 '; then \
+		echo "PASS: REPL test 400 — '1 2 3 4 2DROP .S' outputs '<2> 1 2 '"; \
+	else \
+		echo "FAIL: REPL test 400 — expected '<2> 1 2 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '100 200 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<0> '; then \
+		echo "PASS: REPL test 401 — '100 200 2DROP .S' outputs '<0> '"; \
+	else \
+		echo "FAIL: REPL test 401 — expected '<0> ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# 2SWAP pair-order checks
+	@OUTPUT=$$(printf '1 2 3 4 2SWAP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<4> 3 4 1 2 '; then \
+		echo "PASS: REPL test 402 — '1 2 3 4 2SWAP .S' outputs '<4> 3 4 1 2 '"; \
+	else \
+		echo "FAIL: REPL test 402 — expected '<4> 3 4 1 2 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '10 20 30 40 2SWAP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<4> 30 40 10 20 '; then \
+		echo "PASS: REPL test 403 — '10 20 30 40 2SWAP .S' outputs '<4> 30 40 10 20 '"; \
+	else \
+		echo "FAIL: REPL test 403 — expected '<4> 30 40 10 20 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# 2OVER copy-second-pair checks
+	@OUTPUT=$$(printf '1 2 3 4 2OVER .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<6> 1 2 3 4 1 2 '; then \
+		echo "PASS: REPL test 404 — '1 2 3 4 2OVER .S' outputs '<6> 1 2 3 4 1 2 '"; \
+	else \
+		echo "FAIL: REPL test 404 — expected '<6> 1 2 3 4 1 2 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '10 20 30 40 2OVER .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<6> 10 20 30 40 10 20 '; then \
+		echo "PASS: REPL test 405 — '10 20 30 40 2OVER .S' outputs '<6> 10 20 30 40 10 20 '"; \
+	else \
+		echo "FAIL: REPL test 405 — expected '<6> 10 20 30 40 10 20 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# 2@ byte-order anchor (E10-D1): low cell on TOS after fetch
+	@OUTPUT=$$(printf 'HEX CREATE D1 BEEF , DEAD , D1 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -2153 -4111 '; then \
+		echo "PASS: REPL test 406 — '2@' byte-order anchor: low cell (BEEF) on TOS, high (DEAD) below"; \
+	else \
+		echo "FAIL: REPL test 406 — expected '<2> -2153 -4111 ' (signed-hex DEAD BEEF) in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# 2! / 2@ round-trip
+	@OUTPUT=$$(printf 'HEX CREATE D2 0 , 0 , BEEF DEAD D2 2! D2 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -4111 -2153 '; then \
+		echo "PASS: REPL test 407 — '2! / 2@' round-trip returns the input pair in order (BEEF x1, DEAD x2)"; \
+	else \
+		echo "FAIL: REPL test 407 — expected '<2> -4111 -2153 ' after 2!/2@ round-trip (BEEF x1, DEAD x2)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# 2! / 2@ boundary values: 0 / FFFF / 8000
+	@OUTPUT=$$(printf 'HEX CREATE D3 0 , 0 , 0 0 D3 2! D3 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 408 — '2! / 2@' round-trip at boundary 0 0"; \
+	else \
+		echo "FAIL: REPL test 408 — expected '<2> 0 0 ' at boundary 0 0"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HEX CREATE D4 0 , 0 , FFFF FFFF D4 2! D4 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
+		echo "PASS: REPL test 409 — '2! / 2@' round-trip at boundary FFFF FFFF"; \
+	else \
+		echo "FAIL: REPL test 409 — expected '<2> -1 -1 ' at boundary FFFF FFFF (signed interpretation)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HEX CREATE D5 0 , 0 , 8000 8000 D5 2! D5 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -8000 -8000 '; then \
+		echo "PASS: REPL test 410 — '2! / 2@' round-trip at boundary 8000 8000 (sign-bit set)"; \
+	else \
+		echo "FAIL: REPL test 410 — expected '<2> -8000 -8000 ' at boundary 8000 8000"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Stack-underflow recovery on empty stack for each new word
+	@OUTPUT=$$(printf '2@\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 411 — '2@' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 411 — expected '? Stack underflow' and 'ok' for '2@' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '2!\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 412 — '2!' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 412 — expected '? Stack underflow' and 'ok' for '2!' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '2DUP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 413 — '2DUP' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 413 — expected '? Stack underflow' and 'ok' for '2DUP' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 414 — '2DROP' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 414 — expected '? Stack underflow' and 'ok' for '2DROP' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '2SWAP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 415 — '2SWAP' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 415 — expected '? Stack underflow' and 'ok' for '2SWAP' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '2OVER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 416 — '2OVER' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 416 — expected '? Stack underflow' and 'ok' for '2OVER' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Near-threshold underflow (one cell short of minimum DEPTH)
+	@OUTPUT=$$(printf '1 2DUP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 417 — '1 2DUP' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 417 — expected '? Stack underflow' and 'ok' for '1 2DUP'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 418 — '1 2DROP' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 418 — expected '? Stack underflow' and 'ok' for '1 2DROP'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 2!\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 419 — '1 2 2!' (DEPTH 2, needs 3) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 419 — expected '? Stack underflow' and 'ok' for '1 2 2!'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 3 2SWAP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 420 — '1 2 3 2SWAP' (DEPTH 3, needs 4) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 420 — expected '? Stack underflow' and 'ok' for '1 2 3 2SWAP'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 3 2OVER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 421 — '1 2 3 2OVER' (DEPTH 3, needs 4) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 421 — expected '? Stack underflow' and 'ok' for '1 2 3 2OVER'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 10.2 code-review follow-up: @ now guards DEPTH>=1 (M2 fix) ---
+	@OUTPUT=$$(printf '@\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 422 — '@' on empty stack shows underflow and recovers"; \
+	else \
+		echo "FAIL: REPL test 422 — expected '? Stack underflow' and 'ok' for '@' on empty stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

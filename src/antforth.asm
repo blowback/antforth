@@ -123,6 +123,7 @@ cold_thread:
         INCLUDE "arithmetic.asm"
         INCLUDE "logic.asm"
         INCLUDE "memory.asm"
+        INCLUDE "double.asm"
         INCLUDE "control_flow.asm"
         INCLUDE "io.asm"
         INCLUDE "strings.asm"
