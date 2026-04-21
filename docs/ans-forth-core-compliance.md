@@ -11,11 +11,10 @@
 | Metric | Count | % of 133 |
 |--------|-------|----------|
 | Total §6.1 Core words in standard | 133 | 100.0% |
-| Fully implemented | 116 | 87.2% |
-| Partial (`>NUMBER` — single-cell accumulator only) | 1 | 0.8% |
-| Missing | 16 | 12.0% |
-| **Coverage (counting Partial as Implemented, doc convention)** | **117 / 133** | **88.0%** |
-| **Strict coverage (Partial counts as gap)** | **116 / 133** | **87.2%** |
+| Fully implemented | 118 | 88.7% |
+| Partial | 0 | 0.0% |
+| Missing | 15 | 11.3% |
+| **Coverage** | **118 / 133** | **88.7%** |
 
 **Note on counts:** The previous (2026-04-13) audit's Summary reported 111 / 1 / 21 — that totals 133 only by double-counting `>NUMBER`. Per-category sums show 22 missing, not 21. This refresh corrects the off-by-one and reports both compliance numbers. The 83.5% headline figure is preserved (lenient convention) for continuity with the Epic-10 baseline; the strict 82.7% is recorded for transparency.
 
@@ -24,9 +23,9 @@
 | Gap Classification | Count |
 |--------------------|-------|
 | (a) Deliberately omitted | 0 |
-| (b) Oversight — missing subsystem | 14 |
+| (b) Oversight — missing subsystem | 13 |
 | (b) Oversight — moderate | 2 |
-| (c) Partially implemented | 1 |
+| (c) Partially implemented | 0 |
 
 | Core Extension bonus | Count |
 |----------------------|-------|
@@ -39,7 +38,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | Story | Sub-family | §6.1 words added | Notes |
 |---|---|---|---|
 | 10.2 | Double-cell stack & memory | 6 (`2DROP` `2DUP` `2OVER` `2SWAP` `2!` `2@`) | foundation |
-| 10.3 | Single ↔ double conversions | 1 (`S>D`) + Partial→Full upgrade for `>NUMBER` | `D>S` is §6.2 |
+| 10.3 | Single ↔ double conversions | 1 (`S>D`) ✓ + `>NUMBER` Partial→Full ✓ + `D>S` (§8.6 bonus) ✓ | Complete |
 | 10.4 | Double arithmetic / compare / sign | 0 §6.1 | All §8.6 bonus (`D+` `D-` `DNEGATE` `DABS` `D=` `D<` `DMAX` `DMIN` `M+`) |
 | 10.5 | Double multiplication | 2 (`M*` `UM*`) | `D*` is §8.6 bonus |
 | 10.6 | Double / mixed division | 3 (`FM/MOD` `SM/REM` `UM/MOD`) | |
@@ -101,7 +100,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `MIN` | `( n1 n2 -- n3 )` | Implemented | `bootstrap.asm:38` | DEFWORD |
 | `FM/MOD` | `( d n1 -- n2 n3 )` | **Gap → Story 10.6** | — | Floored division on double dividend |
 | `SM/REM` | `( d n1 -- n2 n3 )` | **Gap → Story 10.6** | — | Symmetric division on double dividend |
-| `S>D` | `( n -- d )` | **Gap → Story 10.3** | — | Sign-extend single → double |
+| `S>D` | `( n -- d )` | Implemented | `double.asm:151` | Sign-extend single → double |
 
 ### Double-Cell and Mixed-Precision Multiplication
 
@@ -214,9 +213,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `S"` | `( "ccc" -- c-addr u )` | Implemented | `strings.asm:589` | IMMEDIATE |
 | `COUNT` | `( c-addr1 -- c-addr2 u )` | Implemented | `dictionary.asm:9` | |
 | `WORD` | `( char -- c-addr )` | Implemented | `strings.asm:11` | |
-| `>NUMBER` | `( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )` | **Partial → Story 10.3 upgrade** | `strings.asm:337` | High cell of `ud` is passed through unchanged (single-cell accumulator). Full double-cell accumulation will land with Story 10.3 (single↔double subsystem) so `>NUMBER` can be the same internal helper that backs pictured input, and is naturally upgraded once `S>D` and `2!`/`2@` exist. |
-
-**Semantic note — `>NUMBER`:** `do_number` (`strings.asm:282`) operates on `DE` only; `>NUMBER` reads `ud1-low` from the stack and writes the converted result to `ud2-low`, leaving `ud1-high` on the stack untouched as `ud2-high`. Functionally correct for any number whose magnitude fits in 16 bits.
+| `>NUMBER` | `( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )` | Implemented | `strings.asm:341` | Full 32-bit accumulation (`ud ← ud × BASE + digit`) with carry propagation across both cells; guards DEPTH ≥ 4. Upgraded from Partial in Story 10.3. **antforth implementation limit:** `u1` is truncated to 8 bits (strings longer than 255 chars are processed only to the first 255); practical for CP/M TIB but a deviation from the 16-bit `u1` signature. |
 
 ### Control Flow
 
@@ -312,7 +309,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 |-----------|------------|-------|
 | Double-cell stack | `2DROP` `2DUP` `2OVER` `2SWAP` | 10.2 ✓ Implemented |
 | Double-cell memory | `2!` `2@` | 10.2 ✓ Implemented |
-| Single → double | `S>D` | 10.3 |
+| Single → double | `S>D` | 10.3 ✓ Implemented |
 | Double / mixed multiplication | `M*` `UM*` | 10.5 |
 | Double / mixed division | `FM/MOD` `SM/REM` `UM/MOD` | 10.6 |
 | Mixed-precision (need double intermediate) | `*/` `*/MOD` | 10.9 |
@@ -326,11 +323,9 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | `EVALUATE` | 10.9 | Moderate | DPANS94 §6.1.1360. Save/restore input source, then interpret from string. Independent of double-cell infrastructure. |
 | `ENVIRONMENT?` | 10.9 | Low | DPANS94 §6.1.1345. Query table of 14 implementation-defined limits per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`). Added to Story 10.9 on 2026-04-20 (party-mode decision). |
 
-### (c) Partially Implemented — 1 word → Story 10.3 upgrade
+### (c) Partially Implemented — 0 words (empty after Story 10.3)
 
-| Word | Status | Story | Details |
-|------|--------|-------|---------|
-| `>NUMBER` | Single-cell only | **10.3** (Partial → Full) | `strings.asm:337` accepts the standard double-cell signature `( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )` but `do_number` (`strings.asm:282`) accumulates only into `DE`. The high cell of `ud` is passed through unchanged. Functionally correct for values ≤ 65535. **Story 10.3** owns the Partial → Full upgrade because the prerequisite primitives (`S>D`, `2!`/`2@`, double-cell add) all land in Stories 10.2 and 10.3, and pictured-input conversion (Story 10.7) needs the upgraded `>NUMBER`. |
+`>NUMBER` was the sole Partial entry. Story 10.3 upgraded it to full 32-bit accumulation at `strings.asm:338`, so this category is now empty and the lenient / strict coverage distinction collapses.
 
 ---
 
@@ -375,7 +370,7 @@ These words are **not in §6.1 Core** and therefore are NOT part of the FR15 100
 | `D*` | 8.6.1090 | 10.5 | Double-cell multiply (truncating) |
 | `D.` | 8.6.1060 | 10.8 | Double-cell signed print |
 | `D.R` | 8.6.1070 | 10.8 | Double-cell right-aligned print |
-| `D>S` | 8.6.1140 | 10.3 | Double-narrow → single |
+| `D>S` | 8.6.1140 | Implemented (`double.asm:172`) | Double-narrow → single (truncating) |
 
 (13 §8.6 additions planned; none on the §6.1 critical path.)
 

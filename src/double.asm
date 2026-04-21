@@ -2,8 +2,9 @@
 ; AntForth — A Forth for CP/M on Z80
 ;
 ; Epic 10 double-cell primitives:
-;   Stack:   2DUP, 2DROP, 2SWAP, 2OVER
-;   Memory:  2@, 2!
+;   Stack:        2DUP, 2DROP, 2SWAP, 2OVER        (Story 10.2)
+;   Memory:       2@, 2!                           (Story 10.2)
+;   Conversions:  S>D, D>S                         (Story 10.3)
 ;
 ; Byte-order convention (architecture decision E10-D1): on the parameter
 ; stack, the low cell is on top and the high cell below — matching
@@ -140,4 +141,38 @@ w_TWO_OVER_cf:
         LD      C, (HL)
         INC     HL
         LD      B, (HL)         ; BC = x2 (new TOS)
+        NEXT
+
+; -----------------------------------------------
+; S>D ( n -- d )
+;   Sign-extend single to double. BC (= n) stays as the low cell on TOS;
+;   high cell is 0 if n >= 0, or -1 ($FFFF) if n < 0, pushed under BC.
+; ANS Forth 1994 §6.1.2170   S>D   — sign-extend single to double
+; -----------------------------------------------
+w_S_TO_D:
+        DEFCODE "S>D", 0
+w_S_TO_D_cf:
+        CALL    check_underflow
+        LD      A, B            ; A = high byte of n (sign bit in bit 7)
+        RLA                     ; Carry = sign bit of n
+        SBC     A, A            ; A = 0 if n >= 0, $FF if n < 0
+        LD      H, A
+        LD      L, A            ; HL = 0 or $FFFF (sign-extended high cell)
+        PUSH    HL              ; Push high cell under BC (low cell = TOS)
+        NEXT
+
+; -----------------------------------------------
+; D>S ( d -- n )
+;   Narrow double to single by dropping the high cell. BC already holds
+;   x2 (low cell, TOS) on entry and is the correct ANS output.
+;   Truncation is ANS implementation-defined: the high cell is
+;   unconditionally dropped — safe when d is within single-cell range,
+;   silently truncating otherwise.
+; ANS Forth 1994 §8.6.1140   D>S   — narrow double to single (truncating)
+; -----------------------------------------------
+w_D_TO_S:
+        DEFCODE "D>S", 0
+w_D_TO_S_cf:
+        CALL    check_underflow_2
+        POP     HL              ; Discard x1 (high cell); BC (= x2) stays as TOS
         NEXT

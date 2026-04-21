@@ -329,37 +329,112 @@ do_number:
 
 ; -----------------------------------------------
 ; >NUMBER ( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )
-;   Convert string to number using BASE
-;   Processes left to right, stops at first non-digit
-;   ud is double-cell; high cell passed through unchanged (MVP)
+;   Accumulate digits from c-addr1 into 32-bit ud per current BASE.
+;   Stops at the first non-digit (char_to_digit carry-set). Each
+;   iteration performs ud ← ud × BASE + digit with full carry
+;   propagation across both cells.
+;   antforth implementation limit: u1 is truncated to 8 bits (count fits
+;   in .tonum_count byte). Strings longer than 255 characters process
+;   only the first 255; u2 reflects the 8-bit remaining count.
+; ANS Forth 1994 §6.1.0567   >NUMBER   — accumulate digits into 32-bit ud per BASE
 ; -----------------------------------------------
 w_TO_NUMBER:
         DEFCODE ">NUMBER", 0
 w_TO_NUMBER_cf:
-        ; Stack: BC = u1 (TOS), (SP) = c-addr1, ud1-low, ud1-high
-        ; Capture count in A (survives EXX); main BC is junk after EXX
-        LD      A, C            ; A = count (u1 low byte)
-        EXX                     ; Save TOS/IP/W to shadows
-        LD      B, A            ; B = count (do_number input)
+        ; Stack on entry:
+        ;   BC = u1 (TOS, count)
+        ;   SP+0 = c-addr1
+        ;   SP+2 = ud1-low
+        ;   SP+4 = ud1-high
+        CALL    check_underflow_4       ; need 4 user cells (BC + 3 SP)
+        LD      A, C                    ; stash count low byte (8-bit limit
+        LD      (.tonum_count), A       ;  — see header comment)
+        EXX                             ; save TOS/IP/W to shadows
+        POP     HL
+        LD      (.tonum_ptr), HL        ; c-addr1
+        POP     HL
+        LD      (.tonum_ud_lo), HL      ; ud1-low
+        POP     HL
+        LD      (.tonum_ud_hi), HL      ; ud1-high
 
-        POP     HL              ; HL = c-addr1
-        POP     DE              ; DE = ud1-low (accumulator for do_number)
+.tonum_loop:
+        LD      A, (.tonum_count)
+        OR      A
+        JR      Z, .tonum_done
 
-        CALL    do_number
+        LD      HL, (.tonum_ptr)
+        LD      A, (HL)
+        CALL    char_to_digit
+        JR      C, .tonum_done          ; invalid → stop
+        LD      (.tonum_digit), A
 
-        ; DE = result (ud2-low), B = remaining count, HL = advanced pointer
-        ; Stack: ud1-high (becomes ud2-high, unchanged)
+        INC     HL
+        LD      (.tonum_ptr), HL
+        LD      A, (.tonum_count)
+        DEC     A
+        LD      (.tonum_count), A
 
-        ; Push results: ud2-low, c-addr2, u2
-        PUSH    DE              ; ud2-low
-        PUSH    HL              ; c-addr2
+        ; result (DE:HL) = ud × BASE, via 8-iter shift-and-add.
+        ; Each iter: result <<= 1; if top bit of remaining BASE byte set, result += ud.
+        LD      A, (IY+UserArea.base)
+        LD      B, A                    ; B = BASE bits (MSB-first consumption)
+        LD      C, 8                    ; C = loop counter
+        LD      HL, 0                   ; result low
+        LD      DE, 0                   ; result high
+.tonum_mul:
+        ADD     HL, HL                  ; result <<= 1 (HL carry out → E)
+        RL      E
+        RL      D                       ; carry-propagate through high cell
+        SLA     B                       ; carry = next high bit of BASE
+        JR      NC, .tonum_mul_skip
+        PUSH    BC                      ; save loop state (B=BASE rem, C=counter)
+        LD      BC, (.tonum_ud_lo)
+        ADD     HL, BC                  ; result_lo += ud_lo
+        LD      BC, (.tonum_ud_hi)      ; LD preserves carry
+        EX      DE, HL
+        ADC     HL, BC                  ; result_hi += ud_hi + carry
+        EX      DE, HL
+        POP     BC
+.tonum_mul_skip:
+        DEC     C
+        JR      NZ, .tonum_mul
+        ; DE:HL = ud × BASE
 
-        ; Stage remaining count through A across exit EXX
-        LD      A, B
-        EXX                     ; Restore IP from shadow
+        ; result += digit (low-cell add, carry ripples into high cell)
+        LD      A, (.tonum_digit)
+        ADD     A, L
+        LD      L, A
+        JR      NC, .tonum_add_done
+        INC     H
+        JR      NZ, .tonum_add_done
+        INC     E
+        JR      NZ, .tonum_add_done
+        INC     D
+.tonum_add_done:
+        LD      (.tonum_ud_lo), HL
+        LD      (.tonum_ud_hi), DE
+        JR      .tonum_loop
+
+.tonum_done:
+        ; Push ud2-high, ud2-low, c-addr2 back in the E10-D1 order.
+        LD      HL, (.tonum_ud_hi)
+        PUSH    HL
+        LD      HL, (.tonum_ud_lo)
+        PUSH    HL
+        LD      HL, (.tonum_ptr)
+        PUSH    HL
+        EXX                             ; restore IP (DE) from shadow
+        LD      A, (.tonum_count)
         LD      C, A
-        LD      B, 0            ; BC = u2 (remaining count, TOS)
+        LD      B, 0                    ; BC = u2 (remaining count, TOS)
         NEXT
+
+; >NUMBER scratch storage
+.tonum_count:   DB      0
+.tonum_digit:   DB      0
+.tonum_ptr:     DW      0
+.tonum_ud_lo:   DW      0
+.tonum_ud_hi:   DW      0
 
 ; -----------------------------------------------
 ; NUMBER? ( c-addr -- n true | c-addr false )

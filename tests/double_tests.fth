@@ -59,3 +59,56 @@ HEX CREATE D5 0 , 0 , 8000 8000 D5 2! D5 2@ .S   \ expect: <2> -8000 -8000
 1 2 2!                                   \ expect: ? Stack underflow  + ok  (2! needs 3, has 2)
 1 2 3 2SWAP                              \ expect: ? Stack underflow  + ok  (needs 4, has 3)
 1 2 3 2OVER                              \ expect: ? Stack underflow  + ok  (needs 4, has 3)
+
+\ === Story 10.3 single<->double conversions ===
+\ S>D sign-extend: TOS = low cell = original n; second = high cell (0 or -1).
+
+\ --- S>D positive / zero / negative ---
+5 S>D .S                                 \ expect: <2> 0 5
+0 S>D .S                                 \ expect: <2> 0 0
+-5 S>D .S                                \ expect: <2> -1 -5
+
+\ --- S>D boundary values ---
+32767 S>D .S                             \ expect: <2> 0 32767
+-32768 S>D .S                            \ expect: <2> -1 -32768
+-1 S>D .S                                \ expect: <2> -1 -1
+
+\ --- D>S pure-sign-extended doubles (positive / negative) round-trip cleanly ---
+0 5 D>S .S                               \ expect: <1> 5
+-1 -5 D>S .S                             \ expect: <1> -5
+
+\ --- D>S truncation: non-sign-extended double silently drops high cell (AC#2) ---
+1 5 D>S .S                               \ expect: <1> 5
+
+\ --- S>D D>S round-trip preserves the value across the signed-16 range ---
+0 S>D D>S .                              \ expect: 0
+1 S>D D>S .                              \ expect: 1
+-1 S>D D>S .                             \ expect: -1
+32767 S>D D>S .                          \ expect: 32767
+-32768 S>D D>S .                         \ expect: -32768
+100 S>D D>S .                            \ expect: 100
+-100 S>D D>S .                           \ expect: -100
+
+\ --- >NUMBER single-cell accumulation (baseline, pre-existing semantics) ---
+0 0 S" 42" DROP 2 >NUMBER 2DROP .S       \ expect: <2> 0 42
+
+\ --- >NUMBER double-cell accumulation across the 16-bit boundary ---
+\ "65536" decimal = (high=1, low=0). u2=0 (fully consumed).
+0 0 S" 65536" DROP 5 >NUMBER 2DROP .S    \ expect: <2> 1 0
+
+\ --- >NUMBER well above the 16-bit boundary ---
+\ "1000000" decimal = 15*65536 + 16960 = (high=15, low=16960).
+0 0 S" 1000000" DROP 7 >NUMBER 2DROP .S  \ expect: <2> 15 16960
+
+\ --- >NUMBER binary base: 17-bit string parses into ud-high=1, ud-low=0 ---
+\ Literals stay decimal; BASE flips to 2 only for the >NUMBER call itself.
+0 0 S" 10000000000000000" DROP 17 2 BASE ! >NUMBER DECIMAL 2DROP .S  \ expect: <2> 1 0
+
+\ --- S>D / D>S / >NUMBER underflow recovery ---
+S>D                                      \ expect: ? Stack underflow  + ok  (S>D needs 1, has 0)
+D>S                                      \ expect: ? Stack underflow  + ok  (D>S needs 2, has 0)
+1 D>S                                    \ expect: ? Stack underflow  + ok  (D>S needs 2, has 1)
+>NUMBER                                  \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 0)
+1 >NUMBER                                \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 1)
+1 2 >NUMBER                              \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 2)
+1 2 3 >NUMBER                            \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 3)
