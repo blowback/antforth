@@ -120,7 +120,7 @@ development_status:
   10-3-single-double-conversions: done
   10-4-double-precision-arithmetic-additive-sign-compare-mixed: done
   10-5-double-multiplication: done
-  10-6-double-mixed-precision-division: backlog
+  10-6-double-mixed-precision-division: done
   10-7-pictured-numeric-output-primitives: backlog
   10-8-number-output-words-on-pictured-foundation: backlog
   10-9-remaining-core-gap-words: backlog

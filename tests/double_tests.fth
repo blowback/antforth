@@ -223,3 +223,39 @@ $FFFF 2 UM* .S 2DROP                     \ expect: <2> 1 -2    ($1FFFE; low-cell
 1 UM*                                    \ expect: ? Stack underflow  + ok  (UM* needs 2, has 1)
 1 M*                                     \ expect: ? Stack underflow  + ok  (M* needs 2, has 1)
 1 2 3 D*                                 \ expect: ? Stack underflow  + ok  (D* needs 4, has 3)
+
+\ === Story 10.6 double/mixed-precision division (UM/MOD, SM/REM, FM/MOD) ===
+
+\ --- UM/MOD (§6.1.2370) unsigned mixed divide ---
+0 0 1 UM/MOD .S 2DROP                    \ expect: <2> 0 0       (zero dividend)
+0 1 1 UM/MOD .S 2DROP                    \ expect: <2> 0 1       (unity / unity)
+0 10 3 UM/MOD .S 2DROP                   \ expect: <2> 1 3       (10 / 3 = 3 rem 1)
+0 -1 1 UM/MOD .S 2DROP                   \ expect: <2> 0 -1      ($FFFF / 1 = $FFFF rem 0)
+1 0 2 UM/MOD .S 2DROP                    \ expect: <2> 0 -32768  ($10000 / 2 = $8000 rem 0)
+0 -1 -1 UM/MOD .S 2DROP                  \ expect: <2> 0 1       ($FFFF / $FFFF = 1 rem 0)
+-2 -1 -1 UM/MOD .S 2DROP                 \ expect: <2> -2 -1     ($FFFEFFFF / $FFFF = $FFFF rem $FFFE — max quot just-fits)
+
+\ --- SM/REM (§6.1.2214) symmetric signed mixed divide ---
+\ (remainder sign matches dividend; quotient truncates toward zero)
+0 10 3 SM/REM .S 2DROP                   \ expect: <2> 1 3       (+10 / +3 = +3 rem +1)
+-1 -10 3 SM/REM .S 2DROP                 \ expect: <2> -1 -3     (-10 / +3 = -3 rem -1)
+0 10 -3 SM/REM .S 2DROP                  \ expect: <2> 1 -3      (+10 / -3 = -3 rem +1)
+-1 -10 -3 SM/REM .S 2DROP                \ expect: <2> -1 3      (-10 / -3 = +3 rem -1)
+0 0 7 SM/REM .S 2DROP                    \ expect: <2> 0 0       (zero dividend)
+-1 -5 10 SM/REM .S 2DROP                 \ expect: <2> -5 0      (|-5|<10 → quot 0 rem -5)
+-1 -32768 1 SM/REM .S 2DROP              \ expect: <2> 0 -32768  ($FFFF8000 / 1 = -32768 rem 0)
+
+\ --- FM/MOD (§6.1.1561) floored signed mixed divide ---
+\ (remainder sign matches divisor; quotient rounds toward -∞)
+0 10 3 FM/MOD .S 2DROP                   \ expect: <2> 1 3       (same-sign — matches SM/REM)
+-1 -10 3 FM/MOD .S 2DROP                 \ expect: <2> 2 -4      (-10 floored /3 = -4 rem 2 — discriminates from SM/REM's -1 -3)
+0 10 -3 FM/MOD .S 2DROP                  \ expect: <2> -2 -4     (+10 floored /-3 = -4 rem -2 — discriminates from SM/REM's 1 -3)
+-1 -10 -3 FM/MOD .S 2DROP                \ expect: <2> -1 3      (same-sign negative — matches SM/REM)
+0 0 7 FM/MOD .S 2DROP                    \ expect: <2> 0 0       (zero dividend)
+0 9 3 FM/MOD .S 2DROP                    \ expect: <2> 0 3       (exact — no correction applied)
+-1 -9 3 FM/MOD .S 2DROP                  \ expect: <2> 0 -3      (exact negative — no correction)
+
+\ --- Story 10.6 underflow recovery (one per word at DEPTH = N-1) ---
+1 2 UM/MOD                               \ expect: ? Stack underflow  + ok  (UM/MOD needs 3, has 2)
+1 2 SM/REM                               \ expect: ? Stack underflow  + ok  (SM/REM needs 3, has 2)
+1 2 FM/MOD                               \ expect: ? Stack underflow  + ok  (FM/MOD needs 3, has 2)

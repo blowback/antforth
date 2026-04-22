@@ -4577,6 +4577,203 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 10.6 double/mixed-precision division (526..549) — DPANS94 §6.1.{1561,2214,2370} ---
+	@# UM/MOD — unsigned mixed divide (§6.1.2370)
+	@OUTPUT=$$(printf '0 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 526 — '0 0 1 UM/MOD .S 2DROP' outputs '<2> 0 0 ' (zero dividend)"; \
+	else \
+		echo "FAIL: REPL test 526 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 1 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 527 — '0 1 1 UM/MOD .S 2DROP' outputs '<2> 0 1 ' (unity / unity)"; \
+	else \
+		echo "FAIL: REPL test 527 — expected '<2> 0 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 10 3 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
+		echo "PASS: REPL test 528 — '0 10 3 UM/MOD .S 2DROP' outputs '<2> 1 3 ' (10/3 = 3 rem 1)"; \
+	else \
+		echo "FAIL: REPL test 528 — expected '<2> 1 3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0 -1 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
+		echo "PASS: REPL test 529 — '0 -1 1 UM/MOD .S 2DROP' outputs '<2> 0 -1 ' (\$$FFFF / 1 = \$$FFFF rem 0)"; \
+	else \
+		echo "FAIL: REPL test 529 — expected '<2> 0 -1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 0 2 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
+		echo "PASS: REPL test 530 — '1 0 2 UM/MOD .S 2DROP' outputs '<2> 0 -32768 ' (\$$10000 / 2 = \$$8000 rem 0)"; \
+	else \
+		echo "FAIL: REPL test 530 — expected '<2> 0 -32768 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0 -1 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 531 — '0 -1 -1 UM/MOD .S 2DROP' outputs '<2> 0 1 ' (\$$FFFF / \$$FFFF = 1 rem 0)"; \
+	else \
+		echo "FAIL: REPL test 531 — expected '<2> 0 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-2 -1 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -2 -1 '; then \
+		echo "PASS: REPL test 532 — '-2 -1 -1 UM/MOD .S 2DROP' outputs '<2> -2 -1 ' (\$$FFFEFFFF / \$$FFFF = \$$FFFF rem \$$FFFE — max quot just-fits)"; \
+	else \
+		echo "FAIL: REPL test 532 — expected '<2> -2 -1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# SM/REM — symmetric signed mixed divide (§6.1.2214); remainder sign matches dividend.
+	@OUTPUT=$$(printf '0 10 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
+		echo "PASS: REPL test 533 — '0 10 3 SM/REM .S 2DROP' outputs '<2> 1 3 ' (+10 / +3 = +3 rem +1)"; \
+	else \
+		echo "FAIL: REPL test 533 — expected '<2> 1 3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -10 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 -3 '; then \
+		echo "PASS: REPL test 534 — '-1 -10 3 SM/REM .S 2DROP' outputs '<2> -1 -3 ' (-10 / +3 = -3 rem -1; rem matches dividend sign)"; \
+	else \
+		echo "FAIL: REPL test 534 — expected '<2> -1 -3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0 10 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 -3 '; then \
+		echo "PASS: REPL test 535 — '0 10 -3 SM/REM .S 2DROP' outputs '<2> 1 -3 ' (+10 / -3 = -3 rem +1; rem matches dividend sign)"; \
+	else \
+		echo "FAIL: REPL test 535 — expected '<2> 1 -3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -10 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 3 '; then \
+		echo "PASS: REPL test 536 — '-1 -10 -3 SM/REM .S 2DROP' outputs '<2> -1 3 ' (-10 / -3 = +3 rem -1; rem matches dividend sign)"; \
+	else \
+		echo "FAIL: REPL test 536 — expected '<2> -1 3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 0 7 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 537 — '0 0 7 SM/REM .S 2DROP' outputs '<2> 0 0 ' (zero dividend)"; \
+	else \
+		echo "FAIL: REPL test 537 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -5 10 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -5 0 '; then \
+		echo "PASS: REPL test 538 — '-1 -5 10 SM/REM .S 2DROP' outputs '<2> -5 0 ' (|-5|<10 → quot 0 rem -5)"; \
+	else \
+		echo "FAIL: REPL test 538 — expected '<2> -5 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -32768 1 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
+		echo "PASS: REPL test 539 — '-1 -32768 1 SM/REM .S 2DROP' outputs '<2> 0 -32768 ' (\$$FFFF8000 / 1 = -32768 rem 0)"; \
+	else \
+		echo "FAIL: REPL test 539 — expected '<2> 0 -32768 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# FM/MOD — floored signed mixed divide (§6.1.1561); remainder sign matches divisor.
+	@OUTPUT=$$(printf '0 10 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
+		echo "PASS: REPL test 540 — '0 10 3 FM/MOD .S 2DROP' outputs '<2> 1 3 ' (same-sign — matches SM/REM)"; \
+	else \
+		echo "FAIL: REPL test 540 — expected '<2> 1 3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -10 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 2 -4 '; then \
+		echo "PASS: REPL test 541 — '-1 -10 3 FM/MOD .S 2DROP' outputs '<2> 2 -4 ' (-10 floored /3 = -4 rem 2 — discriminates from SM/REM's -1 -3)"; \
+	else \
+		echo "FAIL: REPL test 541 — expected '<2> 2 -4 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '0 10 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -2 -4 '; then \
+		echo "PASS: REPL test 542 — '0 10 -3 FM/MOD .S 2DROP' outputs '<2> -2 -4 ' (+10 floored /-3 = -4 rem -2 — discriminates from SM/REM's 1 -3)"; \
+	else \
+		echo "FAIL: REPL test 542 — expected '<2> -2 -4 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -10 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 3 '; then \
+		echo "PASS: REPL test 543 — '-1 -10 -3 FM/MOD .S 2DROP' outputs '<2> -1 3 ' (same-sign negative — matches SM/REM)"; \
+	else \
+		echo "FAIL: REPL test 543 — expected '<2> -1 3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 0 7 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 544 — '0 0 7 FM/MOD .S 2DROP' outputs '<2> 0 0 ' (zero dividend)"; \
+	else \
+		echo "FAIL: REPL test 544 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 9 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 3 '; then \
+		echo "PASS: REPL test 545 — '0 9 3 FM/MOD .S 2DROP' outputs '<2> 0 3 ' (exact — no correction applied)"; \
+	else \
+		echo "FAIL: REPL test 545 — expected '<2> 0 3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -9 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -3 '; then \
+		echo "PASS: REPL test 546 — '-1 -9 3 FM/MOD .S 2DROP' outputs '<2> 0 -3 ' (exact negative — no correction)"; \
+	else \
+		echo "FAIL: REPL test 546 — expected '<2> 0 -3 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Story 10.6 underflow recovery: one per word at DEPTH = N-1 = 2.
+	@OUTPUT=$$(printf '1 2 UM/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 547 — '1 2 UM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 547 — expected '? Stack underflow' and 'ok' for '1 2 UM/MOD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 SM/REM\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 548 — '1 2 SM/REM' (DEPTH 2, needs 3) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 548 — expected '? Stack underflow' and 'ok' for '1 2 SM/REM'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 FM/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 549 — '1 2 FM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 549 — expected '? Stack underflow' and 'ok' for '1 2 FM/MOD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

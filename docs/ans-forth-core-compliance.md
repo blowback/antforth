@@ -1,6 +1,6 @@
 # ANS Forth Core Word Set Compliance Report
 
-**Date:** 2026-04-20 (Story 10.1 refresh)
+**Date:** 2026-04-22 (Story 10.6 refresh)
 **Last full audit:** 2026-04-13 (Story 5.3)
 **System:** antforth (Z80 Forth for CP/M)
 **Reference:** DPANS94 (ANSI X3.215-1994), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
@@ -11,10 +11,10 @@
 | Metric | Count | % of 133 |
 |--------|-------|----------|
 | Total §6.1 Core words in standard | 133 | 100.0% |
-| Fully implemented | 120 | 90.2% |
+| Fully implemented | 123 | 92.5% |
 | Partial | 0 | 0.0% |
-| Missing | 13 | 9.8% |
-| **Coverage** | **120 / 133** | **90.2%** |
+| Missing | 10 | 7.5% |
+| **Coverage** | **123 / 133** | **92.5%** |
 
 **Note on counts:** The previous (2026-04-13) audit's Summary reported 111 / 1 / 21 — that totals 133 only by double-counting `>NUMBER`. Per-category sums show 22 missing, not 21. This refresh corrects the off-by-one and reports both compliance numbers. The 83.5% headline figure is preserved (lenient convention) for continuity with the Epic-10 baseline; the strict 82.7% is recorded for transparency.
 
@@ -23,7 +23,7 @@
 | Gap Classification | Count |
 |--------------------|-------|
 | (a) Deliberately omitted | 0 |
-| (b) Oversight — missing subsystem | 11 |
+| (b) Oversight — missing subsystem | 8 |
 | (b) Oversight — moderate | 2 |
 | (c) Partially implemented | 0 |
 
@@ -41,7 +41,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | 10.3 | Single ↔ double conversions | 1 (`S>D`) ✓ + `>NUMBER` Partial→Full ✓ + `D>S` (§8.6 bonus) ✓ | Complete |
 | 10.4 | Double arithmetic / compare / sign | 0 §6.1 ✓ | §8.6 bonus Complete (`D+` `D-` `DNEGATE` `DABS` `D=` `D<` `DMAX` `DMIN` `M+`) |
 | 10.5 | Double multiplication | 2 ✓ (`M*` `UM*`) | §8.6 bonus `D*` Complete |
-| 10.6 | Double / mixed division | 3 (`FM/MOD` `SM/REM` `UM/MOD`) | |
+| 10.6 | Double / mixed division | 3 ✓ (`FM/MOD` `SM/REM` `UM/MOD`) | Complete |
 | 10.7 | Pictured numeric output primitives | 6 (`<#` `#` `#S` `#>` `HOLD` `SIGN`) + `HOLDS` (§6.2 bonus) | |
 | 10.8 | Number-output rewrite on pictured foundation | 0 net new §6.1 | `.` `U.` `.R` rewritten; `D.` `U.R` `D.R` are §6.2/§8.6 bonus |
 | 10.9 | Remaining §6.1 Core gap words | 4 (`*/` `*/MOD` `EVALUATE` `ENVIRONMENT?`) | `ENVIRONMENT?` added to 10.9 scope on 2026-04-20 (party-mode decision); reclassified from deliberate-omission to gap-to-implement |
@@ -78,7 +78,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 
 ### Arithmetic
 
-19 §6.1 Core words — 14 implemented, 5 missing.
+19 §6.1 Core words — 17 implemented, 2 missing.
 
 | Word | Stack Effect | Status | Source / Story | Notes |
 |------|-------------|--------|----------------|-------|
@@ -98,8 +98,8 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `NEGATE` | `( n -- -n )` | Implemented | `bootstrap.asm:9` | DEFWORD |
 | `MAX` | `( n1 n2 -- n3 )` | Implemented | `bootstrap.asm:56` | DEFWORD |
 | `MIN` | `( n1 n2 -- n3 )` | Implemented | `bootstrap.asm:38` | DEFWORD |
-| `FM/MOD` | `( d n1 -- n2 n3 )` | **Gap → Story 10.6** | — | Floored division on double dividend |
-| `SM/REM` | `( d n1 -- n2 n3 )` | **Gap → Story 10.6** | — | Symmetric division on double dividend |
+| `FM/MOD` | `( d n1 -- n2 n3 )` | Implemented | `double.asm:691` | Story 10.6; DEFWORD wrapping SM/REM + floor correction |
+| `SM/REM` | `( d n1 -- n2 n3 )` | Implemented | `double.asm:638` | Story 10.6; DEFWORD wrapping UM/MOD + sign fixups |
 | `S>D` | `( n -- d )` | Implemented | `double.asm:151` | Sign-extend single → double |
 
 ### Double-Cell and Mixed-Precision Multiplication
@@ -113,11 +113,11 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 
 ### Double-Cell Division
 
-1 §6.1 Core word — 0 implemented, 1 missing. (`FM/MOD` and `SM/REM` are listed in Arithmetic above; `UM/MOD` here.)
+1 §6.1 Core word — 1 implemented, 0 missing. **100% complete.** (`FM/MOD` and `SM/REM` are listed in Arithmetic above; `UM/MOD` here.)
 
 | Word | Stack Effect | Status | Source / Story | Notes |
 |------|-------------|--------|----------------|-------|
-| `UM/MOD` | `( ud u1 -- u2 u3 )` | **Gap → Story 10.6** | — | Unsigned double / single → single quotient + remainder |
+| `UM/MOD` | `( ud u1 -- u2 u3 )` | Implemented | `double.asm:566` | Story 10.6; 16-iteration shift-subtract with 33rd-bit force path |
 
 ### Logic and Comparison
 
@@ -301,7 +301,7 @@ These provide user-customisable number formatting (e.g., formatted currency, lea
 
 Story 10.8 then rewrites `.` / `U.` / `.R` (and adds `D.` `U.R` `D.R` as §6.2/§8.6 bonus) atop this foundation.
 
-#### Missing subsystem: Double-cell operations — 5 §6.1 words remaining → Stories 10.6 / 10.9
+#### Missing subsystem: Double-cell operations — 2 §6.1 words remaining → Story 10.9
 
 antforth is a single-cell (16-bit) system. The following §6.1 Core words operate on double-cell (32-bit) values:
 
@@ -311,7 +311,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | Double-cell memory | `2!` `2@` | 10.2 ✓ Implemented |
 | Single → double | `S>D` | 10.3 ✓ Implemented |
 | Double / mixed multiplication | `M*` `UM*` | 10.5 ✓ Implemented |
-| Double / mixed division | `FM/MOD` `SM/REM` `UM/MOD` | 10.6 |
+| Double / mixed division | `FM/MOD` `SM/REM` `UM/MOD` | 10.6 ✓ Implemented |
 | Mixed-precision (need double intermediate) | `*/` `*/MOD` | 10.9 |
 
 **`*/` and `*/MOD` use a double-cell intermediate** (n1×n2 as 32-bit before dividing by n3), so they depend on Stories 10.5 (`M*`) and 10.6 (`SM/REM` or `FM/MOD`) being complete. They are routed to Story 10.9 (which absorbs all post-foundation §6.1 stragglers).
@@ -400,11 +400,11 @@ antforth also defines words that are useful but outside the Core word sets:
 - **Memory** — 100% Core compliance (17/17). Double-cell `2!` and `2@` landed in Story 10.2.
 - **System** — Near-complete (11/13); `EVALUATE` and `ENVIRONMENT?` remaining, both routed to Story 10.9.
 - **Stack ops** — 100% Core compliance (14/14). Double-cell quartet (Story 10.2) closed the last gap.
-- **Arithmetic single-cell** — 14/14 single-cell complete; the 5 missing words all need a double-cell substrate.
+- **Arithmetic single-cell** — 14/14 single-cell complete. Double-cell-substrate words: `FM/MOD` `SM/REM` `UM/MOD` landed in Story 10.6; `*/` `*/MOD` (2 remaining) routed to Story 10.9.
 
 ### The two big gaps
 
-1. **Double-cell operations (5 §6.1 words remaining):** antforth has no 32-bit division or mixed-precision `*/`. After Stories 10.2–10.5 this is the remaining portion of the largest §6.1 gap and feeds Stories 10.6 (division) and 10.9 (mixed-precision `*/`/`*/MOD`). Stories 10.2–10.5 already delivered double-cell stack/memory, `S>D`/`D>S`, the full §8.6 arithmetic / sign / compare suite, and multiplication (`M*` `UM*` §6.1; `D*` §8.6).
+1. **Double-cell operations (2 §6.1 words remaining):** antforth now has full 32-bit division (`UM/MOD` `SM/REM` `FM/MOD` — Story 10.6). The remaining §6.1 gap in the double-cell family is mixed-precision `*/` and `*/MOD` (Story 10.9), which consume a double-cell intermediate via `M*` (10.5) and `SM/REM` (10.6). Stories 10.2–10.6 delivered double-cell stack/memory, `S>D`/`D>S`, the full §8.6 arithmetic / sign / compare suite, multiplication (`M*` `UM*` §6.1; `D*` §8.6), and division (`UM/MOD` §6.1.2370; `SM/REM` §6.1.2214; `FM/MOD` §6.1.1561).
 
 2. **Pictured numeric output (6 §6.1 words + `HOLDS` §6.2 bonus):** The `<# # #S #> HOLD SIGN` subsystem is entirely absent. Story 10.7 adds it; Story 10.8 then rewrites the existing `.` `U.` `.R` to use it (and adds the §6.2/§8.6 bonus print words `D.` `U.R` `D.R`).
 

@@ -533,9 +533,193 @@ w_D_STAR_cf EQU w_D_STAR_body - 3
         DW      w_SWAP_cf               ; ( res_hi P_lo ) = ( res_hi res_lo )
         DW      EXIT_CODE
 
+; -----------------------------------------------
+; UM/MOD ( ud u1 -- urem uquot )
+;   Unsigned mixed divide: 32-bit unsigned double dividend ÷ 16-bit
+;   unsigned single divisor → 16-bit unsigned remainder (second on
+;   stack) + 16-bit unsigned quotient (TOS).
+;
+;   Restoring shift-subtract: DE is pre-seeded with the high cell of
+;   ud (the running remainder); HL holds the low cell of ud (doubles
+;   as the quotient accumulator — its top bit shifts into DE's bottom
+;   each iteration while we set its bottom bit when the trial subtract
+;   succeeds). Sixteen iterations extract sixteen quotient bits.
+;
+;   Thirty-third-bit handling: the RL D at each iteration's top sets
+;   CF to the bit shifted out of DE's top. When that CF is 1, the
+;   conceptual 33-bit remainder is ≥ 2^16 and the 16-bit divisor
+;   always fits — the force path subtracts unconditionally and sets
+;   the quotient bit.
+;
+;   Quotient-overflow behaviour (DPANS94 §3.2.2.1 / §6.1.2370): when
+;   the true quotient does not fit in a single cell the result is
+;   implementation-defined. antforth silently returns the low 16 bits
+;   of the quotient — matching the single-cell `/` truncation
+;   convention. No overflow check; Epic 11 may reconsider.
+;
+;   Divide-by-zero: matches the Epic-1–8 baseline for single-cell `/`
+;   bit-identically (no new ABORT; empirically today `1 0 /` returns
+;   -1 silently — see Completion Notes). Story 11.4 is the authoritative
+;   migration site to `THROW -10`.
+; ANS Forth 1994 §6.1.2370   UM/MOD   — unsigned mixed divide (double ÷ single → single rem + single quot)
+; -----------------------------------------------
+w_U_M_SLASH_MOD:
+        DEFCODE "UM/MOD", 0
+w_U_M_SLASH_MOD_cf:
+        CALL    check_underflow_3
+        LD      (double_ip_stash), DE   ; Stash IP — DE now free
+        POP     HL                      ; HL = ud-lo (quotient accumulator)
+        POP     DE                      ; DE = ud-hi (running remainder)
+        LD      A, 16                   ; 16-iteration shift-subtract loop
+.ummod_loop:
+        ADD     HL, HL                  ; Quot-accum <<= 1; CF = bit shifted out
+        RL      E                       ; Shift CF into remainder low
+        RL      D                       ; Shift remainder; CF = 33rd bit
+        JR      C, .ummod_force         ; Rem overflowed → always subtract & set
+        EX      DE, HL                  ; HL = remainder, DE = quot accum
+        OR      A                       ; Clear CF before trial subtract
+        SBC     HL, BC                  ; Try remainder - divisor
+        JR      NC, .ummod_set          ; No borrow: subtract succeeded
+        ADD     HL, BC                  ; Restore remainder (trial failed)
+        EX      DE, HL                  ; DE = remainder, HL = quot accum
+        JR      .ummod_next
+.ummod_force:
+        EX      DE, HL                  ; HL = remainder (33rd bit conceptually set)
+        OR      A                       ; Clear CF before SBC
+        SBC     HL, BC                  ; Unconditionally subtract (always fits)
+.ummod_set:
+        EX      DE, HL                  ; DE = remainder, HL = quot accum
+        SET     0, L                    ; Record quotient bit
+.ummod_next:
+        DEC     A
+        JR      NZ, .ummod_loop
+        PUSH    DE                      ; Push remainder (second on stack)
+        LD      B, H
+        LD      C, L                    ; BC = quotient (TOS)
+        LD      DE, (double_ip_stash)
+        NEXT
+
+; -----------------------------------------------
+; (?3) ( -- )
+;   Internal underflow guard: asserts DEPTH >= 3, falling through to
+;   ABORT via check_underflow_3 on failure. Threaded as the first
+;   opcode of DEFWORD SM/REM and FM/MOD so the 3-cell guard fires
+;   before any body word runs (none of those bodies' first words
+;   individually guards for 3 — OVER / DUP / 2DUP / DABS need only 2
+;   or fewer). Named with the existing `(X)`-style internal-word
+;   convention (cf. `(DO)`, `(LOOP)`, `(DOES>)`).
+; -----------------------------------------------
+w_QGUARD_3:
+        DEFCODE "(?3)", 0
+w_QGUARD_3_cf:
+        CALL    check_underflow_3
+        NEXT
+
+; -----------------------------------------------
+; SM/REM ( d n1 -- nrem nquot )
+;   Symmetric signed mixed divide: quotient truncates toward zero;
+;   remainder's sign matches the dividend's sign. For
+;   d = q·n1 + r:  sign(r) == sign(d), |q| == trunc(|d|/|n1|).
+;
+;   Decomposition (DPANS94 §A.6.1.2214 reference body): capture
+;   sign(d-hi) XOR sign(n1) on the return stack for the quotient-
+;   sign fixup; capture sign(d-hi) alone for the remainder-sign
+;   fixup; ABS / DABS the operands; call UM/MOD; apply the fixups.
+;   Two `2 PICK` reaches extract d-hi without permanently perturbing
+;   the stack order.
+;
+;   $80000000 corner: DABS($80000000) returns $80000000 unchanged
+;   (mirrors single-cell ABS($8000)). For this SM/REM input the
+;   true quotient would overflow single-cell range anyway, so
+;   AC #7's implementation-defined-truncation convention applies.
+; ANS Forth 1994 §6.1.2214   SM/REM   — symmetric signed mixed divide
+;   (quotient truncates toward zero; remainder sign matches dividend)
+; -----------------------------------------------
+w_S_M_SLASH_REM:
+        DEFWORD "SM/REM", 0
+w_S_M_SLASH_REM_body:
+w_S_M_SLASH_REM_cf EQU w_S_M_SLASH_REM_body - 3
+        DW      w_QGUARD_3_cf           ; Underflow guard (3 cells)
+        DW      w_LIT_cf                ; 2 PICK — copy d-hi
+        DW      2
+        DW      w_PICK_cf
+        DW      w_OVER_cf               ; copy n1 (was TOS before PICK, now 2nd)
+        DW      w_XOR_cf                ; d-hi XOR n1
+        DW      w_ZERO_LESS_cf          ; quotient-sign flag (true if signs differ)
+        DW      w_TO_R_cf               ; R: (quot-sign)
+        DW      w_LIT_cf                ; 2 PICK — copy d-hi again
+        DW      2
+        DW      w_PICK_cf
+        DW      w_ZERO_LESS_cf          ; remainder-sign flag (true if d < 0)
+        DW      w_TO_R_cf               ; R: (quot-sign rem-sign)
+        DW      w_ABS_cf                ; |n1|
+        DW      w_TO_R_cf               ; R: (quot-sign rem-sign |n1|)
+        DW      w_D_ABS_cf              ; |d|
+        DW      w_R_FROM_cf             ; recover |n1|: ( |d-hi| |d-lo| |n1| )
+        DW      w_U_M_SLASH_MOD_cf      ; ( urem uquot )
+        DW      w_SWAP_cf               ; ( uquot urem )
+        DW      w_R_FROM_cf             ; ( uquot urem rem-sign )
+        DW      w_QBRANCH_cf
+        DW      .sm_rem_done - $
+        DW      w_NEGATE_cf             ; fix remainder sign if dividend was negative
+.sm_rem_done:
+        DW      w_SWAP_cf               ; ( rem uquot )
+        DW      w_R_FROM_cf             ; ( rem uquot quot-sign )
+        DW      w_QBRANCH_cf
+        DW      .sm_quot_done - $
+        DW      w_NEGATE_cf             ; fix quotient sign if signs differed
+.sm_quot_done:
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; FM/MOD ( d n1 -- nrem nquot )
+;   Floored signed mixed divide: quotient rounds toward negative
+;   infinity; remainder's sign matches the divisor's sign. For
+;   d = q·n1 + r:  sign(r) == sign(n1), q = floor(d/n1).
+;
+;   Decomposition (DPANS94 §A.6.1.1561 reference body): call SM/REM;
+;   when remainder is non-zero AND sign(remainder) differs from
+;   sign(divisor), decrement the quotient and add the divisor to
+;   the remainder. The two guards (r ≠ 0 and sign-differ) must both
+;   hold — skipping `r ≠ 0` corrupts exact-division cases
+;   (`0 9 3 FM/MOD` → expected `( 0 3 )`, not `( 3 2 )`); skipping
+;   sign-differ corrupts same-sign cases (`0 10 3 FM/MOD` →
+;   expected `( 1 3 )`, not `( -2 4 )`).
+; ANS Forth 1994 §6.1.1561   FM/MOD   — floored signed mixed divide
+;   (quotient rounds toward -∞; remainder sign matches divisor)
+; -----------------------------------------------
+w_F_M_SLASH_MOD:
+        DEFWORD "FM/MOD", 0
+w_F_M_SLASH_MOD_body:
+w_F_M_SLASH_MOD_cf EQU w_F_M_SLASH_MOD_body - 3
+        DW      w_QGUARD_3_cf           ; Underflow guard (3 cells)
+        DW      w_DUP_cf                ; preserve n1 for the correction step
+        DW      w_TO_R_cf               ; R: (n1)
+        DW      w_S_M_SLASH_REM_cf      ; ( rem quot )
+        DW      w_OVER_cf               ; ( rem quot rem )
+        DW      w_QBRANCH_cf
+        DW      .fm_done - $            ; if rem == 0 no correction
+        DW      w_R_FETCH_cf            ; ( rem quot n1 )
+        DW      w_LIT_cf
+        DW      2
+        DW      w_PICK_cf               ; ( rem quot n1 rem )
+        DW      w_XOR_cf                ; ( rem quot (n1 XOR rem) )
+        DW      w_ZERO_LESS_cf          ; ( rem quot signs-differ-flag )
+        DW      w_QBRANCH_cf
+        DW      .fm_done - $            ; if signs match no correction
+        DW      w_SWAP_cf               ; ( quot rem )
+        DW      w_R_FETCH_cf            ; ( quot rem n1 )
+        DW      w_PLUS_cf               ; ( quot rem+n1 )
+        DW      w_SWAP_cf               ; ( rem+n1 quot )
+        DW      w_ONE_MINUS_cf          ; ( rem+n1 quot-1 )
+.fm_done:
+        DW      w_R_FROM_cf             ; ( rem quot n1 )
+        DW      w_DROP_cf               ; ( rem quot )
+        DW      EXIT_CODE
+
 ; Shared scratch cell for stashing IP (DE) across the DEFCODE double-
 ; cell words that need DE as a general-purpose register (D+, D-, D=,
-; D<, DNEGATE, UM*). Never accessed from threaded code and never held
-; across a NEXT, so one shared cell is safe.
+; D<, DNEGATE, UM*, UM/MOD). Never accessed from threaded code and
+; never held across a NEXT, so one shared cell is safe.
 double_ip_stash:
         DW      0
