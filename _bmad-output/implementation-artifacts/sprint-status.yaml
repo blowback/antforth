@@ -118,7 +118,7 @@ development_status:
   10-1-ans-core-compliance-gap-survey-and-implementation-plan: done
   10-2-double-cell-stack-foundation: done
   10-3-single-double-conversions: done
-  10-4-double-precision-arithmetic-additive-sign-compare-mixed: backlog
+  10-4-double-precision-arithmetic-additive-sign-compare-mixed: done
   10-5-double-multiplication: backlog
   10-6-double-mixed-precision-division: backlog
   10-7-pictured-numeric-output-primitives: backlog

@@ -112,3 +112,80 @@ D>S                                      \ expect: ? Stack underflow  + ok  (D>S
 1 >NUMBER                                \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 1)
 1 2 >NUMBER                              \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 2)
 1 2 3 >NUMBER                            \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 3)
+
+\ === Story 10.4 double-cell arithmetic (additive / sign / compare / mixed) ===
+\ Covers D+, D-, DNEGATE, DABS, D=, D<, DMAX, DMIN, M+ per DPANS94 §8.6
+\ sections 1040, 1050, 1230, 1160, 1120, 1110, 1210, 1220, 1830 with
+\ the E10-D1 byte-order convention (low cell on TOS).
+
+\ --- D+ (§8.6.1040) double-cell add ---
+0 0 0 0 D+ .S 2DROP                      \ expect: <2> 0 0
+0 5 0 7 D+ .S 2DROP                      \ expect: <2> 0 12
+0 -1 0 1 D+ .S 2DROP                     \ expect: <2> 1 0
+-1 -1 0 1 D+ .S 2DROP                    \ expect: <2> 0 0
+32767 -1 0 1 D+ .S 2DROP                 \ expect: <2> -32768 0
+
+\ --- D- (§8.6.1050) double-cell subtract ---
+0 10 0 4 D- .S 2DROP                     \ expect: <2> 0 6
+0 4 0 10 D- .S 2DROP                     \ expect: <2> -1 -6
+0 0 0 1 D- .S 2DROP                      \ expect: <2> -1 -1
+1 0 0 1 D- .S 2DROP                      \ expect: <2> 0 -1
+-1 -1 0 1 D- .S 2DROP                    \ expect: <2> -1 -2
+
+\ --- DNEGATE (§8.6.1230) double-cell two's-complement negate ---
+0 0 DNEGATE .S 2DROP                     \ expect: <2> 0 0
+0 1 DNEGATE .S 2DROP                     \ expect: <2> -1 -1
+-1 -1 DNEGATE .S 2DROP                   \ expect: <2> 0 1
+0 -32768 DNEGATE .S 2DROP                \ expect: <2> -1 -32768
+
+\ --- DABS (§8.6.1160) double-cell absolute value ---
+0 0 DABS .S 2DROP                        \ expect: <2> 0 0
+0 5 DABS .S 2DROP                        \ expect: <2> 0 5
+-1 -5 DABS .S 2DROP                      \ expect: <2> 0 5
+-1 0 DABS .S 2DROP                       \ expect: <2> 1 0
+
+\ --- D= (§8.6.1120) double-cell equality ---
+0 0 0 0 D= .                             \ expect: -1
+0 5 0 5 D= .                             \ expect: -1
+0 5 0 6 D= .                             \ expect: 0
+1 5 2 5 D= .                             \ expect: 0
+-1 -1 -1 -1 D= .                         \ expect: -1
+
+\ --- D< (§8.6.1110) double-cell signed less-than (signed high / unsigned low) ---
+0 0 0 1 D< .                             \ expect: -1
+0 1 0 0 D< .                             \ expect: 0
+-1 -1 0 0 D< .                           \ expect: -1
+0 0 -1 -1 D< .                           \ expect: 0
+0 -1 1 0 D< .                            \ expect: -1
+1 0 1 0 D< .                             \ expect: 0
+-1 0 -1 1 D< .                           \ expect: -1
+
+\ --- DMAX (§8.6.1210) double-cell max (signed) ---
+0 5 0 7 DMAX .S 2DROP                    \ expect: <2> 0 7
+-1 -1 0 0 DMAX .S 2DROP                  \ expect: <2> 0 0
+0 5 0 5 DMAX .S 2DROP                    \ expect: <2> 0 5
+0 -1 1 0 DMAX .S 2DROP                   \ expect: <2> 1 0
+
+\ --- DMIN (§8.6.1220) double-cell min (signed) ---
+0 5 0 7 DMIN .S 2DROP                    \ expect: <2> 0 5
+-1 -1 0 0 DMIN .S 2DROP                  \ expect: <2> -1 -1
+0 5 0 5 DMIN .S 2DROP                    \ expect: <2> 0 5
+0 -1 1 0 DMIN .S 2DROP                   \ expect: <2> 0 -1
+
+\ --- M+ (§8.6.1830) mixed single+double add (sign-extended) ---
+0 0 1 M+ .S 2DROP                        \ expect: <2> 0 1
+0 0 -1 M+ .S 2DROP                       \ expect: <2> -1 -1
+0 -1 1 M+ .S 2DROP                       \ expect: <2> 1 0
+0 0 -5 M+ .S 2DROP                       \ expect: <2> -1 -5
+-1 -5 -1 M+ .S 2DROP                     \ expect: <2> -1 -6
+
+\ --- Story 10.4 underflow recovery (one per word at DEPTH = N-1) ---
+1 2 3 D+                                 \ expect: ? Stack underflow  + ok  (D+ needs 4, has 3)
+1 2 3 D-                                 \ expect: ? Stack underflow  + ok  (D- needs 4, has 3)
+1 DNEGATE                                \ expect: ? Stack underflow  + ok  (DNEGATE needs 2, has 1)
+1 DABS                                   \ expect: ? Stack underflow  + ok  (DABS needs 2, has 1)
+1 2 3 D=                                 \ expect: ? Stack underflow  + ok  (D= needs 4, has 3)
+1 2 3 D<                                 \ expect: ? Stack underflow  + ok  (D< needs 4, has 3)
+1 2 3 DMAX                               \ expect: ? Stack underflow  + ok  (DMAX needs 4, has 3)
+1 2 3 DMIN                               \ expect: ? Stack underflow  + ok  (DMIN needs 4, has 3)
+1 2 M+                                   \ expect: ? Stack underflow  + ok  (M+ needs 3, has 2)

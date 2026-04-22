@@ -39,7 +39,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 |---|---|---|---|
 | 10.2 | Double-cell stack & memory | 6 (`2DROP` `2DUP` `2OVER` `2SWAP` `2!` `2@`) | foundation |
 | 10.3 | Single ↔ double conversions | 1 (`S>D`) ✓ + `>NUMBER` Partial→Full ✓ + `D>S` (§8.6 bonus) ✓ | Complete |
-| 10.4 | Double arithmetic / compare / sign | 0 §6.1 | All §8.6 bonus (`D+` `D-` `DNEGATE` `DABS` `D=` `D<` `DMAX` `DMIN` `M+`) |
+| 10.4 | Double arithmetic / compare / sign | 0 §6.1 ✓ | §8.6 bonus Complete (`D+` `D-` `DNEGATE` `DABS` `D=` `D<` `DMAX` `DMIN` `M+`) |
 | 10.5 | Double multiplication | 2 (`M*` `UM*`) | `D*` is §8.6 bonus |
 | 10.6 | Double / mixed division | 3 (`FM/MOD` `SM/REM` `UM/MOD`) | |
 | 10.7 | Pictured numeric output primitives | 6 (`<#` `#` `#S` `#>` `HOLD` `SIGN`) + `HOLDS` (§6.2 bonus) | |
@@ -358,15 +358,15 @@ These words are **not in §6.1 Core** and therefore are NOT part of the FR15 100
 
 | Word | §-number | Story | Notes |
 |------|----------|-------|-------|
-| `D+` | 8.6.1040 | 10.4 | Double-cell add |
-| `D-` | 8.6.1050 | 10.4 | Double-cell subtract |
-| `DNEGATE` | 8.6.1230 | 10.4 | Double-cell negate |
-| `DABS` | 8.6.1160 | 10.4 | Double-cell abs |
-| `D=` | 8.6.1120 | 10.4 | Double-cell equality |
-| `D<` | 8.6.1110 | 10.4 | Double-cell signed less-than |
-| `DMAX` | 8.6.1210 | 10.4 | Double-cell max |
-| `DMIN` | 8.6.1220 | 10.4 | Double-cell min |
-| `M+` | 8.6.1830 | 10.4 | Mixed add (d + n → d) |
+| `D+` | 8.6.1040 | Implemented (`double.asm:216`) | Double-cell add |
+| `D-` | 8.6.1050 | Implemented (`double.asm:239`) | Double-cell subtract |
+| `DNEGATE` | 8.6.1230 | Implemented (`double.asm:267`) | Double-cell negate |
+| `DABS` | 8.6.1160 | Implemented (`double.asm:292`) | Double-cell abs |
+| `D=` | 8.6.1120 | Implemented (`double.asm:312`) | Double-cell equality |
+| `D<` | 8.6.1110 | Implemented (`double.asm:347`) | Double-cell signed less-than |
+| `DMAX` | 8.6.1210 | Implemented (`double.asm:379`) | Double-cell max |
+| `DMIN` | 8.6.1220 | Implemented (`double.asm:401`) | Double-cell min |
+| `M+` | 8.6.1830 | Implemented (`double.asm:188`) | Mixed add (d + n → d) |
 | `D*` | 8.6.1090 | 10.5 | Double-cell multiply (truncating) |
 | `D.` | 8.6.1060 | 10.8 | Double-cell signed print |
 | `D.R` | 8.6.1070 | 10.8 | Double-cell right-aligned print |
