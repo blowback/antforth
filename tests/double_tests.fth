@@ -189,3 +189,37 @@ D>S                                      \ expect: ? Stack underflow  + ok  (D>S
 1 2 3 DMAX                               \ expect: ? Stack underflow  + ok  (DMAX needs 4, has 3)
 1 2 3 DMIN                               \ expect: ? Stack underflow  + ok  (DMIN needs 4, has 3)
 1 2 M+                                   \ expect: ? Stack underflow  + ok  (M+ needs 3, has 2)
+
+\ === Story 10.5 double-cell multiplication (UM*, M*, D*) ===
+
+\ --- UM* (§6.1.2360) unsigned mixed multiply ---
+0 0 UM* .S 2DROP                         \ expect: <2> 0 0     (zero × zero)
+0 5 UM* .S 2DROP                         \ expect: <2> 0 0     (zero × nonzero)
+1 1 UM* .S 2DROP                         \ expect: <2> 0 1     (trivial product fits in low cell)
+$100 $100 UM* .S 2DROP                   \ expect: <2> 1 0     (256×256=65536; clean carry into high cell)
+$FFFF $FFFF UM* .S 2DROP                 \ expect: <2> -2 1    ($FFFE0001; max unsigned squared)
+$FFFF 2 UM* .S 2DROP                     \ expect: <2> 1 -2    ($1FFFE; low-cell wraps)
+
+\ --- M* (§6.1.1810) signed mixed multiply ---
+0 0 M* .S 2DROP                          \ expect: <2> 0 0
+5 3 M* .S 2DROP                          \ expect: <2> 0 15    (positive × positive)
+-5 3 M* .S 2DROP                         \ expect: <2> -1 -15  (negative × positive → negative double)
+5 -3 M* .S 2DROP                         \ expect: <2> -1 -15  (positive × negative → negative)
+-5 -3 M* .S 2DROP                        \ expect: <2> 0 15    (negative × negative → positive)
+-32768 -32768 M* .S 2DROP                \ expect: <2> 16384 0 ($40000000; ABS($8000) trap collapses)
+32767 32767 M* .S 2DROP                  \ expect: <2> 16383 1 ($3FFF0001; max positive squared)
+-32768 32767 M* .S 2DROP                 \ expect: <2> -16384 -32768  (-$3FFF8000; sign + magnitude)
+
+\ --- D* (§8.6.1090) double-cell signed multiply (truncating) ---
+0 0 0 0 D* .S 2DROP                      \ expect: <2> 0 0
+0 5 0 3 D* .S 2DROP                      \ expect: <2> 0 15    (both fit in single cells)
+0 -1 0 1 D* .S 2DROP                     \ expect: <2> 0 -1    (65535 × 1 = $0000FFFF)
+0 -1 0 -1 D* .S 2DROP                    \ expect: <2> -2 1    (65535 × 65535 = $FFFE0001)
+-1 -1 0 1 D* .S 2DROP                    \ expect: <2> -1 -1   (-1 × 1 signed double)
+-1 -1 -1 -1 D* .S 2DROP                  \ expect: <2> 0 1     (two's-complement -1 × -1 = 1)
+0 1 -1 0 D* .S 2DROP                     \ expect: <2> -1 0    (cross-term carry: $FFFF0000)
+
+\ --- Story 10.5 underflow recovery (one per word at DEPTH = N-1) ---
+1 UM*                                    \ expect: ? Stack underflow  + ok  (UM* needs 2, has 1)
+1 M*                                     \ expect: ? Stack underflow  + ok  (M* needs 2, has 1)
+1 2 3 D*                                 \ expect: ? Stack underflow  + ok  (D* needs 4, has 3)

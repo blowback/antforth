@@ -416,9 +416,126 @@ w_D_MIN_cf EQU w_D_MIN_body - 3
         DW      w_TWO_DROP_cf
         DW      EXIT_CODE
 
+; -----------------------------------------------
+; UM* ( u1 u2 -- ud )
+;   Unsigned mixed multiply: 16-bit u1 × 16-bit u2 → 32-bit ud.
+;   Right-shift schoolbook method: BC starts holding u2 (multiplier) and
+;   drains as bits are consumed from its LSB; HL accumulates the high
+;   half of the product. The 32-bit accumulator (HL:BC) is shifted right
+;   by 1 each iteration; the carry-out of ADD HL,DE is captured by the
+;   subsequent RR H, giving an effective 33-bit shift register so the
+;   $FFFF × $FFFF = $FFFE0001 corner case settles correctly.
+; ANS Forth 1994 §6.1.2360   UM*   — unsigned mixed multiply (single × single → double)
+; -----------------------------------------------
+w_U_M_STAR:
+        DEFCODE "UM*", 0
+w_U_M_STAR_cf:
+        CALL    check_underflow_2
+        LD      (double_ip_stash), DE   ; Stash IP — DE now free
+        POP     DE              ; DE = u1 (multiplicand, held fixed)
+        LD      HL, 0           ; HL = accumulator high half
+        LD      A, 16           ; Loop counter (16 multiplier bits)
+.umstar_loop:
+        OR      A               ; Clear CF (safe path if BIT skips ADD)
+        BIT     0, C            ; Test current LSB of multiplier in BC
+        JR      Z, .umstar_skip
+        ADD     HL, DE          ; acc += multiplicand; CF = carry-out
+.umstar_skip:
+        RR      H               ; 33-bit shift right: CF (or 0) → bit 7 of H
+        RR      L
+        RR      B
+        RR      C               ; Multiplier LSB shifted out (consumed)
+        DEC     A
+        JR      NZ, .umstar_loop
+        ; HL = product high cell, BC = product low cell (TOS)
+        PUSH    HL              ; Push high cell under BC (low cell stays TOS)
+        LD      DE, (double_ip_stash)
+        NEXT
+
+; -----------------------------------------------
+; M* ( n1 n2 -- d )
+;   Signed mixed multiply: 16-bit signed × 16-bit signed → 32-bit signed
+;   double. Wraps UM* with sign tracking: stash sign(n1) XOR sign(n2),
+;   replace operands with their absolute values, multiply unsigned, then
+;   DNEGATE the double result if the stashed sign was negative.
+;
+;   The single-cell ABS($8000) = $8000 fixed-point trap collapses cleanly:
+;   for `-32768 -32768 M*`, the sign-XOR is positive (negative XOR negative),
+;   so no DNEGATE; UM*($8000, $8000) = $40000000 = (16384, 0), which is
+;   the correct +1073741824 = (-32768) × (-32768).
+; ANS Forth 1994 §6.1.1810   M*   — signed mixed multiply (single × single → double)
+; -----------------------------------------------
+w_M_STAR:
+        DEFWORD "M*", 0
+w_M_STAR_body:
+w_M_STAR_cf EQU w_M_STAR_body - 3
+        DW      w_TWO_DUP_cf            ; Underflow guard (needs >= 2)
+        DW      w_XOR_cf                ; n1 XOR n2 — sign bit reflects sign-XOR
+        DW      w_ZERO_LESS_cf          ; flag = (sign-XOR < 0) ? -1 : 0
+        DW      w_TO_R_cf               ; Stash sign flag on R-stack
+        DW      w_ABS_cf                ; |n2|
+        DW      w_SWAP_cf
+        DW      w_ABS_cf                ; |n1|
+        DW      w_SWAP_cf               ; ( |n1| |n2| )
+        DW      w_U_M_STAR_cf           ; ( ud-hi ud-lo ) — unsigned product
+        DW      w_R_FROM_cf             ; Recover sign flag
+        DW      w_QBRANCH_cf
+        DW      .mstar_skip - $
+        DW      w_D_NEGATE_cf           ; If signs differed, negate the double
+.mstar_skip:
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; D* ( d1 d2 -- d3 )
+;   Truncating signed double × double: low 32 bits of the 64-bit product.
+;   Two's-complement two-fold: low-32 of (signed) is bit-identical to
+;   low-32 of (unsigned), so no sign tracking is required.
+;
+;   Algebra (treating both as unsigned, with d_i = a_i*2^16 + b_i):
+;       d3 = (b1*b2) + ((b1*a2 + a1*b2) << 16)  mod 2^32
+;   The cross terms (b1*a2 and a1*b2) contribute only to the high cell
+;   so we use the truncating single-cell `*` for them and add into the
+;   high half of the full UM*(b1, b2) product.
+;
+;   Threaded body:
+;       2OVER 2DROP       \ underflow_4 guard via 2OVER's check
+;       >R                \ stash b2 on R
+;       OVER R@ UM*       \ ( a1 b1 a2 P_hi P_lo )      P = b1*b2 (32-bit)
+;       2SWAP * ROT +     \ ( a1 P_lo H1 ); H1 = (P_hi + b1*a2) mod 2^16
+;       R> 3 PICK *       \ ( a1 P_lo H1 a1*b2 )
+;       SWAP +            \ ( a1 P_lo res_hi )
+;       ROT DROP SWAP     \ ( res_hi P_lo ) = ( res_hi res_lo )
+; ANS Forth 1994 §8.6.1090   D*   — double-cell signed multiply (truncating)
+; -----------------------------------------------
+w_D_STAR:
+        DEFWORD "D*", 0
+w_D_STAR_body:
+w_D_STAR_cf EQU w_D_STAR_body - 3
+        DW      w_TWO_OVER_cf           ; Underflow guard (needs >= 4)
+        DW      w_TWO_DROP_cf           ; Drop the duplicates from 2OVER
+        DW      w_TO_R_cf               ; >R: stash b2
+        DW      w_OVER_cf               ; copy b1
+        DW      w_R_FETCH_cf            ; R@: copy b2
+        DW      w_U_M_STAR_cf           ; UM*(b1,b2) → (P_hi, P_lo)
+        DW      w_TWO_SWAP_cf           ; ( a1 P_hi P_lo b1 a2 )
+        DW      w_STAR_cf               ; ( a1 P_hi P_lo (b1*a2) ) — single * truncates
+        DW      w_ROT_cf                ; ( a1 P_lo (b1*a2) P_hi )
+        DW      w_PLUS_cf               ; ( a1 P_lo H1 ) — H1 = P_hi + b1*a2 mod 2^16
+        DW      w_R_FROM_cf             ; ( a1 P_lo H1 b2 ) — recover b2
+        DW      w_LIT_cf
+        DW      3
+        DW      w_PICK_cf               ; ( a1 P_lo H1 b2 a1 ) — copy a1 to top
+        DW      w_STAR_cf               ; ( a1 P_lo H1 (b2*a1) ) — single * truncates
+        DW      w_SWAP_cf               ; ( a1 P_lo (b2*a1) H1 )
+        DW      w_PLUS_cf               ; ( a1 P_lo res_hi )
+        DW      w_ROT_cf                ; ( P_lo res_hi a1 )
+        DW      w_DROP_cf               ; ( P_lo res_hi )
+        DW      w_SWAP_cf               ; ( res_hi P_lo ) = ( res_hi res_lo )
+        DW      EXIT_CODE
+
 ; Shared scratch cell for stashing IP (DE) across the DEFCODE double-
 ; cell words that need DE as a general-purpose register (D+, D-, D=,
-; D<, DNEGATE). Never accessed from threaded code and never held across
-; a NEXT, so one shared cell is safe.
+; D<, DNEGATE, UM*). Never accessed from threaded code and never held
+; across a NEXT, so one shared cell is safe.
 double_ip_stash:
         DW      0

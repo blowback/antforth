@@ -4380,6 +4380,203 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 10.5 double-cell multiplication (502..525) — DPANS94 §6.1.{1810,2360} + §8.6.1090 ---
+	@# UM* (§6.1.2360): unsigned 16×16 → 32 mixed multiply.
+	@OUTPUT=$$(printf '0 0 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 502 — '0 0 UM* .S 2DROP' outputs '<2> 0 0 ' (zero × zero)"; \
+	else \
+		echo "FAIL: REPL test 502 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 5 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 503 — '0 5 UM* .S 2DROP' outputs '<2> 0 0 ' (zero × nonzero)"; \
+	else \
+		echo "FAIL: REPL test 503 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 1 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 504 — '1 1 UM* .S 2DROP' outputs '<2> 0 1 ' (trivial product fits in low cell)"; \
+	else \
+		echo "FAIL: REPL test 504 — expected '<2> 0 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '$$100 $$100 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
+		echo "PASS: REPL test 505 — '\$$100 \$$100 UM* .S 2DROP' outputs '<2> 1 0 ' (256×256=65536; clean carry into high cell)"; \
+	else \
+		echo "FAIL: REPL test 505 — expected '<2> 1 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '$$FFFF $$FFFF UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -2 1 '; then \
+		echo "PASS: REPL test 506 — '\$$FFFF \$$FFFF UM* .S 2DROP' outputs '<2> -2 1 ' (\$$FFFE0001; max unsigned squared)"; \
+	else \
+		echo "FAIL: REPL test 506 — expected '<2> -2 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '$$FFFF 2 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 -2 '; then \
+		echo "PASS: REPL test 507 — '\$$FFFF 2 UM* .S 2DROP' outputs '<2> 1 -2 ' (\$$1FFFE; low-cell wrap)"; \
+	else \
+		echo "FAIL: REPL test 507 — expected '<2> 1 -2 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# M* (§6.1.1810): signed 16×16 → 32 mixed multiply (UM* + sign tracking).
+	@OUTPUT=$$(printf '0 0 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 508 — '0 0 M* .S 2DROP' outputs '<2> 0 0 '"; \
+	else \
+		echo "FAIL: REPL test 508 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 15 '; then \
+		echo "PASS: REPL test 509 — '5 3 M* .S 2DROP' outputs '<2> 0 15 ' (positive × positive)"; \
+	else \
+		echo "FAIL: REPL test 509 — expected '<2> 0 15 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 -15 '; then \
+		echo "PASS: REPL test 510 — '-5 3 M* .S 2DROP' outputs '<2> -1 -15 ' (negative × positive → negative double)"; \
+	else \
+		echo "FAIL: REPL test 510 — expected '<2> -1 -15 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 -15 '; then \
+		echo "PASS: REPL test 511 — '5 -3 M* .S 2DROP' outputs '<2> -1 -15 ' (positive × negative → negative)"; \
+	else \
+		echo "FAIL: REPL test 511 — expected '<2> -1 -15 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 15 '; then \
+		echo "PASS: REPL test 512 — '-5 -3 M* .S 2DROP' outputs '<2> 0 15 ' (negative × negative → positive)"; \
+	else \
+		echo "FAIL: REPL test 512 — expected '<2> 0 15 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-32768 -32768 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 16384 0 '; then \
+		echo "PASS: REPL test 513 — '-32768 -32768 M* .S 2DROP' outputs '<2> 16384 0 ' (\$$40000000; ABS(\$$8000) trap collapses)"; \
+	else \
+		echo "FAIL: REPL test 513 — expected '<2> 16384 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '32767 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 16383 1 '; then \
+		echo "PASS: REPL test 514 — '32767 32767 M* .S 2DROP' outputs '<2> 16383 1 ' (\$$3FFF0001; max positive squared)"; \
+	else \
+		echo "FAIL: REPL test 514 — expected '<2> 16383 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-32768 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -16384 -32768 '; then \
+		echo "PASS: REPL test 515 — '-32768 32767 M* .S 2DROP' outputs '<2> -16384 -32768 ' (-\$$3FFF8000; sign and magnitude)"; \
+	else \
+		echo "FAIL: REPL test 515 — expected '<2> -16384 -32768 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# D* (§8.6.1090): truncating double × double (low 32 bits).
+	@OUTPUT=$$(printf '0 0 0 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
+		echo "PASS: REPL test 516 — '0 0 0 0 D* .S 2DROP' outputs '<2> 0 0 '"; \
+	else \
+		echo "FAIL: REPL test 516 — expected '<2> 0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 5 0 3 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 15 '; then \
+		echo "PASS: REPL test 517 — '0 5 0 3 D* .S 2DROP' outputs '<2> 0 15 ' (both fit in single cells)"; \
+	else \
+		echo "FAIL: REPL test 517 — expected '<2> 0 15 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 -1 0 1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
+		echo "PASS: REPL test 518 — '0 -1 0 1 D* .S 2DROP' outputs '<2> 0 -1 ' (65535×1=\$$0000FFFF)"; \
+	else \
+		echo "FAIL: REPL test 518 — expected '<2> 0 -1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 -1 0 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -2 1 '; then \
+		echo "PASS: REPL test 519 — '0 -1 0 -1 D* .S 2DROP' outputs '<2> -2 1 ' (65535×65535=\$$FFFE0001)"; \
+	else \
+		echo "FAIL: REPL test 519 — expected '<2> -2 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -1 0 1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
+		echo "PASS: REPL test 520 — '-1 -1 0 1 D* .S 2DROP' outputs '<2> -1 -1 ' (-1 × 1 signed double)"; \
+	else \
+		echo "FAIL: REPL test 520 — expected '<2> -1 -1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -1 -1 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 521 — '-1 -1 -1 -1 D* .S 2DROP' outputs '<2> 0 1 ' (two's-complement -1×-1=1)"; \
+	else \
+		echo "FAIL: REPL test 521 — expected '<2> 0 1 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 1 -1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
+		echo "PASS: REPL test 522 — '0 1 -1 0 D* .S 2DROP' outputs '<2> -1 0 ' (cross-term carry: \$$FFFF0000)"; \
+	else \
+		echo "FAIL: REPL test 522 — expected '<2> -1 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Story 10.5 underflow recovery: one per word at DEPTH = N-1.
+	@OUTPUT=$$(printf '1 UM*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 523 — '1 UM*' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 523 — expected '? Stack underflow' and 'ok' for '1 UM*'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 M*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 524 — '1 M*' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 524 — expected '? Stack underflow' and 'ok' for '1 M*'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 3 D*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 525 — '1 2 3 D*' (DEPTH 3, needs 4) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 525 — expected '? Stack underflow' and 'ok' for '1 2 3 D*'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
