@@ -980,11 +980,17 @@ w_ABS_PAREN_cf:
         NEXT
 
 ; --- Immediate-marker word `#` — pushes 0xFF40 (class=010, index=0)
-;     on TOS, leaving the value the user just typed in NOS. ---
+;     on TOS, leaving the value the user just typed in NOS. Collides
+;     in name with §6.1 pictured-output `#` (src/pictured.asm); this
+;     entry is head-of-bucket (defined later in include order) and
+;     dispatches at run time: asm_mode clear → pictured `#`, set →
+;     immediate-marker sigil. Epic 12 (wordlists) retires this hack. ---
 w_HASH:
         DEFCODE "#", 0
 w_HASH_cf:
-        CALL    check_asm_mode
+        LD      A, (asm_mode)
+        OR      A
+        JP      Z, w_PIC_HASH_cf        ; not in CODE block → pictured-output #
         PUSH    BC                      ; old TOS becomes NOS
         LD      C, ASM_CLASS_IMM        ; C = 0x40
         LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF40

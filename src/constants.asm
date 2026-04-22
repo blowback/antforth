@@ -29,6 +29,12 @@ PAD_OFFSET      EQU     84              ; PAD is 84 bytes above HERE
 ; === Number Formatting Buffer ===
 NUM_BUF_SIZE    EQU     18              ; Max 16 binary digits + sign + safety
 
+; === Pictured Numeric Output Buffer ===
+; Per architecture decision E10-D2 (architecture.md:254-258): 40 bytes in
+; UserArea, IY-relative, addressed via USER variable HLD. Sized to cover
+; the 32-digit base-2 double-cell worst case plus sign plus decorators.
+PIC_BUF_SIZE    EQU     40
+
 ; === Dictionary Entry Flags ===
 F_IMMEDIATE     EQU     0x80            ; Bit 7: IMMEDIATE flag
 F_SMUDGE        EQU     0x40            ; Bit 6: SMUDGE flag (hidden)

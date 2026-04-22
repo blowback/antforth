@@ -1,6 +1,6 @@
 # ANS Forth Core Word Set Compliance Report
 
-**Date:** 2026-04-22 (Story 10.6 refresh)
+**Date:** 2026-04-22 (Story 10.7 refresh)
 **Last full audit:** 2026-04-13 (Story 5.3)
 **System:** antforth (Z80 Forth for CP/M)
 **Reference:** DPANS94 (ANSI X3.215-1994), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
@@ -11,10 +11,10 @@
 | Metric | Count | % of 133 |
 |--------|-------|----------|
 | Total §6.1 Core words in standard | 133 | 100.0% |
-| Fully implemented | 123 | 92.5% |
+| Fully implemented | 129 | 97.0% |
 | Partial | 0 | 0.0% |
-| Missing | 10 | 7.5% |
-| **Coverage** | **123 / 133** | **92.5%** |
+| Missing | 4 | 3.0% |
+| **Coverage** | **129 / 133** | **97.0%** |
 
 **Note on counts:** The previous (2026-04-13) audit's Summary reported 111 / 1 / 21 — that totals 133 only by double-counting `>NUMBER`. Per-category sums show 22 missing, not 21. This refresh corrects the off-by-one and reports both compliance numbers. The 83.5% headline figure is preserved (lenient convention) for continuity with the Epic-10 baseline; the strict 82.7% is recorded for transparency.
 
@@ -23,13 +23,13 @@
 | Gap Classification | Count |
 |--------------------|-------|
 | (a) Deliberately omitted | 0 |
-| (b) Oversight — missing subsystem | 8 |
+| (b) Oversight — missing subsystem | 2 |
 | (b) Oversight — moderate | 2 |
 | (c) Partially implemented | 0 |
 
 | Core Extension bonus | Count |
 |----------------------|-------|
-| Core Extension words implemented (§6.2) | 9 of 46 |
+| Core Extension words implemented (§6.2) | 10 of 46 |
 
 ### Epic-10 closure plan
 
@@ -42,7 +42,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | 10.4 | Double arithmetic / compare / sign | 0 §6.1 ✓ | §8.6 bonus Complete (`D+` `D-` `DNEGATE` `DABS` `D=` `D<` `DMAX` `DMIN` `M+`) |
 | 10.5 | Double multiplication | 2 ✓ (`M*` `UM*`) | §8.6 bonus `D*` Complete |
 | 10.6 | Double / mixed division | 3 ✓ (`FM/MOD` `SM/REM` `UM/MOD`) | Complete |
-| 10.7 | Pictured numeric output primitives | 6 (`<#` `#` `#S` `#>` `HOLD` `SIGN`) + `HOLDS` (§6.2 bonus) | |
+| 10.7 | Pictured numeric output primitives | 6 ✓ (`<#` `#` `#S` `#>` `HOLD` `SIGN`) + `HOLDS` (§6.2 bonus) ✓ | Complete |
 | 10.8 | Number-output rewrite on pictured foundation | 0 net new §6.1 | `.` `U.` `.R` rewritten; `D.` `U.R` `D.R` are §6.2/§8.6 bonus |
 | 10.9 | Remaining §6.1 Core gap words | 4 (`*/` `*/MOD` `EVALUATE` `ENVIRONMENT?`) | `ENVIRONMENT?` added to 10.9 scope on 2026-04-20 (party-mode decision); reclassified from deliberate-omission to gap-to-implement |
 | **Total §6.1 closed** | | **22** | + `>NUMBER` Partial → Full |
@@ -189,7 +189,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 
 ### Numeric Output and Formatting
 
-10 §6.1 Core words — 4 implemented, 6 missing.
+10 §6.1 Core words — 10 implemented, 0 missing. **100% complete.**
 
 | Word | Stack Effect | Status | Source / Story | Notes |
 |------|-------------|--------|----------------|-------|
@@ -197,12 +197,12 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `."` | `( "ccc" -- )` | Implemented | `strings.asm:701` | IMMEDIATE |
 | `U.` | `( u -- )` | Implemented | `formatting.asm:154` | Story 10.8 rewrite (as `.`) |
 | `DECIMAL` | `( -- )` | Implemented | `formatting.asm:383` | DEFWORD |
-| `<#` | `( -- )` | **Gap → Story 10.7** | — | Pictured-output subsystem foundation |
-| `#` | `( ud1 -- ud2 )` | **Gap → Story 10.7** | — | Pictured-output subsystem. (Note: `assembler.asm:985` defines a DEFCODE `#` as the assembler's immediate-operand sigil — that is a non-standard antforth-extension word, **not** the §6.1 pictured-output `#`.) |
-| `#S` | `( ud1 -- ud2 )` | **Gap → Story 10.7** | — | Pictured-output subsystem |
-| `#>` | `( xd -- c-addr u )` | **Gap → Story 10.7** | — | Pictured-output subsystem |
-| `HOLD` | `( char -- )` | **Gap → Story 10.7** | — | Pictured-output subsystem |
-| `SIGN` | `( n -- )` | **Gap → Story 10.7** | — | Pictured-output subsystem |
+| `<#` | `( -- )` | Implemented | `pictured.asm` (Story 10.7) | Resets HLD to pic_buf sentinel |
+| `#` | `( ud1 -- ud2 )` | Implemented | `pictured.asm` (Story 10.7) | Inline 32-by-8 divide. The §6.1 `#` coexists with the assembler's immediate-operand sigil at `assembler.asm:985`: both share the name, the asm entry is head-of-bucket and dispatches at run time — `asm_mode == 0` → pictured `#`, `asm_mode == 1` → sigil. Epic 12 (wordlists) retires this dispatch. |
+| `#S` | `( ud1 -- ud2 )` | Implemented | `pictured.asm` (Story 10.7) | DEFWORD — canonical `BEGIN # 2DUP OR 0= UNTIL` |
+| `#>` | `( xd -- c-addr u )` | Implemented | `pictured.asm` (Story 10.7) | Returns buffer `( c-addr u )` |
+| `HOLD` | `( char -- )` | Implemented | `pictured.asm` (Story 10.7) | Underflow → `? Pictured buffer overflow` + ABORT (Epic 11 migrates to `THROW -17`) |
+| `SIGN` | `( n -- )` | Implemented | `pictured.asm` (Story 10.7) | `BIT 7,B` inline — no extra (?1) helper |
 
 ### String and Parsing
 
@@ -289,17 +289,13 @@ No §6.1 Core word is deliberately omitted from antforth. Every §6.1 word is ei
 
 **Historical note (2026-04-20 party-mode decision):** `ENVIRONMENT?` was previously classified as "deliberately omitted (low value-to-effort)" by Story 5.3 and upheld by the Story 10.1 surveyor. On 2026-04-20, the implementation cost was re-estimated at ~80–120 bytes (straight §3.2.6 query-key table) and the classification was overturned: `ENVIRONMENT?` is now a Story 10.9 deliverable. This keeps FR15 / NFR10's "100% of the ANS Forth 1994 Core wordset" claim literal — 133 / 133 words, no carve-out, no asterisk.
 
-### (b) Oversight — 13 words (11 in two missing subsystems + 2 moderate single-word gaps)
+### (b) Oversight — 7 words (5 in one remaining missing subsystem + 2 moderate single-word gaps)
 
-#### Missing subsystem: Pictured numeric output — 6 words → Story 10.7
+#### Closed subsystem: Pictured numeric output — 6 §6.1 words + `HOLDS` (§6.2 bonus) → **Story 10.7 ✓ Complete**
 
-antforth uses `.` and `U.` directly (`formatting.asm:133`, `:154`) without the ANS pictured-output subsystem. The following 6 words form a single cohesive subsystem owned by **Story 10.7**:
+Story 10.7 delivered `<#` `#` `#S` `#>` `HOLD` `SIGN` (the 6 §6.1 Core primitives) plus `HOLDS` (Forth-2014 §6.2.1675) in `src/pictured.asm`, backed by a 40-byte `pic_buf` and the `HLD` USER variable in `UserArea` (architecture decision E10-D2, `architecture.md:254-258`). `HLD` is also exposed as a user-facing DEFCODE (antforth extension following Gforth / SwiftForth precedent).
 
-`<#` `#` `#S` `#>` `HOLD` `SIGN`
-
-These provide user-customisable number formatting (e.g., formatted currency, leading zeroes, field padding). Adding these requires a pictured-output buffer (architecture decision E10-D2 at `architecture.md:254-258`) and a double-cell conversion loop. Story 10.7 also adds the Forth-2014 `HOLDS` (§6.2.1675) as a §6.2 Core Extension bonus.
-
-Story 10.8 then rewrites `.` / `U.` / `.R` (and adds `D.` `U.R` `D.R` as §6.2/§8.6 bonus) atop this foundation.
+Story 10.8 will rewrite `.` / `U.` / `.R` on top of this foundation and add `D.` / `U.R` / `D.R` as §6.2/§8.6 bonus, preserving observable `.` / `U.` / `.R` output byte-for-byte.
 
 #### Missing subsystem: Double-cell operations — 2 §6.1 words remaining → Story 10.9
 
@@ -331,13 +327,14 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ## Core Extension Bonus Coverage
 
-9 of 46 DPANS94 §6.2 Core Extension words are implemented. (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
+10 of 46 DPANS94 §6.2 Core Extension words are implemented. (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
 
 | Word | Stack Effect | Source | Notes |
 |------|-------------|--------|-------|
 | `.R` | `( n1 n2 -- )` | `formatting.asm:174` | Right-aligned numeric output; Story 10.8 rewrites on pictured foundation |
 | `COMPILE,` | `( xt -- )` | `compiler.asm:321` | Append execution semantics |
 | `HEX` | `( -- )` | `formatting.asm:370` | Set BASE to 16 |
+| `HOLDS` | `( c-addr u -- )` | `pictured.asm` (Story 10.7) | Forth-2014 addition; inserts counted string into pictured buffer |
 | `MARKER` | `( "<spaces>name" -- )` | `system.asm:22` | Snapshot/restore dictionary state |
 | `PICK` | `( xu...x0 u -- xu...x0 xu )` | `stack_ops.asm:94` | |
 | `ROLL` | `( xu...x0 u -- xu-1...x0 xu )` | `stack_ops.asm:112` | |
@@ -349,7 +346,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 | Word | §-number | Story | Notes |
 |------|----------|-------|-------|
-| `HOLDS` | 6.2.1675 | 10.7 | Forth-2014 addition; counterpart of `HOLD` for strings |
+| `HOLDS` | 6.2.1675 | 10.7 ✓ Implemented (`pictured.asm`) | Forth-2014 addition; counterpart of `HOLD` for strings |
 | `U.R` | 6.2.2330 | 10.8 | Right-aligned unsigned print on pictured foundation |
 
 ### §8.6 Double-Number wordset — bonus coverage planned by Epic 10
@@ -406,7 +403,7 @@ antforth also defines words that are useful but outside the Core word sets:
 
 1. **Double-cell operations (2 §6.1 words remaining):** antforth now has full 32-bit division (`UM/MOD` `SM/REM` `FM/MOD` — Story 10.6). The remaining §6.1 gap in the double-cell family is mixed-precision `*/` and `*/MOD` (Story 10.9), which consume a double-cell intermediate via `M*` (10.5) and `SM/REM` (10.6). Stories 10.2–10.6 delivered double-cell stack/memory, `S>D`/`D>S`, the full §8.6 arithmetic / sign / compare suite, multiplication (`M*` `UM*` §6.1; `D*` §8.6), and division (`UM/MOD` §6.1.2370; `SM/REM` §6.1.2214; `FM/MOD` §6.1.1561).
 
-2. **Pictured numeric output (6 §6.1 words + `HOLDS` §6.2 bonus):** The `<# # #S #> HOLD SIGN` subsystem is entirely absent. Story 10.7 adds it; Story 10.8 then rewrites the existing `.` `U.` `.R` to use it (and adds the §6.2/§8.6 bonus print words `D.` `U.R` `D.R`).
+2. **Pictured numeric output — CLOSED by Story 10.7:** `<# # #S #> HOLD SIGN` (6 §6.1) plus `HOLDS` (§6.2 bonus) landed in `src/pictured.asm` backed by a 40-byte `pic_buf` in `UserArea` and the `HLD` USER variable. Story 10.8 will rewrite `.` / `U.` / `.R` on this foundation and add `D.` / `U.R` / `D.R` (§6.2/§8.6 bonus) — the §6.1 display path is preserved byte-for-byte across the rewrite.
 
 ### §6.1 vs §8.6 — important Epic-10 scope distinction
 

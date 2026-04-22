@@ -1102,6 +1102,10 @@ So that opcode words are visible exactly where they're needed — no `ALSO ASSEM
 **When** it runs
 **Then** it verifies: (a) assembler opcodes are invisible outside `CODE`/`END-CODE`; (b) they are visible inside; (c) `END-CODE` correctly restores pre-block search order; (d) every pre-phase CODE source file assembles unchanged (FR31, NFR14 — full coverage in Story 12.7).
 
+**Given** the Story 10.7 asm-`#` dispatch hack at `src/assembler.asm` (`w_HASH_cf` dispatches on `asm_mode`: clear → `JP w_PIC_HASH_cf` for the §6.1 pictured-output `#`, set → immediate-operand sigil)
+**When** Story 12.6 lands
+**Then** the hack **must be removed** — with the assembler `#` registered in the `ASSEMBLER` wordlist and the pictured `#` in `FORTH-WORDLIST`, the two words no longer share a name in the lookup path. Restore `w_HASH_cf` to its pre-Story-10.7 form (single `CALL check_asm_mode` preamble; sigil body unchanged). Verify by: (a) `asm_mode`-based `JP Z, w_PIC_HASH_cf` line is gone from `src/assembler.asm`; (b) `#` outside `CODE` resolves to the pictured word via normal search-order lookup (not via run-time dispatch); (c) Story 10.7's REPL tests 550..572 still pass byte-identically; (d) `tests/number_prefixes_tests.fth` CODE-block tests using `#` still pass. Record net kernel-size delta from hack removal (expected: −4 bytes).
+
 ### Story 12.7: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
 
 As an antforth maintainer,

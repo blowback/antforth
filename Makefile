@@ -1131,10 +1131,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '42 #\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'not in CODE ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 127 — # outside CODE rejected, clean recovery"; \
+	if echo "$$OUTPUT" | grep -q 'Stack underflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 127 — # outside CODE dispatches to pictured-output # (DEPTH=1 → underflow), clean recovery"; \
 	else \
-		echo "FAIL: REPL test 127 — expected 'not in CODE ?' and '3 '"; \
+		echo "FAIL: REPL test 127 — expected 'Stack underflow' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4771,6 +4771,253 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 549 — '1 2 FM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
 		echo "FAIL: REPL test 549 — expected '? Stack underflow' and 'ok' for '1 2 FM/MOD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 10.7 pictured numeric output (550..571) — DPANS94 §6.1.{0030,0040,0050,0490,1670,2210} + §6.2.1675 ---
+	@# Core primitives: decimal round-trip (<# #S #>, explicit # digit train, zero ud).
+	@OUTPUT=$$(printf '0 123 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '123 ok'; then \
+		echo "PASS: REPL test 550 — '0 123 <# #S #> TYPE' outputs '123' (decimal round-trip)"; \
+	else \
+		echo "FAIL: REPL test 550 — expected '123 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 12345 <# # # # # # #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '12345 ok'; then \
+		echo "PASS: REPL test 551 — '0 12345 <# # # # # # #> TYPE' outputs '12345' (five explicit # digits)"; \
+	else \
+		echo "FAIL: REPL test 551 — expected '12345 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 ok'; then \
+		echo "PASS: REPL test 552 — '0 0 <# #S #> TYPE' outputs '0' (AC #4: #S emits >=1 digit for 0. 0.)"; \
+	else \
+		echo "FAIL: REPL test 552 — expected '0 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Base-switching coverage: decimal / HEX / binary / octal / base-36.
+	@OUTPUT=$$(printf 'DECIMAL 0 65535 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '65535 ok'; then \
+		echo "PASS: REPL test 553 — base 10: '0 65535 <# #S #> TYPE' outputs '65535'"; \
+	else \
+		echo "FAIL: REPL test 553 — expected '65535 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Literals are parsed in DECIMAL then printed in the target base.
+	@OUTPUT=$$(printf 'DECIMAL 0 65535 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'FFFF ok'; then \
+		echo "PASS: REPL test 554 — base 16: '0 65535 <# #S #> TYPE' outputs 'FFFF'"; \
+	else \
+		echo "FAIL: REPL test 554 — expected 'FFFF ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL 0 255 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '11111111 ok'; then \
+		echo "PASS: REPL test 555 — base 2: '0 255 <# #S #> TYPE' outputs '11111111'"; \
+	else \
+		echo "FAIL: REPL test 555 — expected '11111111 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL 0 511 8 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '777 ok'; then \
+		echo "PASS: REPL test 556 — base 8: '0 511 <# #S #> TYPE' outputs '777'"; \
+	else \
+		echo "FAIL: REPL test 556 — expected '777 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL 0 35 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'Z ok'; then \
+		echo "PASS: REPL test 557 — base 36: '0 35 <# #S #> TYPE' outputs 'Z' (verifies digit_to_char A-Z branch)"; \
+	else \
+		echo "FAIL: REPL test 557 — expected 'Z ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# SIGN via canonical signed-double recipe: SWAP OVER DABS <# #S ROT SIGN #> TYPE.
+	@OUTPUT=$$(printf -- '-1 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1 ok'; then \
+		echo "PASS: REPL test 558 — '-1 S>D ... SIGN #> TYPE' outputs '-1' (SIGN emits '-' for negative)"; \
+	else \
+		echo "FAIL: REPL test 558 — expected '-1 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '5 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '5 ok'; then \
+		echo "PASS: REPL test 559 — '5 S>D ... SIGN #> TYPE' outputs '5' (SIGN emits nothing for non-negative)"; \
+	else \
+		echo "FAIL: REPL test 559 — expected '5 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-12345 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-12345 ok'; then \
+		echo "PASS: REPL test 560 — '-12345 S>D ... SIGN #> TYPE' outputs '-12345'"; \
+	else \
+		echo "FAIL: REPL test 560 — expected '-12345 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# HOLD explicit non-digit character: builds "1,23" right-to-left.
+	@OUTPUT=$$(printf '0 123 <# # # 44 HOLD #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1,23 ok'; then \
+		echo "PASS: REPL test 561 — '0 123 <# # # 44 HOLD #S #> TYPE' outputs '1,23' (HOLD inserts non-digit ',' = 44)"; \
+	else \
+		echo "FAIL: REPL test 561 — expected '1,23 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# HOLDS string insertion preserves left-to-right order.
+	@OUTPUT=$$(printf ': PICT-ABC S" abc" HOLDS ;\r\n0 99 <# #S PICT-ABC #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'abc99 ok'; then \
+		echo "PASS: REPL test 562 — HOLDS inserts 'abc' before '99' → 'abc99' (left-to-right order preserved)"; \
+	else \
+		echo "FAIL: REPL test 562 — expected 'abc99 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Worst case: double \$$FFFFFFFF printed in base 10, HEX, binary (32-char output in 40-byte budget).
+	@OUTPUT=$$(printf -- '-1 -1 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '4294967295 ok'; then \
+		echo "PASS: REPL test 563 — '-1 -1 <# #S #> TYPE' outputs '4294967295' (ud = \$$FFFFFFFF in base 10)"; \
+	else \
+		echo "FAIL: REPL test 563 — expected '4294967295 ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'DECIMAL -1 -1 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'FFFFFFFF ok'; then \
+		echo "PASS: REPL test 564 — HEX '-1 -1 <# #S #> TYPE' outputs 'FFFFFFFF' (8-char worst case)"; \
+	else \
+		echo "FAIL: REPL test 564 — expected 'FFFFFFFF ok' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- 'DECIMAL -1 -1 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '11111111111111111111111111111111 ok'; then \
+		echo "PASS: REPL test 565 — base 2 '-1 -1 <# #S #> TYPE' outputs 32 '1's (32-char worst case in 40-byte buffer)"; \
+	else \
+		echo "FAIL: REPL test 565 — expected 32 '1's and ok in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Buffer overflow diagnostic: 41 HOLDs exceed 40-byte buffer, fires '? Pictured buffer overflow' + ABORT.
+	@OUTPUT=$$(printf ': OV41 0 0 <# 41 0 DO 65 HOLD LOOP #> TYPE ;\r\nOV41\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'Pictured buffer overflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 566 — 41 HOLDs trigger '? Pictured buffer overflow', REPL recovers cleanly"; \
+	else \
+		echo "FAIL: REPL test 566 — expected 'Pictured buffer overflow' and '3 ' after recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Underflow recovery: one per primitive whose minimum depth > 0.
+	@OUTPUT=$$(printf '1 #\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 567 — '1 #' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 567 — expected '? Stack underflow' and 'ok' for '1 #'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 #S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 568 — '1 #S' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 568 — expected '? Stack underflow' and 'ok' for '1 #S'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 #>\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 569 — '1 #>' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 569 — expected '? Stack underflow' and 'ok' for '1 #>'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'HOLD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 570 — 'HOLD' (DEPTH 0, needs 1) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 570 — expected '? Stack underflow' and 'ok' for 'HOLD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'SIGN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 571 — 'SIGN' (DEPTH 0, needs 1) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 571 — expected '? Stack underflow' and 'ok' for 'SIGN'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 HOLDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 572 — '1 HOLDS' (DEPTH 1, needs 2) underflows and recovers"; \
+	else \
+		echo "FAIL: REPL test 572 — expected '? Stack underflow' and 'ok' for '1 HOLDS'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 10.7 review-pass additions (573..578): HLD smoke, HOLDS u=0/1, digit_to_char A-Z mid-range ---
+	@# HLD user-variable smoke: cold-start init equals <# reset value (idempotent <#).
+	@OUTPUT=$$(printf 'HLD @ <# HLD @ = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-1[ ]+ok'; then \
+		echo "PASS: REPL test 573 — HLD user-variable readable; cold-start init == <# reset"; \
+	else \
+		echo "FAIL: REPL test 573 — expected '-1 ok' for 'HLD @ <# HLD @ = .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# HOLDS u=0: empty-string is a no-op; pictured output unchanged.
+	@OUTPUT=$$(printf '0 99 <# #S HERE 0 HOLDS #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99 ok'; then \
+		echo "PASS: REPL test 574 — 'HERE 0 HOLDS' (u=0) is a no-op; output unchanged"; \
+	else \
+		echo "FAIL: REPL test 574 — expected '99 ok' for HOLDS u=0 path"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# HOLDS u=1: single iteration writes one char then exits.
+	@OUTPUT=$$(printf ': PICT-X S" X" HOLDS ;\r\n0 99 <# #S PICT-X #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'X99 ok'; then \
+		echo "PASS: REPL test 575 — HOLDS (u=1) inserts single char before '99' → 'X99'"; \
+	else \
+		echo "FAIL: REPL test 575 — expected 'X99 ok' for HOLDS u=1 path"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# digit_to_char A-Z mid-range: catches off-by-one in 'ADD A,"A"-10'.
+	@OUTPUT=$$(printf 'DECIMAL 0 10 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'A ok'; then \
+		echo "PASS: REPL test 576 — base 36 digit 10 → 'A' (digit_to_char A-Z lower bound)"; \
+	else \
+		echo "FAIL: REPL test 576 — expected 'A ok' for base-36 digit 10"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL 0 19 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'J ok'; then \
+		echo "PASS: REPL test 577 — base 36 digit 19 → 'J' (digit_to_char A-Z mid-range)"; \
+	else \
+		echo "FAIL: REPL test 577 — expected 'J ok' for base-36 digit 19"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'DECIMAL 0 25 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'P ok'; then \
+		echo "PASS: REPL test 578 — base 36 digit 25 → 'P' (digit_to_char A-Z mid-range)"; \
+	else \
+		echo "FAIL: REPL test 578 — expected 'P ok' for base-36 digit 25"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

@@ -24,4 +24,6 @@ tib_addr    DW      0               ; TIB: text input buffer address
 tib_len     DW      0               ; #TIB: current input length
 tib_in      DW      0               ; >IN: parse position in TIB
 source_id   DW      0               ; SOURCE-ID: 0 = console
+hld         DW      0               ; HLD: pictured-output write cursor
+pic_buf     DS      PIC_BUF_SIZE    ; Pictured-output buffer (fills RTL)
     ENDS

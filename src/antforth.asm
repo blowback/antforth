@@ -67,6 +67,15 @@ cold_start:
         LD      (IY+UserArea.source_id), 0
         LD      (IY+UserArea.source_id+1), 0
 
+        ; 8c. HLD = IY + UserArea.pic_buf + PIC_BUF_SIZE
+        ;     (sentinel one past the buffer's high end; <# resets to this)
+        PUSH    IY
+        POP     HL
+        LD      DE, UserArea.pic_buf + PIC_BUF_SIZE
+        ADD     HL, DE
+        LD      (IY+UserArea.hld), L
+        LD      (IY+UserArea.hld+1), H
+
         ; 9. Hash table is pre-populated in the binary (see hash_table below)
         ;    No runtime initialisation needed
 
@@ -124,6 +133,7 @@ cold_thread:
         INCLUDE "logic.asm"
         INCLUDE "memory.asm"
         INCLUDE "double.asm"
+        INCLUDE "pictured.asm"
         INCLUDE "control_flow.asm"
         INCLUDE "io.asm"
         INCLUDE "strings.asm"
@@ -205,6 +215,8 @@ str_ok:         DB      " ok"
 STR_OK_LEN      EQU     3
 str_underflow:  DB      "? Stack underflow"
 STR_UNDERFLOW_LEN EQU  17
+str_pic_overflow: DB    "? Pictured buffer overflow"
+STR_PIC_OVERFLOW_LEN EQU 26
 test_cell:      DW      0               ; Scratch cell for test threads
 test_cell2:     DW      0               ; Scratch cell for test threads
 test_find_dup:    DB      3, "DUP"        ; Counted string for FIND test
