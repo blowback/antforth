@@ -66,9 +66,12 @@ SIGN                                                          \ expect: ? Stack 
 1 HOLDS                                                       \ expect: ? Stack underflow
 
 \ --- HLD user-variable smoke test (AC #12 — antforth extension) ---
-\ Cold-start sets HLD = pic_buf + 40 (sentinel). <# resets to the same.
-\ HLD @ before and after <# must be equal (deterministic init).
-HLD @ <# HLD @ = .                                            \ expect: -1   ( TRUE flag )
+\ <# is idempotent: two consecutive <# reset HLD to the same sentinel.
+\ (Pre-10.8 this read `HLD @ <# HLD @ = .` — which tested cold-start init
+\  == <# reset. Story 10.8 rewrote U./. on pictured output, so the startup
+\  banner's U. mutates HLD before the REPL prompt. The idempotent-<# form
+\  captures the same invariant without depending on cold-start immutability.)
+<# HLD @ <# HLD @ = .                                         \ expect: -1   ( TRUE flag )
 
 \ --- HOLDS boundary u=0 (no-op) and u=1 (single char) ---
 \ u=0 path: ?BRANCH WHILE exits before any HOLD; 2DROP; net no-op.

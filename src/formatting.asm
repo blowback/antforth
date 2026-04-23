@@ -126,129 +126,111 @@ emit_unsigned:
         JP      bdos_putchar
 
 ; -----------------------------------------------
-; . (dot) ( n -- )
-;   Print signed number followed by space using current BASE
+; D.R ( d +n -- )   Display signed double d right-aligned in +n-char field.
+; ANS Forth 1994 §8.6.1070   D.R   — print signed double, right-aligned
+; -----------------------------------------------
+w_D_DOT_R:
+        DEFWORD "D.R", 0
+w_D_DOT_R_body:
+w_D_DOT_R_cf    EQU     w_D_DOT_R_body - 3
+        ; Underflow: >R is unchecked; OVER below (check_underflow_2) traps for
+        ; DEPTH < 3.  ABORT resets both SP and RP, so the stashed +n on R-stack
+        ; is cleaned up; <# has not yet been called, so pictured state is intact.
+        DW      w_TO_R_cf               ; >R     ( hi lo ; R:+n )
+        DW      w_OVER_cf               ; OVER   ( hi lo hi ; R:+n )
+        DW      w_TO_R_cf               ; >R     ( hi lo ; R:+n hi )
+        DW      w_D_ABS_cf              ; DABS   ( uhi ulo ; R:+n hi )
+        DW      w_PIC_LESS_HASH_cf      ; <#
+        DW      w_PIC_HASH_S_cf         ; #S     ( 0 0 ; R:+n hi )
+        DW      w_R_FROM_cf             ; R>     ( 0 0 hi ; R:+n )
+        DW      w_PIC_SIGN_cf           ; SIGN   ( 0 0 ; R:+n )
+        DW      w_PIC_GREATER_HASH_cf   ; #>     ( c-addr u ; R:+n )
+        DW      w_R_FROM_cf             ; R>     ( c-addr u +n )
+        DW      w_OVER_cf               ; OVER   ( c-addr u +n u )
+        DW      w_MINUS_cf              ; -      ( c-addr u pad )   pad = +n - u
+        DW      w_SPACES_cf             ; SPACES ( c-addr u )       — no-op if pad <= 0
+        DW      w_TYPE_cf               ; TYPE
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; D. ( d -- )   Display signed double d in free-field format, trailing space.
+; ANS Forth 1994 §8.6.1060   D.   — print signed double (Double-Number set)
+; -----------------------------------------------
+w_D_DOT:
+        DEFWORD "D.", 0
+w_D_DOT_body:
+w_D_DOT_cf      EQU     w_D_DOT_body - 3
+        DW      w_OVER_cf               ; OVER   ( hi lo hi )   — copy hi (carries sign)
+        DW      w_TO_R_cf               ; >R     ( hi lo ; R:hi )
+        DW      w_D_ABS_cf              ; DABS   ( uhi ulo ; R:hi )
+        DW      w_PIC_LESS_HASH_cf      ; <#
+        DW      w_PIC_HASH_S_cf         ; #S     ( 0 0 ; R:hi )
+        DW      w_R_FROM_cf             ; R>     ( 0 0 hi )
+        DW      w_PIC_SIGN_cf           ; SIGN   ( 0 0 )        — HOLD '-' if hi<0
+        DW      w_PIC_GREATER_HASH_cf   ; #>     ( c-addr u )
+        DW      w_TYPE_cf               ; TYPE
+        DW      w_SPACE_cf              ; SPACE
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; . ( n -- )   Display signed n in free-field format, trailing space.
+; ANS Forth 1994 §6.1.0180   .   — print signed number
 ; -----------------------------------------------
 w_DOT:
-        DEFCODE ".", 0
-w_DOT_cf:
-        CALL    check_underflow
-        ; Park IP in DE' via shadow registers; TOS stays in main BC for helpers
-        PUSH    BC
-        EXX
-        POP     BC
-        ; Handle sign: emit '-' and negate if negative
-        CALL    print_neg_prefix
-        CALL    emit_unsigned
-        ; Restore IP from DE' (main BC holds garbage — overwritten by POP BC below)
-        EXX
-        ; Pop new TOS from parameter stack
-        POP     BC
-        NEXT
+        DEFWORD ".", 0
+w_DOT_body:
+w_DOT_cf        EQU     w_DOT_body - 3
+        DW      w_S_TO_D_cf             ; S>D    ( n -- d )
+        DW      w_D_DOT_cf              ; D.
+        DW      EXIT_CODE
 
 ; -----------------------------------------------
-; U. ( u -- )
-;   Print unsigned number followed by space using current BASE
+; U. ( u -- )   Display unsigned u in free-field format, trailing space.
+; ANS Forth 1994 §6.1.2320   U.   — print unsigned number
 ; -----------------------------------------------
 w_U_DOT:
-        DEFCODE "U.", 0
-w_U_DOT_cf:
-        CALL    check_underflow
-        ; Park IP in DE' via shadow registers; TOS stays in main BC for emit_unsigned
-        PUSH    BC
-        EXX
-        POP     BC
-        CALL    emit_unsigned
-        ; Restore IP from DE' (main BC holds garbage — overwritten by POP BC below)
-        EXX
-        ; Pop new TOS from parameter stack
-        POP     BC
-        NEXT
+        DEFWORD "U.", 0
+w_U_DOT_body:
+w_U_DOT_cf      EQU     w_U_DOT_body - 3
+        DW      w_LIT_cf, 0             ; 0      ( u 0 )
+        DW      w_SWAP_cf               ; SWAP   ( 0 u )  — E10-D1: hi=0, lo=u
+        DW      w_D_DOT_cf              ; D.
+        DW      EXIT_CODE
 
 ; -----------------------------------------------
-; .R ( n width -- )
-;   Print signed number right-justified in field of given width
-;   No trailing space
+; .R ( n +n -- )   Display signed n right-aligned in +n-char field.
+; ANS Forth 1994 §6.2.0210   .R   — print signed, right-aligned (Core Extension)
+;   (Epic spec's §6.1.0310 is a typo — §6.1.0310 is actually `2!`; the correct
+;   reference is §6.2.0210 per docs/ans-forth-core-compliance.md:334.)
 ; -----------------------------------------------
 w_DOT_R:
-        DEFCODE ".R", 0
-w_DOT_R_cf:
-        CALL    check_underflow_2
-        ; Park IP in DE' via shadow registers; rearrange main set so
-        ; main DE = width and main BC = n (consumed for u_to_str).
-        PUSH    BC                      ; width onto SP
-        EXX                             ; IP → DE'
-        POP     DE                      ; main DE = width
-        POP     BC                      ; main BC = n
+        DEFWORD ".R", 0
+w_DOT_R_body:
+w_DOT_R_cf      EQU     w_DOT_R_body - 3
+        ; Underflow: >R unchecked; S>D (check_underflow) traps for DEPTH < 2.
+        ; ABORT resets RP, clearing the stashed +n.
+        DW      w_TO_R_cf               ; >R     ( n ; R:+n )
+        DW      w_S_TO_D_cf             ; S>D    ( d ; R:+n )
+        DW      w_R_FROM_cf             ; R>     ( d +n )
+        DW      w_D_DOT_R_cf            ; D.R
+        DW      EXIT_CODE
 
-        ; Check sign of n
-        BIT     7, B
-        JR      Z, .dotr_positive
-        ; Negative: set flag and negate
-        LD      A, 1
-        LD      (.dotr_neg), A
-        XOR     A
-        SUB     C
-        LD      C, A
-        SBC     A, A
-        SUB     B
-        LD      B, A
-        JR      .dotr_convert
-.dotr_positive:
-        XOR     A
-        LD      (.dotr_neg), A
-.dotr_convert:
-        ; BC = |n|, DE = width — preserve width across u_to_str (clobbers DE)
-        PUSH    DE                      ; save width
-        CALL    u_to_str                ; HL = string addr, A = length
-        ; Save string info (lives across pad-loop BDOS calls — see Dev Notes)
-        LD      (.dotr_str), HL
-        LD      (.dotr_len), A
-        POP     DE                      ; restore DE = width
-
-        ; Calculate padding = width_lo - string_length - sign_char
-        LD      B, A                    ; B = string length
-        LD      A, (.dotr_neg)
-        ADD     A, B                    ; A = string_length + sign_char
-        LD      B, A
-        LD      A, E                    ; A = width (low byte)
-        ; NOTE: only the low 8 bits of width are used for padding (pre-existing
-        ; behaviour); widths >= 256 fall through to .dotr_no_pad via wrap.
-        SUB     B                       ; A = padding count
-        ; If padding <= 0, skip
-        JR      C, .dotr_no_pad
-        JR      Z, .dotr_no_pad
-        ; Emit padding spaces
-        LD      B, A                    ; B = padding count
-.dotr_pad:
-        PUSH    BC
-        LD      E, ' '
-        CALL    bdos_putchar
-        POP     BC
-        DJNZ    .dotr_pad
-.dotr_no_pad:
-        ; Emit '-' if negative
-        LD      A, (.dotr_neg)
-        OR      A
-        JR      Z, .dotr_emit_digits
-        LD      E, '-'
-        CALL    bdos_putchar
-.dotr_emit_digits:
-        ; Emit digit string
-        LD      HL, (.dotr_str)
-        LD      A, (.dotr_len)
-        LD      B, A
-        CALL    bdos_print_str
-
-        ; Restore IP from DE' (main BC overwritten by POP BC below)
-        EXX
-        ; Pop new TOS
-        POP     BC
-        NEXT
-
-.dotr_neg:      DB      0
-.dotr_str:      DW      0
-.dotr_len:      DB      0
+; -----------------------------------------------
+; U.R ( u +n -- )   Display unsigned u right-aligned in +n-char field.
+; Forth 2014 §6.2.2330   U.R   — print unsigned, right-aligned (Core Extension)
+; -----------------------------------------------
+w_U_DOT_R:
+        DEFWORD "U.R", 0
+w_U_DOT_R_body:
+w_U_DOT_R_cf    EQU     w_U_DOT_R_body - 3
+        ; Underflow: >R unchecked; SWAP (check_underflow_2) traps for DEPTH < 2.
+        ; ABORT resets RP, clearing the stashed +n.
+        DW      w_TO_R_cf               ; >R     ( u ; R:+n )
+        DW      w_LIT_cf, 0             ; 0      ( u 0 )
+        DW      w_SWAP_cf               ; SWAP   ( 0 u )
+        DW      w_R_FROM_cf             ; R>     ( 0 u +n )
+        DW      w_D_DOT_R_cf            ; D.R
+        DW      EXIT_CODE
 
 ; -----------------------------------------------
 ; .S ( -- )

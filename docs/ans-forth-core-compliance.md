@@ -1,6 +1,6 @@
 # ANS Forth Core Word Set Compliance Report
 
-**Date:** 2026-04-22 (Story 10.7 refresh)
+**Date:** 2026-04-23 (Story 10.8 refresh)
 **Last full audit:** 2026-04-13 (Story 5.3)
 **System:** antforth (Z80 Forth for CP/M)
 **Reference:** DPANS94 (ANSI X3.215-1994), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
@@ -29,7 +29,7 @@
 
 | Core Extension bonus | Count |
 |----------------------|-------|
-| Core Extension words implemented (§6.2) | 10 of 46 |
+| Core Extension words implemented (§6.2) | 11 of 46 |
 
 ### Epic-10 closure plan
 
@@ -43,7 +43,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | 10.5 | Double multiplication | 2 ✓ (`M*` `UM*`) | §8.6 bonus `D*` Complete |
 | 10.6 | Double / mixed division | 3 ✓ (`FM/MOD` `SM/REM` `UM/MOD`) | Complete |
 | 10.7 | Pictured numeric output primitives | 6 ✓ (`<#` `#` `#S` `#>` `HOLD` `SIGN`) + `HOLDS` (§6.2 bonus) ✓ | Complete |
-| 10.8 | Number-output rewrite on pictured foundation | 0 net new §6.1 | `.` `U.` `.R` rewritten; `D.` `U.R` `D.R` are §6.2/§8.6 bonus |
+| 10.8 | Number-output rewrite on pictured foundation | 0 net new §6.1 ✓ | `.` `U.` `.R` rewritten on pictured foundation (`formatting.asm`); `D.` `U.R` `D.R` added as §8.6/§6.2 bonus. Complete |
 | 10.9 | Remaining §6.1 Core gap words | 4 (`*/` `*/MOD` `EVALUATE` `ENVIRONMENT?`) | `ENVIRONMENT?` added to 10.9 scope on 2026-04-20 (party-mode decision); reclassified from deliberate-omission to gap-to-implement |
 | **Total §6.1 closed** | | **22** | + `>NUMBER` Partial → Full |
 
@@ -327,11 +327,11 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ## Core Extension Bonus Coverage
 
-10 of 46 DPANS94 §6.2 Core Extension words are implemented. (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
+11 of 46 DPANS94 §6.2 Core Extension words are implemented. (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
 
 | Word | Stack Effect | Source | Notes |
 |------|-------------|--------|-------|
-| `.R` | `( n1 n2 -- )` | `formatting.asm:174` | Right-aligned numeric output; Story 10.8 rewrites on pictured foundation |
+| `.R` | `( n1 n2 -- )` | `formatting.asm:203` | Right-aligned numeric output; DEFWORD on pictured foundation (Story 10.8) |
 | `COMPILE,` | `( xt -- )` | `compiler.asm:321` | Append execution semantics |
 | `HEX` | `( -- )` | `formatting.asm:370` | Set BASE to 16 |
 | `HOLDS` | `( c-addr u -- )` | `pictured.asm` (Story 10.7) | Forth-2014 addition; inserts counted string into pictured buffer |
@@ -347,7 +347,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | Word | §-number | Story | Notes |
 |------|----------|-------|-------|
 | `HOLDS` | 6.2.1675 | 10.7 ✓ Implemented (`pictured.asm`) | Forth-2014 addition; counterpart of `HOLD` for strings |
-| `U.R` | 6.2.2330 | 10.8 | Right-aligned unsigned print on pictured foundation |
+| `U.R` | 6.2.2330 | 10.8 ✓ Implemented (`formatting.asm:217`) | Right-aligned unsigned print on pictured foundation |
 
 ### §8.6 Double-Number wordset — bonus coverage planned by Epic 10
 
@@ -365,11 +365,11 @@ These words are **not in §6.1 Core** and therefore are NOT part of the FR15 100
 | `DMIN` | 8.6.1220 | Implemented (`double.asm:401`) | Double-cell min |
 | `M+` | 8.6.1830 | Implemented (`double.asm:188`) | Mixed add (d + n → d) |
 | `D*` | 8.6.1090 | Implemented (`double.asm:510`) | Double-cell multiply (truncating) |
-| `D.` | 8.6.1060 | 10.8 | Double-cell signed print |
-| `D.R` | 8.6.1070 | 10.8 | Double-cell right-aligned print |
+| `D.` | 8.6.1060 | 10.8 ✓ Implemented (`formatting.asm:156`) | Double-cell signed print |
+| `D.R` | 8.6.1070 | 10.8 ✓ Implemented (`formatting.asm:132`) | Double-cell right-aligned print |
 | `D>S` | 8.6.1140 | Implemented (`double.asm:172`) | Double-narrow → single (truncating) |
 
-(13 §8.6 additions planned; none on the §6.1 critical path.)
+(13 §8.6 additions planned; all 13 implemented post-Story-10.8 — `D.` and `D.R` landed with this refresh. None on the §6.1 critical path.)
 
 ### Non-standard words (not in Core or Core Extension)
 

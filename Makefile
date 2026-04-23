@@ -4969,12 +4969,15 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- Story 10.7 review-pass additions (573..578): HLD smoke, HOLDS u=0/1, digit_to_char A-Z mid-range ---
-	@# HLD user-variable smoke: cold-start init equals <# reset value (idempotent <#).
-	@OUTPUT=$$(printf 'HLD @ <# HLD @ = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@# HLD user-variable smoke: <# is idempotent — two consecutive <# yield the same HLD.
+	@# (Story 10.8 rewrote U./. on pictured foundation, so the startup banner's U. now
+	@#  mutates HLD; the test's original 'cold-start init == <# reset' form no longer
+	@#  holds. The <#-idempotent invariant it was really checking still does.)
+	@OUTPUT=$$(printf '<# HLD @ <# HLD @ = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-1[ ]+ok'; then \
-		echo "PASS: REPL test 573 — HLD user-variable readable; cold-start init == <# reset"; \
+		echo "PASS: REPL test 573 — HLD user-variable readable; <# is idempotent"; \
 	else \
-		echo "FAIL: REPL test 573 — expected '-1 ok' for 'HLD @ <# HLD @ = .'"; \
+		echo "FAIL: REPL test 573 — expected '-1 ok' for '<# HLD @ <# HLD @ = .'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -5018,6 +5021,316 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 578 — base 36 digit 25 → 'P' (digit_to_char A-Z mid-range)"; \
 	else \
 		echo "FAIL: REPL test 578 — expected 'P ok' for base-36 digit 25"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 10.8 number-output on pictured foundation (579..614) ---
+	@# `.` regression block (AC #1, #14a) — byte-for-byte parity with pre-10.8.
+	@OUTPUT=$$(printf '0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
+		echo "PASS: REPL test 579 — '0 .' → '0 ' (free-field signed, base 10)"; \
+	else \
+		echo "FAIL: REPL test 579 — expected '0  ok' for '0 .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1234 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1234  ok'; then \
+		echo "PASS: REPL test 580 — '1234 .' → '1234 ' (free-field signed, base 10)"; \
+	else \
+		echo "FAIL: REPL test 580 — expected '1234  ok' for '1234 .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-5  ok'; then \
+		echo "PASS: REPL test 581 — '-5 .' → '-5 ' (negative signed)"; \
+	else \
+		echo "FAIL: REPL test 581 — expected '-5  ok' for '-5 .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '32767 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^32767  ok'; then \
+		echo "PASS: REPL test 582 — '32767 .' → '32767 ' (INT16_MAX)"; \
+	else \
+		echo "FAIL: REPL test 582 — expected '32767  ok' for '32767 .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-32768 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-32768  ok'; then \
+		echo "PASS: REPL test 583 — '-32768 .' → '-32768 ' (INT16_MIN single-cell corner)"; \
+	else \
+		echo "FAIL: REPL test 583 — expected '-32768  ok' for '-32768 .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '255 HEX . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^FF  ok'; then \
+		echo "PASS: REPL test 584 — '255 HEX . DECIMAL' → 'FF ' (HEX discipline)"; \
+	else \
+		echo "FAIL: REPL test 584 — expected 'FF  ok' for '255 HEX . DECIMAL'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `U.` regression block (AC #1, #14b).
+	@OUTPUT=$$(printf '0 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
+		echo "PASS: REPL test 585 — '0 U.' → '0 '"; \
+	else \
+		echo "FAIL: REPL test 585 — expected '0  ok' for '0 U.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1234 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1234  ok'; then \
+		echo "PASS: REPL test 586 — '1234 U.' → '1234 '"; \
+	else \
+		echo "FAIL: REPL test 586 — expected '1234  ok' for '1234 U.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# U. with 65535 must print '65535 ' — if E10-D1 SWAP order is wrong it becomes '4294901760 '.
+	@OUTPUT=$$(printf '65535 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^65535  ok'; then \
+		echo "PASS: REPL test 587 — '65535 U.' → '65535 ' (UINT16_MAX; E10-D1 SWAP order sanity)"; \
+	else \
+		echo "FAIL: REPL test 587 — expected '65535  ok' for '65535 U.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '65535 HEX U. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^FFFF  ok'; then \
+		echo "PASS: REPL test 588 — '65535 HEX U. DECIMAL' → 'FFFF '"; \
+	else \
+		echo "FAIL: REPL test 588 — expected 'FFFF  ok' for '65535 HEX U. DECIMAL'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `.R` regression block incl. no-truncation (AC #3, #14c).
+	@OUTPUT=$$(printf '42 10 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^        42 ok'; then \
+		echo "PASS: REPL test 589 — '42 10 .R' → 8 spaces + '42' (right-aligned)"; \
+	else \
+		echo "FAIL: REPL test 589 — expected '        42 ok' for '42 10 .R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-5 10 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^        -5 ok'; then \
+		echo "PASS: REPL test 590 — '-5 10 .R' → 8 spaces + '-5'"; \
+	else \
+		echo "FAIL: REPL test 590 — expected '        -5 ok' for '-5 10 .R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# .R no-truncation per §6.2.0210: when u > +n, emit all digits without leading pad.
+	@OUTPUT=$$(printf '1234 3 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1234 ok'; then \
+		echo "PASS: REPL test 591 — '1234 3 .R' → '1234' no-truncation (AC #3, §6.2.0210)"; \
+	else \
+		echo "FAIL: REPL test 591 — expected '1234 ok' for '1234 3 .R' (no truncation)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 0 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0 ok'; then \
+		echo "PASS: REPL test 592 — '0 0 .R' → '0' (zero width, single digit)"; \
+	else \
+		echo "FAIL: REPL test 592 — expected '0 ok' for '0 0 .R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `D.` block incl. INT_MIN corner (AC #6, #14d, #15).
+	@OUTPUT=$$(printf '0 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
+		echo "PASS: REPL test 593 — '0 0 D.' → '0 '"; \
+	else \
+		echo "FAIL: REPL test 593 — expected '0  ok' for '0 0 D.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Worst-case signed double: -1 -1 represents signed -1 (d = $FFFFFFFF). SIGN must fire on hi.
+	@OUTPUT=$$(printf -- '-1 -1 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1  ok'; then \
+		echo "PASS: REPL test 594 — '-1 -1 D.' → '-1 ' (E10-D1 high-cell-drives-SIGN)"; \
+	else \
+		echo "FAIL: REPL test 594 — expected '-1  ok' for '-1 -1 D.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# hi=0, lo=-1 → unsigned double = 65535. Catches E10-D1 confusion — hi NOT on TOS.
+	@OUTPUT=$$(printf '0 -1 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^65535  ok'; then \
+		echo "PASS: REPL test 595 — '0 -1 D.' → '65535 ' (hi=0, lo=-1; low-on-TOS sanity)"; \
+	else \
+		echo "FAIL: REPL test 595 — expected '65535  ok' for '0 -1 D.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 -1 HEX D. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^FFFF  ok'; then \
+		echo "PASS: REPL test 596 — '0 -1 HEX D. DECIMAL' → 'FFFF '"; \
+	else \
+		echo "FAIL: REPL test 596 — expected 'FFFF  ok' for '0 -1 HEX D. DECIMAL'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# INT_MIN corner (AC #15): double $$80000000 = hi=32768 lo=0; DABS leaves it unchanged, SIGN still fires on hi.
+	@OUTPUT=$$(printf '32768 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-2147483648  ok'; then \
+		echo "PASS: REPL test 597 — '32768 0 D.' → '-2147483648 ' (INT_MIN; DABS(\$$80000000) fixed-point)"; \
+	else \
+		echo "FAIL: REPL test 597 — expected '-2147483648  ok' for '32768 0 D.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `U.R` block (AC #14e).
+	@OUTPUT=$$(printf '42 10 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^        42 ok'; then \
+		echo "PASS: REPL test 598 — '42 10 U.R' → 8 spaces + '42'"; \
+	else \
+		echo "FAIL: REPL test 598 — expected '        42 ok' for '42 10 U.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '65535 10 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^     65535 ok'; then \
+		echo "PASS: REPL test 599 — '65535 10 U.R' → 5 spaces + '65535' (E10-D1 sanity)"; \
+	else \
+		echo "FAIL: REPL test 599 — expected '     65535 ok' for '65535 10 U.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `D.R` block (AC #14f).
+	@OUTPUT=$$(printf '0 0 10 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^         0 ok'; then \
+		echo "PASS: REPL test 600 — '0 0 10 D.R' → 9 spaces + '0'"; \
+	else \
+		echo "FAIL: REPL test 600 — expected '         0 ok' for '0 0 10 D.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 -1 10 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^        -1 ok'; then \
+		echo "PASS: REPL test 601 — '-1 -1 10 D.R' → 8 spaces + '-1'"; \
+	else \
+		echo "FAIL: REPL test 601 — expected '        -1 ok' for '-1 -1 10 D.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# D.R no-truncation edge: +n=0, single-digit string.
+	@OUTPUT=$$(printf -- '-1 -1 0 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 ok'; then \
+		echo "PASS: REPL test 602 — '-1 -1 0 D.R' → '-1' no-truncation"; \
+	else \
+		echo "FAIL: REPL test 602 — expected '-1 ok' for '-1 -1 0 D.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Pictured-path explicit (AC #14g) — proves `.`'s factoring reaches pictured output.
+	@OUTPUT=$$(printf ': DOT-VIA-PICT S>D OVER >R DABS <# #S R> SIGN #> TYPE SPACE ;\r\n1234 DOT-VIA-PICT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1234  ok'; then \
+		echo "PASS: REPL test 603 — DOT-VIA-PICT (user pictured recipe) yields byte-identical '1234 '"; \
+	else \
+		echo "FAIL: REPL test 603 — expected '1234  ok' for '1234 DOT-VIA-PICT'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Early-binding HOLD-redefinition (AC #8, #14h).
+	@OUTPUT=$$(printf ': HOLD DROP ;\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^42  ok'; then \
+		echo "PASS: REPL test 604 — ': HOLD DROP ; 42 .' → '42 ' (early binding; user HOLD redef ignored)"; \
+	else \
+		echo "FAIL: REPL test 604 — expected '42  ok' for ': HOLD DROP ; 42 .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# .S preservation smoke (AC #7, #14i) — u_to_str / num_buf / emit_unsigned kept alive.
+	@OUTPUT=$$(printf '1 2 3 .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '<3> 1 2 3  ok'; then \
+		echo "PASS: REPL test 605 — '1 2 3 .S' → '<3> 1 2 3 ' (.S preserved; helpers kept)"; \
+	else \
+		echo "FAIL: REPL test 605 — expected '<3> 1 2 3  ok' for '1 2 3 .S'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Underflow-parity block (AC #9, #14j) — factor chain guards trip before pictured state mutates.
+	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 606 — '.' (DEPTH 0) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 606 — expected '? Stack underflow' and 'ok' for '.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 607 — 'U.' (DEPTH 0) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 607 — expected '? Stack underflow' and 'ok' for 'U.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 608 — 'D.' (DEPTH 0, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 608 — expected '? Stack underflow' and 'ok' for 'D.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 609 — '1 .R' (DEPTH 1, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 609 — expected '? Stack underflow' and 'ok' for '1 .R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 610 — '1 U.R' (DEPTH 1, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 610 — expected '? Stack underflow' and 'ok' for '1 U.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 1 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 611 — '1 1 D.R' (DEPTH 2, needs 3) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 611 — expected '? Stack underflow' and 'ok' for '1 1 D.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Review follow-ups: D.R × INT_MIN, D. typical positive, .R negative-width.
+	@# D.R INT_MIN corner (width=15): exercises DABS($$80000000) + SIGN + width-arith together.
+	@OUTPUT=$$(printf '32768 0 15 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^    -2147483648 ok'; then \
+		echo "PASS: REPL test 612 — '32768 0 15 D.R' → 4 spaces + '-2147483648' (INT_MIN × right-align)"; \
+	else \
+		echo "FAIL: REPL test 612 — expected '    -2147483648 ok' for '32768 0 15 D.R'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# D. typical positive value — complements the edge-heavy 593..597 block.
+	@OUTPUT=$$(printf '0 12345 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^12345  ok'; then \
+		echo "PASS: REPL test 613 — '0 12345 D.' → '12345 ' (typical positive double)"; \
+	else \
+		echo "FAIL: REPL test 613 — expected '12345  ok' for '0 12345 D.'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# .R with negative width: DPANS94 specifies +n; implementation no-ops via SPACES(-n),
+	@# emitting digits with no padding and no truncation. Sanity gate on unspecified input.
+	@OUTPUT=$$(printf -- '42 -5 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^42 ok'; then \
+		echo "PASS: REPL test 614 — '42 -5 .R' → '42' (negative width: SPACES no-ops, no truncation)"; \
+	else \
+		echo "FAIL: REPL test 614 — expected '42 ok' for '42 -5 .R'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
