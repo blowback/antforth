@@ -85,3 +85,69 @@ D.                                         \ expect: ? Stack underflow
 1 .R                                       \ expect: ? Stack underflow
 1 U.R                                      \ expect: ? Stack underflow
 1 1 D.R                                    \ expect: ? Stack underflow
+
+\ === Story 10.9 remaining Core gap words ===
+\
+\ Closes the §6.1 Core gap (129/133 → 133/133). Words covered:
+\   */     (§6.1.0100)  */MOD  (§6.1.0110)
+\   ENVIRONMENT? (§6.1.1345)  EVALUATE  (§6.1.1360)
+\
+\ Stack-display note: in REPL output, `.` prints TOS first, so a stack
+\ ( a b c ) with c on TOS prints as "c b a" via `c b a` -> three `.` calls.
+\ For tests below, expected stdout matches the canonical Makefile probe.
+
+\ --- */ block (AC #14a) ---
+10 20 5 */                                 \ expect: 40
+-10 20 5 */                                \ expect: -40
+7 3 2 */                                   \ expect: 10            (21/2 = 10 truncated toward zero)
+32767 32767 32767 */                       \ expect: 32767         (double-intermediate overflow trap)
+
+\ --- */MOD block (AC #14b) ---
+10 20 6 */MOD                              \ expect: 2 33          (rem 2, quot 33)
+17 3 5 */MOD                               \ expect: 1 10          (rem 1, quot 10)
+-17 3 5 */MOD                              \ expect: -1 -10        (symmetric remainder sign = dividend)
+
+\ --- EVALUATE block (AC #14c) ---
+S" 10 20 +" EVALUATE                       \ expect: 30 on stack
+S" 2 3 * 4 +" EVALUATE                     \ expect: 10 on stack
+S" " EVALUATE                              \ expect: stack unchanged (empty string completes cleanly)
+S" 99" EVALUATE 7 +                        \ expect: 106 (proves TIB restored — '7 +' parses from REPL)
+
+\ Nested EVALUATE via a colon definition (antforth lacks Forth-2014 S\")
+: __E910_INNER S" 32" EVALUATE ;
+S" 10 __E910_INNER +" EVALUATE             \ expect: 42 (10 + 32)
+
+\ --- ENVIRONMENT? block (AC #14d) — all 14 keys + unknown + case-sensitivity ---
+S" /COUNTED-STRING" ENVIRONMENT?           \ expect: ( 255 -1 )
+S" /HOLD" ENVIRONMENT?                     \ expect: ( 40 -1 )
+S" /PAD" ENVIRONMENT?                      \ expect: ( 84 -1 )
+S" ADDRESS-UNIT-BITS" ENVIRONMENT?         \ expect: ( 8 -1 )
+S" CORE" ENVIRONMENT?                      \ expect: ( -1 -1 )    (true value, then true flag)
+S" CORE-EXT" ENVIRONMENT?                  \ expect: ( 0 -1 )
+S" FLOORED" ENVIRONMENT?                   \ expect: ( 0 -1 )
+S" MAX-CHAR" ENVIRONMENT?                  \ expect: ( 255 -1 )
+S" MAX-D" ENVIRONMENT?                     \ expect: ( 32767 -1 -1 )   (hi=$7FFF=32767, lo=$FFFF=-1, flag=-1; TOS=true)
+S" MAX-N" ENVIRONMENT?                     \ expect: ( 32767 -1 )
+S" MAX-U" ENVIRONMENT?                     \ expect: ( -1 -1 )    (-1 == 65535 unsigned)
+S" MAX-UD" ENVIRONMENT?                    \ expect: ( -1 -1 -1 )
+S" RETURN-STACK-CELLS" ENVIRONMENT?        \ expect: ( 128 -1 )
+S" STACK-CELLS" ENVIRONMENT?               \ expect: ( 128 -1 )
+S" XYZZY" ENVIRONMENT?                     \ expect: ( 0 )         (single-cell false; no i*x)
+S" core" ENVIRONMENT?                      \ expect: ( 0 )         (case-sensitive: lowercase not found)
+
+\ --- Underflow recovery (AC #10) ---
+*/                                         \ expect: ? Stack underflow
+1 */                                       \ expect: ? Stack underflow
+1 2 */                                     \ expect: ? Stack underflow
+*/MOD                                      \ expect: ? Stack underflow
+1 */MOD                                    \ expect: ? Stack underflow
+1 2 */MOD                                  \ expect: ? Stack underflow
+EVALUATE                                   \ expect: ? Stack underflow
+1 EVALUATE                                 \ expect: ? Stack underflow
+ENVIRONMENT?                               \ expect: ? Stack underflow
+1 ENVIRONMENT?                             \ expect: ? Stack underflow
+
+\ --- Div-by-zero baseline (DPANS94 ambiguous; SM/REM silent) ---
+\ Pre-Epic-11 behaviour: no error, garbage cell(s) remain. Story 11.6 → THROW -10.
+1 1 0 */                                   \ expect: silent; one garbage cell on stack
+1 1 0 */MOD                                \ expect: silent; two garbage cells on stack

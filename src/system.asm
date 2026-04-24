@@ -264,6 +264,187 @@ w_ABORT_cf:
         JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE)
 
 ; -----------------------------------------------
+; ENVIRONMENT? ( c-addr u -- false | i*x true )
+;   Look up the query string c-addr/u in env_table. On hit, push the
+;   associated value (single, double, or flag), then push true. On miss,
+;   push false alone (one cell — the i*x is absent per DPANS94 §6.1.1345).
+;   Match is case-sensitive (all 14 standard keys are uppercase literals
+;   per DPANS94 §3.2.6). Keys longer than 255 bytes cannot match — every
+;   table key is shorter — so u >= 256 short-circuits to false.
+;
+; ANS Forth 1994 §6.1.1345   ENVIRONMENT?   — query environment
+; -----------------------------------------------
+w_ENVIRONMENT_QUERY:
+        DEFCODE "ENVIRONMENT?", 0
+w_ENVIRONMENT_QUERY_cf:
+        CALL    check_underflow_2       ; needs c-addr u (2 cells)
+        ; BC = u (TOS), [SP] = c-addr
+        LD      A, B
+        OR      A
+        JR      NZ, .env_too_long       ; u >= 256: no match possible
+        ; Consume operands and walk the table.
+        LD      (env_saved_ip), DE
+        POP     HL                      ; HL = c-addr
+        LD      DE, env_table
+.env_loop:
+        LD      A, (DE)                 ; A = entry length
+        OR      A
+        JR      Z, .env_not_found       ; len=0 terminator
+        CP      C                       ; query length match?
+        JR      Z, .env_compare
+.env_advance:
+        ; Skip this entry: DE += 1 + len + 1 (kind) + (2 or 4)
+        INC     DE                      ; -> first key char
+        ADD     A, E
+        LD      E, A
+        JR      NC, .env_adv_no_carry
+        INC     D
+.env_adv_no_carry:                      ; DE -> kind byte
+        LD      A, (DE)                 ; A = kind
+        INC     DE                      ; -> first value byte
+        CP      1
+        JR      NZ, .env_adv_skip2
+        INC     DE                      ; double: skip 2 extra bytes
+        INC     DE
+.env_adv_skip2:
+        INC     DE
+        INC     DE
+        JR      .env_loop
+.env_compare:
+        ; A = len = u, DE -> length byte, HL -> c-addr
+        PUSH    HL                      ; save c-addr
+        PUSH    DE                      ; save entry start
+        INC     DE                      ; -> first key char
+        LD      B, A                    ; B = byte count (>0)
+.env_cmp_loop:
+        LD      A, (DE)
+        CP      (HL)
+        JR      NZ, .env_mismatch
+        INC     DE
+        INC     HL
+        DJNZ    .env_cmp_loop
+        ; All bytes matched — recover entry start, then advance to value.
+        POP     DE                      ; restore entry start
+        POP     HL                      ; discard c-addr
+        LD      A, (DE)                 ; reload length
+        INC     DE
+        ADD     A, E
+        LD      E, A
+        JR      NC, .env_hit_no_carry
+        INC     D
+.env_hit_no_carry:                      ; DE -> kind byte
+        LD      A, (DE)                 ; A = kind
+        INC     DE                      ; -> value bytes
+        DEC     A
+        JR      Z, .env_kind_double
+        ; A = kind - 1. Expected post-DEC values: 0->$FF (single), 2->1 (flag).
+        ; Any other value here means the table is malformed (kind >= 3 or
+        ; corrupted entry header). The 2-byte path is the safe default for
+        ; both kind 0 and kind 2; if a future kind needs a different value
+        ; size, ADD a JR/CP branch here BEFORE the fall-through. Do NOT
+        ; rely on silent fall-through for new kinds.
+.env_kind_2byte:
+        LD      A, (DE)
+        LD      C, A
+        INC     DE
+        LD      A, (DE)
+        LD      B, A                    ; BC = value
+        PUSH    BC                      ; value as second-on-stack
+        LD      BC, -1                  ; TOS = true ($FFFF)
+        LD      DE, (env_saved_ip)
+        NEXT
+.env_mismatch:
+        POP     DE                      ; restore entry start
+        POP     HL                      ; restore c-addr
+        LD      A, (DE)                 ; reload length
+        JR      .env_advance
+.env_kind_double:
+        ; DE -> 4 bytes: lo_low, lo_high, hi_low, hi_high.
+        ; E10-D1 byte-order: low cell on TOS, high cell second.
+        ; We want stack ( hi lo true ) with true as TOS, so push hi first
+        ; (deepest), then lo (above hi), then BC = -1 (new TOS = true).
+        LD      A, (DE)
+        LD      L, A
+        INC     DE
+        LD      A, (DE)
+        LD      H, A                    ; HL = lo
+        INC     DE
+        LD      A, (DE)
+        LD      C, A
+        INC     DE
+        LD      A, (DE)
+        LD      B, A                    ; BC = hi
+        PUSH    BC                      ; hi (deepest)
+        PUSH    HL                      ; lo (above hi)
+        LD      BC, -1                  ; TOS = true
+        LD      DE, (env_saved_ip)
+        NEXT
+.env_not_found:
+        ; (c-addr, u) already consumed; leave only false on the stack.
+        LD      BC, 0
+        LD      DE, (env_saved_ip)
+        NEXT
+.env_too_long:
+        ; u >= 256: drop c-addr and return false alone.
+        POP     HL                      ; discard c-addr
+        LD      BC, 0
+        NEXT
+
+env_saved_ip:   DW 0
+
+; --- DPANS94 §3.2.6 standard query-key table ---
+; Format per entry: db len, "KEY", kind, value-bytes (2 for kind 0/2, 4 for kind 1)
+; Kind: 0 = single-cell, 1 = double-cell (lo then hi), 2 = flag (0=false, $FFFF=true)
+; Key match is case-sensitive (all standard keys are uppercase literals).
+env_table:
+        ; /COUNTED-STRING -> 255 (max counted-string length; antforth uses 8-bit count byte)
+        db  15, "/COUNTED-STRING", 0
+        dw  255
+        ; /HOLD -> PIC_BUF_SIZE = 40 (pictured-output buffer size)
+        db  5, "/HOLD", 0
+        dw  PIC_BUF_SIZE
+        ; /PAD -> PAD_OFFSET = 84 (PAD offset above HERE)
+        db  4, "/PAD", 0
+        dw  PAD_OFFSET
+        ; ADDRESS-UNIT-BITS -> 8 (Z80 byte-addressable)
+        db  17, "ADDRESS-UNIT-BITS", 0
+        dw  8
+        ; CORE -> true (post-Story-10.9: 133/133 §6.1 Core words implemented)
+        db  4, "CORE", 2
+        dw  $FFFF
+        ; CORE-EXT -> false (§6.2 partial: 11/46 implemented; DPANS94 §15.3.5.2 needs full set)
+        db  8, "CORE-EXT", 2
+        dw  0
+        ; FLOORED -> false (antforth's `/` is symmetric per sdivmod, not floored)
+        db  7, "FLOORED", 2
+        dw  0
+        ; MAX-CHAR -> 255 (8-bit char)
+        db  8, "MAX-CHAR", 0
+        dw  255
+        ; MAX-D -> +2147483647 = (lo=$FFFF, hi=$7FFF) — double-cell
+        db  5, "MAX-D", 1
+        dw  $FFFF
+        dw  $7FFF
+        ; MAX-N -> 32767 (INT16_MAX)
+        db  5, "MAX-N", 0
+        dw  32767
+        ; MAX-U -> 65535 ($FFFF unsigned; antforth signed TOS shows -1)
+        db  5, "MAX-U", 0
+        dw  $FFFF
+        ; MAX-UD -> 4294967295 = (lo=$FFFF, hi=$FFFF) — double-cell
+        db  6, "MAX-UD", 1
+        dw  $FFFF
+        dw  $FFFF
+        ; RETURN-STACK-CELLS -> RS_SIZE/2 = 128
+        db  18, "RETURN-STACK-CELLS", 0
+        dw  RS_SIZE/2
+        ; STACK-CELLS -> PS_SIZE/2 = 128
+        db  11, "STACK-CELLS", 0
+        dw  PS_SIZE/2
+        ; Terminator (zero-length entry)
+        db  0
+
+; -----------------------------------------------
 ; check_underflow — Internal subroutine (not a Forth word)
 ;   Verify DEPTH >= 1 (at least 1 cell on machine stack)
 ;   CALL pushes 2-byte return address onto SP, so at time of check

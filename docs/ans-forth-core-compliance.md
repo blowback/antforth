@@ -1,6 +1,6 @@
 # ANS Forth Core Word Set Compliance Report
 
-**Date:** 2026-04-23 (Story 10.8 refresh)
+**Date:** 2026-04-24 (Story 10.9 refresh — §6.1 Core gap closed)
 **Last full audit:** 2026-04-13 (Story 5.3)
 **System:** antforth (Z80 Forth for CP/M)
 **Reference:** DPANS94 (ANSI X3.215-1994), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
@@ -11,21 +11,21 @@
 | Metric | Count | % of 133 |
 |--------|-------|----------|
 | Total §6.1 Core words in standard | 133 | 100.0% |
-| Fully implemented | 129 | 97.0% |
+| Fully implemented | 133 | 100.0% |
 | Partial | 0 | 0.0% |
-| Missing | 4 | 3.0% |
-| **Coverage** | **129 / 133** | **97.0%** |
+| Missing | 0 | 0.0% |
+| **Coverage** | **133 / 133** | **100.0%** |
 
-**Note on counts:** The previous (2026-04-13) audit's Summary reported 111 / 1 / 21 — that totals 133 only by double-counting `>NUMBER`. Per-category sums show 22 missing, not 21. This refresh corrects the off-by-one and reports both compliance numbers. The 83.5% headline figure is preserved (lenient convention) for continuity with the Epic-10 baseline; the strict 82.7% is recorded for transparency.
-
-**Which figure feeds FR15 / NFR10?** The **lenient 111 / 133 = 83.5%** is the canonical baseline measurement for the Epic-10 entry gate. The Epic-10 close-out gate (Story 10.10, NFR10) measures **133 fully-implemented = 100% Core with zero deliberate omissions**, at which point the Partial classification becomes empty (`>NUMBER` upgraded by Story 10.3) and the strict / lenient distinction collapses. (See 2026-04-20 party-mode decision note in Gap Analysis: `ENVIRONMENT?` is reclassified from deliberate-omission to Story 10.9 deliverable.)
+**Post-Story-10.9 status: 133/133 §6.1 Core words implemented, zero deliberate omissions. FR15 / NFR10 satisfied as written.** The Partial / Missing categories are empty; the strict / lenient distinction has collapsed. Story 10.10 (Epic-10 close-out, CCD-4 benchmark gate) inherits a single-sentence FR15 / NFR10 verification.
 
 | Gap Classification | Count |
 |--------------------|-------|
 | (a) Deliberately omitted | 0 |
-| (b) Oversight — missing subsystem | 2 |
-| (b) Oversight — moderate | 2 |
+| (b) Oversight — missing subsystem | 0 |
+| (b) Oversight — moderate | 0 |
 | (c) Partially implemented | 0 |
+
+**All §6.1 Core gaps closed as of Story 10.9 (2026-04-24).**
 
 | Core Extension bonus | Count |
 |----------------------|-------|
@@ -44,8 +44,8 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | 10.6 | Double / mixed division | 3 ✓ (`FM/MOD` `SM/REM` `UM/MOD`) | Complete |
 | 10.7 | Pictured numeric output primitives | 6 ✓ (`<#` `#` `#S` `#>` `HOLD` `SIGN`) + `HOLDS` (§6.2 bonus) ✓ | Complete |
 | 10.8 | Number-output rewrite on pictured foundation | 0 net new §6.1 ✓ | `.` `U.` `.R` rewritten on pictured foundation (`formatting.asm`); `D.` `U.R` `D.R` added as §8.6/§6.2 bonus. Complete |
-| 10.9 | Remaining §6.1 Core gap words | 4 (`*/` `*/MOD` `EVALUATE` `ENVIRONMENT?`) | `ENVIRONMENT?` added to 10.9 scope on 2026-04-20 (party-mode decision); reclassified from deliberate-omission to gap-to-implement |
-| **Total §6.1 closed** | | **22** | + `>NUMBER` Partial → Full |
+| 10.9 | Remaining §6.1 Core gap words | 4 ✓ (`*/` `*/MOD` `EVALUATE` `ENVIRONMENT?`) | Complete — `ENVIRONMENT?` reclassified from deliberate-omission to gap-to-implement on 2026-04-20 (party-mode decision) |
+| **Total §6.1 closed** | | **22 ✓** | + `>NUMBER` Partial → Full ✓ |
 
 **Post-Epic-10 target:** 133 fully implemented, 0 deliberate omissions = **100.0% of §6.1 Core (133 / 133)**. Satisfies FR15 / NFR10 as written ("100% of the ANS Forth 1994 Core wordset") with no carve-out or asterisk.
 
@@ -88,8 +88,8 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `/` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:240` | |
 | `MOD` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:256` | |
 | `/MOD` | `( n1 n2 -- rem quot )` | Implemented | `arithmetic.asm:219` | |
-| `*/` | `( n1 n2 n3 -- n4 )` | **Gap → Story 10.9** | — | Needs double-cell intermediate; depends on Stories 10.5/10.6 primitives |
-| `*/MOD` | `( n1 n2 n3 -- n4 n5 )` | **Gap → Story 10.9** | — | Needs double-cell intermediate; depends on Stories 10.5/10.6 primitives |
+| `*/` | `( n1 n2 n3 -- n4 )` | Implemented | `arithmetic.asm:296` | Story 10.9; DEFWORD wrapping `*/MOD SWAP DROP` (double-cell intermediate via `M*` / `SM/REM`) |
+| `*/MOD` | `( n1 n2 n3 -- n4 n5 )` | Implemented | `arithmetic.asm:277` | Story 10.9; DEFWORD `>R M* R> SM/REM` (double-cell intermediate; symmetric remainder sign = dividend) |
 | `1+` | `( n -- n+1 )` | Implemented | `arithmetic.asm:13` | |
 | `1-` | `( n -- n-1 )` | Implemented | `arithmetic.asm:23` | |
 | `2*` | `( x -- x*2 )` | Implemented | `arithmetic.asm:33` | |
@@ -276,8 +276,8 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `'` | `( "<spaces>name" -- xt )` | Implemented | `compiler.asm:26` | DEFWORD |
 | `>BODY` | `( xt -- a-addr )` | Implemented | `compiler.asm:11` | xt+5 (skips JP + does-addr) |
 | `ABORT"` | `( "ccc" x -- )` | Implemented | `system.asm:139` | F_IMMEDIATE; runtime `(ABORT")` at `system.asm:89` |
-| `EVALUATE` | `( c-addr u -- )` | **Gap → Story 10.9** | — | Requires input source switching |
-| `ENVIRONMENT?` | `( c-addr u -- false \| true )` | **Gap → Story 10.9** | — | DPANS94 §6.1.1345. Reclassified from deliberate-omission to Story 10.9 scope on 2026-04-20 (party-mode decision — ~80–120 byte cost; query table per §3.2.6). |
+| `EVALUATE` | `( i*x c-addr u -- j*x )` | Implemented | `outer_interpreter.asm:366` | Story 10.9; DEFWORD `(SAVE-INPUT) INTERPRET (RESTORE-INPUT)`; saves four USER source-spec cells (tib_addr, tib_len, tib_in, source_id) on R-stack across INTERPRET; source_id = -1 during EVALUATE per Forth 2014 §6.2.2218 |
+| `ENVIRONMENT?` | `( c-addr u -- false \| i*x true )` | Implemented | `system.asm:277` | Story 10.9; DEFCODE walking a 14-entry static `env_table` of DPANS94 §3.2.6 standard query keys (case-sensitive); supports single, double, and flag value kinds |
 
 ---
 
@@ -285,39 +285,41 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 
 ### (a) Deliberately Omitted — 0 words
 
-No §6.1 Core word is deliberately omitted from antforth. Every §6.1 word is either implemented, partial (→ Story 10.3), or a gap routed to one of Stories 10.2–10.9 for implementation.
+No §6.1 Core word is deliberately omitted from antforth.
 
-**Historical note (2026-04-20 party-mode decision):** `ENVIRONMENT?` was previously classified as "deliberately omitted (low value-to-effort)" by Story 5.3 and upheld by the Story 10.1 surveyor. On 2026-04-20, the implementation cost was re-estimated at ~80–120 bytes (straight §3.2.6 query-key table) and the classification was overturned: `ENVIRONMENT?` is now a Story 10.9 deliverable. This keeps FR15 / NFR10's "100% of the ANS Forth 1994 Core wordset" claim literal — 133 / 133 words, no carve-out, no asterisk.
+**Historical note (2026-04-20 party-mode decision):** `ENVIRONMENT?` was previously classified as "deliberately omitted (low value-to-effort)" by Story 5.3 and upheld by the Story 10.1 surveyor. On 2026-04-20 the implementation cost was re-estimated at ~80–120 bytes and the classification was overturned: `ENVIRONMENT?` was added to Story 10.9 scope and is now implemented. This keeps the FR15 / NFR10 claim literal — 133 / 133 words, no carve-out, no asterisk.
 
-### (b) Oversight — 7 words (5 in one remaining missing subsystem + 2 moderate single-word gaps)
+### (b) Oversight — 0 words (all closed by Stories 10.2–10.9)
 
-#### Closed subsystem: Pictured numeric output — 6 §6.1 words + `HOLDS` (§6.2 bonus) → **Story 10.7 ✓ Complete**
+**All §6.1 Core gaps closed as of Story 10.9 (2026-04-24).** This subsection records how each closed:
+
+#### Closed subsystem: Pictured numeric output — 6 §6.1 words + `HOLDS` (§6.2 bonus) → Story 10.7 ✓
 
 Story 10.7 delivered `<#` `#` `#S` `#>` `HOLD` `SIGN` (the 6 §6.1 Core primitives) plus `HOLDS` (Forth-2014 §6.2.1675) in `src/pictured.asm`, backed by a 40-byte `pic_buf` and the `HLD` USER variable in `UserArea` (architecture decision E10-D2, `architecture.md:254-258`). `HLD` is also exposed as a user-facing DEFCODE (antforth extension following Gforth / SwiftForth precedent).
 
-Story 10.8 will rewrite `.` / `U.` / `.R` on top of this foundation and add `D.` / `U.R` / `D.R` as §6.2/§8.6 bonus, preserving observable `.` / `U.` / `.R` output byte-for-byte.
+Story 10.8 rewrote `.` / `U.` / `.R` on top of this foundation and added `D.` / `U.R` / `D.R` as §6.2/§8.6 bonus, preserving observable `.` / `U.` / `.R` output byte-for-byte.
 
-#### Missing subsystem: Double-cell operations — 2 §6.1 words remaining → Story 10.9
+#### Closed subsystem: Double-cell operations — 13 §6.1 words across Stories 10.2–10.6, 10.9
 
-antforth is a single-cell (16-bit) system. The following §6.1 Core words operate on double-cell (32-bit) values:
+antforth is a single-cell (16-bit) system. The following §6.1 Core words operate on double-cell (32-bit) values, all now implemented:
 
 | Sub-group | §6.1 words | Story |
 |-----------|------------|-------|
-| Double-cell stack | `2DROP` `2DUP` `2OVER` `2SWAP` | 10.2 ✓ Implemented |
-| Double-cell memory | `2!` `2@` | 10.2 ✓ Implemented |
-| Single → double | `S>D` | 10.3 ✓ Implemented |
-| Double / mixed multiplication | `M*` `UM*` | 10.5 ✓ Implemented |
-| Double / mixed division | `FM/MOD` `SM/REM` `UM/MOD` | 10.6 ✓ Implemented |
-| Mixed-precision (need double intermediate) | `*/` `*/MOD` | 10.9 |
+| Double-cell stack | `2DROP` `2DUP` `2OVER` `2SWAP` | 10.2 ✓ |
+| Double-cell memory | `2!` `2@` | 10.2 ✓ |
+| Single → double | `S>D` | 10.3 ✓ |
+| Double / mixed multiplication | `M*` `UM*` | 10.5 ✓ |
+| Double / mixed division | `FM/MOD` `SM/REM` `UM/MOD` | 10.6 ✓ |
+| Mixed-precision (double intermediate) | `*/` `*/MOD` | 10.9 ✓ |
 
-**`*/` and `*/MOD` use a double-cell intermediate** (n1×n2 as 32-bit before dividing by n3), so they depend on Stories 10.5 (`M*`) and 10.6 (`SM/REM` or `FM/MOD`) being complete. They are routed to Story 10.9 (which absorbs all post-foundation §6.1 stragglers).
+**`*/` and `*/MOD` use a double-cell intermediate** (n1×n2 as 32-bit before dividing by n3), so Story 10.9 was sequenced after Stories 10.5 (`M*`) and 10.6 (`SM/REM`) had landed.
 
-#### Moderate single-word gaps — 2 words → Story 10.9
+#### Closed moderate single-word gaps — 2 words → Story 10.9 ✓
 
 | Word | Story | Complexity | Notes |
 |------|-------|-----------|-------|
-| `EVALUATE` | 10.9 | Moderate | DPANS94 §6.1.1360. Save/restore input source, then interpret from string. Independent of double-cell infrastructure. |
-| `ENVIRONMENT?` | 10.9 | Low | DPANS94 §6.1.1345. Query table of 14 implementation-defined limits per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`). Added to Story 10.9 on 2026-04-20 (party-mode decision). |
+| `EVALUATE` | 10.9 ✓ | Moderate | DPANS94 §6.1.1360. Save/restore input source via 4-cell R-stack frame across INTERPRET. |
+| `ENVIRONMENT?` | 10.9 ✓ | Low | DPANS94 §6.1.1345. 14-entry static query table per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`). |
 
 ### (c) Partially Implemented — 0 words (empty after Story 10.3)
 
@@ -395,15 +397,17 @@ antforth also defines words that are useful but outside the Core word sets:
 - **Control flow** — 100% Core compliance (16/16).
 - **Compiler** — 100% Core compliance (14/14).
 - **Memory** — 100% Core compliance (17/17). Double-cell `2!` and `2@` landed in Story 10.2.
-- **System** — Near-complete (11/13); `EVALUATE` and `ENVIRONMENT?` remaining, both routed to Story 10.9.
+- **System** — 100% Core compliance (13/13). `EVALUATE` and `ENVIRONMENT?` landed in Story 10.9.
 - **Stack ops** — 100% Core compliance (14/14). Double-cell quartet (Story 10.2) closed the last gap.
-- **Arithmetic single-cell** — 14/14 single-cell complete. Double-cell-substrate words: `FM/MOD` `SM/REM` `UM/MOD` landed in Story 10.6; `*/` `*/MOD` (2 remaining) routed to Story 10.9.
+- **Arithmetic** — 100% Core compliance. Double-cell-substrate words: `FM/MOD` `SM/REM` `UM/MOD` landed in Story 10.6; `*/` and `*/MOD` (mixed-precision via double intermediate) landed in Story 10.9.
 
-### The two big gaps
+### Historical big gaps — all CLOSED by Epic 10
 
-1. **Double-cell operations (2 §6.1 words remaining):** antforth now has full 32-bit division (`UM/MOD` `SM/REM` `FM/MOD` — Story 10.6). The remaining §6.1 gap in the double-cell family is mixed-precision `*/` and `*/MOD` (Story 10.9), which consume a double-cell intermediate via `M*` (10.5) and `SM/REM` (10.6). Stories 10.2–10.6 delivered double-cell stack/memory, `S>D`/`D>S`, the full §8.6 arithmetic / sign / compare suite, multiplication (`M*` `UM*` §6.1; `D*` §8.6), and division (`UM/MOD` §6.1.2370; `SM/REM` §6.1.2214; `FM/MOD` §6.1.1561).
+1. **Double-cell operations — CLOSED:** Stories 10.2–10.6 delivered the full double-cell foundation (stack/memory, `S>D`/`D>S`, §8.6 arithmetic / sign / compare, multiplication, division). Story 10.9 added the last two §6.1 mixed-precision words `*/` and `*/MOD` on top of `M*` (10.5) and `SM/REM` (10.6).
 
-2. **Pictured numeric output — CLOSED by Story 10.7:** `<# # #S #> HOLD SIGN` (6 §6.1) plus `HOLDS` (§6.2 bonus) landed in `src/pictured.asm` backed by a 40-byte `pic_buf` in `UserArea` and the `HLD` USER variable. Story 10.8 will rewrite `.` / `U.` / `.R` on this foundation and add `D.` / `U.R` / `D.R` (§6.2/§8.6 bonus) — the §6.1 display path is preserved byte-for-byte across the rewrite.
+2. **Pictured numeric output — CLOSED by Story 10.7:** `<# # #S #> HOLD SIGN` (6 §6.1) plus `HOLDS` (§6.2 bonus) landed in `src/pictured.asm` backed by a 40-byte `pic_buf` in `UserArea` and the `HLD` USER variable. Story 10.8 rewrote `.` / `U.` / `.R` on this foundation and added `D.` / `U.R` / `D.R` (§6.2/§8.6 bonus) — the §6.1 display path preserved byte-for-byte.
+
+3. **System single-word gaps — CLOSED by Story 10.9:** `EVALUATE` and `ENVIRONMENT?`. EVALUATE saves the four-cell input source spec (`tib_addr`, `tib_len`, `tib_in`, `source_id`) on the R-stack across an `INTERPRET` call. ENVIRONMENT? walks a 14-entry static §3.2.6 query-key table.
 
 ### §6.1 vs §8.6 — important Epic-10 scope distinction
 

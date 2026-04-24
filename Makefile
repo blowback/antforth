@@ -5334,6 +5334,342 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 10.9 remaining Core gap words (615..650) — DPANS94 §6.1.{0100,0110,1345,1360} ---
+	@# `*/` block: signed pair, negative input, trunc-toward-zero, and the canonical
+	@# 32767×32767/32767=32767 overflow-trap (would be 0 if implementation used single-cell *).
+	@OUTPUT=$$(printf '10 20 5 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^40  ok'; then \
+		echo "PASS: REPL test 615 — '10 20 5 */' → 40 (canonical signed)"; \
+	else \
+		echo "FAIL: REPL test 615 — expected '40  ok' for '10 20 5 */'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-10 20 5 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-40  ok'; then \
+		echo "PASS: REPL test 616 — '-10 20 5 */' → -40 (negative input, signed)"; \
+	else \
+		echo "FAIL: REPL test 616 — expected '-40  ok' for '-10 20 5 */'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '7 3 2 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^10  ok'; then \
+		echo "PASS: REPL test 617 — '7 3 2 */' → 10 (21/2 truncated toward zero)"; \
+	else \
+		echo "FAIL: REPL test 617 — expected '10  ok' for '7 3 2 */'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Double-intermediate overflow trap: 32767*32767 = 1073676289 (32-bit), /32767 = 32767.
+	@# Naive single-cell `*` would give 32767*32767 mod 65536 = 1, then 1/32767 = 0.
+	@OUTPUT=$$(printf '32767 32767 32767 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^32767  ok'; then \
+		echo "PASS: REPL test 618 — '32767 32767 32767 */' → 32767 (double-intermediate overflow trap)"; \
+	else \
+		echo "FAIL: REPL test 618 — expected '32767  ok' for '32767 32767 32767 */'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `*/MOD` block: ( n1 n2 n3 -- rem quot ) with quot on TOS. Probe with `. .` →
+	@# prints quot then rem (TOS-first).
+	@OUTPUT=$$(printf '10 20 6 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^33 2  ok'; then \
+		echo "PASS: REPL test 619 — '10 20 6 */MOD' → ( 2 33 ) — rem 2, quot 33"; \
+	else \
+		echo "FAIL: REPL test 619 — expected '33 2  ok' for '10 20 6 */MOD . .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '17 3 5 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^10 1  ok'; then \
+		echo "PASS: REPL test 620 — '17 3 5 */MOD' → ( 1 10 ) — rem 1, quot 10"; \
+	else \
+		echo "FAIL: REPL test 620 — expected '10 1  ok' for '17 3 5 */MOD . .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Symmetric-remainder sign trap: -17*3/5 = -51/5; symmetric (truncated toward zero)
+	@# gives quot=-10, rem=-1 (rem sign matches dividend). Floored would give 2,-11 — wrong.
+	@OUTPUT=$$(printf -- '-17 3 5 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-10 -1  ok'; then \
+		echo "PASS: REPL test 621 — '-17 3 5 */MOD' → ( -1 -10 ) — symmetric remainder sign = dividend"; \
+	else \
+		echo "FAIL: REPL test 621 — expected '-10 -1  ok' for '-17 3 5 */MOD . .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `EVALUATE` block: simplest, multi-word, TIB restoration, nested via colon, empty string.
+	@OUTPUT=$$(printf 'S" 10 20 +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^30  ok'; then \
+		echo "PASS: REPL test 622 — 'S\" 10 20 +\" EVALUATE' → 30"; \
+	else \
+		echo "FAIL: REPL test 622 — expected '30  ok' for 'S\" 10 20 +\" EVALUATE .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" 2 3 * 4 +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^10  ok'; then \
+		echo "PASS: REPL test 623 — 'S\" 2 3 * 4 +\" EVALUATE' → 10 (operator precedence inside string)"; \
+	else \
+		echo "FAIL: REPL test 623 — expected '10  ok' for 'S\" 2 3 * 4 +\" EVALUATE .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# TIB-restoration smoke: post-EVALUATE, the rest of the line ('7 + .') must parse
+	@# from the original REPL TIB, not from the evaluated string. 99 + 7 = 106.
+	@OUTPUT=$$(printf 'S" 99" EVALUATE 7 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^106  ok'; then \
+		echo "PASS: REPL test 624 — 'S\" 99\" EVALUATE 7 + .' → 106 (TIB restored after EVALUATE)"; \
+	else \
+		echo "FAIL: REPL test 624 — expected '106  ok' for TIB-restoration probe"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Nested EVALUATE via colon definition (antforth lacks Forth-2014 S\"). Exercises
+	@# rstack save/restore under LIFO discipline.
+	@OUTPUT=$$(printf ': __E910I S" 32" EVALUATE ;\r\nS" 10 __E910I +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^42  ok'; then \
+		echo "PASS: REPL test 625 — nested EVALUATE → 42 (10 + 32; rstack LIFO save/restore)"; \
+	else \
+		echo "FAIL: REPL test 625 — expected '42  ok' for nested EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Empty string: INTERPRET's WORD/C@ loop returns via .interp_done without parse error.
+	@OUTPUT=$$(printf 'S" " EVALUATE 99 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^99  ok'; then \
+		echo "PASS: REPL test 626 — 'S\" \" EVALUATE 99 .' → 99 (empty string completes cleanly)"; \
+	else \
+		echo "FAIL: REPL test 626 — expected '99  ok' for empty-string EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# `ENVIRONMENT?` block: 14 standard keys per DPANS94 §3.2.6, plus unknown-key
+	@# (returns single-cell false) and case-sensitivity (lowercase 'core' → false).
+	@# Probe `. .` prints TOS-first → "-1 VALUE" (true flag, then value).
+	@OUTPUT=$$(printf 'S" /COUNTED-STRING" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 255  ok'; then \
+		echo "PASS: REPL test 627 — 'S\" /COUNTED-STRING\" ENVIRONMENT?' → ( 255 -1 )"; \
+	else \
+		echo "FAIL: REPL test 627 — expected '-1 255  ok' for /COUNTED-STRING"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" /HOLD" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 40  ok'; then \
+		echo "PASS: REPL test 628 — 'S\" /HOLD\" ENVIRONMENT?' → ( 40 -1 ) — PIC_BUF_SIZE"; \
+	else \
+		echo "FAIL: REPL test 628 — expected '-1 40  ok' for /HOLD"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" /PAD" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 84  ok'; then \
+		echo "PASS: REPL test 629 — 'S\" /PAD\" ENVIRONMENT?' → ( 84 -1 ) — PAD_OFFSET"; \
+	else \
+		echo "FAIL: REPL test 629 — expected '-1 84  ok' for /PAD"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" ADDRESS-UNIT-BITS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 8  ok'; then \
+		echo "PASS: REPL test 630 — 'S\" ADDRESS-UNIT-BITS\" ENVIRONMENT?' → ( 8 -1 )"; \
+	else \
+		echo "FAIL: REPL test 630 — expected '-1 8  ok' for ADDRESS-UNIT-BITS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" CORE" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 -1  ok'; then \
+		echo "PASS: REPL test 631 — 'S\" CORE\" ENVIRONMENT?' → ( true true ) — 133/133 §6.1 Core"; \
+	else \
+		echo "FAIL: REPL test 631 — expected '-1 -1  ok' for CORE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" CORE-EXT" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 0  ok'; then \
+		echo "PASS: REPL test 632 — 'S\" CORE-EXT\" ENVIRONMENT?' → ( false true ) — partial §6.2"; \
+	else \
+		echo "FAIL: REPL test 632 — expected '-1 0  ok' for CORE-EXT"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" FLOORED" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 0  ok'; then \
+		echo "PASS: REPL test 633 — 'S\" FLOORED\" ENVIRONMENT?' → ( false true ) — symmetric / not floored"; \
+	else \
+		echo "FAIL: REPL test 633 — expected '-1 0  ok' for FLOORED"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" MAX-CHAR" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 255  ok'; then \
+		echo "PASS: REPL test 634 — 'S\" MAX-CHAR\" ENVIRONMENT?' → ( 255 -1 )"; \
+	else \
+		echo "FAIL: REPL test 634 — expected '-1 255  ok' for MAX-CHAR"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# MAX-D: stack ( hi lo true ) per E10-D1 (lo on TOS, hi second, true newly on top).
+	@# Probe '. . .' is TOS-first so it prints true, lo, hi → "-1 -1 32767" since
+	@# lo=$$FFFF=-1, hi=$$7FFF=32767, flag=$$FFFF=-1.
+	@OUTPUT=$$(printf 'S" MAX-D" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 -1 32767  ok'; then \
+		echo "PASS: REPL test 635 — 'S\" MAX-D\" ENVIRONMENT?' → ( 32767 -1 -1 ) — E10-D1 lo-on-TOS for double"; \
+	else \
+		echo "FAIL: REPL test 635 — expected '-1 -1 32767  ok' for MAX-D"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" MAX-N" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 32767  ok'; then \
+		echo "PASS: REPL test 636 — 'S\" MAX-N\" ENVIRONMENT?' → ( 32767 -1 )"; \
+	else \
+		echo "FAIL: REPL test 636 — expected '-1 32767  ok' for MAX-N"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" MAX-U" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 -1  ok'; then \
+		echo "PASS: REPL test 637 — 'S\" MAX-U\" ENVIRONMENT?' → ( -1 -1 ) — 65535 unsigned shows as -1 signed"; \
+	else \
+		echo "FAIL: REPL test 637 — expected '-1 -1  ok' for MAX-U"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" MAX-UD" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 -1 -1  ok'; then \
+		echo "PASS: REPL test 638 — 'S\" MAX-UD\" ENVIRONMENT?' → ( -1 -1 -1 ) — double 4294967295"; \
+	else \
+		echo "FAIL: REPL test 638 — expected '-1 -1 -1  ok' for MAX-UD"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" RETURN-STACK-CELLS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 128  ok'; then \
+		echo "PASS: REPL test 639 — 'S\" RETURN-STACK-CELLS\" ENVIRONMENT?' → ( 128 -1 ) — RS_SIZE/2"; \
+	else \
+		echo "FAIL: REPL test 639 — expected '-1 128  ok' for RETURN-STACK-CELLS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'S" STACK-CELLS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 128  ok'; then \
+		echo "PASS: REPL test 640 — 'S\" STACK-CELLS\" ENVIRONMENT?' → ( 128 -1 ) — PS_SIZE/2"; \
+	else \
+		echo "FAIL: REPL test 640 — expected '-1 128  ok' for STACK-CELLS"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Unknown key returns single-cell false (no i*x). Probe `.` → "0 ".
+	@OUTPUT=$$(printf 'S" XYZZY" ENVIRONMENT? .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
+		echo "PASS: REPL test 641 — 'S\" XYZZY\" ENVIRONMENT?' → ( 0 ) — unknown key returns single-cell false"; \
+	else \
+		echo "FAIL: REPL test 641 — expected '0  ok' for unknown key XYZZY"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Case-sensitivity per DPANS94 §3.2.6: 'core' ≠ 'CORE'.
+	@OUTPUT=$$(printf 'S" core" ENVIRONMENT? .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
+		echo "PASS: REPL test 642 — 'S\" core\" ENVIRONMENT?' → ( 0 ) — case-sensitive (lowercase not found)"; \
+	else \
+		echo "FAIL: REPL test 642 — expected '0  ok' for lowercase 'core'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Underflow recovery (AC #10). All four words guard at entry; ABORT resets stacks
+	@# and REPL re-prompts. For */ and */MOD the chain via M*'s 2DUP guard provides
+	@# the effective 3-cell guard.
+	@OUTPUT=$$(printf '*/\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 643 — '*/' (DEPTH 0, needs 3) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 643 — expected '? Stack underflow' and 'ok' for '*/'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 */\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 644 — '1 2 */' (DEPTH 2, needs 3) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 644 — expected '? Stack underflow' and 'ok' for '1 2 */'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '*/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 645 — '*/MOD' (DEPTH 0, needs 3) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 645 — expected '? Stack underflow' and 'ok' for '*/MOD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 2 */MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 646 — '1 2 */MOD' (DEPTH 2, needs 3) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 646 — expected '? Stack underflow' and 'ok' for '1 2 */MOD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'EVALUATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 647 — 'EVALUATE' (DEPTH 0, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 647 — expected '? Stack underflow' and 'ok' for 'EVALUATE'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 EVALUATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 648 — '1 EVALUATE' (DEPTH 1, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 648 — expected '? Stack underflow' and 'ok' for '1 EVALUATE'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 649 — 'ENVIRONMENT?' (DEPTH 0, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 649 — expected '? Stack underflow' and 'ok' for 'ENVIRONMENT?'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+		echo "PASS: REPL test 650 — '1 ENVIRONMENT?' (DEPTH 1, needs 2) underflows and REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 650 — expected '? Stack underflow' and 'ok' for '1 ENVIRONMENT?'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 10.9 review follow-up: div-by-zero baseline (DPANS94 §6.1.0100/§6.1.0110 ---
+	@# "ambiguous condition" — antforth's SM/REM produces silent garbage on n3=0.
+	@# `*/` and `*/MOD` inherit that baseline; this is the pre-Epic-11 behaviour.
+	@# Story 11.6 will migrate to THROW -10 (DIVISION BY ZERO). Until then, document
+	@# the observed shape: REPL recovers cleanly with no error message and a single
+	@# garbage cell on the stack (for `*/`) or two cells (for `*/MOD`).
+	@OUTPUT=$$(printf '1 1 0 */ DEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1  ok' && ! echo "$$OUTPUT" | grep -q '? Stack underflow'; then \
+		echo "PASS: REPL test 651 — '1 1 0 */' silent (DPANS94 ambiguous; SM/REM baseline; one cell remains, no error)"; \
+	else \
+		echo "FAIL: REPL test 651 — expected silent SM/REM baseline (DEPTH=1, no error) for '1 1 0 */'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '1 1 0 */MOD DEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^2  ok' && ! echo "$$OUTPUT" | grep -q '? Stack underflow'; then \
+		echo "PASS: REPL test 652 — '1 1 0 */MOD' silent (DPANS94 ambiguous; SM/REM baseline; two cells remain, no error)"; \
+	else \
+		echo "FAIL: REPL test 652 — expected silent SM/REM baseline (DEPTH=2, no error) for '1 1 0 */MOD'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

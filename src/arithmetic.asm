@@ -263,3 +263,41 @@ w_MOD_cf:
     LD      C, E            ; BC = remainder (TOS)
     POP     DE              ; Restore IP
     NEXT
+
+; -----------------------------------------------
+; */MOD ( n1 n2 n3 -- n4 n5 )
+;   Mixed-precision multiply-divide-modulo via double intermediate.
+;   n4 = (n1*n2) mod n3 (remainder, sign matches dividend per SM/REM)
+;   n5 = (n1*n2) / n3   (quotient, truncated toward zero)
+; ANS Forth 1994 §6.1.0110   */MOD   — mixed-precision multiply-divide-modulo
+; Body chain: >R M* R> SM/REM. Underflow guard chains via M*'s 2DUP
+; (DEPTH>=2 after >R) — net DEPTH>=3 at entry. If guard trips inside M*,
+; ABORT resets both stacks (including the >R-stashed n3), so no rstack leak.
+; -----------------------------------------------
+w_STAR_SLASH_MOD:
+    DEFWORD "*/MOD", 0
+w_STAR_SLASH_MOD_body:
+w_STAR_SLASH_MOD_cf EQU w_STAR_SLASH_MOD_body - 3
+    DW      w_TO_R_cf               ; >R   ( n1 n2 ; R: n3 )
+    DW      w_M_STAR_cf             ; M*   ( d ; R: n3 ) — signed mixed multiply
+    DW      w_R_FROM_cf             ; R>   ( d n3 )
+    DW      w_S_M_SLASH_REM_cf      ; SM/REM ( rem quot )
+    DW      EXIT_CODE
+
+; -----------------------------------------------
+; */ ( n1 n2 n3 -- n4 )
+;   Mixed-precision multiply-divide via double intermediate.
+;   n4 = (n1*n2) / n3 (truncated toward zero, symmetric per SM/REM)
+; ANS Forth 1994 §6.1.0100   */   — mixed-precision multiply-divide
+; Factored via */MOD: keeps both bodies tied (a change to */MOD
+; propagates automatically). Trap test: 32767 32767 32767 */ → 32767
+; (would return 0 if implementation accidentally used single-cell *).
+; -----------------------------------------------
+w_STAR_SLASH:
+    DEFWORD "*/", 0
+w_STAR_SLASH_body:
+w_STAR_SLASH_cf EQU w_STAR_SLASH_body - 3
+    DW      w_STAR_SLASH_MOD_cf     ; */MOD ( rem quot )
+    DW      w_SWAP_cf               ; SWAP  ( quot rem )
+    DW      w_DROP_cf               ; DROP  ( quot )
+    DW      EXIT_CODE

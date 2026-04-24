@@ -123,7 +123,7 @@ development_status:
   10-6-double-mixed-precision-division: done
   10-7-pictured-numeric-output-primitives: done
   10-8-number-output-words-on-pictured-foundation: done
-  10-9-remaining-core-gap-words: backlog
+  10-9-remaining-core-gap-words: done
   10-10-epic-10-compliance-audit-benchmark-and-regression-gate-ccd-4: backlog
   epic-10-retrospective: optional
 

@@ -269,3 +269,116 @@ w_QUIT_cf:
         ; Loop forever
         DW      w_BRANCH_cf
         DW      .quit_loop - $
+
+; -----------------------------------------------
+; (SAVE-INPUT) ( c-addr u -- )
+;   Internal helper. Save current (tib_addr, tib_len, tib_in,
+;   source_id) to the return stack (8 bytes), then install the new
+;   source: tib_addr=c-addr, tib_len=u, tib_in=0, source_id=-1.
+;
+;   R-stack push order (top of stack last): source_id, tib_in,
+;   tib_len, tib_addr — so (RESTORE-INPUT) pops tib_addr first, then
+;   tib_len, tib_in, source_id (LIFO inverse).
+;
+;   On the parameter stack, c-addr is at [SP] and u is in BC at entry.
+;   After the routine: BC = old second-on-stack (new TOS).
+;
+;   INVARIANT: every call to (SAVE-INPUT) MUST be matched by exactly one
+;   (RESTORE-INPUT) on the same control path. A direct user-level call
+;   without a matching restore corrupts the input source on the next
+;   parse. EVALUATE owns the only sanctioned pairing; future Epic-13
+;   INCLUDE will own the second. The (paren) naming per architecture.md:425
+;   warns of internal-helper status — convention only, NOT enforced by
+;   SMUDGE/F_HIDDEN. Treat as private.
+; -----------------------------------------------
+w_PAREN_SAVE_INPUT:
+        DEFCODE "(SAVE-INPUT)", 0
+w_PAREN_SAVE_INPUT_cf:
+        CALL    check_underflow_2       ; needs c-addr u (2 cells)
+        ; Save the four current source-spec cells to the R-stack.
+        ; Push order (deepest first): source_id, tib_in, tib_len, tib_addr.
+        LD      L, (IY+UserArea.source_id)
+        LD      H, (IY+UserArea.source_id+1)
+        CALL    rpush_hl
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        CALL    rpush_hl
+        LD      L, (IY+UserArea.tib_len)
+        LD      H, (IY+UserArea.tib_len+1)
+        CALL    rpush_hl
+        LD      L, (IY+UserArea.tib_addr)
+        LD      H, (IY+UserArea.tib_addr+1)
+        CALL    rpush_hl
+
+        ; Install new source spec.
+        POP     HL                      ; HL = c-addr (was second-on-stack)
+        LD      (IY+UserArea.tib_addr), L
+        LD      (IY+UserArea.tib_addr+1), H
+        ; tib_len = u (still in BC)
+        LD      (IY+UserArea.tib_len), C
+        LD      (IY+UserArea.tib_len+1), B
+        ; tib_in = 0
+        XOR     A
+        LD      (IY+UserArea.tib_in), A
+        LD      (IY+UserArea.tib_in+1), A
+        ; source_id = -1 ($FFFF) per Forth 2014 §6.2.2218
+        DEC     A                       ; A = $FF
+        LD      (IY+UserArea.source_id), A
+        LD      (IY+UserArea.source_id+1), A
+        ; Pop new TOS from below the consumed (c-addr, u) pair.
+        POP     BC
+        NEXT
+
+; -----------------------------------------------
+; (RESTORE-INPUT) ( -- )
+;   Internal helper. Pop the four-cell source-spec frame saved by
+;   (SAVE-INPUT) and write it back into the USER area.
+;   Pop order (top first): tib_addr, tib_len, tib_in, source_id.
+;   Stack-neutral: parameter stack is untouched.
+;
+;   INVARIANT: must only run when a matching (SAVE-INPUT) frame is on
+;   the return stack. Calling this directly (no prior SAVE) pops 4
+;   garbage R-stack cells into the USER source-spec fields, corrupting
+;   the next parse. Treat as private — see (SAVE-INPUT) for rationale.
+; -----------------------------------------------
+w_PAREN_RESTORE_INPUT:
+        DEFCODE "(RESTORE-INPUT)", 0
+w_PAREN_RESTORE_INPUT_cf:
+        CALL    rpop_hl
+        LD      (IY+UserArea.tib_addr), L
+        LD      (IY+UserArea.tib_addr+1), H
+        CALL    rpop_hl
+        LD      (IY+UserArea.tib_len), L
+        LD      (IY+UserArea.tib_len+1), H
+        CALL    rpop_hl
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        CALL    rpop_hl
+        LD      (IY+UserArea.source_id), L
+        LD      (IY+UserArea.source_id+1), H
+        NEXT
+
+; -----------------------------------------------
+; EVALUATE ( i*x c-addr u -- j*x )
+;   Save the current input source spec, install c-addr/u as the
+;   active input source with source_id = -1, run INTERPRET, then
+;   restore the saved source spec.
+;
+;   ABORT inside INTERPRET (unknown word, number-parse failure)
+;   resets both stacks via w_ABORT_cf -> w_QUIT_cf, which discards
+;   the saved source-spec frame on the return stack. w_QUIT_cf calls
+;   w_QUERY_cf which overwrites the USER source fields with fresh
+;   console input, so the live state is clean even though RESTORE
+;   never ran. This is the pre-Epic-11 baseline; Story 11.6 will
+;   migrate to a THROW-safe save/restore.
+;
+; ANS Forth 1994 §6.1.1360   EVALUATE   — interpret from string
+; -----------------------------------------------
+w_EVALUATE:
+        DEFWORD "EVALUATE", 0
+w_EVALUATE_body:
+w_EVALUATE_cf EQU w_EVALUATE_body - 3
+        DW      w_PAREN_SAVE_INPUT_cf
+        DW      w_INTERPRET_cf
+        DW      w_PAREN_RESTORE_INPUT_cf
+        DW      EXIT_CODE

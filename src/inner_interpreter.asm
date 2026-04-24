@@ -160,6 +160,20 @@ rpop_bc:                        ; Pop BC from return stack
         INC     IX
         RET                         ; 9 bytes
 
+rpush_hl:                       ; Push HL onto return stack
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), L
+        LD      (IX+1), H
+        RET                         ; 9 bytes
+
+rpop_hl:                        ; Pop HL from return stack
+        LD      L, (IX+0)
+        LD      H, (IX+1)
+        INC     IX
+        INC     IX
+        RET                         ; 9 bytes
+
 ; -----------------------------------------------
 ; LIT ( -- x )
 ;   Push inline literal from thread to parameter stack
