@@ -187,7 +187,7 @@ w_PIC_QGUARD_2_cf:
 ;   right in the final output. Walks c-addr..c-addr+u-1 back-to-front
 ;   so that the right-to-left buffer fill yields correct visual order.
 ;   Canonical DPANS94 §6.2.1675 reference body is used verbatim.
-; Forth 2012/2014 §6.2.1675   HOLDS   — insert counted string into pictured-output buffer
+; Forth 2014 §6.2.1675   HOLDS   — insert counted string into pictured-output buffer
 ; -----------------------------------------------
 w_PIC_HOLDS:
         DEFWORD "HOLDS", 0
