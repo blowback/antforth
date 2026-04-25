@@ -114,7 +114,7 @@ development_status:
   9-6-epic-9-benchmark-standards-citation-audit-and-regression-gate-ccd-4: done
   epic-9-retrospective: done
 
-  epic-10: in-progress
+  epic-10: done
   10-1-ans-core-compliance-gap-survey-and-implementation-plan: done
   10-2-double-cell-stack-foundation: done
   10-3-single-double-conversions: done
@@ -125,7 +125,7 @@ development_status:
   10-8-number-output-words-on-pictured-foundation: done
   10-9-remaining-core-gap-words: done
   10-10-epic-10-compliance-audit-benchmark-and-regression-gate-ccd-4: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   epic-11: backlog
   11-1-abort-site-migration-inventory-throw-code-table-and-code-equs: backlog
