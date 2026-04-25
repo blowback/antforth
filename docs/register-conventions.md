@@ -288,6 +288,65 @@ See `docs/shadow-register-followup-survey.md` for the full survey behind these e
 
 ---
 
+## 9. Exception Frames (Epic 11)
+
+Epic 11 introduces a new return-stack frame type — the 8-byte exception frame — managed by `CATCH` and `THROW`. This section documents the frame layout and the IX-relative addressing pattern; it complements §4 of `_bmad-output/planning-artifacts/architecture.md:270-287` (E11-D1, the authoritative spec).
+
+### Layout (E11-D1)
+
+The frame is 8 bytes, pushed downward on the IX return stack like every other rstack cell. Offsets are addressed as `(IX+0)` through `(IX+7)` after `IX` has been decremented past the entire frame:
+
+```
+Higher address ─┬──────────────────────────────────┐
+        +6, +7  │ previous CATCH-TOP (chain link)  │
+        +4, +5  │ catching-IP (caller's IP)        │
+        +2, +3  │ saved IX (= frame's own base)    │
+        +0, +1  │ saved SP (parameter-stack ptr)   │
+Lower address  ─┴──────────────────────────────────┘
+                 ← IX points here after push
+```
+
+The cells are pushed in highest-address-first order (prev-CATCH-TOP first, saved-SP last), matching the IX-grows-downward discipline established in §1's hard rule #4.
+
+### CCD-1 dual-chain placement
+
+Per CCD-1 (`architecture.md:168-191`), the exception frames form a LIFO chain rooted at the USER variable `CATCH-TOP`:
+
+- `CATCH-TOP` lives in the user-area struct (`UserArea.catch_top` in `src/structures.asm`); reachable via `(IY+UserArea.catch_top)` and the antforth-extension Forth word `CATCH-TOP` (DEFCODE in `src/exception.asm`).
+- Cold-start init (`src/antforth.asm`) writes 0 to `CATCH-TOP` — the sentinel for "no enclosing CATCH".
+- `CATCH` stores the *current* `CATCH-TOP` into the new frame's `+6` slot, then sets `CATCH-TOP` to the new frame's address (= post-push IX = the frame's own base).
+- On normal return, `(CATCH-RESUME)` restores `CATCH-TOP` from `+6` before popping the frame.
+- INCLUDE source frames (Epic 13, E13-D2) form a parallel chain rooted at `INCLUDE-TOP`; the two chains never share frame-types and never collide.
+
+### IX-relative addressing pattern
+
+`CATCH-TOP` always holds the *post-push* IX value — i.e., the address of the lowest byte of the frame. This means:
+
+- `THROW`'s target-frame access is O(1): one read of `CATCH-TOP`, then `(IX+0)..(IX+7)` reads the frame fields directly. No rstack scanning.
+- The `+2` slot (saved IX) is recursive: it stores the value of IX *after* the frame has been pushed, which equals the frame's own base address. Story 11.2's `CATCH` writes this slot via a backfill — push a placeholder, complete the rest of the frame, then `PUSH IX / POP HL / LD (IX+2),L / LD (IX+3),H` after IX has reached its final post-push value.
+- Nested CATCH frames stack normally: the inner frame's `+6` points at the outer frame's base, forming the chain. `CATCH-TOP` always points at the most recent frame; on normal return of an inner CATCH, `CATCH-TOP` walks back one link.
+
+### Story 11.2 contract — normal-return only
+
+`CATCH` (Story 11.2 in `src/exception.asm`) implements **only** the normal-return path:
+
+1. Frame setup (push 8 bytes, set CATCH-TOP).
+2. EXECUTE-pattern handoff to xt (`LD H,B / LD L,C / POP BC / JP (HL)`), with `DE` pre-loaded to `catch_resume_thread` (a one-cell pseudo-thread containing the address of the internal `(CATCH-RESUME)` continuation).
+3. xt's terminal `NEXT` chases `DE = catch_resume_thread` → fetches `catch_resume_cf` → `JP (HL)` lands on `(CATCH-RESUME)`.
+4. `(CATCH-RESUME)` teardown: restore CATCH-TOP from `+6`; restore caller's IP (DE) from `+4`; `PUSH BC` (xt's final TOS becomes second-on-stack); `IX += 8` (free frame); `BC = 0` (success code); `NEXT` to caller.
+
+The frame's `+0` (saved SP) and `+2` (saved IX) slots are written but **never read** by Story 11.2 — they exist purely as the contract for Story 11.3's THROW-time restore. The catching-IP slot (`+4`) is read once on normal return (to restore DE), and Story 11.3 will also read it on the THROW path. Do not pre-implement THROW-time logic in `CATCH` itself; Story 11.3 owns that codepath.
+
+### Forward pointer (Stories 11.3–11.7)
+
+- **Story 11.3** — adds `THROW`, the uncaught-throw REPL handler, and the THROW-time restore (consumes saved-SP, saved-IX, catching-IP from this frame).
+- **Stories 11.4–11.6** — migrate existing internal `JP w_ABORT_cf` sites to `THROW <code>`; do not touch the frame layout.
+- **Story 11.7** — retargets `ABORT` and `ABORT"` themselves to `-1 THROW` / `-2 THROW` (the capstone).
+
+This section will be extended by Stories 11.3–11.7 as new fields, semantics, or interactions land. The 8-byte layout itself is locked at Story 11.2 — any change must be a deliberate revision to E11-D1, not a drift.
+
+---
+
 ## References
 
 Source-of-truth documents consulted or referenced by this convention doc:

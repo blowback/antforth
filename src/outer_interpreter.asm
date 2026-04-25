@@ -244,6 +244,10 @@ w_QUIT_cf:
         XOR     A
         LD      (IY+UserArea.state), A
         LD      (IY+UserArea.state+1), A
+        ; CATCH-TOP = 0 (no enclosing exception frame after ABORT/QUIT recovery —
+        ; CCD-1 chain-link invariant; AC #17 of Story 11.2)
+        LD      (IY+UserArea.catch_top), A
+        LD      (IY+UserArea.catch_top+1), A
         ; Enter the QUIT loop thread
         LD      DE, .quit_loop
         NEXT

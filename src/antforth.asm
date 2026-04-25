@@ -67,6 +67,10 @@ cold_start:
         LD      (IY+UserArea.source_id), 0
         LD      (IY+UserArea.source_id+1), 0
 
+        ; 8b'. CATCH-TOP = 0 (no enclosing exception frame at REPL start)
+        LD      (IY+UserArea.catch_top), 0
+        LD      (IY+UserArea.catch_top+1), 0
+
         ; 8c. HLD = IY + UserArea.pic_buf + PIC_BUF_SIZE
         ;     (sentinel one past the buffer's high end; <# resets to this)
         PUSH    IY
@@ -145,6 +149,7 @@ cold_thread:
         INCLUDE "compiler.asm"
         INCLUDE "assembler.asm"
         INCLUDE "system.asm"
+        INCLUDE "exception.asm"
 
 ; === Forth bootstrap definitions (depend on everything above) ===
         INCLUDE "bootstrap.asm"

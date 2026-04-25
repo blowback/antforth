@@ -5670,6 +5670,179 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 11.2 — CATCH (normal-return) per Forth 2014 / ANS Forth 1994 §9.6.1.0875 ---
+	@# Tests cover: pure / producing / consuming xts (AC #13/AC #14), CATCH-TOP
+	@# preservation (AC #17), nested CATCH frames (AC #13), state-integrity
+	@# invariants (AC #15), empty-stack ABORT path (AC #3 / AC #18). THROW-side
+	@# tests land in Story 11.3.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "' NOOP CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 653 — \"' NOOP CATCH .\" returns success code 0"; \
+	else \
+		echo "FAIL: REPL test 653 — expected '0  ok' for \"' NOOP CATCH .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DUP-DROP DUP DROP ;" "5 ' DUP-DROP CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 5  ok'; then \
+		echo "PASS: REPL test 654 — \"5 ' DUP-DROP CATCH . .\" preserves NOS, returns 0"; \
+	else \
+		echo "FAIL: REPL test 654 — expected '0 5  ok' for \"5 ' DUP-DROP CATCH . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-42 42 ;" "' MAKE-42 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 42  ok'; then \
+		echo "PASS: REPL test 655 — \"' MAKE-42 CATCH . .\" producing xt + success code"; \
+	else \
+		echo "FAIL: REPL test 655 — expected '0 42  ok' for \"' MAKE-42 CATCH . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-1-2 1 2 ;" "' MAKE-1-2 CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 2 1  ok'; then \
+		echo "PASS: REPL test 656 — \"' MAKE-1-2 CATCH . . .\" depth-2 producer + success code"; \
+	else \
+		echo "FAIL: REPL test 656 — expected '0 2 1  ok' for \"' MAKE-1-2 CATCH . . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DROP-IT DROP ;" "5 ' DROP-IT CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 657 — \"5 ' DROP-IT CATCH .\" consuming xt + success code"; \
+	else \
+		echo "FAIL: REPL test 657 — expected '0  ok' for \"5 ' DROP-IT CATCH .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": ADD-IT + ;" "1 2 ' ADD-IT CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 3  ok'; then \
+		echo "PASS: REPL test 658 — \"1 2 ' ADD-IT CATCH . .\" 2-cell consumer + 1 producer"; \
+	else \
+		echo "FAIL: REPL test 658 — expected '0 3  ok' for \"1 2 ' ADD-IT CATCH . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' BL CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 32  ok'; then \
+		echo "PASS: REPL test 659 — \"' BL CATCH . .\" DEFCODE xt (BL pushes 32)"; \
+	else \
+		echo "FAIL: REPL test 659 — expected '0 32  ok' for \"' BL CATCH . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": BL2 ['] BL EXECUTE ;" "' BL2 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 32  ok'; then \
+		echo "PASS: REPL test 660 — \"' BL2 CATCH . .\" xt that internally calls EXECUTE"; \
+	else \
+		echo "FAIL: REPL test 660 — expected '0 32  ok' for \"' BL2 CATCH . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": A 1 ; : B A A + ;" "' B CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 2  ok'; then \
+		echo "PASS: REPL test 661 — \"' B CATCH . .\" DEFWORD that calls another DEFWORD"; \
+	else \
+		echo "FAIL: REPL test 661 — expected '0 2  ok' for \"' B CATCH . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 ' DUP CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 1 1  ok'; then \
+		echo "PASS: REPL test 662 — \"1 ' DUP CATCH . . .\" DEFCODE xt with stack effect"; \
+	else \
+		echo "FAIL: REPL test 662 — expected '0 1 1  ok' for \"1 ' DUP CATCH . . .\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 663 — 'CATCH-TOP @ .' is 0 at fresh REPL (no enclosing CATCH)"; \
+	else \
+		echo "FAIL: REPL test 663 — expected '0  ok' for 'CATCH-TOP @ .' at fresh REPL"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "' NOOP CATCH . CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 0  ok'; then \
+		echo "PASS: REPL test 664 — CATCH-TOP restored to entry-time value (0) after CATCH normal return"; \
+	else \
+		echo "FAIL: REPL test 664 — expected '0 0  ok' for CATCH-TOP-restore test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-42 42 ;" "' MAKE-42 CATCH . . CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 42 0  ok'; then \
+		echo "PASS: REPL test 665 — CATCH-TOP restored to 0 after producing-xt CATCH"; \
+	else \
+		echo "FAIL: REPL test 665 — expected '0 42 0  ok' for producing-xt CATCH-TOP test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": INNER ['] BL CATCH ;" "' INNER CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 0 32  ok'; then \
+		echo "PASS: REPL test 666 — nested CATCH (both normal-return) works correctly"; \
+	else \
+		echo "FAIL: REPL test 666 — expected '0 0 32  ok' for nested CATCH test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": PROBE CATCH-TOP @ ;" "' PROBE CATCH . 0= 0= . CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 -1 0  ok'; then \
+		echo "PASS: REPL test 667 — CATCH-TOP non-zero inside CATCH, restored to 0 after"; \
+	else \
+		echo "FAIL: REPL test 667 — expected '0 -1 0  ok' for PROBE test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HEX ' NOOP CATCH DROP BASE @ DECIMAL ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\. 16  ok'; then \
+		echo "PASS: REPL test 668 — BASE preserved across CATCH normal return (AC #15a)"; \
+	else \
+		echo "FAIL: REPL test 668 — expected '. 16  ok' (sole result) for BASE-integrity test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "STATE @ ' NOOP CATCH DROP STATE @ = ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 669 — STATE preserved across CATCH normal return (AC #15b)"; \
+	else \
+		echo "FAIL: REPL test 669 — expected '-1  ok' for STATE-integrity test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HERE ' NOOP CATCH DROP HERE = ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 670 — HERE preserved across CATCH normal return (AC #15c)"; \
+	else \
+		echo "FAIL: REPL test 670 — expected '-1  ok' for HERE-integrity test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "1 2 3 DEPTH . ' NOOP CATCH DROP DEPTH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '3 3  ok'; then \
+		echo "PASS: REPL test 671 — DEPTH invariant across CATCH normal return (AC #15d)"; \
+	else \
+		echo "FAIL: REPL test 671 — expected '3 3  ok' for DEPTH-integrity test"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CATCH\r\nCATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\? Stack underflow.* ok.*CATCH-TOP @ \. 0  ok'; then \
+		echo "PASS: REPL test 672 — empty-stack 'CATCH' aborts and CATCH-TOP is reset to 0 on recovery (AC #3 / AC #17 / AC #18)"; \
+	else \
+		echo "FAIL: REPL test 672 — expected '? Stack underflow' + recovery + 'CATCH-TOP @ . 0  ok' (CCD-1 chain reset)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": L1 ['] BL CATCH ;" ": L2 ['] L1 CATCH ;" "' L2 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 0 0 32  ok'; then \
+		echo "PASS: REPL test 673 — 3-level nested CATCH exercises non-zero prev-of-prev chain link (AC #13)"; \
+	else \
+		echo "FAIL: REPL test 673 — expected '0 0 0 32  ok' for 3-level nested CATCH"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

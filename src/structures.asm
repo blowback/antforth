@@ -25,5 +25,6 @@ tib_len     DW      0               ; #TIB: current input length
 tib_in      DW      0               ; >IN: parse position in TIB
 source_id   DW      0               ; SOURCE-ID: 0 = console
 hld         DW      0               ; HLD: pictured-output write cursor
+catch_top   DW      0               ; CATCH-TOP: most recent exception frame addr, 0 if none (CCD-1)
 pic_buf     DS      PIC_BUF_SIZE    ; Pictured-output buffer (fills RTL)
     ENDS
