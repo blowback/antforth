@@ -240,7 +240,7 @@ hold_common:
 ; -----------------------------------------------
 ; do_pic_overflow_error — Internal diagnostic helper
 ;   Print "? Pictured buffer overflow" + CR/LF via direct BDOS; JP ABORT.
-;   Never returns. Mirrors do_underflow_error (src/system.asm:370).
+;   Never returns. Mirrors do_underflow_error (src/system.asm:551).
 ;   Epic 11 will migrate this to THROW -17 (DPANS94 §9.3.5).
 ; -----------------------------------------------
 do_pic_overflow_error:

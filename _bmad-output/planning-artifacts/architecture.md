@@ -473,9 +473,9 @@ Good:
 Every THROW code used in phase-2 source cites its definition inline. Standard codes reference the ANS table; antforth-extension codes reference the allocation table in `docs/throw-codes.md` (to be created in Epic 11 first story):
 
 ```
-THROW_UNDEFINED_WORD   EQU -13  ; ANS Forth 2014 §9.3.5
-THROW_FCB_EXHAUSTED    EQU -69  ; ANS Forth 2014 §9.3.5
-THROW_ASM_LOAD_FAIL    EQU -257 ; antforth extension (see docs/throw-codes.md)
+THROW_UNDEFINED_WORD   EQU -13  ; ANS Forth 1994 §9.3.5
+THROW_FCB_EXHAUSTED    EQU -69  ; ANS Forth 1994 §9.3.5
+THROW_ASM_LOAD_FAIL    EQU -257 ; antforth extension — see docs/throw-codes.md
 ```
 
 #### Stack effect comments
@@ -602,7 +602,7 @@ catch_impl:
 **Good — new THROW code allocation:**
 
 ```
-; antforth extension (see docs/throw-codes.md)
+; antforth extension — see docs/throw-codes.md
 THROW_ASM_LOAD_FAIL    EQU -257
 ```
 
