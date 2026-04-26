@@ -92,6 +92,13 @@ asm_jp_op:         DB 0   ; 1-byte spill slot for JP,/CALL, unconditional
                           ; opcode (kept separate from asm_tmp — Story 4.3
                           ; retrospective lesson #2: don't share scratch
                           ; across nesting boundaries)
+asm_throw_code:    DW 0   ; Story 11.5: THROW code carrier for
+                          ; asm_print_error_with_name. Set by callers
+                          ; (asm_err_unresolved → -268, asm_err_already →
+                          ; -269) before JP asm_print_error_with_name; read
+                          ; by the post-print epilogue into BC for the
+                          ; w_THROW_cf.kernel_entry raise. Single-threaded
+                          ; (asm errors are not re-entrant).
 
 ; =====================================================================
 ; Per-CODE label and fixup pools (Story 4.2)
@@ -179,36 +186,22 @@ asm_label_dict:    DS ASM_LABEL_DICT_SIZE
 
 ; =====================================================================
 ; Error message strings (printed with trailing " ?" CR LF)
+;
+; Story 11.5 deleted 9 obsolete strings (str_asm_badop, str_asm_nested,
+; str_asm_noname, str_asm_orphan, str_asm_label_after, str_asm_jr_range,
+; str_asm_too_labels, str_asm_too_fixups, str_asm_equ_in_code) along with
+; their *_LEN EQUs — those error sites now raise -258..-266 THROW and
+; the description text lives in throw_desc_table (src/exception.asm:560).
+; The remaining strings drive dynamic-print error paths that THROW alone
+; cannot replace (str_asm_unresolved / str_asm_already print a label
+; name; str_asm_bare_int prints a hex value) plus the asm_die fan-in
+; (str_asm_notcode / str_asm_range) which retains its pre-print path
+; because the two non-fan-in callers (check_asm_mode, asm_range_err)
+; are out of Story 11.5's enumerated scope — see Task 7 deviation note
+; in Completion Notes.
 ; =====================================================================
 str_asm_notcode:   DB "not in CODE"
 STR_ASM_NOTCODE_LEN EQU $ - str_asm_notcode
-
-str_asm_badop:     DB "bad operand"
-STR_ASM_BADOP_LEN  EQU $ - str_asm_badop
-
-str_asm_nested:    DB "nested CODE"
-STR_ASM_NESTED_LEN EQU $ - str_asm_nested
-
-str_asm_noname:    DB "CODE needs name"
-STR_ASM_NONAME_LEN EQU $ - str_asm_noname
-
-str_asm_orphan:    DB "END-CODE without CODE"
-STR_ASM_ORPHAN_LEN EQU $ - str_asm_orphan
-
-str_asm_label_after: DB "LABEL must precede opcodes"
-STR_ASM_LABEL_AFTER_LEN EQU $ - str_asm_label_after
-
-str_asm_jr_range:  DB "JR out of range"
-STR_ASM_JR_RANGE_LEN EQU $ - str_asm_jr_range
-
-str_asm_too_labels: DB "too many labels"
-STR_ASM_TOO_LABELS_LEN EQU $ - str_asm_too_labels
-
-str_asm_too_fixups: DB "too many fixups"
-STR_ASM_TOO_FIXUPS_LEN EQU $ - str_asm_too_fixups
-
-str_asm_equ_in_code: DB "EQU outside CODE only"
-STR_ASM_EQU_IN_CODE_LEN EQU $ - str_asm_equ_in_code
 
 ; "unresolved label " — printed before name; trailing space included
 str_asm_unresolved: DB "unresolved label "
@@ -274,59 +267,76 @@ asm_print_hex8:
 
 ; -----------------------------------------------
 ; asm_die — Print (HL/B) via asm_print_error and JP ABORT. Never returns.
-; asm_bad_operand / asm_err_* — Shorthand entries for specific messages.
+;
+; Story 11.5 retired the 9 fan-in callers (asm_bad_operand and
+; asm_err_nested..asm_err_equ_in_code) — each now raises its own
+; -258..-266 THROW directly. The asm_die body is retained because two
+; non-fan-in callers (check_asm_mode, asm_range_err) remain wired to it
+; and were not enumerated in Story 11.5's inventory; their migration is
+; deferred to a follow-up story (see Completion Notes).
 ; -----------------------------------------------
 asm_die:
         CALL    asm_print_error
         JP      w_ABORT_cf
 
 asm_bad_operand:
-        LD      HL, str_asm_badop
-        LD      B, STR_ASM_BADOP_LEN
-        JP      asm_die
+        ; -258 THROW (Story 11.5): bad operand per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_BAD_OPERAND
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_nested:
-        LD      HL, str_asm_nested
-        LD      B, STR_ASM_NESTED_LEN
-        JP      asm_die
+        ; -259 THROW (Story 11.5): nested CODE per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_NESTED
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_noname:
-        LD      HL, str_asm_noname
-        LD      B, STR_ASM_NONAME_LEN
-        JP      asm_die
+        ; -260 THROW (Story 11.5): CODE needs name per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_NONAME
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_orphan:
-        LD      HL, str_asm_orphan
-        LD      B, STR_ASM_ORPHAN_LEN
-        JP      asm_die
+        ; -261 THROW (Story 11.5): END-CODE without CODE per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_ORPHAN_LABEL
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_label_after:
-        LD      HL, str_asm_label_after
-        LD      B, STR_ASM_LABEL_AFTER_LEN
-        JP      asm_die
+        ; -262 THROW (Story 11.5): LABEL must precede opcodes per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_LABEL_AFTER_END
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_jr_range:
-        LD      HL, str_asm_jr_range
-        LD      B, STR_ASM_JR_RANGE_LEN
-        JP      asm_die
+        ; -263 THROW (Story 11.5): JR out of range per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_JR_RANGE
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_too_labels:
-        LD      HL, str_asm_too_labels
-        LD      B, STR_ASM_TOO_LABELS_LEN
-        JP      asm_die
+        ; -264 THROW (Story 11.5): too many labels per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_TOO_LABELS
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_too_fixups:
-        LD      HL, str_asm_too_fixups
-        LD      B, STR_ASM_TOO_FIXUPS_LEN
-        JP      asm_die
+        ; -265 THROW (Story 11.5): too many fixups per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_TOO_FIXUPS
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_equ_in_code:
-        LD      HL, str_asm_equ_in_code
-        LD      B, STR_ASM_EQU_IN_CODE_LEN
-        JP      asm_die
+        ; -266 THROW (Story 11.5): EQU outside CODE only per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_EQU_IN_CODE
+        JP      w_THROW_cf.kernel_entry
 
 asm_err_bare_int:
-        ; HL = bare integer value on entry (set by callers)
+        ; HL = bare integer value on entry (set by callers).
+        ; Print "bare integer 0xNNNN ?" + CRLF (dynamic hex value preserved),
+        ; then raise -267 THROW (Story 11.5).
         PUSH    HL
         LD      HL, str_asm_bare_int
         LD      B, STR_ASM_BARE_INT_LEN
@@ -334,14 +344,18 @@ asm_err_bare_int:
         POP     HL
         CALL    asm_print_hex16
         CALL    asm_print_q_crlf
-        JP      w_ABORT_cf
+        ; -267 THROW (Story 11.5): bare integer per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_BARE_INT
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; asm_check_tagged — Verify TOS (BC) is a tagged operand (B == 0xFF).
 ;   If B != 0xFF, the user passed a bare integer where a tagged operand
-;   was expected. Prints "bare integer ?" and ABORTs.
+;   was expected. Prints "bare integer 0xNNNN ?" and raises -267 THROW
+;   via asm_err_bare_int.
 ;   On success: returns with BC unchanged, Z flag set.
-;   On failure: never returns (ABORTs).
+;   On failure: never returns.
 ; -----------------------------------------------
 asm_check_tagged:
         LD      A, B
@@ -378,25 +392,35 @@ asm_print_error_with_name:
 .pen_no_name:
         ; Print " ?" CR LF
         CALL    bdos_print_q_crlf
-        JP      w_ABORT_cf
+        ; -<N> THROW (Story 11.5): asm-error-with-name per antforth extension —
+        ; see docs/throw-codes.md. The specific code is set by the caller in
+        ; asm_throw_code (see asm_err_unresolved / asm_err_already).
+        LD      BC, (asm_throw_code)
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
-; asm_err_unresolved — print "unresolved label NAME ?" and ABORT.
+; asm_err_unresolved — print "unresolved label NAME ?" then raise -268 THROW.
 ;   Entry: HL = count_flags ptr of the unresolved label's dict entry.
-;   Stashes HL into asm_tmp2 then jumps to asm_print_error_with_name.
+;   Stashes HL into asm_tmp2, the THROW code into asm_throw_code, then
+;   jumps to asm_print_error_with_name (Story 11.5).
 ; -----------------------------------------------
 asm_err_unresolved:
         LD      (asm_tmp2), HL
+        LD      HL, THROW_ASM_UNRESOLVED        ; -268 per antforth extension
+        LD      (asm_throw_code), HL
         LD      HL, str_asm_unresolved
         LD      B, STR_ASM_UNRESOLVED_LEN
         JP      asm_print_error_with_name
 
 ; -----------------------------------------------
-; asm_err_already — print "already fixed: NAME ?" and ABORT.
+; asm_err_already — print "already fixed: NAME ?" then raise -269 THROW.
 ;   Entry: HL = count_flags ptr of the already-fixed label's dict entry.
+;   Same caller pattern as asm_err_unresolved (Story 11.5).
 ; -----------------------------------------------
 asm_err_already:
         LD      (asm_tmp2), HL
+        LD      HL, THROW_ASM_ALREADY_FIXED     ; -269 per antforth extension
+        LD      (asm_throw_code), HL
         LD      HL, str_asm_already
         LD      B, STR_ASM_ALREADY_LEN
         JP      asm_print_error_with_name
@@ -515,7 +539,12 @@ asm_fixup_addr:
 asm_alloc_label_slot:
         LD      A, (asm_label_count)
         CP      ASM_LABEL_POOL_SIZE
-        JP      NC, asm_err_too_labels
+        JR      C, .als_have_room
+        ; Story 11.5 review F2: only caller is LABEL post-EXX; restore
+        ; primary set before kernel-internal THROW raise.
+        EXX
+        JP      asm_err_too_labels
+.als_have_room:
         PUSH    AF                  ; save new index
         CALL    asm_slot_addr       ; HL = &slot
         ; Zero 8 bytes
@@ -553,7 +582,15 @@ asm_add_fixup:
         PUSH    BC                  ; save kind in C
         LD      A, (asm_fixup_count)
         CP      ASM_FIXUP_POOL_SIZE
-        JP      NC, asm_err_too_fixups
+        JR      C, .aaf_have_room
+        ; Callers (JR,, JP,/CALL,, DW,, DJNZ,) are DEFCODE bodies running
+        ; in primary set with no enclosing EXX, so we drop straight into
+        ; the kernel-internal THROW raise — no EXX-restore needed. The
+        ; PUSH'ed values above are abandoned: THROW's caught path
+        ; restores SP from the catch frame, and the uncaught path resets
+        ; SP via QUIT, so the imbalance is recovered automatically.
+        JP      asm_err_too_fixups
+.aaf_have_room:
         CALL    asm_fixup_addr      ; HL = &fixup_pool[count]
         POP     BC                  ; C = kind
         POP     DE                  ; DE = patch addr
@@ -604,12 +641,16 @@ asm_jr_disp:
         RET
 .jrd_oor:
         POP     HL                  ; clean stack
+        ; Callers (asm_apply_jr_fixup from FIX/asm_resolve_slot,
+        ; asm_apply_jr_fixup_emit from JR,/DJNZ,) are reached from DEFCODE
+        ; bodies running in primary set with no enclosing EXX, so we drop
+        ; straight into the kernel-internal THROW raise.
         JP      asm_err_jr_range
 
 ; -----------------------------------------------
 ; asm_apply_jr_fixup — Patch a queued JR fixup with a real displacement.
 ;   Entry: HL = patch address, DE = target address
-;   On out-of-range: ABORT via asm_err_jr_range.
+;   On out-of-range: raises -263 THROW via asm_err_jr_range.
 ;   The displacement byte field is at HL; the JR opcode itself sits at
 ;   HL-1. The "next instruction" address used by Z80 is patch_addr+1.
 ; -----------------------------------------------
@@ -662,7 +703,7 @@ asm_apply_fixup_record:
 ;   fixup pool: for every record whose label index matches, applies the
 ;   patch via asm_apply_fixup_record and removes the record by swapping
 ;   the last record over the current slot and decrementing the count.
-;   On JR-range error during apply, the underlying helper ABORTs.
+;   On JR-range error during apply, the underlying helper raises -263 THROW.
 ;
 ;   Register usage in the walk:
 ;     B  = our slot index (preserved across the loop)
@@ -758,7 +799,15 @@ asm_resolve_slot:
 ; -----------------------------------------------
 ; asm_check_unresolved — Called from END-CODE before SMUDGE-clear.
 ;   If any fixup remains, look up its label's count_flags ptr (slot+6),
-;   and ABORT via asm_err_unresolved (which prints "unresolved label NAME ?").
+;   and raise -268 THROW via asm_err_unresolved (which prints
+;   "unresolved label NAME ?" first).
+;
+;   Story 11.5 review F1: END-CODE calls this from EXX-active context
+;   (END-CODE does EXX before CALL asm_check_unresolved). The downstream
+;   asm_err_unresolved → asm_print_error_with_name → kernel-internal THROW
+;   raise contract requires primary-set context. We restore the primary
+;   set here, preserving HL = cf_ptr across the EXX via PUSH/POP (SP is
+;   universal so the push is set-agnostic).
 ; -----------------------------------------------
 asm_check_unresolved:
         LD      A, (asm_fixup_count)
@@ -778,7 +827,11 @@ asm_check_unresolved:
         LD      E, (HL)
         INC     HL
         LD      D, (HL)             ; DE = cf_ptr
-        EX      DE, HL              ; HL = cf_ptr
+        EX      DE, HL              ; HL = cf_ptr (in shadow set — END-CODE's EXX active)
+        ; --- Story 11.5 review F1 EXX-restore for kernel-internal THROW ---
+        PUSH    HL                  ; preserve cf_ptr across set-swap
+        EXX                         ; restore primary set
+        POP     HL                  ; HL = cf_ptr (now in primary set)
         JP      asm_err_unresolved
 
 ; -----------------------------------------------
@@ -1330,7 +1383,7 @@ w_POP_COMMA_cf:
 ; -----------------------------------------------
 ; assert_8bit_reg — HL = unified tag; reject if H!=0xFF or not class=REG8.
 ;   On success: A = r-field (0..7 excluding 6)
-;   On failure: JP asm_bad_operand or asm_err_bare_int (never returns)
+;   On failure: JP asm_bad_operand (-258) or asm_err_bare_int (-267); never returns
 ; -----------------------------------------------
 assert_8bit_reg:
         LD      A, H
@@ -2209,7 +2262,13 @@ w_LABEL_cf:
         LD      DE, (asm_body_start)
         OR      A
         SBC     HL, DE
-        JP      NZ, asm_err_label_after
+        JR      Z, .lbl_after_ok
+        ; Story 11.5 review F2: restore primary set before kernel-internal
+        ; THROW raise (asm_err_label_after's `LD BC / JP w_THROW_cf
+        ; .kernel_entry` requires primary BC — see src/exception.asm:288-296).
+        EXX
+        JP      asm_err_label_after
+.lbl_after_ok:
 
         ; Allocate the slot first (so the index is known when we patch
         ; the body); aborts on overflow.

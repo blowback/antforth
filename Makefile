@@ -417,58 +417,58 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'IF\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 43 — compile-only guard: IF in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 43 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 43 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'THEN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 44 — compile-only guard: THEN in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 44 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 44 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BEGIN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 45 — compile-only guard: BEGIN in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 45 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 45 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'ELSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 46 — compile-only guard: ELSE in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 46 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 46 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'WHILE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 47 — compile-only guard: WHILE in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 47 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 47 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'REPEAT\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 48 — compile-only guard: REPEAT in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 48 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 48 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'UNTIL\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 49 — compile-only guard: UNTIL in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 49 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 49 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -529,42 +529,42 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'DO\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 57 — compile-only guard: DO in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 57 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 57 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 58 — compile-only guard: LOOP in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 58 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 58 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '+LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 59 — compile-only guard: +LOOP in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 59 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 59 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'LEAVE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 60 — compile-only guard: LEAVE in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 60 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 60 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'RECURSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 61 — compile-only guard: RECURSE in interpret mode shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 61 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 61 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -657,10 +657,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'POSTPONE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? compile only' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 73 — POSTPONE in interpret mode shows compile-only error and recovers"; \
 	else \
-		echo "FAIL: REPL test 73 — expected '? compile only' and recovery"; \
+		echo "FAIL: REPL test 73 — expected 'error -14: interpreting a compile-only word' and recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -853,23 +853,23 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf 'CODE BAD3 A A LD, LABEL ZED NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'LABEL must precede opcodes ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -262: LABEL must precede opcodes' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD3$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^ZED$$'; then \
 		echo "PASS: REPL test 97 — LABEL after opcodes: error, recovery, BAD3 and ZED not leaked"; \
 	else \
-		echo "FAIL: REPL test 97 — expected 'LABEL must precede opcodes ?', '3', BAD3/ZED absent"; \
+		echo "FAIL: REPL test 97 — expected 'error -262: LABEL must precede opcodes', '3', BAD3/ZED absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD4 LABEL TGT TGT FIX 130 DS, TGT JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'JR out of range ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -263: JR out of range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD4$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^TGT$$'; then \
 		echo "PASS: REPL test 98 — out-of-range JR: error, recovery, BAD4 and TGT not leaked"; \
 	else \
-		echo "FAIL: REPL test 98 — expected 'JR out of range ?', '3', BAD4/TGT absent"; \
+		echo "FAIL: REPL test 98 — expected 'error -263: JR out of range', '3', BAD4/TGT absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -896,12 +896,12 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf 'CODE BAD6 1 EQU FOO NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'EQU outside CODE only ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -266: EQU outside CODE only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD6$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^FOO$$'; then \
 		echo "PASS: REPL test 101 — EQU inside CODE: error, recovery, BAD6 and FOO not leaked"; \
 	else \
-		echo "FAIL: REPL test 101 — expected 'EQU outside CODE only ?', '3', BAD6/FOO absent"; \
+		echo "FAIL: REPL test 101 — expected 'error -266: EQU outside CODE only', '3', BAD6/FOO absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -916,13 +916,13 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf 'CODE BIG LABEL L1 LABEL L2 LABEL L3 LABEL L4 LABEL L5 LABEL L6 LABEL L7 LABEL L8 LABEL L9 LABEL L10 LABEL L11 LABEL L12 LABEL L13 LABEL L14 LABEL L15 LABEL L16 LABEL L17 NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'too many labels ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -264: too many labels' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BIG$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^L1$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^L16$$'; then \
 		echo "PASS: REPL test 103 — label-pool overflow: error, recovery, BIG and L1..L16 not leaked"; \
 	else \
-		echo "FAIL: REPL test 103 — expected 'too many labels ?', '3', BIG/L1/L16 absent"; \
+		echo "FAIL: REPL test 103 — expected 'error -264: too many labels', '3', BIG/L1/L16 absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -937,12 +937,12 @@ test-repl: $(TARGET)
 	@JRS=$$(yes 'F JR,' | head -33 | tr '\n' ' '); \
 	OUTPUT=$$(printf 'CODE FXOF LABEL F %sF FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' "$$JRS" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'too many fixups ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -265: too many fixups' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^FXOF$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^F$$'; then \
 		echo "PASS: REPL test 105 — fixup-pool overflow: 33 forward JRs hit 'too many fixups ?'"; \
 	else \
-		echo "FAIL: REPL test 105 — expected 'too many fixups ?', '3', FXOF/F absent from WORDS"; \
+		echo "FAIL: REPL test 105 — expected 'error -265: too many fixups', '3', FXOF/F absent from WORDS"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -973,11 +973,11 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf 'HEX\r\nCODE BADAF AF 1234 # LD, NEXT, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADAF$$'; then \
 		echo "PASS: REPL test 109 — LD rr,nn rejects AF: error, recovery, BADAF not leaked"; \
 	else \
-		echo "FAIL: REPL test 109 — expected 'bad operand ?' and BADAF absent"; \
+		echo "FAIL: REPL test 109 — expected 'error -258: bad operand' and BADAF absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -999,11 +999,11 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf 'CODE BADHH (HL) (HL) LD, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADHH$$'; then \
 		echo "PASS: REPL test 112 — (HL),(HL) LD, rejected: error, recovery, BADHH not leaked"; \
 	else \
-		echo "FAIL: REPL test 112 — expected 'bad operand ?' and BADHH absent"; \
+		echo "FAIL: REPL test 112 — expected 'error -258: bad operand' and BADHH absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1082,12 +1082,12 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf 'CODE BADJR LABEL T T FIX PO T JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADJR$$' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^T$$'; then \
 		echo "PASS: REPL test 122 — conditional JR rejects PO: error, BADJR/T not leaked"; \
 	else \
-		echo "FAIL: REPL test 122 — expected 'bad operand ?' and BADJR/T absent"; \
+		echo "FAIL: REPL test 122 — expected 'error -258: bad operand' and BADJR/T absent"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1349,10 +1349,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'HEX\r\nCODE BAD154 42 # B IN, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 154 — immediate-port IN with B: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 154 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 154 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1482,10 +1482,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD170 DE 5 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 170 — +D with non-(IX)/(IY): bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 170 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 170 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1498,10 +1498,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD172 AF INC, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 172 — AF INC,: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 172 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 172 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1779,10 +1779,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD202 3 RST, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | grep -q '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 202 — RST, with invalid vector: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 202 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 202 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1835,34 +1835,34 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD208 B (BC) LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | grep -q '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 208 — B (BC) LD, rejects non-A: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 208 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 208 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD209 B (DE) LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | grep -q '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 209 — B (DE) LD, rejects non-A: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 209 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 209 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD210 B IREG LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | grep -q '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 210 — B IREG LD, rejects non-A: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 210 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 210 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD211 IREG B LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | grep -q '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 211 — IREG B LD, rejects non-A dest: bad operand, clean recovery"; \
 	else \
-		echo "FAIL: REPL test 211 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 211 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1883,10 +1883,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD214 IX IY ADD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'bad operand ?' && echo "$$OUTPUT" | grep -q '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 214 — IX IY ADD, cross-index rejected: bad operand"; \
 	else \
-		echo "FAIL: REPL test 214 — expected 'bad operand ?' and '3 '"; \
+		echo "FAIL: REPL test 214 — expected 'error -258: bad operand' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -6268,6 +6268,150 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 726 — Story 11.4.1 (review F2): DO-LOOP-frame snap-back + i*x preservation across underflow inside DO body"; \
 	else \
 		echo "FAIL: REPL test 726 — expected '-4 3 2 1  ok' (DO frame skipped + 3 i*x cells preserved)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ; CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
+		echo "PASS: REPL test 727 — Story 11.5: ' ; CATCH . returns -14 (compile-only guard caught from kernel-internal entry; AC #6, #15)"; \
+	else \
+		echo "FAIL: REPL test 727 — expected '-14  ok' for ' ; CATCH ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DOES> CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
+		echo "PASS: REPL test 728 — Story 11.5: ' DOES> CATCH . returns -14 (compile-only guard caught; AC #6, #15)"; \
+	else \
+		echo "FAIL: REPL test 728 — expected '-14  ok' for ' DOES> CATCH ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ?COMP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
+		echo "PASS: REPL test 729 — Story 11.5: ' ?COMP CATCH . returns -14 (compile-only guard caught; AC #6, #15)"; \
+	else \
+		echo "FAIL: REPL test 729 — expected '-14  ok' for ' ?COMP CATCH ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' ; CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-14 3 2 1  ok'; then \
+		echo "PASS: REPL test 730 — Story 11.5: i*x preservation across kernel-internal -14 raise (1 2 3 ' ; CATCH; AC #15)"; \
+	else \
+		echo "FAIL: REPL test 730 — expected '-14 3 2 1  ok' (i*x cells preserved across compile-only THROW)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T3DOL 2 0 DO ?COMP LOOP ;" "' T3DOL CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
+		echo "PASS: REPL test 731 — Story 11.5: ?COMP from inside DO-LOOP body raises -14, snap-back skips DO frame on IX (review F3 analog; AC #20d)"; \
+	else \
+		echo "FAIL: REPL test 731 — expected '-14  ok' (?COMP-in-DO-LOOP)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DUP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '0  ok'; then \
+		echo "PASS: REPL test 732 — Story 11.5 positive control: ' DUP CATCH . returns 0 (CATCH framework still works; AC #15)"; \
+	else \
+		echo "FAIL: REPL test 732 — expected '0  ok' (positive control for CATCH framework)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "5 CONSTANT BAR BAR ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '5  ok'; then \
+		echo "PASS: REPL test 733 — Story 11.5 positive control: CONSTANT with real name defines callable word (success path of the migrated CONSTANT site; AC #15)"; \
+	else \
+		echo "FAIL: REPL test 733 — expected '5  ok' (CONSTANT positive control); CONSTANT at top level (not inside colon) parses its name from REPL"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ; CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '1  ok'; then \
+		echo "PASS: REPL test 734 — Story 11.5: DEPTH=1 after popping THROW code -14 from caught compile-only (review F6 analog)"; \
+	else \
+		echo "FAIL: REPL test 734 — expected '1  ok' (DEPTH after caught -14)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "' UNDEFINED" '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+		echo "PASS: REPL test 735 — Story 11.5: uncaught ' UNDEFINED prints error -13 + REPL recovers cleanly (TICK at REPL; AC #19)"; \
+	else \
+		echo "FAIL: REPL test 735 — expected 'error -13: undefined word' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'UNDEFINED' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+		echo "PASS: REPL test 736 — Story 11.5: uncaught UNDEFINED token at top level prints error -13 + REPL recovers (INTERPRET; AC #19)"; \
+	else \
+		echo "FAIL: REPL test 736 — expected 'error -13: undefined word' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ';' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
+		echo "PASS: REPL test 737 — Story 11.5: uncaught ; outside compile mode prints error -14 + REPL recovers (AC #19)"; \
+	else \
+		echo "FAIL: REPL test 737 — expected 'error -14: interpreting a compile-only word' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DOES>' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
+		echo "PASS: REPL test 738 — Story 11.5: uncaught DOES> outside compile mode prints error -14 + REPL recovers (AC #19)"; \
+	else \
+		echo "FAIL: REPL test 738 — expected 'error -14:' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+		echo "PASS: REPL test 739 — Story 11.5: uncaught ':' (no name) prints error -16 + REPL recovers (AC #19)"; \
+	else \
+		echo "FAIL: REPL test 739 — expected 'error -16: attempt to use zero-length string as a name' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CREATE ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+		echo "PASS: REPL test 740 — Story 11.5: uncaught CREATE (no name) prints error -16 + REPL recovers (AC #19)"; \
+	else \
+		echo "FAIL: REPL test 740 — expected 'error -16:' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '5 CONSTANT ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+		echo "PASS: REPL test 741 — Story 11.5: uncaught 5 CONSTANT (no name) prints error -16 + REPL recovers (AC #19; CONSTANT POP-BC consumes value before THROW)"; \
+	else \
+		echo "FAIL: REPL test 741 — expected 'error -16:' + recovery + '99  ok' (CONSTANT no-name with value-on-stack)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'MARKER ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+		echo "PASS: REPL test 742 — Story 11.5: uncaught MARKER (no name) prints error -16 + REPL recovers (AC #19)"; \
+	else \
+		echo "FAIL: REPL test 742 — expected 'error -16:' + recovery + '99  ok' (MARKER no-name)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" 'CODE' 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -260: CODE needs name.*99  ok'; then \
+		echo "PASS: REPL test 743 — Story 11.5: uncaught CODE (no name) prints error -260 + REPL recovers (asm error via inline raise; AC #19)"; \
+	else \
+		echo "FAIL: REPL test 743 — expected 'error -260: CODE needs name' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -261: END-CODE without CODE.*99  ok'; then \
+		echo "PASS: REPL test 744 — Story 11.5: uncaught standalone END-CODE prints error -261 + REPL recovers (asm error via inline raise; AC #19)"; \
+	else \
+		echo "FAIL: REPL test 744 — expected 'error -261: END-CODE without CODE' + recovery + '99  ok'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

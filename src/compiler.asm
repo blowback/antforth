@@ -20,7 +20,11 @@ w_TO_BODY_cf:
 ; -----------------------------------------------
 ; ' (tick) ( "<spaces>name" -- xt )
 ;   Parse next word, find it, return its execution token
-;   Error if word not found
+;   Error if word not found: prints "<NAME> ?" + CR then raises
+;   -13 THROW (Story 11.5) per ANS Forth 1994 §9.3.5. The dynamic
+;   word-name print is preserved so the user sees which name failed;
+;   the THROW code is then dispatched to CATCH (caught) or to the
+;   uncaught-handler's "error -13: undefined word" diagnostic.
 ; -----------------------------------------------
 w_TICK:
         DEFWORD "'", 0
@@ -45,7 +49,9 @@ w_TICK_cf EQU w_TICK_body - 3
         DW w_LIT_cf, '?'
         DW w_EMIT_cf                 ; question mark
         DW w_CR_cf                   ; newline
-        DW w_ABORT_cf                ; reset and restart (never returns)
+        ; -13 THROW (Story 11.5): undefined word per ANS Forth 1994 §9.3.5
+        DW w_LIT_cf, THROW_UNDEFINED_WORD
+        DW w_THROW_cf
 
 ; -----------------------------------------------
 ; ['] ( "<spaces>name" -- ) compile: ( -- xt )
@@ -354,6 +360,8 @@ w_IMMEDIATE_cf:
 ; : (COLON) ( "<spaces>name" -- )
 ;   Begin a new colon definition. Parse name, create dictionary header
 ;   at HERE with SMUDGE set, emit JP DOCOL, enter compile mode.
+;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
+;   when the parsed name is empty (Story 11.5).
 ; -----------------------------------------------
 w_COLON:
         DEFCODE ":", 0
@@ -394,13 +402,21 @@ w_COLON_cf:
         NEXT
 
 .colon_no_name:
-        EXX                                      ; Restore TOS/IP/W from shadows
-        JP      w_ABORT_cf
+        EXX                                      ; Restore primary set (Story 11.5:
+                                                 ; kernel-internal THROW entry contract
+                                                 ; requires primary-set BC; src/exception.asm:288-296)
+        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_ZERO_LEN_NAME
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; COMP-ERROR ( c-addr -- ) internal, never returns
 ;   Compilation error recovery: restore HERE, unlink hash entry,
-;   print error, ABORT.
+;   print "<NAME> ?" + CR, then raise -13 THROW (Story 11.5)
+;   per ANS Forth 1994 §9.3.5. Migrated from `JP w_ABORT_cf` to
+;   `LD BC, THROW_UNDEFINED_WORD / JP w_THROW_cf.kernel_entry` —
+;   the dynamic word-name print and HERE/bucket recovery are
+;   preserved verbatim.
 ; -----------------------------------------------
 w_COMP_ERROR:
         DEFCODE "COMP-ERROR", 0
@@ -447,13 +463,21 @@ w_COMP_ERROR_cf:
         CALL    bdos_print_q_crlf
 
 .comp_err_abort:
-        ; --- 5.4: Call ABORT ---
-        JP      w_ABORT_cf
+        ; --- 5.4: Raise -13 THROW (Story 11.5) ---
+        ; -13 THROW (Story 11.5): undefined word per ANS Forth 1994 §9.3.5
+        ; STATE was already cleared above (5.3); HERE / hash bucket already
+        ; restored (5.1, 5.2). EXX is not active here (COMP-ERROR is a
+        ; DEFCODE called from INTERPRET which runs in primary-set context),
+        ; so the kernel-internal entry contract holds.
+        LD      BC, THROW_UNDEFINED_WORD
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; ; (SEMICOLON) ( -- ) IMMEDIATE
 ;   End a colon definition. Compile EXIT, clear SMUDGE, return to
 ;   interpret mode.
+;   Errors: -14 THROW (interpreting a compile-only word) per ANS Forth
+;   1994 §9.3.5 when invoked outside compile mode (Story 11.5).
 ; -----------------------------------------------
 w_SEMICOLON:
         DEFCODE ";", F_IMMEDIATE
@@ -465,8 +489,10 @@ w_SEMICOLON_cf:
         LD      A, (IY+UserArea.state+1)
         OR      A
         JR      NZ, .semi_ok
-        ; STATE=0 — `;` used outside definition, abort
-        JP      w_ABORT_cf
+        ; STATE=0 — `;` used outside definition; raise -14 THROW (Story 11.5)
+        ; -14 THROW (Story 11.5): interpreting a compile-only word per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_COMPILE_ONLY
+        JP      w_THROW_cf.kernel_entry
 .semi_ok:
         ; --- 3.1: Compile EXIT_CODE into the definition ---
         LD      L, (IY+UserArea.here)
@@ -544,6 +570,8 @@ w_LITERAL_cf:
 ;   Parse name, build dictionary header at HERE with JP DOVAR
 ;   code field + 2-byte does-addr slot (zeroed). No SMUDGE, no
 ;   compile mode. Word is immediately findable.
+;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
+;   when the parsed name is empty (Story 11.5).
 ; -----------------------------------------------
 w_CREATE:
         DEFCODE "CREATE", 0
@@ -573,13 +601,20 @@ w_CREATE_cf:
         NEXT
 
 .create_no_name:
-        EXX                                      ; Restore TOS/IP/W from shadows
-        JP      w_ABORT_cf
+        EXX                                      ; Restore primary set (Story 11.5:
+                                                 ; kernel-internal THROW entry contract
+                                                 ; requires primary-set BC; src/exception.asm:288-296)
+        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_ZERO_LEN_NAME
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; CONSTANT ( x "<spaces>name" -- )
 ;   Parse name, build dictionary header with JP DOCON code field,
 ;   store x in body.
+;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
+;   when the parsed name is empty; the value-cell `x` is consumed
+;   from the data stack before the THROW raise (Story 11.5).
 ; -----------------------------------------------
 w_CONSTANT:
         DEFCODE "CONSTANT", 0
@@ -619,14 +654,24 @@ w_CONSTANT_cf:
         NEXT
 
 .const_no_name:
-        EXX                                      ; Restore TOS/IP/W from shadows
-        POP     BC                               ; TOS consumed, pop new TOS
-        JP      w_ABORT_cf
+        EXX                                      ; Restore primary set (Story 11.5:
+                                                 ; kernel-internal THROW entry contract
+                                                 ; requires primary-set BC; src/exception.asm:288-296)
+        POP     BC                               ; TOS consumed, pop new TOS — must
+                                                 ; precede the LD BC below or the user's
+                                                 ; value-cell would be orphaned on the
+                                                 ; stack across the THROW (Story 11.5
+                                                 ; Dev Notes pitfall #3).
+        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_ZERO_LEN_NAME
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; DOES> ( -- ) IMMEDIATE
 ;   Compile (DOES>) into the current definition.
 ;   The DOES> body follows and is compiled normally by ;.
+;   Errors: -14 THROW (interpreting a compile-only word) per ANS Forth
+;   1994 §9.3.5 when invoked outside compile mode (Story 11.5).
 ; -----------------------------------------------
 w_DOES:
         DEFCODE "DOES>", F_IMMEDIATE
@@ -638,7 +683,10 @@ w_DOES_cf:
         LD      A, (IY+UserArea.state+1)
         OR      A
         JR      NZ, .does_ok
-        JP      w_ABORT_cf
+        ; STATE=0 — DOES> used outside definition; raise -14 THROW (Story 11.5)
+        ; -14 THROW (Story 11.5): interpreting a compile-only word per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_COMPILE_ONLY
+        JP      w_THROW_cf.kernel_entry
 .does_ok:
         ; Compile (DOES>) into current definition
         LD      L, (IY+UserArea.here)

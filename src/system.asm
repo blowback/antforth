@@ -17,6 +17,8 @@ w_BYE_cf:
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
 ;   Body layout: [saved_here(2)][saved_hash_table(128)]
+;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
+;   when the parsed name is empty (Story 11.5).
 ; -----------------------------------------------
 w_MARKER:
         DEFCODE "MARKER", 0
@@ -76,8 +78,12 @@ w_MARKER_cf:
         NEXT
 
 .marker_no_name:
-        EXX                                      ; Restore TOS/IP/W from shadows
-        JP      w_ABORT_cf
+        EXX                                      ; Restore primary set (Story 11.5:
+                                                 ; kernel-internal THROW entry contract
+                                                 ; requires primary-set BC; src/exception.asm:288-296)
+        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_ZERO_LEN_NAME
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; (ABORT") ( flag -- ) runtime helper

@@ -588,6 +588,50 @@ throw_desc_table:
         DW      -58
         DB      23
         DB      "unexpected end of input"
+        ; --- antforth extension codes -258..-269 (assembler errors) ---
+        ; Added by Story 11.5. Description text matches the pre-Story-11.5
+        ; str_asm_<name> string contents — the migration moved the
+        ; diagnostic from inline pre-prints (asm_die fan-in) to the
+        ; unified "error -<N>: <desc>" format via this table. Length
+        ; bytes hand-counted to match the literal string contents
+        ; (mismatch silently misaligns the table walk per Story 11.3
+        ; design — cross-check on every edit).
+        DW      THROW_ASM_BAD_OPERAND       ; -258
+        DB      11
+        DB      "bad operand"
+        DW      THROW_ASM_NESTED            ; -259
+        DB      11
+        DB      "nested CODE"
+        DW      THROW_ASM_NONAME            ; -260
+        DB      15
+        DB      "CODE needs name"
+        DW      THROW_ASM_ORPHAN_LABEL      ; -261
+        DB      21
+        DB      "END-CODE without CODE"
+        DW      THROW_ASM_LABEL_AFTER_END   ; -262
+        DB      26
+        DB      "LABEL must precede opcodes"
+        DW      THROW_ASM_JR_RANGE          ; -263
+        DB      15
+        DB      "JR out of range"
+        DW      THROW_ASM_TOO_LABELS        ; -264
+        DB      15
+        DB      "too many labels"
+        DW      THROW_ASM_TOO_FIXUPS        ; -265
+        DB      15
+        DB      "too many fixups"
+        DW      THROW_ASM_EQU_IN_CODE       ; -266
+        DB      21
+        DB      "EQU outside CODE only"
+        DW      THROW_ASM_BARE_INT          ; -267
+        DB      12
+        DB      "bare integer"
+        DW      THROW_ASM_UNRESOLVED        ; -268
+        DB      16
+        DB      "unresolved label"
+        DW      THROW_ASM_ALREADY_FIXED     ; -269
+        DB      13
+        DB      "already fixed"
         DW      0                       ; terminator
 
 ; -----------------------------------------------

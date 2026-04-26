@@ -3,7 +3,13 @@
 
 ; -----------------------------------------------
 ; ?COMP ( -- )
-;   Compile-only guard: if STATE=0 (interpreting), print error and ABORT
+;   Compile-only guard: if STATE=0 (interpreting), raise -14 THROW
+;   (Story 11.5) per ANS Forth 1994 §9.3.5. Migrated from the
+;   pre-print + JP w_ABORT_cf form — the legacy "? compile only"
+;   pre-print (and its data declarations) was deleted in favour of
+;   the unified "error -14: interpreting a compile-only word"
+;   diagnostic from Story 11.3's throw_desc_table (mirrors Story
+;   11.4's removal of "? Stack underflow").
 ; -----------------------------------------------
 w_QCOMP:
         DEFCODE "?COMP", 0
@@ -11,16 +17,9 @@ w_QCOMP_cf:
         LD      A, (IY+UserArea.state)
         OR      (IY+UserArea.state+1)
         JR      NZ, .qcomp_ok
-        ; Print "? compile only" CR LF
-        ; Raw BDOS calls (no BDOS_SAVE/BDOS_RESTORE) — registers are
-        ; irrelevant since we JP to ABORT immediately after printing.
-        LD      HL, .comp_only_msg
-        LD      B, .comp_only_len
-        CALL    bdos_print_str
-        JP      w_ABORT_cf
-.comp_only_msg:
-        DB      "? compile only", 0x0D, 0x0A
-.comp_only_len  EQU     $ - .comp_only_msg
+        ; -14 THROW (Story 11.5): interpreting a compile-only word per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_COMPILE_ONLY
+        JP      w_THROW_cf.kernel_entry
 .qcomp_ok:
         NEXT
 

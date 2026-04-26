@@ -141,3 +141,61 @@
 : T241 1 0 / ;
 5 6 7 ' T241 CATCH . DEPTH .            \ expect: -10 3  ok    (combined value+depth per Story 11.4.1 review F6)
 5 6 7 ' T241 CATCH . . . .              \ expect: -10 7 6 5  ok
+
+\ ============================================================
+\ Section 3 — Compiler / dictionary / control flow / assembler (Story 11.5)
+\               (-13 / -14 / -16 / -258..-269)
+\ ============================================================
+\
+\ AC #15 caveat: TICK (`'`) for an undefined name fires at execute time
+\ in antforth (per tests/exception_tests.fth:13-15); within colon
+\ definitions use [']. The undefined-word caught test at the colon-
+\ thread level is best exercised via uncaught-recovery (Makefile)
+\ since the `[']`-of-undefined form raises at compile time, before
+\ the colon closes — outside any CATCH frame.
+\
+\ AC #15 caveat: assembler-error caught tests are deferred to uncaught-
+\ recovery form (Makefile Section 3.4 blocks) because exercising
+\ assembler errors via CATCH requires nested-compile shapes that are
+\ non-trivial in antforth. The uncaught path validates that each
+\ -258..-269 code reaches the user via the unified diagnostic; the
+\ THROW code itself is identical on either path.
+
+\ --- Section 3.1 — Compile-only guard caught (-14): ;, DOES>, ?COMP ---
+\ All three are kernel words callable via `'` from the REPL. Each
+\ raises -14 from the kernel-internal entry; CATCH catches; -14 lands.
+' ; CATCH .                             \ expect: -14  ok
+' DOES> CATCH .                         \ expect: -14  ok
+' ?COMP CATCH .                         \ expect: -14  ok
+
+\ --- i*x preservation across kernel-internal -14 raise (AC #15) ---
+1 2 3 ' ; CATCH . . . .                 \ expect: -14 3 2 1  ok
+
+\ --- Compile-only guard via DO-LOOP frame (review F3 analog) ---
+\ ?COMP fired from inside a DO-LOOP body. The DO frame sits on IX
+\ when the kernel-internal THROW fires; the snap-back must skip it.
+: T3DOL 2 0 DO ?COMP LOOP ;
+' T3DOL CATCH .                         \ expect: -14  ok
+
+\ --- Positive controls: success path returns 0 ---
+' DUP CATCH .                           \ expect: 0  ok
+\ A successful CONSTANT (top-level — CONSTANT consumes its name from the
+\ REPL parse area, so it cannot be wrapped inside a colon body without
+\ the body's own compile-time INTERPRET trying to look up the name as a
+\ word and raising -13). Verifies the success path of the migrated
+\ CONSTANT site:
+5 CONSTANT BAR BAR .                    \ expect: 5  ok
+
+\ --- DEPTH-invariant after caught -14 (post-THROW DEPTH = 1) ---
+' ; CATCH DEPTH .                       \ expect: 1  ok
+
+\ ============================================================
+\ Section 3.2 — Undefined-word and zero-length-name (uncaught form)
+\ ============================================================
+\ Caught-form coverage for -13 (TICK / INTERPRET) and -16 (no-name
+\ parsers) is awkward at the REPL: TICK-of-undefined fires before
+\ CATCH wraps; `:` / CREATE / CONSTANT / MARKER consume their own
+\ name parse so they cannot be wrapped via CATCH directly. The
+\ uncaught-recovery cases live in the Makefile blocks and verify
+\ that (a) each catalogued THROW code lands with its description
+\ text and (b) the REPL recovers cleanly to a live prompt.

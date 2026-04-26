@@ -79,10 +79,10 @@ back to the per-file inventory in §d.
 | -10 | division by zero | done — Story 11.4 | `arithmetic.asm:126` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm:569` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
 | -11 | result out of range | no | — |
 | -12 | argument type mismatch | no | — |
-| -13 | undefined word | yes — Story 11.5 | `compiler.asm:48` (`'`), `compiler.asm:451` (`COMP-ERROR`), `outer_interpreter.asm:226` (`INTERPRET`) |
-| -14 | interpreting a compile-only word | yes — Story 11.5 | `compiler.asm:469` (`;`), `compiler.asm:641` (`DOES>`), `control_flow.asm:20` (`?COMP`) |
+| -13 | undefined word | done — Story 11.5 | `compiler.asm:48` (`'`), `compiler.asm:451` (`COMP-ERROR`), `outer_interpreter.asm:226` (`INTERPRET`) |
+| -14 | interpreting a compile-only word | done — Story 11.5 | `compiler.asm:469` (`;`), `compiler.asm:641` (`DOES>`), `control_flow.asm:20` (`?COMP`) |
 | -15 | invalid FORGET | no | — |
-| -16 | attempt to use zero-length string as a name | yes — Story 11.5 | `system.asm:80` (`MARKER`), `compiler.asm:398` (`:`), `compiler.asm:577` (`CREATE`), `compiler.asm:624` (`CONSTANT`) |
+| -16 | attempt to use zero-length string as a name | done — Story 11.5 | `system.asm:80` (`MARKER`), `compiler.asm:398` (`:`), `compiler.asm:577` (`CREATE`), `compiler.asm:624` (`CONSTANT`) |
 | -17 | pictured numeric output string overflow | yes — Story 11.6 | `pictured.asm:251` (`do_pic_overflow_error`) |
 | -18 | parsed string overflow | no | — |
 | -19 | definition name too long | no | — |
@@ -190,18 +190,18 @@ slip into the deliverable" pitfall.
 | Code | Name | Trigger | ABORT site | Migration story |
 |---:|---|---|---|---|
 | -257 | THROW_ASM_LOAD_FAIL         | (reserved by `architecture.md:478,606`; first used Epic 13 lazy-load assembler) | (reserved — not a current ABORT site) | (Epic 13) |
-| -258 | THROW_ASM_BAD_OPERAND       | bad operand to asm op                                 | `assembler.asm:281` (`asm_die` ← `asm_bad_operand`)         | 11.5 |
-| -259 | THROW_ASM_NESTED            | nested `CODE` block                                   | `assembler.asm:281` (`asm_die` ← `asm_err_nested`)          | 11.5 |
-| -260 | THROW_ASM_NONAME            | `CODE` parsed empty name                              | `assembler.asm:281` (`asm_die` ← `asm_err_noname`)          | 11.5 |
-| -261 | THROW_ASM_ORPHAN_LABEL      | orphan label (declared, never resolved this CODE)     | `assembler.asm:281` (`asm_die` ← `asm_err_orphan`)          | 11.5 |
-| -262 | THROW_ASM_LABEL_AFTER_END   | label declared after `END-CODE`                       | `assembler.asm:281` (`asm_die` ← `asm_err_label_after`)     | 11.5 |
-| -263 | THROW_ASM_JR_RANGE          | `JR` displacement out of range                        | `assembler.asm:281` (`asm_die` ← `asm_err_jr_range`)        | 11.5 |
-| -264 | THROW_ASM_TOO_LABELS        | local-label table exhausted                           | `assembler.asm:281` (`asm_die` ← `asm_err_too_labels`)      | 11.5 |
-| -265 | THROW_ASM_TOO_FIXUPS        | fixup table exhausted                                 | `assembler.asm:281` (`asm_die` ← `asm_err_too_fixups`)      | 11.5 |
-| -266 | THROW_ASM_EQU_IN_CODE       | `EQU` used outside `CODE` block (or vice versa)       | `assembler.asm:281` (`asm_die` ← `asm_err_equ_in_code`)     | 11.5 |
-| -267 | THROW_ASM_BARE_INT          | tagged operand expected, bare integer received        | `assembler.asm:337` (`asm_err_bare_int` own JP)             | 11.5 |
-| -268 | THROW_ASM_UNRESOLVED        | unresolved label NAME at `END-CODE`                   | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_unresolved`) | 11.5 |
-| -269 | THROW_ASM_ALREADY_FIXED     | already-fixed label NAME (double `FIX`)               | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_already`)    | 11.5 |
+| -258 | THROW_ASM_BAD_OPERAND       | bad operand to asm op                                 | `assembler.asm:281` (`asm_die` ← `asm_bad_operand`)         | **done — 11.5** |
+| -259 | THROW_ASM_NESTED            | nested `CODE` block                                   | `assembler.asm:281` (`asm_die` ← `asm_err_nested`)          | **done — 11.5** |
+| -260 | THROW_ASM_NONAME            | `CODE` parsed empty name                              | `assembler.asm:281` (`asm_die` ← `asm_err_noname`)          | **done — 11.5** |
+| -261 | THROW_ASM_ORPHAN_LABEL      | orphan label (declared, never resolved this CODE)     | `assembler.asm:281` (`asm_die` ← `asm_err_orphan`)          | **done — 11.5** |
+| -262 | THROW_ASM_LABEL_AFTER_END   | label declared after `END-CODE`                       | `assembler.asm:281` (`asm_die` ← `asm_err_label_after`)     | **done — 11.5** |
+| -263 | THROW_ASM_JR_RANGE          | `JR` displacement out of range                        | `assembler.asm:281` (`asm_die` ← `asm_err_jr_range`)        | **done — 11.5** |
+| -264 | THROW_ASM_TOO_LABELS        | local-label table exhausted                           | `assembler.asm:281` (`asm_die` ← `asm_err_too_labels`)      | **done — 11.5** |
+| -265 | THROW_ASM_TOO_FIXUPS        | fixup table exhausted                                 | `assembler.asm:281` (`asm_die` ← `asm_err_too_fixups`)      | **done — 11.5** |
+| -266 | THROW_ASM_EQU_IN_CODE       | `EQU` used outside `CODE` block (or vice versa)       | `assembler.asm:281` (`asm_die` ← `asm_err_equ_in_code`)     | **done — 11.5** |
+| -267 | THROW_ASM_BARE_INT          | tagged operand expected, bare integer received        | `assembler.asm:337` (`asm_err_bare_int` own JP)             | **done — 11.5** |
+| -268 | THROW_ASM_UNRESOLVED        | unresolved label NAME at `END-CODE`                   | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_unresolved`) | **done — 11.5** |
+| -269 | THROW_ASM_ALREADY_FIXED     | already-fixed label NAME (double `FIX`)               | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_already`)    | **done — 11.5** |
 
 **Subgroup justification (Task 6.3):** all 12 extensions migrate in Story
 11.5. Rationale: assembler errors are structurally compiler-state errors —
@@ -239,33 +239,33 @@ Inventory grouped by source file (alphabetical), then by line number.
 
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
-| 281 | `asm_die` (fan-in: 9 shorthand entry points — see §c subgroup justification) | various assembler errors | antforth extension `-258..-266` (one per entry point) | 11.5 |
-| 337 | `asm_err_bare_int` (own JP, prints HL) | tagged operand expected, bare integer received | antforth extension `-267` | 11.5 |
-| 381 | `asm_print_error_with_name` (fan-in: `asm_err_unresolved`, `asm_err_already`) | unresolved / already-fixed label | antforth extension `-268`, `-269` | 11.5 |
+| 281 | `asm_die` (fan-in: 9 shorthand entry points — see §c subgroup justification) | various assembler errors | antforth extension `-258..-266` (one per entry point) | **done — 11.5** |
+| 337 | `asm_err_bare_int` (own JP, prints HL) | tagged operand expected, bare integer received | antforth extension `-267` | **done — 11.5** |
+| 381 | `asm_print_error_with_name` (fan-in: `asm_err_unresolved`, `asm_err_already`) | unresolved / already-fixed label | antforth extension `-268`, `-269` | **done — 11.5** |
 
 ### `src/compiler.asm`
 
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
-| 48  | `'` (tick) `.tick_notfound` (DEFWORD body) | `'` parsed an undefined word | `-13` | 11.5 |
-| 398 | `:` `.colon_no_name` | `:` parsed an empty name | `-16` | 11.5 |
-| 451 | `COMP-ERROR` `.comp_err_abort` (fan-in from `INTERPRET`'s compile path) | undefined word during compilation | `-13` | 11.5 |
-| 469 | `;` (compile-state guard) | `;` outside compile mode | `-14` | 11.5 |
-| 577 | `CREATE` `.create_no_name` | `CREATE` parsed an empty name | `-16` | 11.5 |
-| 624 | `CONSTANT` `.const_no_name` | `CONSTANT` parsed an empty name | `-16` | 11.5 |
-| 641 | `DOES>` (compile-state guard) | `DOES>` outside compile mode | `-14` | 11.5 |
+| 48  | `'` (tick) `.tick_notfound` (DEFWORD body) | `'` parsed an undefined word | `-13` | **done — 11.5** |
+| 398 | `:` `.colon_no_name` | `:` parsed an empty name | `-16` | **done — 11.5** |
+| 451 | `COMP-ERROR` `.comp_err_abort` (fan-in from `INTERPRET`'s compile path) | undefined word during compilation | `-13` | **done — 11.5** |
+| 469 | `;` (compile-state guard) | `;` outside compile mode | `-14` | **done — 11.5** |
+| 577 | `CREATE` `.create_no_name` | `CREATE` parsed an empty name | `-16` | **done — 11.5** |
+| 624 | `CONSTANT` `.const_no_name` | `CONSTANT` parsed an empty name | `-16` | **done — 11.5** |
+| 641 | `DOES>` (compile-state guard) | `DOES>` outside compile mode | `-14` | **done — 11.5** |
 
 ### `src/control_flow.asm`
 
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
-| 20 | `?COMP` (generic compile-only guard) | compile-only word interpreted | `-14` | 11.5 |
+| 20 | `?COMP` (generic compile-only guard) | compile-only word interpreted | `-14` | **done — 11.5** |
 
 ### `src/outer_interpreter.asm`
 
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
-| 226 | `INTERPRET` `.interp_error` | interpreted token failed both word-find and number-parse | `-13` | 11.5 |
+| 226 | `INTERPRET` `.interp_error` | interpreted token failed both word-find and number-parse | `-13` | **done — 11.5** |
 
 ### `src/pictured.asm`
 
@@ -283,7 +283,7 @@ Inventory grouped by source file (alphabetical), then by line number.
 
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
-| 80  | `MARKER` `.marker_no_name` | `MARKER` parsed an empty name | `-16` | 11.5 |
+| 80  | `MARKER` `.marker_no_name` | `MARKER` parsed an empty name | `-16` | **done — 11.5** |
 | 131 | `(ABORT")` `.paq_do_abort` | runtime `(ABORT")` with truthy flag | `-2` | **11.7 (capstone — retarget)** |
 | 260 | `w_ABORT_cf` (the entry point itself) | direct `ABORT` invocation | `-1` | **11.7 (capstone — retarget)** |
 | 563 | `do_underflow_error` (fan-in: every `check_underflow{,_2,_3,_4}` caller — 49 callers) | parameter-stack underflow | `-4` | **done — 11.4** (`LD BC, -4 / JP w_THROW_cf.kernel_entry`) |

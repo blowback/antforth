@@ -214,7 +214,7 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_QBRANCH_cf            ; if STATE=0, normal error
         DW      .interp_error - $
         ; Compilation error: restore HERE and unlink hash entry
-        DW      w_COMP_ERROR_cf         ; ( c-addr -- ) never returns (calls ABORT)
+        DW      w_COMP_ERROR_cf         ; ( c-addr -- ) never returns (raises -13 THROW)
 .interp_error:
         DW      w_COUNT_cf              ; ( c-addr -- addr len )
         DW      w_TYPE_cf               ; print the unknown word
@@ -223,7 +223,12 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_LIT_cf, '?'
         DW      w_EMIT_cf               ; question mark
         DW      w_CR_cf                 ; newline
-        DW      w_ABORT_cf              ; reset and restart QUIT (never returns)
+        ; -13 THROW (Story 11.5): undefined word per ANS Forth 1994 §9.3.5
+        ; Forth-thread form: push the THROW code as a literal then call the
+        ; user-mode w_THROW_cf entry (NOT w_THROW_cf.kernel_entry, which is
+        ; not addressable from a Forth thread).
+        DW      w_LIT_cf, THROW_UNDEFINED_WORD
+        DW      w_THROW_cf
 .interp_done:
         DW      w_DROP_cf               ; drop the empty c-addr
         DW      EXIT_CODE               ; return to caller (QUIT loop)
