@@ -274,17 +274,29 @@ All phase-2 architectural decisions build on this foundation without replacing a
 ```
 +6: previous CATCH-TOP   (chain link — value of CATCH-TOP just before CATCH entered)
 +4: catching-IP          (where to resume after THROW)
-+2: saved IX             (absolute rstack pointer at CATCH entry — for unwinding nested rstack frames)
-+0: saved SP             (parameter stack pointer at CATCH entry)
++2: saved BC             (i*x's TOS-cell value at CATCH entry — captured
+                          from BC immediately after CATCH's POP BC. Restored
+                          to the data stack on THROW caught path so the
+                          i*x cells underneath the catching frame are
+                          preserved across xt's CALL/RET clobbering of
+                          memory at [SP_safe-2]. Pre-Story-11.4.1 this slot
+                          was named "saved IX" but was unused — see Story
+                          11.4.1 root-cause analysis.)
++0: saved SP             (parameter stack pointer AFTER CATCH's POP BC —
+                          i.e., one cell above the original i*x's TOS-cell
+                          memory slot. Pre-Story-11.4.1 this was captured
+                          BEFORE POP BC, leading to the bug that Story
+                          11.4.1 fixes — see "i*x preservation under THROW"
+                          note below E11-D2.)
 ```
 
 CATCH's implementation:
-1. Push 8-byte frame with `previous CATCH-TOP` = current value of `CATCH-TOP`; `catching-IP` = IP to resume at on THROW; `saved IX` = current IX (post-frame-push); `saved SP` = current SP.
+1. Push 8-byte frame with `previous CATCH-TOP` = current value of `CATCH-TOP`; `catching-IP` = IP to resume at on THROW; `saved BC` = i*x's TOS-cell value (= BC immediately after POP BC); `saved SP` = current SP after POP BC (= SP_safe).
 2. Set `CATCH-TOP` to the address of the frame just pushed.
 3. Execute the caller-supplied XT.
 4. On normal return: restore `CATCH-TOP` from the frame's prev-link, pop the frame, push `0`.
 
-**Rationale:** 8 bytes is the minimum to support ANS semantics (SP restore, rstack restore, IP resume) plus the chain-link that makes CCD-1's dual-chain approach work. Total cycle cost for uncaught CATCH (frame push + update CATCH-TOP + execute + pop + restore CATCH-TOP): well within NFR4's ~15-cycle budget.
+**Rationale:** 8 bytes is the minimum to support ANS semantics (SP restore, rstack restore, IP resume) plus the chain-link that makes CCD-1's dual-chain approach work. Total cycle cost for uncaught CATCH (frame push + update CATCH-TOP + execute + pop + restore CATCH-TOP): well within NFR4's per-epic budget. Story 11.4.1 added ~5 t-states to CATCH frame-push (SP_safe capture idiom less the saved-IX backfill removal) and ~50 t-states to the THROW caught path (the `LD C,(IX-6) / LD B,(IX-5) / PUSH BC` i\*x-restore sequence). The caught path is cold (only fires on errors), so the CATCH-side ~5 t-state delta is the only addition to the hot uncaught-CATCH cycle budget — still cycle-neutral within the NFR4 envelope.
 
 #### E11-D2: CATCH/THROW mechanism
 
@@ -293,11 +305,13 @@ CATCH's implementation:
 **THROW algorithm:**
 1. Read `CATCH-TOP`. If zero: uncaught throw — display diagnostic (THROW code + standard message), reset REPL state.
 2. While `INCLUDE-TOP` points to a frame at an rstack address above the target exception frame (i.e., more recent than the target): close the current `SOURCE-ID` (which is the FID of the current INCLUDE); restore input state from the INCLUDE frame (SOURCE-ID, input buffer, `>IN`); set `INCLUDE-TOP` to the frame's prev-link; pop the frame from the rstack.
-3. Restore SP and IX from the target exception frame; push the THROW code onto the parameter stack.
+3. Restore SP from the target exception frame's saved-SP slot (`LD SP, HL` where HL = saved-SP = SP_safe); push saved-BC from frame +2 onto the data stack (via `PUSH BC` after loading BC from the popped frame's +2 slot) to restore the i*x's TOS-cell that was captured at CATCH entry; then load BC = n (the THROW code).
 4. Set `CATCH-TOP` to the target frame's previous-CATCH-TOP; pop the exception frame from the rstack.
 5. Jump to the target frame's catching-IP — execution resumes inside the caller of the original CATCH with the THROW code on top of stack.
 
 **Rationale:** Direct CATCH-TOP access avoids rstack scanning entirely. INCLUDE chain walk only touches frames that need cleanup (the ones more recent than the target). File handles close deterministically as their frames unwind — satisfies NFR9 (no orphaned FIDs after THROW). O(active-INCLUDE-nesting) cleanup work on THROW; paid only on error paths. Non-INCLUDE frames (colon returns, DO-LOOP frames) between the THROW site and the target catch frame are **not** explicitly popped here — they are abandoned as part of the SP/IX restore, which conceptually "snaps back" the return stack to the state it had at CATCH entry.
+
+**i*x preservation under THROW (Story 11.4.1):** The frame's saved-SP is captured AFTER CATCH's POP BC (which consumes xt → HL and i*x's TOS → BC). The cell at the original (pre-POP-BC) `[SP]` held i*x's TOS at CATCH entry; xt's CALLs write at `[SP_safe - 2]` (= the original `[SP]`), clobbering the original i*x-TOS-cell memory. To preserve the value, frame +2 holds saved-BC = the i*x-TOS-cell value, captured from BC immediately after the POP. THROW's caught path: `LD SP, HL` (HL = saved-SP = SP_safe); `PUSH BC` (where BC has been reloaded with saved-BC from the popped frame's +2 slot via `LD C, (IX-6) / LD B, (IX-5)`); `LD BC, n`; `NEXT`. Result: BC = n (real TOS), `[SP]` = i*x's TOS-cell, `[SP+2]` = i*x's second-from-top, … `[SP+2*(K-1)]` = i*x's deepest, where K = the i*x cell count at CATCH entry. DEPTH = K + 1 = pre-CATCH-DEPTH (xt consumed, n on top instead).
 
 #### E11-D3: Internal error migration strategy
 
@@ -582,7 +596,8 @@ Per project memory `feedback_adversarial_review.md`:
 ; Forth 2014 §9.6.1.0875   CATCH          — execute xt with exception frame
 DEFCODE "CATCH", 5, 0, w_catch    ; ( xt -- exception-code | 0 )
 w_catch:
-    ; push 6-byte exception frame per CCD-1 / E11-D1
+    ; push 8-byte exception frame per CCD-1 / E11-D1
+    ; (post-Story-11.4.1: +0 saved-SP_safe, +2 saved-BC, +4 catching-IP, +6 prev-CATCH-TOP)
     ...
     JP NEXT
 ```

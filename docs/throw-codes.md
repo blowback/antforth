@@ -70,13 +70,13 @@ back to the per-file inventory in §d.
 | -1  | ABORT | yes — Story 11.7 | `system.asm:260` (`w_ABORT_cf` entry) |
 | -2  | ABORT" | yes — Story 11.7 | `system.asm:131` (`(ABORT")` `.paq_do_abort`) |
 | -3  | stack overflow | no | — |
-| -4  | stack underflow | yes — Story 11.4 | `system.asm:559` (`do_underflow_error`) |
+| -4  | stack underflow | done — Story 11.4 | `system.asm:563` (`do_underflow_error`; migrated) |
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |
 | -7  | do-loops nested too deeply during execution | no | — |
 | -8  | dictionary overflow | no | — |
 | -9  | invalid memory address | no | — |
-| -10 | division by zero | yes — Story 11.4 (future-add) | `arithmetic.asm:~115` (`/`, `MOD`, `/MOD`, `*/`, `*/MOD` divisor=0 guard — currently unguarded) |
+| -10 | division by zero | done — Story 11.4 | `arithmetic.asm:126` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm:569` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
 | -11 | result out of range | no | — |
 | -12 | argument type mismatch | no | — |
 | -13 | undefined word | yes — Story 11.5 | `compiler.asm:48` (`'`), `compiler.asm:451` (`COMP-ERROR`), `outer_interpreter.asm:226` (`INTERPRET`) |
@@ -223,10 +223,9 @@ The 18th row (the entry point) is added explicitly.
 
 Cross-checks:
 - `grep -nE 'CALL\s+check_underflow' src/*.asm` returns 50 hits, of
-  which 1 is a comment (`system.asm:552`), leaving **49 actual `CALL`
-  sites**. Every one converges on `do_underflow_error` (single ABORT
-  site at `system.asm:559`). Migration to `-4 THROW` (Story 11.4)
-  replaces the one ABORT, not 49 sites.
+  which 1 is a comment, leaving **49 actual `CALL` sites**. Every
+  one converges on `do_underflow_error`. Migration to `-4 THROW`
+  (Story 11.4) replaced the one ABORT, not 49 sites.
 - `asm_die` (`assembler.asm:281`) is the single ABORT site for 9 shorthand
   entry points (`asm_bad_operand`, `asm_err_nested`, `asm_err_noname`,
   `asm_err_orphan`, `asm_err_label_after`, `asm_err_jr_range`,
@@ -287,23 +286,24 @@ Inventory grouped by source file (alphabetical), then by line number.
 | 80  | `MARKER` `.marker_no_name` | `MARKER` parsed an empty name | `-16` | 11.5 |
 | 131 | `(ABORT")` `.paq_do_abort` | runtime `(ABORT")` with truthy flag | `-2` | **11.7 (capstone — retarget)** |
 | 260 | `w_ABORT_cf` (the entry point itself) | direct `ABORT` invocation | `-1` | **11.7 (capstone — retarget)** |
-| 559 | `do_underflow_error` (fan-in: every `check_underflow{,_2,_3,_4}` caller — 49 callers) | parameter-stack underflow | `-4` | 11.4 |
+| 563 | `do_underflow_error` (fan-in: every `check_underflow{,_2,_3,_4}` caller — 49 callers) | parameter-stack underflow | `-4` | **done — 11.4** (`LD BC, -4 / JP w_THROW_cf.kernel_entry`) |
 
-### Future-add (not currently an ABORT site — flag for Story 11.4)
+### Divisor-zero guards added by Story 11.4 (not pre-existing ABORT sites)
 
-| File | Line | Word | Trigger | Proposed THROW code |
+| File | Line | Word | Trigger | THROW code |
 |---|---:|---|---|---|
-| `src/arithmetic.asm` | ~115 | `/`, `MOD`, `/MOD`, `*/`, `*/MOD` (any division-producing word) | divisor = 0 (currently undefined behaviour per code comment) | `-10` |
-
-This is not in the existing ABORT inventory because the precondition is
-unchecked — Story 11.4 will add a `BC ≠ 0` guard plus `-10 THROW`.
+| `src/arithmetic.asm` | 126 | `udivmod` (covers `/`, `MOD`, `/MOD` via `sdivmod`) | divisor = 0 | `-10` (done — Story 11.4) |
+| `src/double.asm` | 569 | `UM/MOD` (covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) | divisor = 0 | `-10` (done — Story 11.4) |
 
 ### Inventory totals
 
-- 17 `JP w_ABORT_cf` / `DW w_ABORT_cf` sites surveyed.
+- 17 `JP w_ABORT_cf` / `DW w_ABORT_cf` sites surveyed (18 pre-Story-11.4;
+  `system.asm:559`'s `JP w_ABORT_cf` was retired by Story 11.4 in favour
+  of `LD BC, -4 / JP w_THROW_cf.kernel_entry`).
 - 1 entry-point row (`w_ABORT_cf` itself at `system.asm:260`).
-- 1 future-add row (`/MOD` divisor=0).
-- **18 catalogued sites + 1 future-add → 19 rows total.**
+- 2 divisor-zero guard rows (added by Story 11.4 — `udivmod`, `UM/MOD`).
+- **17 surviving ABORT sites + 1 entry point + 2 divisor-zero guards →
+  20 rows total post-Story-11.4.**
 
 ---
 
@@ -323,7 +323,7 @@ themselves.
 
 | Migration story | Theme | Sites migrated | Codes used |
 |---|---|---|---|
-| **11.4** | Stack / arithmetic / memory leaf primitives | `system.asm:559` (`do_underflow_error`) + future-add `arithmetic.asm:~115` (`/MOD` divisor=0 guard) | `-4`, `-10` |
+| **11.4** | Stack / arithmetic / memory leaf primitives | `system.asm:559` (`do_underflow_error`) — done; `arithmetic.asm:126` (`udivmod` divisor=0 guard) — done; `double.asm:569` (`UM/MOD` divisor=0 guard) — done | `-4`, `-10` |
 | **11.5** | Compiler / dictionary / control flow / assembler-internal state | `compiler.asm:48`, `compiler.asm:398`, `compiler.asm:451`, `compiler.asm:469`, `compiler.asm:577`, `compiler.asm:624`, `compiler.asm:641`, `control_flow.asm:20`, `outer_interpreter.asm:226`, `system.asm:80` (`MARKER`), `assembler.asm:281` (`asm_die` fan-in), `assembler.asm:337` (`asm_err_bare_int`), `assembler.asm:381` (`asm_print_error_with_name` fan-in) | `-13`, `-14`, `-16`, `-258..-269` |
 | **11.6** | Strings / I-O / buffer-shaped errors | `strings.asm:953` (`(` missing-`)`), `pictured.asm:251` (pictured buffer overflow) | `-17`, `-58` |
 | **11.7** | `ABORT` / `ABORT"` retarget — capstone | `system.asm:131` (`(ABORT")` `.paq_do_abort`) → `-2 THROW`; `system.asm:260` (`w_ABORT_cf` entry) → `-1 THROW` | `-1`, `-2` |

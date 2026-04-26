@@ -734,7 +734,7 @@ So that I have a safety harness around user code — the foundation for every su
 **When** the kernel boots
 **Then** a new USER variable `CATCH-TOP` exists, initialised to `0`.
 
-**Given** E11-D1's 8-byte exception frame layout (saved SP, saved IX, catching-IP, previous-CATCH-TOP)
+**Given** E11-D1's 8-byte exception frame layout (saved SP, saved BC = i*x's TOS-cell value per Story 11.4.1, catching-IP, previous-CATCH-TOP)
 **When** `CATCH` is invoked with an xt on TOS
 **Then** it pushes an 8-byte frame onto the IX return stack in that layout, sets `CATCH-TOP` to the new frame's address, and executes the xt.
 

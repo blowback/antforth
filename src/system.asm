@@ -451,7 +451,8 @@ env_table:
 ;   SP is 2 less than "real" SP. Need sp_base - SP_real >= 2,
 ;   i.e. sp_base - SP_measured >= 4.
 ;
-;   On underflow: prints "? Stack underflow", calls ABORT (never returns)
+;   On underflow: JP do_underflow_error (raises -4 THROW via
+;     w_THROW_cf.kernel_entry; Story 11.4). Never returns to caller.
 ;   On success: returns normally
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
@@ -477,6 +478,7 @@ check_underflow:
 ;   Threshold: sp_base - SP_measured >= 6
 ;   (2 for CALL ret addr + 4 for two cells)
 ;
+;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -501,6 +503,7 @@ check_underflow_2:
 ;   Threshold: sp_base - SP_measured >= 8
 ;   (2 for CALL ret addr + 6 for three cells)
 ;
+;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -525,6 +528,7 @@ check_underflow_3:
 ;   Threshold: sp_base - SP_measured >= 10
 ;   (2 for CALL ret addr + 8 for four cells)
 ;
+;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -544,16 +548,21 @@ check_underflow_4:
 
 ; -----------------------------------------------
 ; do_underflow_error — Internal subroutine (not a Forth word)
-;   Print "? Stack underflow" + CR/LF via direct BDOS calls
-;   then jump to ABORT. Never returns.
-;   Uses direct BDOS because SP may be corrupt.
+;   Migrated by Story 11.4 from `JP w_ABORT_cf` (with a "? Stack
+;   underflow" pre-print) to a clean -4 THROW. The diagnostic the
+;   user sees on the uncaught path becomes "error -4: stack
+;   underflow" (description seeded by Story 11.3 into
+;   throw_desc_table at src/exception.asm). On the caught path,
+;   -4 lands on the user's data stack as the THROW code per
+;   ANS Forth 1994 §9.3.5.
+;
+;   Note: CALL check_underflow's return address remains on SP —
+;   harmless because the THROW-restore (caught) or the ABORT-chain
+;   (uncaught) both wholesale reset SP downstream. SP-may-be-corrupt
+;   safety is preserved: the new path neither reads nor writes
+;   SP-relative values until the downstream restore.
 ; -----------------------------------------------
 do_underflow_error:
-        ; Note: CALL check_underflow return addr remains on SP — harmless, ABORT resets SP
-        LD      HL, str_underflow
-        LD      B, STR_UNDERFLOW_LEN
-        CALL    bdos_print_str
-        ; Newline
-        CALL    bdos_crlf
-        ; ABORT resets SP and enters QUIT
-        JP      w_ABORT_cf
+        ; -4 THROW (Story 11.4): stack underflow per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_STACK_UNDERFLOW
+        JP      w_THROW_cf.kernel_entry

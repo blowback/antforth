@@ -58,12 +58,12 @@ OV41                                                          \ expect: ? Pictur
 \ --- Underflow recovery (AC #11) ---
 \ <# consumes 0 cells (no underflow possible).
 <#                                                            \ expect: ok
-1 #                                                           \ expect: ? Stack underflow
-1 #S                                                          \ expect: ? Stack underflow
-1 #>                                                          \ expect: ? Stack underflow
-HOLD                                                          \ expect: ? Stack underflow
-SIGN                                                          \ expect: ? Stack underflow
-1 HOLDS                                                       \ expect: ? Stack underflow
+1 #                                                           \ expect: error -4: stack underflow
+1 #S                                                          \ expect: error -4: stack underflow
+1 #>                                                          \ expect: error -4: stack underflow
+HOLD                                                          \ expect: error -4: stack underflow
+SIGN                                                          \ expect: error -4: stack underflow
+1 HOLDS                                                       \ expect: error -4: stack underflow
 
 \ --- HLD user-variable smoke test (AC #12 — antforth extension) ---
 \ <# is idempotent: two consecutive <# reset HLD to the same sentinel.

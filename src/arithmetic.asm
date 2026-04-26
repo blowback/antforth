@@ -110,9 +110,33 @@ w_STAR_cf:
 ;   Unsigned 16-bit division: HL / BC -> HL=quotient, DE=remainder
 ;   Caller MUST save DE (IP) before calling
 ;   Uses A as bit counter, clobbers DE
+;   Divisor-zero is checked at entry (Story 11.4); BC = 0 raises
+;   -10 THROW via w_THROW_cf.kernel_entry. Covers `/`, `MOD`, `/MOD`
+;   user-facing words (each routes through sdivmod → udivmod;
+;   sdivmod's sign-fixup preserves zero via the BIT 7 check, so
+;   an entry-time BC = 0 reaches udivmod unchanged and trips the
+;   guard here).
+;   Note (Story 11.4 review F6 + L2): when the guard fires, several
+;   pushes upstream remain unmatched on SP:
+;     - sdivmod's `PUSH AF` (sign flags) — sdivmod's matching
+;       `POP AF` is skipped.
+;     - The user-word caller's `PUSH DE` (IP-stash) at
+;       `w_SLASH_cf:265`, `w_MOD_cf:281`, `w_SLASH_MOD_cf:243`.
+;   The catch-frame `LD SP, HL` (caught path) and `JP w_ABORT_cf`
+;   (uncaught path) both wholesale-reset SP, so all stranded bytes
+;   are discarded. Future refactors that change either reset path
+;   inherit the leak.
 ; -----------------------------------------------
 udivmod:
-    ; Precondition: BC != 0 (division by zero produces undefined result)
+    ; Divisor-zero guard (Story 11.4): BC = 0 → -10 THROW.
+    ; -10 THROW (Story 11.4): division by zero per ANS Forth 1994 §9.3.5
+    LD      A, B
+    OR      C
+    JR      NZ, .udiv_proceed
+    LD      BC, THROW_DIV_BY_ZERO
+    JP      w_THROW_cf.kernel_entry
+.udiv_proceed:
+    ; Precondition: BC != 0 (now enforced by the guard above)
     LD      DE, 0           ; DE = remainder
     LD      A, 16           ; 16 bits
 .udiv_loop:

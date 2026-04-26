@@ -79,12 +79,12 @@
 1 2 3 .S                                   \ expect: <3> 1 2 3
 
 \ --- Underflow-parity block (AC #9, #14j) ---
-.                                          \ expect: ? Stack underflow
-U.                                         \ expect: ? Stack underflow
-D.                                         \ expect: ? Stack underflow
-1 .R                                       \ expect: ? Stack underflow
-1 U.R                                      \ expect: ? Stack underflow
-1 1 D.R                                    \ expect: ? Stack underflow
+.                                          \ expect: error -4: stack underflow
+U.                                         \ expect: error -4: stack underflow
+D.                                         \ expect: error -4: stack underflow
+1 .R                                       \ expect: error -4: stack underflow
+1 U.R                                      \ expect: error -4: stack underflow
+1 1 D.R                                    \ expect: error -4: stack underflow
 
 \ === Story 10.9 remaining Core gap words ===
 \
@@ -136,18 +136,18 @@ S" XYZZY" ENVIRONMENT?                     \ expect: ( 0 )         (single-cell 
 S" core" ENVIRONMENT?                      \ expect: ( 0 )         (case-sensitive: lowercase not found)
 
 \ --- Underflow recovery (AC #10) ---
-*/                                         \ expect: ? Stack underflow
-1 */                                       \ expect: ? Stack underflow
-1 2 */                                     \ expect: ? Stack underflow
-*/MOD                                      \ expect: ? Stack underflow
-1 */MOD                                    \ expect: ? Stack underflow
-1 2 */MOD                                  \ expect: ? Stack underflow
-EVALUATE                                   \ expect: ? Stack underflow
-1 EVALUATE                                 \ expect: ? Stack underflow
-ENVIRONMENT?                               \ expect: ? Stack underflow
-1 ENVIRONMENT?                             \ expect: ? Stack underflow
+*/                                         \ expect: error -4: stack underflow
+1 */                                       \ expect: error -4: stack underflow
+1 2 */                                     \ expect: error -4: stack underflow
+*/MOD                                      \ expect: error -4: stack underflow
+1 */MOD                                    \ expect: error -4: stack underflow
+1 2 */MOD                                  \ expect: error -4: stack underflow
+EVALUATE                                   \ expect: error -4: stack underflow
+1 EVALUATE                                 \ expect: error -4: stack underflow
+ENVIRONMENT?                               \ expect: error -4: stack underflow
+1 ENVIRONMENT?                             \ expect: error -4: stack underflow
 
-\ --- Div-by-zero baseline (DPANS94 ambiguous; SM/REM silent) ---
-\ Pre-Epic-11 behaviour: no error, garbage cell(s) remain. Story 11.6 → THROW -10.
-1 1 0 */                                   \ expect: silent; one garbage cell on stack
-1 1 0 */MOD                                \ expect: silent; two garbage cells on stack
+\ --- Div-by-zero (Story 11.4 migrated to -10 THROW via UM/MOD funnel) ---
+\ DPANS94 §6.1.0100/§6.1.0110 — divide-by-zero raises -10 THROW.
+1 1 0 */                                   \ expect: error -10: division by zero
+1 1 0 */MOD                                \ expect: error -10: division by zero

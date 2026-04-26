@@ -45,20 +45,21 @@ HEX CREATE D4 0 , 0 , FFFF FFFF D4 2! D4 2@ .S   \ expect: <2> -1 -1
 HEX CREATE D5 0 , 0 , 8000 8000 D5 2! D5 2@ .S   \ expect: <2> -8000 -8000
 
 \ --- Stack-underflow recovery: each word on insufficient depth ---
-\ All must produce the "? Stack underflow" diagnostic and recover to 'ok'.
-2@                                       \ expect: ? Stack underflow  + ok
-2!                                       \ expect: ? Stack underflow  + ok
-2DUP                                     \ expect: ? Stack underflow  + ok
-2DROP                                    \ expect: ? Stack underflow  + ok
-2SWAP                                    \ expect: ? Stack underflow  + ok
-2OVER                                    \ expect: ? Stack underflow  + ok
+\ All must produce the "error -4: stack underflow" diagnostic and recover
+\ to 'ok' (Story 11.4 migrated do_underflow_error to -4 THROW).
+2@                                       \ expect: error -4: stack underflow  + ok
+2!                                       \ expect: error -4: stack underflow  + ok
+2DUP                                     \ expect: error -4: stack underflow  + ok
+2DROP                                    \ expect: error -4: stack underflow  + ok
+2SWAP                                    \ expect: error -4: stack underflow  + ok
+2OVER                                    \ expect: error -4: stack underflow  + ok
 
 \ --- Near-threshold underflow (one cell short of the minimum DEPTH) ---
-1 2DUP                                   \ expect: ? Stack underflow  + ok  (needs 2, has 1)
-1 2DROP                                  \ expect: ? Stack underflow  + ok  (needs 2, has 1)
-1 2 2!                                   \ expect: ? Stack underflow  + ok  (2! needs 3, has 2)
-1 2 3 2SWAP                              \ expect: ? Stack underflow  + ok  (needs 4, has 3)
-1 2 3 2OVER                              \ expect: ? Stack underflow  + ok  (needs 4, has 3)
+1 2DUP                                   \ expect: error -4: stack underflow  + ok  (needs 2, has 1)
+1 2DROP                                  \ expect: error -4: stack underflow  + ok  (needs 2, has 1)
+1 2 2!                                   \ expect: error -4: stack underflow  + ok  (2! needs 3, has 2)
+1 2 3 2SWAP                              \ expect: error -4: stack underflow  + ok  (needs 4, has 3)
+1 2 3 2OVER                              \ expect: error -4: stack underflow  + ok  (needs 4, has 3)
 
 \ === Story 10.3 single<->double conversions ===
 \ S>D sign-extend: TOS = low cell = original n; second = high cell (0 or -1).
@@ -105,13 +106,13 @@ HEX CREATE D5 0 , 0 , 8000 8000 D5 2! D5 2@ .S   \ expect: <2> -8000 -8000
 0 0 S" 10000000000000000" DROP 17 2 BASE ! >NUMBER DECIMAL 2DROP .S  \ expect: <2> 1 0
 
 \ --- S>D / D>S / >NUMBER underflow recovery ---
-S>D                                      \ expect: ? Stack underflow  + ok  (S>D needs 1, has 0)
-D>S                                      \ expect: ? Stack underflow  + ok  (D>S needs 2, has 0)
-1 D>S                                    \ expect: ? Stack underflow  + ok  (D>S needs 2, has 1)
->NUMBER                                  \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 0)
-1 >NUMBER                                \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 1)
-1 2 >NUMBER                              \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 2)
-1 2 3 >NUMBER                            \ expect: ? Stack underflow  + ok  (>NUMBER needs 4, has 3)
+S>D                                      \ expect: error -4: stack underflow  + ok  (S>D needs 1, has 0)
+D>S                                      \ expect: error -4: stack underflow  + ok  (D>S needs 2, has 0)
+1 D>S                                    \ expect: error -4: stack underflow  + ok  (D>S needs 2, has 1)
+>NUMBER                                  \ expect: error -4: stack underflow  + ok  (>NUMBER needs 4, has 0)
+1 >NUMBER                                \ expect: error -4: stack underflow  + ok  (>NUMBER needs 4, has 1)
+1 2 >NUMBER                              \ expect: error -4: stack underflow  + ok  (>NUMBER needs 4, has 2)
+1 2 3 >NUMBER                            \ expect: error -4: stack underflow  + ok  (>NUMBER needs 4, has 3)
 
 \ === Story 10.4 double-cell arithmetic (additive / sign / compare / mixed) ===
 \ Covers D+, D-, DNEGATE, DABS, D=, D<, DMAX, DMIN, M+ per DPANS94 §8.6
@@ -180,15 +181,15 @@ D>S                                      \ expect: ? Stack underflow  + ok  (D>S
 -1 -5 -1 M+ .S 2DROP                     \ expect: <2> -1 -6
 
 \ --- Story 10.4 underflow recovery (one per word at DEPTH = N-1) ---
-1 2 3 D+                                 \ expect: ? Stack underflow  + ok  (D+ needs 4, has 3)
-1 2 3 D-                                 \ expect: ? Stack underflow  + ok  (D- needs 4, has 3)
-1 DNEGATE                                \ expect: ? Stack underflow  + ok  (DNEGATE needs 2, has 1)
-1 DABS                                   \ expect: ? Stack underflow  + ok  (DABS needs 2, has 1)
-1 2 3 D=                                 \ expect: ? Stack underflow  + ok  (D= needs 4, has 3)
-1 2 3 D<                                 \ expect: ? Stack underflow  + ok  (D< needs 4, has 3)
-1 2 3 DMAX                               \ expect: ? Stack underflow  + ok  (DMAX needs 4, has 3)
-1 2 3 DMIN                               \ expect: ? Stack underflow  + ok  (DMIN needs 4, has 3)
-1 2 M+                                   \ expect: ? Stack underflow  + ok  (M+ needs 3, has 2)
+1 2 3 D+                                 \ expect: error -4: stack underflow  + ok  (D+ needs 4, has 3)
+1 2 3 D-                                 \ expect: error -4: stack underflow  + ok  (D- needs 4, has 3)
+1 DNEGATE                                \ expect: error -4: stack underflow  + ok  (DNEGATE needs 2, has 1)
+1 DABS                                   \ expect: error -4: stack underflow  + ok  (DABS needs 2, has 1)
+1 2 3 D=                                 \ expect: error -4: stack underflow  + ok  (D= needs 4, has 3)
+1 2 3 D<                                 \ expect: error -4: stack underflow  + ok  (D< needs 4, has 3)
+1 2 3 DMAX                               \ expect: error -4: stack underflow  + ok  (DMAX needs 4, has 3)
+1 2 3 DMIN                               \ expect: error -4: stack underflow  + ok  (DMIN needs 4, has 3)
+1 2 M+                                   \ expect: error -4: stack underflow  + ok  (M+ needs 3, has 2)
 
 \ === Story 10.5 double-cell multiplication (UM*, M*, D*) ===
 
@@ -220,9 +221,9 @@ $FFFF 2 UM* .S 2DROP                     \ expect: <2> 1 -2    ($1FFFE; low-cell
 0 1 -1 0 D* .S 2DROP                     \ expect: <2> -1 0    (cross-term carry: $FFFF0000)
 
 \ --- Story 10.5 underflow recovery (one per word at DEPTH = N-1) ---
-1 UM*                                    \ expect: ? Stack underflow  + ok  (UM* needs 2, has 1)
-1 M*                                     \ expect: ? Stack underflow  + ok  (M* needs 2, has 1)
-1 2 3 D*                                 \ expect: ? Stack underflow  + ok  (D* needs 4, has 3)
+1 UM*                                    \ expect: error -4: stack underflow  + ok  (UM* needs 2, has 1)
+1 M*                                     \ expect: error -4: stack underflow  + ok  (M* needs 2, has 1)
+1 2 3 D*                                 \ expect: error -4: stack underflow  + ok  (D* needs 4, has 3)
 
 \ === Story 10.6 double/mixed-precision division (UM/MOD, SM/REM, FM/MOD) ===
 
@@ -256,6 +257,6 @@ $FFFF 2 UM* .S 2DROP                     \ expect: <2> 1 -2    ($1FFFE; low-cell
 -1 -9 3 FM/MOD .S 2DROP                  \ expect: <2> 0 -3      (exact negative — no correction)
 
 \ --- Story 10.6 underflow recovery (one per word at DEPTH = N-1) ---
-1 2 UM/MOD                               \ expect: ? Stack underflow  + ok  (UM/MOD needs 3, has 2)
-1 2 SM/REM                               \ expect: ? Stack underflow  + ok  (SM/REM needs 3, has 2)
-1 2 FM/MOD                               \ expect: ? Stack underflow  + ok  (FM/MOD needs 3, has 2)
+1 2 UM/MOD                               \ expect: error -4: stack underflow  + ok  (UM/MOD needs 3, has 2)
+1 2 SM/REM                               \ expect: error -4: stack underflow  + ok  (SM/REM needs 3, has 2)
+1 2 FM/MOD                               \ expect: error -4: stack underflow  + ok  (FM/MOD needs 3, has 2)

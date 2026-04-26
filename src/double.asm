@@ -557,16 +557,27 @@ w_D_STAR_cf EQU w_D_STAR_body - 3
 ;   of the quotient — matching the single-cell `/` truncation
 ;   convention. No overflow check; Epic 11 may reconsider.
 ;
-;   Divide-by-zero: matches the Epic-1–8 baseline for single-cell `/`
-;   bit-identically (no new ABORT; empirically today `1 0 /` returns
-;   -1 silently — see Completion Notes). Story 11.4 is the authoritative
-;   migration site to `THROW -10`.
+;   Divide-by-zero: Migrated by Story 11.4: divisor-zero raises
+;   `-10 THROW` (catchable via `CATCH`; uncaught diagnostic
+;   `error -10: division by zero`). The single guard at this site
+;   covers SM/REM, FM/MOD, */, and */MOD (each funnels through
+;   UM/MOD), plus bare UM/MOD user invocations. Note: M/MOD is not
+;   a kernel primitive in antforth (Story 11.4 review F3).
 ; ANS Forth 1994 §6.1.2370   UM/MOD   — unsigned mixed divide (double ÷ single → single rem + single quot)
 ; -----------------------------------------------
 w_U_M_SLASH_MOD:
         DEFCODE "UM/MOD", 0
 w_U_M_SLASH_MOD_cf:
         CALL    check_underflow_3
+        ; Divisor-zero guard (Story 11.4): BC = the divisor n at this
+        ; point. Single guard covers every double-cell-divide path.
+        ; -10 THROW (Story 11.4): division by zero per ANS Forth 1994 §9.3.5
+        LD      A, B
+        OR      C
+        JR      NZ, .ummod_proceed
+        LD      BC, THROW_DIV_BY_ZERO
+        JP      w_THROW_cf.kernel_entry
+.ummod_proceed:
         LD      (double_ip_stash), DE   ; Stash IP — DE now free
         POP     HL                      ; HL = ud-lo (quotient accumulator)
         POP     DE                      ; DE = ud-hi (running remainder)

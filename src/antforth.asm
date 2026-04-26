@@ -218,8 +218,6 @@ str_banner4:    DB      "Type BYE to exit"
 STR_BANNER4_LEN EQU     16
 str_ok:         DB      " ok"
 STR_OK_LEN      EQU     3
-str_underflow:  DB      "? Stack underflow"
-STR_UNDERFLOW_LEN EQU  17
 str_pic_overflow: DB    "? Pictured buffer overflow"
 STR_PIC_OVERFLOW_LEN EQU 26
 test_cell:      DW      0               ; Scratch cell for test threads

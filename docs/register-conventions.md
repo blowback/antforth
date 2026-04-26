@@ -300,11 +300,13 @@ The frame is 8 bytes, pushed downward on the IX return stack like every other rs
 Higher address ─┬──────────────────────────────────┐
         +6, +7  │ previous CATCH-TOP (chain link)  │
         +4, +5  │ catching-IP (caller's IP)        │
-        +2, +3  │ saved IX (= frame's own base)    │
-        +0, +1  │ saved SP (parameter-stack ptr)   │
+        +2, +3  │ saved BC (i*x's TOS-cell value)  │
+        +0, +1  │ saved SP (post-POP-BC SP_safe)   │
 Lower address  ─┴──────────────────────────────────┘
                  ← IX points here after push
 ```
+
+The `+2` slot semantic was changed by Story 11.4.1 from "saved IX" (an unused recursive self-reference) to "saved BC" (i*x's TOS-cell value at CATCH entry, captured from BC immediately after the POP that consumes it). THROW's caught path restores this to the data stack via `PUSH BC` after `LD SP, HL`, so any cell xt's CALL/RET clobbered at `[SP_safe-2]` is repopulated. The `+0` slot was also re-anchored: it now captures SP **after** the POP BC (= `SP_safe`, one cell above the original i*x's TOS-cell slot), not before. See Story 11.4.1 for the root-cause analysis (Story 11.4 Note A).
 
 The cells are pushed in highest-address-first order (prev-CATCH-TOP first, saved-SP last), matching the IX-grows-downward discipline established in §1's hard rule #4.
 
@@ -323,7 +325,7 @@ Per CCD-1 (`architecture.md:168-191`), the exception frames form a LIFO chain ro
 `CATCH-TOP` always holds the *post-push* IX value — i.e., the address of the lowest byte of the frame. This means:
 
 - `THROW`'s target-frame access is O(1): one read of `CATCH-TOP`, then `(IX+0)..(IX+7)` reads the frame fields directly. No rstack scanning.
-- The `+2` slot (saved IX) is recursive: it stores the value of IX *after* the frame has been pushed, which equals the frame's own base address. Story 11.2's `CATCH` writes this slot via a backfill — push a placeholder, complete the rest of the frame, then `PUSH IX / POP HL / LD (IX+2),L / LD (IX+3),H` after IX has reached its final post-push value.
+- The `+2` slot (saved BC, post-Story-11.4.1) holds i*x's TOS-cell value at CATCH entry — captured from BC immediately after the `POP BC` that consumes it during the EXECUTE-prelude reorder. THROW's caught path reads this back into BC (via `LD C, (IX-6) / LD B, (IX-5)` after the frame is popped) and restores it to the data stack via `PUSH BC`. (Pre-Story-11.4.1 this slot stored a recursive self-reference to the frame's own IX address — written via a `PUSH IX / POP HL / LD (IX+2),L / LD (IX+3),H` backfill — but was never read, making it dead code.)
 - Nested CATCH frames stack normally: the inner frame's `+6` points at the outer frame's base, forming the chain. `CATCH-TOP` always points at the most recent frame; on normal return of an inner CATCH, `CATCH-TOP` walks back one link.
 
 ### Story 11.2 contract — normal-return only
@@ -335,7 +337,7 @@ Per CCD-1 (`architecture.md:168-191`), the exception frames form a LIFO chain ro
 3. xt's terminal `NEXT` chases `DE = catch_resume_thread` → fetches `catch_resume_cf` → `JP (HL)` lands on `(CATCH-RESUME)`.
 4. `(CATCH-RESUME)` teardown: restore CATCH-TOP from `+6`; restore caller's IP (DE) from `+4`; `PUSH BC` (xt's final TOS becomes second-on-stack); `IX += 8` (free frame); `BC = 0` (success code); `NEXT` to caller.
 
-The frame's `+0` (saved SP) and `+2` (saved IX) slots are written but **never read** by Story 11.2 — they exist purely as the contract for Story 11.3's THROW-time restore. The catching-IP slot (`+4`) is read once on normal return (to restore DE), and Story 11.3 will also read it on the THROW path. Do not pre-implement THROW-time logic in `CATCH` itself; Story 11.3 owns that codepath.
+The frame's `+0` (saved SP) and `+2` (saved BC, per Story 11.4.1) slots are written by `CATCH` but **never read on the normal-return path** — they exist purely as the contract for Story 11.3's THROW-time restore (and Story 11.4.1's i*x-preservation extension to that restore). The catching-IP slot (`+4`) is read once on normal return (to restore DE), and Story 11.3 also reads it on the THROW path. Do not pre-implement THROW-time logic in `CATCH` itself; Story 11.3 / 11.4.1 own that codepath.
 
 ### Story 11.3 contract — THROW-time restore
 
@@ -353,14 +355,14 @@ After the `n = 0` short-circuit and the `CATCH-TOP = 0` short-circuit, `THROW` r
 2. **INCLUDE-TOP chain walk** — currently a no-op (Story 13.4 will insert the loop here, between this step and step 3, to close source-input frames more recent than the target exception frame; see CCD-1 dual-chain discipline).
 3. **Restore CATCH-TOP** from frame `+6` into `(IY+UserArea.catch_top)` — must read while IX = frame base (the next steps shuffle IX).
 4. **Read catching-IP** from frame `+4` into DE — the caller's IP at CATCH entry, one cell past the CATCH that wraps this THROW.
-5. **Read saved-SP** from frame `+0` into HL — the SP captured by `CATCH` *before* its `POP BC` consumed the xt cell, so the cell at this address is i*x's TOS-cell.
+5. **Read saved-SP** from frame `+0` into HL — the SP captured by `CATCH` *after* its `POP BC` consumed the i*x's TOS-cell into BC (= `SP_safe`, one cell above the original i*x's TOS-cell slot). xt's CALLs write at `[SP_safe-2]` but never at-or-above `SP_safe` (Z80 PUSH/CALL discipline), so this restored SP is unaffected by xt's stack traffic.
 6. **Pop the 8-byte frame** via `LD BC, 8 / ADD IX, BC` — the second kernel use of `ADD IX, BC` (the first is in `catch_resume_cf`, Story 11.2). The intermediate IX rstack — colon return-addr frames, DO-LOOP frames, etc. — is abandoned wholesale by this restore (E11-D2's "snap back" semantic).
-7. **Restore SP** (`LD SP, HL`) and **install BC = n** (`LD BC, (throw_saved_n)`) — n is parked in the dedicated scratch cell because BC is reused for the `LD BC, 8` of step 6. After this point, **do NOT** `POP BC` and re-push: the saved-SP value is exactly the SP that puts i*x's TOS at `[SP]` ready to be the new second-on-stack underneath BC = n. `NEXT` resumes execution at the caller's catching-IP.
+7. **Read saved-BC** from the popped frame's old `+2` slot via `LD C, (IX-6) / LD B, (IX-5)` (Story 11.4.1) — recovers the i*x's TOS-cell value captured at CATCH entry. Then **restore SP** (`LD SP, HL`) and **PUSH BC** to repopulate `[SP_safe-2]` with i*x's TOS-cell value (overwriting any return-address byte xt's CALLs may have left). Finally **install BC = n** (`LD BC, (throw_saved_n)`) — n was parked in the dedicated scratch cell because BC was reused. `NEXT` resumes execution at the caller's catching-IP.
 
-The frame field reads (steps 3, 4, 5) all happen *before* IX is advanced past the frame in step 6 — IX-relative reads need IX = frame base. Steps 3, 4, 5 are commutative among themselves but each must precede step 6.
+The frame field reads (steps 3, 4, 5) all happen *before* IX is advanced past the frame in step 6 — IX-relative reads need IX = frame base. Steps 3, 4, 5 are commutative among themselves but each must precede step 6. Step 7's `LD C, (IX-6) / LD B, (IX-5)` reads the popped frame's old `+2` slot via the post-add IX-relative offsets; this read must precede any subsequent IX-relative write that lands on the popped frame's bytes.
 
 Post-NEXT invariants:
-- **BC = n** is a *real* TOS, not phantom — see `project_tos_in_register.md`. `DEPTH` (which counts SP cells, not BC) reports `pre-CATCH-DEPTH + 1`, since the saved-SP restore put i*x's TOS-cell at `[SP]` as the new second-on-stack.
+- **BC = n** is a *real* TOS, not phantom — see `project_tos_in_register.md`. `DEPTH` (which counts SP cells, not BC) reports `pre-CATCH-DEPTH` exactly: the xt cell is consumed but n took its place, and i*x's TOS-cell sits at `[SP]` because Step 7's `PUSH BC` put it back.
 - **DE = catching-IP** matches the value `(CATCH-RESUME)` would land on a normal-return path; both routes converge on the same cell in the caller's compiled thread.
 - **CATCH-TOP** is restored to the value it held at CATCH entry — recursion-safe.
 
@@ -379,7 +381,7 @@ The description table is seeded with the standard codes Epic 11 issues (`-1`, `-
 - **Story 11.7** — retargets `ABORT` and `ABORT"` themselves to `-1 THROW` / `-2 THROW` (the capstone). At this point, ABORT's recovery becomes uncaught-THROW's recovery — the same code path either way.
 - **Story 13.4** — inserts the `INCLUDE-TOP` chain-walk loop into THROW's caught path (between steps 2 and 3 of the 7-step algorithm above), closing source-input frames that are more recent than the target exception frame.
 
-This section will be extended by Stories 11.3–11.7 as new fields, semantics, or interactions land. The 8-byte layout itself is locked at Story 11.2 — any change must be a deliberate revision to E11-D1, not a drift.
+This section will be extended by Stories 11.3–11.7 as new fields, semantics, or interactions land. The 8-byte layout itself was locked at Story 11.2; the slot semantics at `+0` (saved-SP captured AFTER `POP BC`) and `+2` (saved-BC = i*x's TOS-cell value) were revised by Story 11.4.1 (a deliberate revision to E11-D1, not a drift). Further changes require the same level of deliberation.
 
 ---
 

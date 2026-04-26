@@ -68,11 +68,12 @@ HERE ' NOOP CATCH DROP HERE = .         \ expect: -1  ok
 1 2 3 DEPTH . ' NOOP CATCH DROP DEPTH . \ expect: 3 3  ok
 
 \ --- Section 5: Empty-stack CATCH triggers stack-underflow ABORT ---
-\ AC #3 / AC #17 / AC #18 — pre-Epic-11 ABORT path; Story 11.4 will
-\ migrate to THROW -4. Until then `CATCH` on empty stack hits
-\ check_underflow → "? Stack underflow" → ABORT → QUIT recovers to
-\ "ok", and QUIT must reset CATCH-TOP to 0 (CCD-1 chain invariant).
-CATCH                                   \ expect: ? Stack underflow  ok
+\ AC #3 / AC #17 / AC #18 — Story 11.4 migrated do_underflow_error
+\ to -4 THROW. `CATCH` on empty stack hits check_underflow → -4 THROW
+\ → uncaught-handler prints "error -4: stack underflow" → QUIT
+\ recovers to "ok", and QUIT must reset CATCH-TOP to 0 (CCD-1 chain
+\ invariant).
+CATCH                                   \ expect: error -4: stack underflow  ok
 CATCH-TOP @ .                           \ expect: 0  ok    (post-recovery CATCH-TOP zeroed)
 
 \ ===============================================================
@@ -96,6 +97,17 @@ CATCH-TOP @ .                           \ expect: 0  ok    (post-recovery CATCH-
 ' T2 CATCH .                            \ expect: -13  ok
 1 2 3 ' T1 CATCH . . . .                \ expect: 42 3 2 1  ok
 1 2 3 4 ' T1 CATCH DEPTH .              \ expect: 5  ok
+
+\ --- Section 7.1: i*x preservation across colon-body THROW (Story 11.4.1) ---
+\ Pre-Story-11.4.1, the `1 2 3 ' T1 CATCH . . . .` test above passed by
+\ coincidence: T1's `LIT 42` PUSH BC=3 to [SP-2]=[old SP], restoring the
+\ i*x's TOS-cell to its original memory location (with the same value).
+\ The CATCH frame layout treated [old SP] as the i*x-TOS-cell holder,
+\ which broke for any xt that did a CALL before any data-stack PUSH
+\ (e.g. kernel primitives whose body started with CALL check_underflow_N).
+\ Story 11.4.1 redesigned the frame: +2 now holds saved-BC (= i*x's
+\ TOS-cell value), restored to data stack on THROW caught path.
+\ Post-fix, this test passes by design.
 
 \ --- Section 8: Nested CATCH semantics (AC #1) ---
 : T3 -5 THROW ;
@@ -136,6 +148,33 @@ CATCH-TOP @ .                           \ expect: 0  ok    (post-recovery CATCH-
 \ return-addr frame on IX; the snap-back must skip past it.
 : T9 -5 THROW ;
 ' T9 ['] EXECUTE CATCH .                \ expect: -5  ok
+
+\ --- Section 8.1: i*x preservation under nested CATCH (Story 11.4.1 AC #12) ---
+\ Inner CATCH catches -5; outer CATCH normal-returns with 0; the
+\ pre-outer-CATCH i*x = (1, 2) is preserved underneath. Pre-fix
+\ this would have shown garbage in place of the 1 / 2 cells; post-fix
+\ it shows the spec form.
+: T84 -5 THROW ;
+: N84 ['] T84 CATCH ;
+1 2 ' N84 CATCH . . . .                 \ expect: 0 -5 2 1  ok
+
+\ --- Section 8.2: 3-level nested with inner-rethrow (review F4) ---
+\ Outer wraps middle wraps T-throws-(-5). Middle CATCHes -5, DROPs it,
+\ rethrows -7. Outer catches -7. Outer i*x = (11, 22) must survive
+\ the middle frame's saved-BC slot remaining intact during the inner
+\ unwind and reused on the outer THROW.
+: TI3 -5 THROW ;
+: MI3 ['] TI3 CATCH DROP -7 THROW ;
+11 22 ' MI3 CATCH . . .                 \ expect: -7 22 11  ok
+
+\ --- Section 8.3: i*x preservation across DO-LOOP frame snap-back (review F2) ---
+\ Underflow inside a DO-LOOP body with multi-cell pre-CATCH i*x.
+\ THROW snap-back must skip the 4-byte DO frame on IX AND the saved-BC
+\ restore must repopulate i*x's TOS-cell at [SP_safe-2]. Pre-fix the
+\ DO-frame skip worked but i*x's TOS-cell was clobbered by check_
+\ underflow's CALL ret-addr.
+: TDOL3 5 0 DO 2OVER LOOP ;
+1 2 3 ' TDOL3 CATCH . . . .             \ expect: -4 3 2 1  ok
 
 \ --- Section 9: Uncaught THROW + diagnostic + REPL recovery ---
 \ AC #4 / AC #5. Multi-line scenarios live in the Makefile because the

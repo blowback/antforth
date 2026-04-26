@@ -12,11 +12,23 @@
 ; the new frame address, and on normal return restores CATCH-TOP from
 ; the frame's prev-link slot at +6.
 ;
-; Frame layout (E11-D1):
+; Frame layout (E11-D1, post-Story-11.4.1):
 ;   +6: previous CATCH-TOP   (chain link)
 ;   +4: catching-IP          (caller's IP at CATCH entry)
-;   +2: saved IX             (post-push IX = frame's own base address)
-;   +0: saved SP             (parameter-stack pointer at CATCH entry)
+;   +2: saved BC             (i*x's TOS-cell value at CATCH entry; restored
+;                             to data stack on THROW caught path so that
+;                             the cell at [SP_safe-2] — which any CALL
+;                             inside xt would otherwise clobber with its
+;                             return-address byte — is repopulated before
+;                             NEXT. Pre-Story-11.4.1 this slot was named
+;                             "saved IX" and unused — see story 11-4-1
+;                             root-cause analysis.)
+;   +0: saved SP             (parameter-stack pointer **after** the POP BC
+;                             that consumed xt → HL and i*x's TOS → BC.
+;                             Pre-Story-11.4.1 captured BEFORE POP BC,
+;                             which left frame +0 pointing at a cell xt's
+;                             first CALL would clobber with its return-
+;                             address byte — the Story 11.4 Note A bug.)
 
 ; -----------------------------------------------
 ; CATCH-TOP ( -- a-addr )
@@ -38,20 +50,30 @@ w_CATCH_TOP_cf:
 ;   On normal return: push 0 onto the parameter stack as the success code.
 ;   On THROW: (Story 11.3 — not implemented here) restore SP/IX, push n.
 ;
-;   Frame layout (E11-D1) — pushed in highest-addr-first order so the
-;   final IX matches the frame base:
+;   Frame layout (E11-D1, post-Story-11.4.1) — pushed in highest-addr-
+;   first order so the final IX matches the frame base:
 ;       +6: prev CATCH-TOP
 ;       +4: catching-IP (caller's IP at CATCH entry)
-;       +2: saved IX (= frame base, recursive — backfilled after pushes)
-;       +0: saved SP (parameter-stack pointer at CATCH entry)
+;       +2: saved BC   (i*x's TOS-cell value, captured from BC immediately
+;                       after POP BC. THROW's caught path restores this
+;                       to the data stack at [SP_safe-2] via PUSH BC.)
+;       +0: saved SP   (parameter-stack pointer **after** POP BC =
+;                       SP_safe — one cell above the original i*x's
+;                       TOS-cell memory slot. xt's CALLs write at
+;                       [SP_safe-2], never at-or-above [SP_safe], so
+;                       the restored SP is unaffected by xt's stack
+;                       traffic.)
 ;
 ;   Implementation notes:
 ;     - Saves DE (caller's IP) into frame +4 BEFORE the LD DE, catch_
 ;       resume_thread clobber — no scratch stash cell needed.
-;     - Captures SP via "LD HL,0 / ADD HL,SP" (Z80 has no LD HL,SP).
-;     - Backfills +2 placeholder via PUSH IX/POP HL after all four
-;       cells are allocated, since the post-push IX is only knowable
-;       once all 8 bytes have been DEC'd off.
+;     - Reorders the EXECUTE pattern (LD H,B / LD L,C / POP BC) BEFORE
+;       the frame push, so SP_safe (= post-POP-BC SP) is available for
+;       the saved-SP slot and i*x's TOS-cell value (= BC after POP) is
+;       available for the saved-BC slot.
+;     - Captures SP_safe via "PUSH HL / LD HL, 2 / ADD HL, SP / POP HL"
+;       (HL holds xt at this point; spill xt to system stack, capture
+;       SP_safe = SP+2 to undo the PUSH, recover xt at end).
 ;     - On entry BC=xt; AC #3 says check_underflow first (1-cell guard;
 ;       ABORT path identical to every other 1-cell primitive — Story 11.4
 ;       owns the migration to THROW -4).
@@ -62,9 +84,46 @@ w_CATCH:
         DEFCODE "CATCH", 0              ; ( i*x xt -- j*x 0 | i*x n )
 w_CATCH_cf:
         CALL    check_underflow         ; AC #3: SP-cells >= 1 (xt cell)
-        ; --- Capture SP-at-entry into HL (Z80 has no LD HL,SP) ---
-        LD      HL, 0
-        ADD     HL, SP                  ; HL = SP at CATCH entry
+        ; --- EXECUTE-prelude reorder (Story 11.4.1): consume xt → HL and
+        ;     i*x's TOS → BC BEFORE the frame push so the post-POP SP
+        ;     ("SP_safe") and i*x's TOS-cell value are both available
+        ;     for the new frame layout. ---
+        LD      H, B
+        LD      L, C                    ; HL = xt
+        POP     BC                      ; BC = i*x's TOS-cell value
+                                        ; SP advances to SP_safe = one
+                                        ; cell above the original [SP].
+        ; --- SP_safe capture: the saved-SP slot must hold the SP value
+        ;     AFTER the POP BC consumed i*x's TOS into BC. Pre-Story-
+        ;     11.4.1 this was captured BEFORE the POP — frame +0 then
+        ;     pointed at the i*x's TOS-cell location, which xt's first
+        ;     CALL (typically check_underflow) would clobber with its
+        ;     return-address byte. THROW's `LD SP, HL` then landed on
+        ;     stale return-address data instead of i*x's TOS. The post-
+        ;     Story-11.4.1 design captures SP_safe = SP after POP BC;
+        ;     xt's CALLs write at [SP_safe - 2] (never at SP_safe or
+        ;     above — Z80 PUSH/CALL discipline); i*x's TOS-cell value
+        ;     is preserved separately in frame +2 (saved-BC).
+        ;
+        ;     The PUSH HL / LD HL, 2 / ADD HL, SP / POP HL idiom is
+        ;     required because Z80 has no direct LD HL, SP — and HL
+        ;     currently holds xt; we spill xt across the SP capture
+        ;     and recover it on the other side. SP_safe = current SP
+        ;     + 2 undoes the PUSH HL.
+        ;
+        ;     FUTURE-EDIT NOTE: the +2 offset in `LD HL, 2 / ADD HL, SP`
+        ;     below assumes SP = SP_safe-2 at that exact moment (i.e.,
+        ;     exactly one PUSH HL has happened since the POP BC). Do NOT
+        ;     insert any SP-modifying instruction between this PUSH HL
+        ;     and the ADD HL, SP — even a paired PUSH/POP would briefly
+        ;     change SP, but only an UNPAIRED change would corrupt the
+        ;     captured value. The PUSH IX / POP HL pair later in the
+        ;     frame-push body is fine because it lands AFTER the SP
+        ;     capture is complete; SP is back at SP_safe-2 by the
+        ;     terminating POP HL. ---
+        PUSH    HL                      ; spill xt across SP capture
+        LD      HL, 2
+        ADD     HL, SP                  ; HL = SP_safe (post-POP-BC SP)
         ; --- Push 8-byte frame (highest addr first; IX grows downward) ---
         ; +6: prev CATCH-TOP (read from IY+catch_top)
         DEC     IX
@@ -78,26 +137,24 @@ w_CATCH_cf:
         DEC     IX
         LD      (IX+0), E
         LD      (IX+1), D
-        ; +2: saved-IX placeholder (filled below once final IX is known)
+        ; +2: saved BC (Story 11.4.1: i*x's TOS-cell value from BC)
         DEC     IX
         DEC     IX
-        ; +0: saved-SP (HL captured above)
+        LD      (IX+0), C
+        LD      (IX+1), B
+        ; +0: saved SP_safe (HL captured above)
         DEC     IX
         DEC     IX
         LD      (IX+0), L
         LD      (IX+1), H
-        ; --- Backfill saved-IX slot: IX now = frame base ---
+        ; --- Update CATCH-TOP = frame base. IX now = frame base. ---
         PUSH    IX
-        POP     HL                      ; HL = IX (frame base)
-        LD      (IX+2), L
-        LD      (IX+3), H
-        ; --- Update CATCH-TOP = frame base ---
+        POP     HL                      ; HL = IX (frame base) — clobbers
+                                        ; the SP_safe value we already
+                                        ; wrote to +0; safe.
         LD      (IY+UserArea.catch_top), L
         LD      (IY+UserArea.catch_top+1), H
-        ; --- EXECUTE pattern (matches inner_interpreter.asm:240-243) ---
-        LD      H, B
-        LD      L, C                    ; HL = xt
-        POP     BC                      ; BC = new TOS (i*x's TOS)
+        POP     HL                      ; recover xt (matches PUSH HL above)
         ; --- DE = continuation thread (xt's terminal NEXT lands on (CATCH-RESUME)) ---
         LD      DE, catch_resume_thread
         JP      (HL)                    ; execute xt
@@ -133,12 +190,13 @@ catch_resume_cf:
         ; --- Restore caller's IP (DE) from frame +4 ---
         LD      E, (IX+4)
         LD      D, (IX+5)
-        ; --- Push xt's final TOS to SP; new TOS = 0 ---
-        ; Note: the saved-SP slot at +0 becomes stale after this PUSH (xt's
-        ; final TOS is now on SP, while +0 holds SP-at-CATCH-entry). This is
-        ; harmless — Story 11.3's THROW reads +0 directly off CATCH-TOP
-        ; before any normal-return teardown could clobber it; on the normal-
-        ; return path the frame is popped immediately below.
+        ; --- Push xt's final TOS to SP; new TOS = 0. Story 11.4.1: the
+        ;     +2 slot's repurposing as saved-BC has zero effect on this
+        ;     path — normal-return doesn't read +2 (or +0); it just
+        ;     pushes BC and pops the 8-byte frame. The saved-SP slot at
+        ;     +0 likewise becomes stale on this path; harmless because
+        ;     THROW's caught path reads +0 from a target frame that is
+        ;     by definition still live (catch_resume_cf bypassed). ---
         PUSH    BC
         ; --- Pop 8-byte frame: IX += 8 (BC freely usable now) ---
         ; ADD IX, BC = DD 09 (first kernel use of the IX-relative ADD; the
@@ -167,12 +225,29 @@ catch_resume_cf:
 ;
 ;   Post-NEXT invariant on the caught path: BC = n is a *real* TOS, not
 ;   phantom (project_tos_in_register.md). At CATCH entry, BC held xt
-;   (TOS-in-register) and [SP] held i*x's TOS-cell; CATCH captured that
-;   SP into frame +0 *before* its own POP BC advanced SP past it (the
-;   POP reloaded BC with i*x's TOS). After THROW restores SP from frame
-;   +0, [SP] still holds i*x's TOS-cell — exactly what we want as the
-;   new second-on-stack underneath BC = n. DEPTH thus reports
-;   pre-CATCH-DEPTH + 1, not + 2.
+;   (TOS-in-register) and [SP] held i*x's TOS-cell. Story-11.4.1 frame
+;   layout: CATCH's POP BC consumes i*x's TOS into BC; frame +2 captures
+;   that BC value as saved-BC; frame +0 captures the post-POP SP value
+;   as SP_safe (one cell above the original i*x's TOS-cell slot).
+;
+;   Pre-Story-11.4.1 (Story 11.4 Note A): saved-SP was captured BEFORE
+;   the POP BC, so frame +0 pointed at the memory cell that held i*x's
+;   TOS. xt's first CALL (typically check_underflow's entry CALL) wrote
+;   its return-address byte at THAT cell, clobbering the i*x's TOS value
+;   the THROW caught path expected to find via LD SP, HL. The fix splits
+;   the responsibility: saved-SP at +0 holds SP_safe (above xt's CALL
+;   territory) and saved-BC at +2 holds the i*x's TOS-cell value
+;   separately. THROW's caught-path restore:
+;     LD SP, HL    (HL = SP_safe — points one cell above xt's
+;                   CALL/PUSH territory; preserved across xt)
+;     PUSH BC      (BC = saved-BC at this point — restores
+;                   i*x's TOS-cell to [SP_safe - 2])
+;     LD BC, n
+;     NEXT
+;   Final invariant: BC = n (real TOS), [SP] = i*x's TOS-cell,
+;   [SP+2] = i*x's second-from-top, … [SP+2*(K-1)] = i*x's deepest,
+;   where K = the i*x cell count at CATCH entry. DEPTH = K + 1 =
+;   pre-CATCH-DEPTH (xt consumed, n on top instead).
 ;
 ;   The IX rstack between the THROW site and the target frame's base
 ;   (colon return-addr frames, DO-LOOP frames, etc.) is abandoned
@@ -198,6 +273,42 @@ w_THROW_cf:
                                         ; to -4 THROW, but THROW's own entry
                                         ; call must remain wired to the
                                         ; legacy helper to avoid recursion.
+        ; -----------------------------------------------
+        ; Kernel-internal entry: callers from inside the kernel
+        ; (do_underflow_error, the divisor-zero guards in udivmod / UM/MOD,
+        ; and any future internal ABORT-site migration in Stories 11.5 / 11.6)
+        ; JP w_THROW_cf.kernel_entry with BC pre-loaded to the THROW code.
+        ; The check_underflow guard above is skipped for two reasons:
+        ;   (1) the caller's user stack is by definition in a degenerate
+        ;       state on the underflow path (so check_underflow would
+        ;       re-trip and recurse through do_underflow_error endlessly);
+        ;   (2) the THROW code in BC is not a stack arg but a register-
+        ;       passed parameter, so the ( n -- ) arity contract that
+        ;       check_underflow enforces does not apply here.
+        ; SP/IX may be in any state on entry — the caught-path's
+        ; LD SP, HL from the catch frame +0, and the uncaught-path's
+        ; JP w_ABORT_cf, both perform a wholesale state reset before any
+        ; SP-dependent operation.
+        ; EXX hygiene: each kernel-internal call site must verify
+        ; EXX-not-active at entry. The three sites added in Story 11.4
+        ; (do_underflow_error, the udivmod guard, the UM/MOD guard)
+        ; satisfy this — they all run from primary-set context.
+        ; Stories 11.5/11.6 must re-verify per migrated site.
+        ; FUTURE-EDIT NOTE 1: any new code inserted between this label
+        ; and the n=0 short-circuit below will be SKIPPED on the
+        ; kernel-internal path. New pre-throw work belongs *after*
+        ; this label, not before.
+        ; FUTURE-EDIT NOTE 2: kernel-internal callers MUST pass a
+        ; non-zero BC. The n=0 short-circuit immediately below does
+        ; `POP BC` to consume the zero from the user data stack — on
+        ; the kernel-entry path SP may be indeterminate (per the
+        ; "SP may be in any state" note above), so a BC=0 entry would
+        ; pop a stale frame byte and corrupt the user stack. Today no
+        ; site does this (THROW codes are -4, -10); flagging for any
+        ; future Story 11.5/11.6/11.7 migration that wishes to raise
+        ; THROW 0 from the kernel.
+        ; -----------------------------------------------
+.kernel_entry:
         ; --- n = 0 no-op (Forth 2014 §9.6.1.2275: "If any bits of n are
         ;     non-zero, ..." — zero is silent, only consumes the zero) ---
         LD      A, B
@@ -239,13 +350,36 @@ w_THROW_cf:
         ;     catch_resume_cf src/exception.asm above). ---
         LD      BC, 8
         ADD     IX, BC
-        ; --- Restore SP. At CATCH entry [SP] held i*x's TOS-cell (xt
-        ;     itself was in BC, TOS-in-register). CATCH captured that SP
-        ;     into frame +0 before its POP BC advanced SP past the cell.
-        ;     After LD SP, HL, [SP] still holds i*x's TOS-cell, ready as
-        ;     the new second-on-stack. DO NOT POP BC after this — that
-        ;     would discard i*x's TOS and corrupt the user's stack. ---
+        ; --- Read saved i*x's TOS-cell value from the popped frame's +2
+        ;     slot, now at IX-6 (since IX advanced 8 bytes, frame_base+2
+        ;     becomes IX-8+2 = IX-6). Story 11.4.1 i*x preservation.
+        ;
+        ;     Safe: the popped frame's memory is unwritten between
+        ;     ADD IX, BC and this read — only CATCH and INCLUDE write
+        ;     to the IX rstack (per CCD-1, architecture.md:166-191), and
+        ;     we hold the kernel until NEXT.
+        ;
+        ;     FUTURE-EDIT NOTE: any new instruction inserted between the
+        ;     ADD IX, BC above and this LD pair that writes IX-relative
+        ;     memory (or does any push/call that lands on the popped
+        ;     frame's bytes — the IX rstack is independent of SP, so
+        ;     SP-side traffic is fine) would corrupt the saved-BC read. ---
+        LD      C, (IX-6)
+        LD      B, (IX-5)               ; BC = saved i*x's TOS-cell value
+        ; --- Restore SP_safe (post-POP-BC SP at CATCH entry).
+        ;     SP_safe sits one cell above the original i*x's TOS-cell
+        ;     slot; xt's CALL/RET traffic during execution wrote its
+        ;     return-address byte at [SP_safe-2] but never at-or-above
+        ;     SP_safe (Z80 PUSH/CALL discipline). The cell at
+        ;     [SP_safe-2] may now hold stale return-address data — we
+        ;     restore it via PUSH BC below. ---
         LD      SP, HL
+        ; --- PUSH BC: restore the i*x's TOS-cell value to the data
+        ;     stack at [SP_safe-2], overwriting whatever return-address
+        ;     garbage xt's CALLs may have left there. SP becomes
+        ;     SP_safe-2 — exactly where it was at CATCH entry, with
+        ;     i*x's TOS-cell back in its original slot. ---
+        PUSH    BC
         ; --- Install BC = n (THROW code, new TOS) ---
         LD      BC, (throw_saved_n)
         ; --- NEXT into caller's thread (DE = catching-IP, one cell after

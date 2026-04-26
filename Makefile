@@ -145,10 +145,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '+\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 10 — stack underflow on + shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 10 — expected '? Stack underflow' and 'ok' in output"; \
+		echo "FAIL: REPL test 10 — expected 'error -4: stack underflow' and 'ok' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -169,34 +169,34 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 13 — stack underflow on DROP shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 13 — expected '? Stack underflow' and 'ok' in output"; \
+		echo "FAIL: REPL test 13 — expected 'error -4: stack underflow' and 'ok' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 14 — stack underflow on . shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 14 — expected '? Stack underflow' and 'ok' in output"; \
+		echo "FAIL: REPL test 14 — expected 'error -4: stack underflow' and 'ok' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'AND\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 15 — stack underflow on AND shows error and recovers"; \
 	else \
-		echo "FAIL: REPL test 15 — expected '? Stack underflow' and 'ok' in output"; \
+		echo "FAIL: REPL test 15 — expected 'error -4: stack underflow' and 'ok' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 +\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 16 — stack underflow on '1 +' (only 1 arg for binary op)"; \
 	else \
-		echo "FAIL: REPL test 16 — expected '? Stack underflow' and 'ok' in output"; \
+		echo "FAIL: REPL test 16 — expected 'error -4: stack underflow' and 'ok' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1131,10 +1131,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '42 #\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'Stack underflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+	if echo "$$OUTPUT" | grep -q 'stack underflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 127 — # outside CODE dispatches to pictured-output # (DEPTH=1 → underflow), clean recovery"; \
 	else \
-		echo "FAIL: REPL test 127 — expected 'Stack underflow' and '3 '"; \
+		echo "FAIL: REPL test 127 — expected 'stack underflow' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -3626,100 +3626,100 @@ test-repl: $(TARGET)
 	fi
 	@# Stack-underflow recovery on empty stack for each new word
 	@OUTPUT=$$(printf '2@\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 411 — '2@' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 411 — expected '? Stack underflow' and 'ok' for '2@' on empty stack"; \
+		echo "FAIL: REPL test 411 — expected 'error -4: stack underflow' and 'ok' for '2@' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '2!\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 412 — '2!' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 412 — expected '? Stack underflow' and 'ok' for '2!' on empty stack"; \
+		echo "FAIL: REPL test 412 — expected 'error -4: stack underflow' and 'ok' for '2!' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '2DUP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 413 — '2DUP' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 413 — expected '? Stack underflow' and 'ok' for '2DUP' on empty stack"; \
+		echo "FAIL: REPL test 413 — expected 'error -4: stack underflow' and 'ok' for '2DUP' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 414 — '2DROP' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 414 — expected '? Stack underflow' and 'ok' for '2DROP' on empty stack"; \
+		echo "FAIL: REPL test 414 — expected 'error -4: stack underflow' and 'ok' for '2DROP' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '2SWAP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 415 — '2SWAP' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 415 — expected '? Stack underflow' and 'ok' for '2SWAP' on empty stack"; \
+		echo "FAIL: REPL test 415 — expected 'error -4: stack underflow' and 'ok' for '2SWAP' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '2OVER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 416 — '2OVER' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 416 — expected '? Stack underflow' and 'ok' for '2OVER' on empty stack"; \
+		echo "FAIL: REPL test 416 — expected 'error -4: stack underflow' and 'ok' for '2OVER' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# Near-threshold underflow (one cell short of minimum DEPTH)
 	@OUTPUT=$$(printf '1 2DUP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 417 — '1 2DUP' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 417 — expected '? Stack underflow' and 'ok' for '1 2DUP'"; \
+		echo "FAIL: REPL test 417 — expected 'error -4: stack underflow' and 'ok' for '1 2DUP'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 418 — '1 2DROP' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 418 — expected '? Stack underflow' and 'ok' for '1 2DROP'"; \
+		echo "FAIL: REPL test 418 — expected 'error -4: stack underflow' and 'ok' for '1 2DROP'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 2!\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 419 — '1 2 2!' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 419 — expected '? Stack underflow' and 'ok' for '1 2 2!'"; \
+		echo "FAIL: REPL test 419 — expected 'error -4: stack underflow' and 'ok' for '1 2 2!'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 2SWAP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 420 — '1 2 3 2SWAP' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 420 — expected '? Stack underflow' and 'ok' for '1 2 3 2SWAP'"; \
+		echo "FAIL: REPL test 420 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 2SWAP'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 2OVER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 421 — '1 2 3 2OVER' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 421 — expected '? Stack underflow' and 'ok' for '1 2 3 2OVER'"; \
+		echo "FAIL: REPL test 421 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 2OVER'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# --- Story 10.2 code-review follow-up: @ now guards DEPTH>=1 (M2 fix) ---
 	@OUTPUT=$$(printf '@\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 422 — '@' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 422 — expected '? Stack underflow' and 'ok' for '@' on empty stack"; \
+		echo "FAIL: REPL test 422 — expected 'error -4: stack underflow' and 'ok' for '@' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -3887,59 +3887,59 @@ test-repl: $(TARGET)
 	fi
 	@# Underflow recovery: S>D needs 1, D>S needs 2, >NUMBER needs 3.
 	@OUTPUT=$$(printf 'S>D\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 442 — 'S>D' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 442 — expected '? Stack underflow' and 'ok' for 'S>D' on empty stack"; \
+		echo "FAIL: REPL test 442 — expected 'error -4: stack underflow' and 'ok' for 'S>D' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'D>S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 443 — 'D>S' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 443 — expected '? Stack underflow' and 'ok' for 'D>S' on empty stack"; \
+		echo "FAIL: REPL test 443 — expected 'error -4: stack underflow' and 'ok' for 'D>S' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 D>S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 444 — '1 D>S' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 444 — expected '? Stack underflow' and 'ok' for '1 D>S'"; \
+		echo "FAIL: REPL test 444 — expected 'error -4: stack underflow' and 'ok' for '1 D>S'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '>NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 445 — '>NUMBER' on empty stack shows underflow and recovers"; \
 	else \
-		echo "FAIL: REPL test 445 — expected '? Stack underflow' and 'ok' for '>NUMBER' on empty stack"; \
+		echo "FAIL: REPL test 445 — expected 'error -4: stack underflow' and 'ok' for '>NUMBER' on empty stack"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# >NUMBER needs 4 inputs (ud1 c-addr1 u1) — DEPTH=1/2/3 must all underflow.
 	@OUTPUT=$$(printf '1 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 446 — '1 >NUMBER' (DEPTH 1, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 446 — expected '? Stack underflow' and 'ok' for '1 >NUMBER'"; \
+		echo "FAIL: REPL test 446 — expected 'error -4: stack underflow' and 'ok' for '1 >NUMBER'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 447 — '1 2 >NUMBER' (DEPTH 2, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 447 — expected '? Stack underflow' and 'ok' for '1 2 >NUMBER'"; \
+		echo "FAIL: REPL test 447 — expected 'error -4: stack underflow' and 'ok' for '1 2 >NUMBER'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 448 — '1 2 3 >NUMBER' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 448 — expected '? Stack underflow' and 'ok' for '1 2 3 >NUMBER'"; \
+		echo "FAIL: REPL test 448 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 >NUMBER'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4309,74 +4309,74 @@ test-repl: $(TARGET)
 	fi
 	@# Story 10.4 underflow recovery: one per word at DEPTH = N-1.
 	@OUTPUT=$$(printf '1 2 3 D+\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 493 — '1 2 3 D+' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 493 — expected '? Stack underflow' and 'ok' for '1 2 3 D+'"; \
+		echo "FAIL: REPL test 493 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 D+'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 D-\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 494 — '1 2 3 D-' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 494 — expected '? Stack underflow' and 'ok' for '1 2 3 D-'"; \
+		echo "FAIL: REPL test 494 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 D-'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 DNEGATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 495 — '1 DNEGATE' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 495 — expected '? Stack underflow' and 'ok' for '1 DNEGATE'"; \
+		echo "FAIL: REPL test 495 — expected 'error -4: stack underflow' and 'ok' for '1 DNEGATE'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 DABS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 496 — '1 DABS' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 496 — expected '? Stack underflow' and 'ok' for '1 DABS'"; \
+		echo "FAIL: REPL test 496 — expected 'error -4: stack underflow' and 'ok' for '1 DABS'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 D=\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 497 — '1 2 3 D=' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 497 — expected '? Stack underflow' and 'ok' for '1 2 3 D='"; \
+		echo "FAIL: REPL test 497 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 D='"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 D<\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 498 — '1 2 3 D<' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 498 — expected '? Stack underflow' and 'ok' for '1 2 3 D<'"; \
+		echo "FAIL: REPL test 498 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 D<'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 DMAX\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 499 — '1 2 3 DMAX' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 499 — expected '? Stack underflow' and 'ok' for '1 2 3 DMAX'"; \
+		echo "FAIL: REPL test 499 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 DMAX'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 DMIN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 500 — '1 2 3 DMIN' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 500 — expected '? Stack underflow' and 'ok' for '1 2 3 DMIN'"; \
+		echo "FAIL: REPL test 500 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 DMIN'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 M+\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 501 — '1 2 M+' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 501 — expected '? Stack underflow' and 'ok' for '1 2 M+'"; \
+		echo "FAIL: REPL test 501 — expected 'error -4: stack underflow' and 'ok' for '1 2 M+'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4554,26 +4554,26 @@ test-repl: $(TARGET)
 	fi
 	@# Story 10.5 underflow recovery: one per word at DEPTH = N-1.
 	@OUTPUT=$$(printf '1 UM*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 523 — '1 UM*' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 523 — expected '? Stack underflow' and 'ok' for '1 UM*'"; \
+		echo "FAIL: REPL test 523 — expected 'error -4: stack underflow' and 'ok' for '1 UM*'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 M*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 524 — '1 M*' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 524 — expected '? Stack underflow' and 'ok' for '1 M*'"; \
+		echo "FAIL: REPL test 524 — expected 'error -4: stack underflow' and 'ok' for '1 M*'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 3 D*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 525 — '1 2 3 D*' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 525 — expected '? Stack underflow' and 'ok' for '1 2 3 D*'"; \
+		echo "FAIL: REPL test 525 — expected 'error -4: stack underflow' and 'ok' for '1 2 3 D*'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4751,26 +4751,26 @@ test-repl: $(TARGET)
 	fi
 	@# Story 10.6 underflow recovery: one per word at DEPTH = N-1 = 2.
 	@OUTPUT=$$(printf '1 2 UM/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 547 — '1 2 UM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 547 — expected '? Stack underflow' and 'ok' for '1 2 UM/MOD'"; \
+		echo "FAIL: REPL test 547 — expected 'error -4: stack underflow' and 'ok' for '1 2 UM/MOD'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 SM/REM\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 548 — '1 2 SM/REM' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 548 — expected '? Stack underflow' and 'ok' for '1 2 SM/REM'"; \
+		echo "FAIL: REPL test 548 — expected 'error -4: stack underflow' and 'ok' for '1 2 SM/REM'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 FM/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 549 — '1 2 FM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 549 — expected '? Stack underflow' and 'ok' for '1 2 FM/MOD'"; \
+		echo "FAIL: REPL test 549 — expected 'error -4: stack underflow' and 'ok' for '1 2 FM/MOD'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4921,50 +4921,50 @@ test-repl: $(TARGET)
 	fi
 	@# Underflow recovery: one per primitive whose minimum depth > 0.
 	@OUTPUT=$$(printf '1 #\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 567 — '1 #' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 567 — expected '? Stack underflow' and 'ok' for '1 #'"; \
+		echo "FAIL: REPL test 567 — expected 'error -4: stack underflow' and 'ok' for '1 #'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 #S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 568 — '1 #S' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 568 — expected '? Stack underflow' and 'ok' for '1 #S'"; \
+		echo "FAIL: REPL test 568 — expected 'error -4: stack underflow' and 'ok' for '1 #S'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 #>\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 569 — '1 #>' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 569 — expected '? Stack underflow' and 'ok' for '1 #>'"; \
+		echo "FAIL: REPL test 569 — expected 'error -4: stack underflow' and 'ok' for '1 #>'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'HOLD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 570 — 'HOLD' (DEPTH 0, needs 1) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 570 — expected '? Stack underflow' and 'ok' for 'HOLD'"; \
+		echo "FAIL: REPL test 570 — expected 'error -4: stack underflow' and 'ok' for 'HOLD'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'SIGN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 571 — 'SIGN' (DEPTH 0, needs 1) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 571 — expected '? Stack underflow' and 'ok' for 'SIGN'"; \
+		echo "FAIL: REPL test 571 — expected 'error -4: stack underflow' and 'ok' for 'SIGN'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 HOLDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 572 — '1 HOLDS' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
-		echo "FAIL: REPL test 572 — expected '? Stack underflow' and 'ok' for '1 HOLDS'"; \
+		echo "FAIL: REPL test 572 — expected 'error -4: stack underflow' and 'ok' for '1 HOLDS'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -5258,50 +5258,50 @@ test-repl: $(TARGET)
 	fi
 	@# Underflow-parity block (AC #9, #14j) — factor chain guards trip before pictured state mutates.
 	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 606 — '.' (DEPTH 0) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 606 — expected '? Stack underflow' and 'ok' for '.'"; \
+		echo "FAIL: REPL test 606 — expected 'error -4: stack underflow' and 'ok' for '.'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 607 — 'U.' (DEPTH 0) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 607 — expected '? Stack underflow' and 'ok' for 'U.'"; \
+		echo "FAIL: REPL test 607 — expected 'error -4: stack underflow' and 'ok' for 'U.'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 608 — 'D.' (DEPTH 0, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 608 — expected '? Stack underflow' and 'ok' for 'D.'"; \
+		echo "FAIL: REPL test 608 — expected 'error -4: stack underflow' and 'ok' for 'D.'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 609 — '1 .R' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 609 — expected '? Stack underflow' and 'ok' for '1 .R'"; \
+		echo "FAIL: REPL test 609 — expected 'error -4: stack underflow' and 'ok' for '1 .R'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 610 — '1 U.R' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 610 — expected '? Stack underflow' and 'ok' for '1 U.R'"; \
+		echo "FAIL: REPL test 610 — expected 'error -4: stack underflow' and 'ok' for '1 U.R'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 1 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 611 — '1 1 D.R' (DEPTH 2, needs 3) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 611 — expected '? Stack underflow' and 'ok' for '1 1 D.R'"; \
+		echo "FAIL: REPL test 611 — expected 'error -4: stack underflow' and 'ok' for '1 1 D.R'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -5585,88 +5585,87 @@ test-repl: $(TARGET)
 	@# and REPL re-prompts. For */ and */MOD the chain via M*'s 2DUP guard provides
 	@# the effective 3-cell guard.
 	@OUTPUT=$$(printf '*/\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 643 — '*/' (DEPTH 0, needs 3) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 643 — expected '? Stack underflow' and 'ok' for '*/'"; \
+		echo "FAIL: REPL test 643 — expected 'error -4: stack underflow' and 'ok' for '*/'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 */\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 644 — '1 2 */' (DEPTH 2, needs 3) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 644 — expected '? Stack underflow' and 'ok' for '1 2 */'"; \
+		echo "FAIL: REPL test 644 — expected 'error -4: stack underflow' and 'ok' for '1 2 */'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '*/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 645 — '*/MOD' (DEPTH 0, needs 3) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 645 — expected '? Stack underflow' and 'ok' for '*/MOD'"; \
+		echo "FAIL: REPL test 645 — expected 'error -4: stack underflow' and 'ok' for '*/MOD'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 2 */MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 646 — '1 2 */MOD' (DEPTH 2, needs 3) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 646 — expected '? Stack underflow' and 'ok' for '1 2 */MOD'"; \
+		echo "FAIL: REPL test 646 — expected 'error -4: stack underflow' and 'ok' for '1 2 */MOD'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'EVALUATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 647 — 'EVALUATE' (DEPTH 0, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 647 — expected '? Stack underflow' and 'ok' for 'EVALUATE'"; \
+		echo "FAIL: REPL test 647 — expected 'error -4: stack underflow' and 'ok' for 'EVALUATE'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 EVALUATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 648 — '1 EVALUATE' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 648 — expected '? Stack underflow' and 'ok' for '1 EVALUATE'"; \
+		echo "FAIL: REPL test 648 — expected 'error -4: stack underflow' and 'ok' for '1 EVALUATE'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 649 — 'ENVIRONMENT?' (DEPTH 0, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 649 — expected '? Stack underflow' and 'ok' for 'ENVIRONMENT?'"; \
+		echo "FAIL: REPL test 649 — expected 'error -4: stack underflow' and 'ok' for 'ENVIRONMENT?'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? Stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
+	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 650 — '1 ENVIRONMENT?' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 650 — expected '? Stack underflow' and 'ok' for '1 ENVIRONMENT?'"; \
+		echo "FAIL: REPL test 650 — expected 'error -4: stack underflow' and 'ok' for '1 ENVIRONMENT?'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@# --- Story 10.9 review follow-up: div-by-zero baseline (DPANS94 §6.1.0100/§6.1.0110 ---
-	@# "ambiguous condition" — antforth's SM/REM produces silent garbage on n3=0.
-	@# `*/` and `*/MOD` inherit that baseline; this is the pre-Epic-11 behaviour.
-	@# Story 11.6 will migrate to THROW -10 (DIVISION BY ZERO). Until then, document
-	@# the observed shape: REPL recovers cleanly with no error message and a single
-	@# garbage cell on the stack (for `*/`) or two cells (for `*/MOD`).
-	@OUTPUT=$$(printf '1 1 0 */ DEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '^1  ok' && ! echo "$$OUTPUT" | grep -q '? Stack underflow'; then \
-		echo "PASS: REPL test 651 — '1 1 0 */' silent (DPANS94 ambiguous; SM/REM baseline; one cell remains, no error)"; \
+	@# --- Story 11.4: div-by-zero migrated to THROW -10 (DPANS94 §6.1.0100/§6.1.0110) ---
+	@# `*/` and `*/MOD` funnel through UM/MOD; Story 11.4's divisor-zero guard at
+	@# UM/MOD raises -10 THROW for any zero divisor. Tests 651 / 652 (originally
+	@# Story 10.9 review follow-ups documenting the silent-garbage baseline) are
+	@# repurposed here to assert the post-migration uncaught-recovery diagnostic.
+	@OUTPUT=$$(printf '1 1 0 */\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*0  ok'; then \
+		echo "PASS: REPL test 651 — '1 1 0 */' raises -10 THROW (Story 11.4 UM/MOD guard); REPL recovers, post-recovery DEPTH=0"; \
 	else \
-		echo "FAIL: REPL test 651 — expected silent SM/REM baseline (DEPTH=1, no error) for '1 1 0 */'"; \
+		echo "FAIL: REPL test 651 — expected 'error -10: division by zero' + post-recovery '0  ok' for '1 1 0 */'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 1 0 */MOD DEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '^2  ok' && ! echo "$$OUTPUT" | grep -q '? Stack underflow'; then \
-		echo "PASS: REPL test 652 — '1 1 0 */MOD' silent (DPANS94 ambiguous; SM/REM baseline; two cells remain, no error)"; \
+	@OUTPUT=$$(printf '1 1 0 */MOD\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*0  ok'; then \
+		echo "PASS: REPL test 652 — '1 1 0 */MOD' raises -10 THROW (Story 11.4 UM/MOD guard); REPL recovers, post-recovery DEPTH=0"; \
 	else \
-		echo "FAIL: REPL test 652 — expected silent SM/REM baseline (DEPTH=2, no error) for '1 1 0 */MOD'"; \
+		echo "FAIL: REPL test 652 — expected 'error -10: division by zero' + post-recovery '0  ok' for '1 1 0 */MOD'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -5828,10 +5827,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CATCH\r\nCATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\? Stack underflow.* ok.*CATCH-TOP @ \. 0  ok'; then \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.* ok.*CATCH-TOP @ \. 0  ok'; then \
 		echo "PASS: REPL test 672 — empty-stack 'CATCH' aborts and CATCH-TOP is reset to 0 on recovery (AC #3 / AC #17 / AC #18)"; \
 	else \
-		echo "FAIL: REPL test 672 — expected '? Stack underflow' + recovery + 'CATCH-TOP @ . 0  ok' (CCD-1 chain reset)"; \
+		echo "FAIL: REPL test 672 — expected 'error -4: stack underflow' + recovery + 'CATCH-TOP @ . 0  ok' (CCD-1 chain reset)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -6016,6 +6015,259 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 695 — Story 11.3 (review F3): THROW mid-EXECUTE; snap-back skips EXECUTE return-addr frame"; \
 	else \
 		echo "FAIL: REPL test 695 — expected '-5  ok' for THROW mid-EXECUTE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 11.4 — internal-error migration: stack/arithmetic/memory primitives ---
+	@# Section 1: stack underflow caught (-4 THROW via do_underflow_error
+	@# → w_THROW_cf.kernel_entry). Section 2: divisor zero caught (-10
+	@# THROW via udivmod / UM/MOD entry guards). Source spec:
+	@# tests/throw_migration_tests.fth.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DROP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 696 — Story 11.4: caught DROP underflow returns -4 (AC #1, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 696 — expected '-4  ok' for caught DROP underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' + CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 697 — Story 11.4: caught + underflow (depth-2 guard) returns -4 (AC #1, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 697 — expected '-4  ok' for caught + underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' @ CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 698 — Story 11.4: caught @ underflow (memory primitive) returns -4 (AC #1, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 698 — expected '-4  ok' for caught @ underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ! CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 699 — Story 11.4: caught ! underflow (depth-2 guard) returns -4 (AC #1, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 699 — expected '-4  ok' for caught ! underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ROT CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 700 — Story 11.4: caught ROT underflow (depth-3 guard) returns -4 (AC #1, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 700 — expected '-4  ok' for caught ROT underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' 2SWAP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 701 — Story 11.4: caught 2SWAP underflow (depth-4 guard) returns -4 (AC #1, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 701 — expected '-4  ok' for caught 2SWAP underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "5 ' DROP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
+		echo "PASS: REPL test 702 — Story 11.4: positive control — DROP at depth-1 succeeds; CATCH returns 0 (AC #9)"; \
+	else \
+		echo "FAIL: REPL test 702 — expected '0  ok' for positive-control DROP at depth 1"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DROP CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1  ok'; then \
+		echo "PASS: REPL test 703 — Story 11.4: post-caught-underflow DEPTH = 1 (THROW code is the lone TOS)"; \
+	else \
+		echo "FAIL: REPL test 703 — expected '1  ok' for DEPTH after caught underflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TDOL 2 0 DO DROP LOOP ;' "1 ' TDOL CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
+		echo "PASS: REPL test 704 — Story 11.4 (review F3 analog): underflow inside DO-LOOP body caught; DO frame snap-back works (AC #18)"; \
+	else \
+		echo "FAIL: REPL test 704 — expected '-4  ok' for DROP-underflow inside DO-LOOP"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T1 1 0 / ;' "' T1 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 705 — Story 11.4: caught '/' divisor-zero returns -10 (AC #4, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 705 — expected '-10  ok' for caught '/' divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T2 1 0 MOD ;' "' T2 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 706 — Story 11.4: caught MOD divisor-zero returns -10 (AC #4, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 706 — expected '-10  ok' for caught MOD divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T3 1 0 /MOD ;' "' T3 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 707 — Story 11.4: caught /MOD divisor-zero returns -10 (AC #4, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 707 — expected '-10  ok' for caught /MOD divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T4 1 1 0 */ ;' "' T4 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 708 — Story 11.4: caught '*/' divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 708 — expected '-10  ok' for caught '*/' divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T5 1 1 0 */MOD ;' "' T5 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 709 — Story 11.4: caught '*/MOD' divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 709 — expected '-10  ok' for caught '*/MOD' divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': P1 100 5 / ;' "' P1 CATCH . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0 20  ok'; then \
+		echo "PASS: REPL test 710 — Story 11.4: positive control — '100 5 /' inside CATCH returns success + correct quotient (AC #9)"; \
+	else \
+		echo "FAIL: REPL test 710 — expected '0 20  ok' for positive-control non-zero divisor"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T6 1 0 0 UM/MOD ;' "' T6 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 711 — Story 11.4: caught UM/MOD divisor-zero returns -10 (AC #5, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 711 — expected '-10  ok' for caught UM/MOD divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T7 1 0 0 SM/REM ;' "' T7 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 712 — Story 11.4: caught SM/REM divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 712 — expected '-10  ok' for caught SM/REM divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T8 1 0 0 FM/MOD ;' "' T8 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
+		echo "PASS: REPL test 713 — Story 11.4: caught FM/MOD divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
+	else \
+		echo "FAIL: REPL test 713 — expected '-10  ok' for caught FM/MOD divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TD 1 0 / ;' "' TD CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^1  ok'; then \
+		echo "PASS: REPL test 714 — Story 11.4: post-caught-divisor-zero DEPTH = 1 (THROW code is the lone TOS)"; \
+	else \
+		echo "FAIL: REPL test 714 — expected '1  ok' for DEPTH after caught divisor zero"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': PMN 1 -32768 / ;' "' PMN CATCH . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0 0  ok'; then \
+		echo "PASS: REPL test 715 — Story 11.4 (review F2 watch): most-negative divisor 0x8000 does NOT false-trip the divisor-zero guard"; \
+	else \
+		echo "FAIL: REPL test 715 — expected '0 0  ok' for most-negative divisor positive control"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DROP' '42 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*42  ok'; then \
+		echo "PASS: REPL test 716 — Story 11.4: uncaught DROP underflow prints diagnostic + REPL recovers cleanly (AC #9, AC #20)"; \
+	else \
+		echo "FAIL: REPL test 716 — expected 'error -4: stack underflow' + recovery + '42  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '1 0 /' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*99  ok'; then \
+		echo "PASS: REPL test 717 — Story 11.4: uncaught '1 0 /' divisor-zero prints diagnostic + REPL recovers cleanly (AC #9, AC #20)"; \
+	else \
+		echo "FAIL: REPL test 717 — expected 'error -10: division by zero' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 ' + CATCH . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-4 1  ok'; then \
+		echo "PASS: REPL test 718 — Story 11.4.1: smallest reproducer (1 ' + CATCH . .) restores i*x's TOS-cell (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 718 — expected '-4 1  ok' (i*x's TOS-cell preserved across caught underflow THROW)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' 2OVER CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-4 3 2 1  ok'; then \
+		echo "PASS: REPL test 719 — Story 11.4.1: 3 i*x cells preserved underneath caught -4 THROW (AC #2 corrected; uses 2OVER instead of DROP)"; \
+	else \
+		echo "FAIL: REPL test 719 — expected '-4 3 2 1  ok' (3 i*x cells preserved across caught underflow)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' 2OVER CATCH . DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-4 3  ok'; then \
+		echo "PASS: REPL test 720 — Story 11.4.1: DEPTH=3 after popping THROW code -4 (AC #3 corrected; review F6 — combined value+depth assertion)"; \
+	else \
+		echo "FAIL: REPL test 720 — expected '-4 3  ok' (drop THROW code -4, then 3 i*x cells remain)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 ' 2OVER CATCH . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-4 2 1  ok'; then \
+		echo "PASS: REPL test 721 — Story 11.4.1: 2 i*x cells preserved underneath caught -4 THROW (2OVER needs 4 cells; depth=2 underflows via check_underflow_4)"; \
+	else \
+		echo "FAIL: REPL test 721 — expected '-4 2 1  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T241 1 0 / ;' "5 6 7 ' T241 CATCH . DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-10 3  ok'; then \
+		echo "PASS: REPL test 722 — Story 11.4.1: DEPTH=3 after popping THROW code -10 (AC #4; review F6 — combined value+depth assertion)"; \
+	else \
+		echo "FAIL: REPL test 722 — expected '-10 3  ok' (drop THROW code -10, then 3 i*x cells remain)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T241 1 0 / ;' "5 6 7 ' T241 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-10 7 6 5  ok'; then \
+		echo "PASS: REPL test 723 — Story 11.4.1: 3 i*x cells preserved underneath caught -10 THROW (divisor zero, AC #4)"; \
+	else \
+		echo "FAIL: REPL test 723 — expected '-10 7 6 5  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T84 -5 THROW ;" ": N84 ['] T84 CATCH ;" "1 2 ' N84 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '0 -5 2 1  ok'; then \
+		echo "PASS: REPL test 724 — Story 11.4.1: nested CATCH preserves outer i*x = (1,2) when inner catches -5 (AC #12)"; \
+	else \
+		echo "FAIL: REPL test 724 — expected '0 -5 2 1  ok' (outer normal-return 0 + inner-caught -5 + outer i*x)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": TI3 -5 THROW ;" ": MI3 ['] TI3 CATCH DROP -7 THROW ;" "11 22 ' MI3 CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-7 22 11  ok'; then \
+		echo "PASS: REPL test 725 — Story 11.4.1 (review F4): 3-level nested CATCH with inner-rethrow preserves outer i*x = (11,22)"; \
+	else \
+		echo "FAIL: REPL test 725 — expected '-7 22 11  ok' (outer catches rethrown -7, outer i*x preserved)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": TDOL3 5 0 DO 2OVER LOOP ;" "1 2 3 ' TDOL3 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '\-4 3 2 1  ok'; then \
+		echo "PASS: REPL test 726 — Story 11.4.1 (review F2): DO-LOOP-frame snap-back + i*x preservation across underflow inside DO body"; \
+	else \
+		echo "FAIL: REPL test 726 — expected '-4 3 2 1  ok' (DO frame skipped + 3 i*x cells preserved)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
