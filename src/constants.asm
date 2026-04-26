@@ -72,11 +72,14 @@ THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5
 ; lazy-load assembler also in Epic 13.
 THROW_FCB_EXHAUSTED     EQU -69  ; ANS Forth 1994 §9.3.5 (post-1994 extension; Forth 2014 retains)
 
-; --- antforth extensions: assembler-error codes (-258..-269) ---
+; --- antforth extensions: assembler-error codes (-258..-271) ---
 ; Allocated as one contiguous block for grep-ability; one code per error
 ; entry point in src/assembler.asm. The block starts at -258 (not -256)
 ; to leave -256 reserved for future use and -257 reserved for
 ; architecture-mandated THROW_ASM_LOAD_FAIL (architecture.md:478,606).
+; The block extends to -271 per Story 11.6's asm_die-residual cleanup
+; (the two non-fan-in callers check_asm_mode and asm_range_err were
+; missed by Story 11.1's inventory; -270 / -271 retire them).
 ; See docs/throw-codes.md §c.
 THROW_ASM_LOAD_FAIL         EQU -257 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_BAD_OPERAND       EQU -258 ; antforth extension — see docs/throw-codes.md
@@ -91,3 +94,5 @@ THROW_ASM_EQU_IN_CODE       EQU -266 ; antforth extension — see docs/throw-cod
 THROW_ASM_BARE_INT          EQU -267 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_UNRESOLVED        EQU -268 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_ALREADY_FIXED     EQU -269 ; antforth extension — see docs/throw-codes.md
+THROW_ASM_NOT_IN_CODE       EQU -270 ; antforth extension — see docs/throw-codes.md
+THROW_ASM_RANGE             EQU -271 ; antforth extension — see docs/throw-codes.md

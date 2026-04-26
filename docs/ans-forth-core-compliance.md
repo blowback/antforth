@@ -201,7 +201,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `#` | `( ud1 -- ud2 )` | Implemented | `pictured.asm` (Story 10.7) | Inline 32-by-8 divide. The §6.1 `#` coexists with the assembler's immediate-operand sigil at `assembler.asm:985`: both share the name, the asm entry is head-of-bucket and dispatches at run time — `asm_mode == 0` → pictured `#`, `asm_mode == 1` → sigil. Epic 12 (wordlists) retires this dispatch. |
 | `#S` | `( ud1 -- ud2 )` | Implemented | `pictured.asm` (Story 10.7) | DEFWORD — canonical `BEGIN # 2DUP OR 0= UNTIL` |
 | `#>` | `( xd -- c-addr u )` | Implemented | `pictured.asm` (Story 10.7) | Returns buffer `( c-addr u )` |
-| `HOLD` | `( char -- )` | Implemented | `pictured.asm` (Story 10.7) | Underflow → `? Pictured buffer overflow` + ABORT (Epic 11 migrates to `THROW -17`) |
+| `HOLD` | `( char -- )` | Implemented | `pictured.asm` (Story 10.7) | Underflow → `-17 THROW` (`pictured numeric output string overflow`) per ANS Forth 1994 §9.3.5 (Story 11.6) |
 | `SIGN` | `( n -- )` | Implemented | `pictured.asm` (Story 10.7) | `BIT 7,B` inline — no extra (?1) helper |
 
 ### String and Parsing

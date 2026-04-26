@@ -890,7 +890,14 @@ w_BACKSLASH_cf:
 ; -----------------------------------------------
 ; ( ( -- ) IMMEDIATE
 ;   Paren comment: consume input up to and including next ')'
-;   Error if ')' not found before end of input
+;   Raises -58 THROW (unexpected end of input) per ANS Forth 1994
+;   §9.3.5 if ')' not found before end of input. Pre-Story-11.6 the
+;   site printed "? missing )" before ABORT — the syntactic
+;   specificity is lost in the unified `error -58: unexpected end
+;   of input` diagnostic; the trade is deliberate (mirrors ?COMP's
+;   "? compile only" → -14 migration in Story 11.5). A future
+;   refactor could re-introduce a (-specific extension code if the
+;   syntactic clarity proves valuable.
 ; -----------------------------------------------
 w_PAREN:
         DEFCODE "(", F_IMMEDIATE
@@ -943,15 +950,16 @@ w_PAREN_cf:
         NEXT
 
 .paren_missing:
-        ; Print "missing )" CR LF then ABORT. Restore shadows defensively
-        ; before ABORT (ABORT resets SP/RSP and re-enters QUIT which reloads IP,
-        ; but matching the 7.1 convention keeps reasoning simple).
-        LD      HL, .paren_err_msg
-        LD      B, .paren_err_len
-        CALL    bdos_print_str
-        EXX
-        JP      w_ABORT_cf
-
-.paren_err_msg:
-        DB      "? missing )", 0x0D, 0x0A
-.paren_err_len  EQU     $ - .paren_err_msg
+        EXX                              ; Restore primary set (kernel-internal
+                                         ; THROW entry contract; matches Story
+                                         ; 11.5 :/CREATE/CONSTANT/MARKER pattern)
+        ; -58 THROW (Story 11.6): unexpected end of input per ANS Forth
+        ; 1994 §9.3.5. Pre-Story-11.6 this site printed "? missing )"
+        ; CR/LF before ABORT; the unified `error -58: unexpected end of
+        ; input` diagnostic from Story 11.3's throw_desc_table replaces
+        ; the pre-print. The pre-Story-11.6 message carried syntactic
+        ; specificity ("the ) is missing") which the ANS text loses;
+        ; the trade is deliberate per the unified-diagnostic discipline
+        ; (mirrors ?COMP's "? compile only" → -14 migration).
+        LD      BC, THROW_END_OF_INPUT
+        JP      w_THROW_cf.kernel_entry

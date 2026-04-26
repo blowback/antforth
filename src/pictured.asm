@@ -50,7 +50,8 @@ w_PIC_LESS_HASH_cf:
 ; -----------------------------------------------
 ; HOLD ( char -- )
 ;   Insert char into the pictured-output buffer (buffer fills RTL).
-;   Underflow (writing below pic_buf) → do_pic_overflow_error + ABORT.
+;   Underflow (writing below pic_buf) raises -17 THROW per ANS Forth
+;   1994 §9.3.5 (via do_pic_overflow_error).
 ; ANS Forth 1994 §6.1.1670   HOLD   — insert char into pictured-output buffer
 ; -----------------------------------------------
 w_PIC_HOLD:
@@ -215,7 +216,7 @@ w_PIC_HOLDS_cf EQU w_PIC_HOLDS_body - 3
 ;   Entry: A = char, IY = user_area. DE (IP) preserved.
 ;   Exit:  HLD decremented; A stored at new HLD. Flags clobbered.
 ;   Preserves: BC, DE, IX, IY, SP.
-;   Overflow: JP do_pic_overflow_error (no return).
+;   Overflow: JP do_pic_overflow_error (raises -17 THROW; no return).
 ; -----------------------------------------------
 hold_common:
         LD      L, (IY+UserArea.hld)
@@ -238,17 +239,24 @@ hold_common:
         JP      do_pic_overflow_error
 
 ; -----------------------------------------------
-; do_pic_overflow_error — Internal diagnostic helper
-;   Print "? Pictured buffer overflow" + CR/LF via direct BDOS; JP ABORT.
-;   Never returns. Mirrors do_underflow_error (src/system.asm:551).
-;   Epic 11 will migrate this to THROW -17 (DPANS94 §9.3.5).
+; do_pic_overflow_error — Internal raise helper
+;   Migrated by Story 11.6 to raise -17 THROW per ANS Forth 1994 §9.3.5.
+;   Never returns. Pre-Story-11.6 this site printed "? Pictured buffer
+;   overflow" + CR/LF via direct BDOS before JP w_ABORT_cf; the unified
+;   `error -17: pictured numeric output string overflow` diagnostic
+;   from Story 11.3's throw_desc_table replaces the pre-print (mirrors
+;   Story 11.4's removal of "? Stack underflow" and Story 11.5's
+;   removal of "? compile only").
+;
+;   Callers: hold_common.hc_overflow falls into this site (so HOLD,
+;   #, SIGN, HOLDS all reach it via hold_common). All callers are
+;   primary-set DEFCODE bodies — no EXX-restore needed at the raise.
 ; -----------------------------------------------
 do_pic_overflow_error:
-        LD      HL, str_pic_overflow
-        LD      B, STR_PIC_OVERFLOW_LEN
-        CALL    bdos_print_str
-        CALL    bdos_crlf
-        JP      w_ABORT_cf
+        ; -17 THROW (Story 11.6): pictured numeric output string
+        ; overflow per ANS Forth 1994 §9.3.5.
+        LD      BC, THROW_PIC_OVERFLOW
+        JP      w_THROW_cf.kernel_entry
 
 ; Scratch cell for stashing IP (DE) across the DEFCODE pictured words
 ; that need DE as a general-purpose register (#, #>, HOLDS). Never held

@@ -51,9 +51,10 @@ DECIMAL -1 -1 2 BASE ! <# #S #> TYPE DECIMAL                  \ expect: 11111111
 
 \ --- Buffer overflow diagnostic (AC #5) ---
 \ 41 HOLD calls exceed the 40-byte buffer; 41st triggers
-\ "? Pictured buffer overflow" and ABORT recovers the REPL.
+\ -17 THROW (Story 11.6 migrated from `? Pictured buffer overflow`
+\ + ABORT) and the REPL recovers cleanly.
 : OV41 0 0 <# 41 0 DO 65 HOLD LOOP #> TYPE ;
-OV41                                                          \ expect: ? Pictured buffer overflow
+OV41                                                          \ expect: error -17: pictured numeric output string overflow
 
 \ --- Underflow recovery (AC #11) ---
 \ <# consumes 0 cells (no underflow possible).

@@ -199,3 +199,58 @@
 \ uncaught-recovery cases live in the Makefile blocks and verify
 \ that (a) each catalogued THROW code lands with its description
 \ text and (b) the REPL recovers cleanly to a live prompt.
+
+\ ============================================================
+\ Section 4 — Strings / I-O / asm-die-residual (Story 11.6)
+\               (-17 / -58 / -270 / -271)
+\ ============================================================
+\
+\ AC #13 caveat: -58 caught form is deferred to uncaught-recovery
+\ only. The intuitive caught harness `: T58 S" ( unterminated " EVALUATE ;`
+\ does not return a -58 value to a wrapping CATCH in antforth's
+\ EVALUATE — the source-frame interaction with the kernel-internal
+\ THROW yields a silent CATCH return rather than the expected -58.
+\ Investigated at dev-pass; the standard-text -58 emission via the
+\ uncaught path (Makefile Section 4.2) covers the THROW code +
+\ description-text coverage. A future refactor of EVALUATE's
+\ source-frame discipline could restore caught coverage; out of
+\ scope for Story 11.6.
+\
+\ AC #13 caveat: -270 / -271 caught forms are deferred to uncaught-
+\ recovery (mirror Story 11.5 D2 deferral rationale) — exercising
+\ the assembler-error path inside a CATCH frame requires nested-
+\ compile shapes that introduce more test-engineering risk than
+\ the coverage value. The uncaught path validates each code lands
+\ with its description; the THROW code itself is identical on
+\ either path.
+
+\ --- Section 4.1 — Pictured overflow (-17): caught + i*x preservation ---
+\ HOLD writes RTL into pic_buf (40 bytes per PIC_BUF_SIZE). After
+\ 40 successful HOLDs, the 41st decrements HLD below pic_buf and
+\ triggers .hc_overflow → do_pic_overflow_error → -17 THROW.
+\ Verified by direct experiment at dev-pass: 41 iterations is the
+\ correct count.
+: T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;
+' T17 CATCH .                           \ expect: -17  ok
+
+\ --- i*x preservation across kernel-internal -17 raise ---
+1 2 3 ' T17 CATCH . . . .               \ expect: -17 3 2 1  ok
+
+\ --- DEPTH-invariant after caught -17 ---
+' T17 CATCH DEPTH .                     \ expect: 1  ok
+
+\ --- Section 4.2 — Positive controls: success path returns 0 ---
+\ A successful pictured-output round-trip — converts 1234 to
+\ "1234" via 4 # iterations, drops the residual ud, leaves
+\ ( c-addr u ) on the stack ready for TYPE/.S.
+: TPIC 1234 0 <# # # # # #> 2DROP ;
+' TPIC CATCH .                          \ expect: 0  ok
+
+\ --- No-throw colon body containing compile-time `(` returns 0.
+\ Note: `(` is IMMEDIATE, so it runs at compile time during the
+\ `: TOK ... ;` line — TOK's compiled body is just `5 EXIT`. This
+\ test verifies that CATCH around a no-throw body returns 0; `(`'s
+\ runtime success path is covered by pre-existing tests in
+\ pictured_tests.fth / strings_tests.fth. ---
+: TOK 5 ( inline ok ) ;
+' TOK CATCH .                           \ expect: 0  ok

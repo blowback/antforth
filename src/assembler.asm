@@ -185,24 +185,21 @@ asm_fixup_pool:    DS ASM_FIXUP_POOL_SIZE * ASM_FIXUP_REC_SIZE
 asm_label_dict:    DS ASM_LABEL_DICT_SIZE
 
 ; =====================================================================
-; Error message strings (printed with trailing " ?" CR LF)
+; Error message strings (printed before label name + " ?" CR LF)
 ;
 ; Story 11.5 deleted 9 obsolete strings (str_asm_badop, str_asm_nested,
 ; str_asm_noname, str_asm_orphan, str_asm_label_after, str_asm_jr_range,
 ; str_asm_too_labels, str_asm_too_fixups, str_asm_equ_in_code) along with
 ; their *_LEN EQUs — those error sites now raise -258..-266 THROW and
 ; the description text lives in throw_desc_table (src/exception.asm:560).
+; Story 11.6 retired the asm_die residual: check_asm_mode and
+; asm_range_err migrated to -270 / -271 THROW, asm_die body deleted,
+; str_asm_notcode / str_asm_range / asm_print_error all deleted.
 ; The remaining strings drive dynamic-print error paths that THROW alone
-; cannot replace (str_asm_unresolved / str_asm_already print a label
-; name; str_asm_bare_int prints a hex value) plus the asm_die fan-in
-; (str_asm_notcode / str_asm_range) which retains its pre-print path
-; because the two non-fan-in callers (check_asm_mode, asm_range_err)
-; are out of Story 11.5's enumerated scope — see Task 7 deviation note
-; in Completion Notes.
+; cannot replace — they print a label name (str_asm_unresolved,
+; str_asm_already) or a hex value (str_asm_bare_int) before " ?" CR LF
+; via asm_print_error_with_name / asm_err_bare_int.
 ; =====================================================================
-str_asm_notcode:   DB "not in CODE"
-STR_ASM_NOTCODE_LEN EQU $ - str_asm_notcode
-
 ; "unresolved label " — printed before name; trailing space included
 str_asm_unresolved: DB "unresolved label "
 STR_ASM_UNRESOLVED_LEN EQU $ - str_asm_unresolved
@@ -215,19 +212,7 @@ STR_ASM_ALREADY_LEN EQU $ - str_asm_already
 str_asm_bare_int:  DB "bare integer "
 STR_ASM_BARE_INT_LEN EQU $ - str_asm_bare_int
 
-str_asm_range:     DB "range"
-STR_ASM_RANGE_LEN  EQU $ - str_asm_range
-
 asm_print_str EQU bdos_print_str
-
-; -----------------------------------------------
-; asm_print_error — Print HL..HL+B-1, then " ?", CR, LF via BDOS.
-;   Entry: HL = message ptr, B = length
-;   Clobbers: A, BC, DE, HL
-; -----------------------------------------------
-asm_print_error:
-        CALL    bdos_print_str
-        JP      bdos_print_q_crlf   ; explicit tail-call replaces fall-through
 
 asm_print_q_crlf EQU bdos_print_q_crlf
 
@@ -264,20 +249,6 @@ asm_print_hex8:
 .digit:
         LD      E, A
         JP      bdos_putchar
-
-; -----------------------------------------------
-; asm_die — Print (HL/B) via asm_print_error and JP ABORT. Never returns.
-;
-; Story 11.5 retired the 9 fan-in callers (asm_bad_operand and
-; asm_err_nested..asm_err_equ_in_code) — each now raises its own
-; -258..-266 THROW directly. The asm_die body is retained because two
-; non-fan-in callers (check_asm_mode, asm_range_err) remain wired to it
-; and were not enumerated in Story 11.5's inventory; their migration is
-; deferred to a follow-up story (see Completion Notes).
-; -----------------------------------------------
-asm_die:
-        CALL    asm_print_error
-        JP      w_ABORT_cf
 
 asm_bad_operand:
         ; -258 THROW (Story 11.5): bad operand per antforth extension —
@@ -370,7 +341,8 @@ asm_check_tagged:
 ;   Entry: HL = prefix string, B = prefix length,
 ;          DE = pointer to count_flags byte of the label dict entry
 ;          (length is low 5 bits of (DE), name bytes follow at DE+1)
-;   Never returns — falls through to ABORT via asm_die_after_name.
+;   Never returns — raises the THROW code stashed in asm_throw_code
+;   (set by the caller — asm_err_unresolved / asm_err_already).
 ; -----------------------------------------------
 asm_print_error_with_name:
         ; Print prefix bytes
@@ -465,17 +437,20 @@ asm_cleanup:
         RET
 
 ; -----------------------------------------------
-; check_asm_mode — abort unless asm_mode is set.
+; check_asm_mode — raise -270 THROW unless asm_mode is set.
 ;   Pass path (RET NZ): preserves BC, DE, HL, IX, IY.
-;   Fail path: prints "not in CODE ?" and jumps to ABORT.
+;   Fail path: raises -270 THROW (not in CODE) per antforth extension.
+;   All callers are primary-set DEFCODE bodies that `CALL check_asm_mode`
+;   as their first instruction, so no EXX-restore is needed at the raise.
 ; -----------------------------------------------
 check_asm_mode:
         LD      A, (asm_mode)
         OR      A
         RET     NZ
-        LD      HL, str_asm_notcode
-        LD      B, STR_ASM_NOTCODE_LEN
-        JP      asm_die
+        ; -270 THROW (Story 11.6): not in CODE per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_NOT_IN_CODE
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; asm_emit_byte — Write A at HERE, advance HERE.
@@ -1208,12 +1183,16 @@ w_PLUS_D_cf:
         NEXT
 
 ; -----------------------------------------------
-; asm_range_err — Print "range ?" and ABORT.
+; asm_range_err — Raise -271 THROW per antforth extension.
+;   Callers (+D's range guards at :1135/:1138/:1143, the bit-op range
+;   guards at :3076/:3113/:3145) are primary-set DEFCODE bodies — no
+;   EXX-restore needed at the raise.
 ; -----------------------------------------------
 asm_range_err:
-        LD      HL, str_asm_range
-        LD      B, STR_ASM_RANGE_LEN
-        JP      asm_die
+        ; -271 THROW (Story 11.6): range per antforth extension —
+        ; see docs/throw-codes.md
+        LD      BC, THROW_ASM_RANGE
+        JP      w_THROW_cf.kernel_entry
 
 ; =====================================================================
 ; CODE ( "<spaces>name" -- )
@@ -2246,9 +2225,9 @@ asm_push_label_tag:
 ;   build a dict entry in the side area whose body pushes the slot's
 ;   tag, capture bucket info for later unlink.
 ;   Errors:
-;     not in CODE ?              — outside CODE
-;     LABEL must precede opcodes ? — HERE has moved past asm_saved_here
-;     too many labels ?          — slot pool full
+;     -270 THROW (not in CODE)              — outside CODE block
+;     -262 THROW (LABEL must precede opcodes) — HERE has moved past asm_saved_here
+;     -264 THROW (too many labels)          — slot pool full
 ; =====================================================================
 w_LABEL:
         DEFCODE "LABEL", 0
@@ -2388,8 +2367,10 @@ w_FIX_cf:
         POP     BC                      ; pop new TOS
         NEXT
 .fix_already:
-        ; Already fixed — print "already fixed: NAME ?" and ABORT.
-        ; HL currently points at slot+0; advance to +6 (cf_ptr).
+        ; Already fixed — print "already fixed: NAME" and raise -269
+        ; THROW (Story 11.5; pre-Story-11.5 site printed "?" CR/LF
+        ; before ABORT). HL currently points at slot+0; advance to
+        ; +6 (cf_ptr).
         LD      DE, 6
         ADD     HL, DE
         LD      E, (HL)

@@ -885,12 +885,12 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'LABEL FOO\r\n1 2 + .\r\n0 FIX\r\n1 2 + .\r\n66 DB,\r\n1 2 + .\r\n4660 DW,\r\n1 2 + .\r\n1 DS,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	NCOUNT=$$(echo "$$OUTPUT" | grep -c 'not in CODE ?') && \
+	NCOUNT=$$(echo "$$OUTPUT" | grep -c 'error -270: not in CODE') && \
 	NREC=$$(echo "$$OUTPUT" | tr -d '\r\n' | grep -oE '3 ' | wc -l) && \
 	if [ "$$NCOUNT" -ge 5 ] && [ "$$NREC" -ge 5 ]; then \
-		echo "PASS: REPL test 100 — LABEL/FIX/DB,/DW,/DS, outside CODE: 5 errors, 5 clean recoveries"; \
+		echo "PASS: REPL test 100 — LABEL/FIX/DB,/DW,/DS, outside CODE: 5 errors, 5 clean recoveries (Story 11.6: -270)"; \
 	else \
-		echo "FAIL: REPL test 100 — expected 5x 'not in CODE ?' and 5x recovery (got $$NCOUNT errors, $$NREC '3 ')"; \
+		echo "FAIL: REPL test 100 — expected 5x 'error -270: not in CODE' and 5x recovery (got $$NCOUNT errors, $$NREC '3 ')"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1317,10 +1317,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD150 8 # A BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'range ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 150 — bit 8 raises range ?, clean recovery"; \
+	if echo "$$OUTPUT" | grep -q 'error -271: range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 150 — bit 8 raises error -271: range, clean recovery (Story 11.6)"; \
 	else \
-		echo "FAIL: REPL test 150 — expected 'range ?' and '3 '"; \
+		echo "FAIL: REPL test 150 — expected 'error -271: range' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1490,10 +1490,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD171 (IX) 200 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'range ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 171 — displacement 200 out of range, clean recovery"; \
+	if echo "$$OUTPUT" | grep -q 'error -271: range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 171 — displacement 200 out of range, clean recovery (Story 11.6: -271)"; \
 	else \
-		echo "FAIL: REPL test 171 — expected 'range ?' and '3 '"; \
+		echo "FAIL: REPL test 171 — expected 'error -271: range' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1827,10 +1827,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'NOP,\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'not in CODE ?' && echo "$$OUTPUT" | grep -q '3 '; then \
-		echo "PASS: REPL test 207 — NOP, outside CODE: not in CODE ?, clean recovery"; \
+	if echo "$$OUTPUT" | grep -q 'error -270: not in CODE' && echo "$$OUTPUT" | grep -q '3 '; then \
+		echo "PASS: REPL test 207 — NOP, outside CODE: error -270: not in CODE, clean recovery (Story 11.6)"; \
 	else \
-		echo "FAIL: REPL test 207 — expected 'not in CODE ?' and '3 '"; \
+		echo "FAIL: REPL test 207 — expected 'error -270: not in CODE' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1947,10 +1947,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '( missing paren\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '? missing )' && echo "$$OUTPUT" | grep -q '42 '; then \
-		echo "PASS: REPL test 222 — missing ) raises error and recovers"; \
+	if echo "$$OUTPUT" | grep -q 'error -58: unexpected end of input' && echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 222 — missing ) raises error -58 and recovers (Story 11.6)"; \
 	else \
-		echo "FAIL: REPL test 222 — expected '? missing )' and '42 ' in output"; \
+		echo "FAIL: REPL test 222 — expected 'error -58: unexpected end of input' and '42 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4910,12 +4910,12 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@# Buffer overflow diagnostic: 41 HOLDs exceed 40-byte buffer, fires '? Pictured buffer overflow' + ABORT.
+	@# Buffer overflow diagnostic: 41 HOLDs exceed 40-byte buffer, fires -17 THROW (Story 11.6).
 	@OUTPUT=$$(printf ': OV41 0 0 <# 41 0 DO 65 HOLD LOOP #> TYPE ;\r\nOV41\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'Pictured buffer overflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 566 — 41 HOLDs trigger '? Pictured buffer overflow', REPL recovers cleanly"; \
+	if echo "$$OUTPUT" | grep -q 'error -17: pictured numeric output string overflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 566 — 41 HOLDs trigger error -17, REPL recovers cleanly (Story 11.6)"; \
 	else \
-		echo "FAIL: REPL test 566 — expected 'Pictured buffer overflow' and '3 ' after recovery"; \
+		echo "FAIL: REPL test 566 — expected 'error -17: pictured numeric output string overflow' and '3 ' after recovery"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -6412,6 +6412,94 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 744 — Story 11.5: uncaught standalone END-CODE prints error -261 + REPL recovers (asm error via inline raise; AC #19)"; \
 	else \
 		echo "FAIL: REPL test 744 — expected 'error -261: END-CODE without CODE' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# --- Story 11.6 — strings/I-O/asm-die-residual migration tests ---
+	@# Section 4.1: caught -17 (pictured overflow). HOLDs 41 chars from a
+	@# 40-byte buffer; the 41st triggers .hc_overflow → -17 THROW; CATCH
+	@# returns the code. Verifies the kernel-internal raise from
+	@# do_pic_overflow_error.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "' T17 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-17  ok'; then \
+		echo "PASS: REPL test 745 — Story 11.6: ' T17 CATCH . returns -17 (pictured overflow caught)"; \
+	else \
+		echo "FAIL: REPL test 745 — expected '-17  ok' for caught pictured overflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.1: i*x preservation across kernel-internal -17 raise.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "1 2 3 ' T17 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-17 3 2 1  ok'; then \
+		echo "PASS: REPL test 746 — Story 11.6: i*x preserved across caught -17 (3 cells under)"; \
+	else \
+		echo "FAIL: REPL test 746 — expected '-17 3 2 1  ok' for i*x preservation across pictured overflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.1: DEPTH = 1 after caught -17 (just the THROW code on top).
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "' T17 CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1  ok'; then \
+		echo "PASS: REPL test 747 — Story 11.6: DEPTH = 1 after caught -17"; \
+	else \
+		echo "FAIL: REPL test 747 — expected '1  ok' for DEPTH after caught -17"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.2: positive control — successful pictured-output round-trip.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TPIC 1234 0 <# # # # # #> 2DROP ;' "' TPIC CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 748 — Story 11.6: ' TPIC CATCH . returns 0 (success path)"; \
+	else \
+		echo "FAIL: REPL test 748 — expected '0  ok' for successful pictured-output CATCH"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.2: positive control — properly-closed `(` returns 0.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOK 5 ( inline ok ) ;' "' TOK CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 749 — Story 11.6: no-throw colon body containing compile-time paren-comment returns 0"; \
+	else \
+		echo "FAIL: REPL test 749 — expected '0  ok' for closed-paren CATCH"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.3: uncaught -17 pictured overflow + REPL recovery.
+	@# DO/LOOP are compile-only — wrap in a colon body to fire from
+	@# execute time.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ': T17X 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' 'T17X' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -17: pictured numeric output string overflow.*99  ok'; then \
+		echo "PASS: REPL test 750 — Story 11.6: uncaught -17 pictured overflow prints error + REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 750 — expected 'error -17: pictured numeric output string overflow' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.3: uncaught -58 `(` missing `)` + REPL recovery.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '( unterminated' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -58: unexpected end of input.*99  ok'; then \
+		echo "PASS: REPL test 751 — Story 11.6: uncaught open-paren missing close-paren prints error -58 + REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 751 — expected 'error -58: unexpected end of input' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.3: uncaught -270 (NOP, outside CODE) + REPL recovery.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'NOP,' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -270: not in CODE.*99  ok'; then \
+		echo "PASS: REPL test 752 — Story 11.6: uncaught NOP, outside CODE prints error -270 + REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 752 — expected 'error -270: not in CODE' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 4.3: uncaught -271 (BIT 8 — bit number out of 0..7 range)
+	@# + REPL recovery. Triggers asm_range_err via .bop_reg8's range check.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRG271 8 # B BIT, END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -271: range.*99  ok'; then \
+		echo "PASS: REPL test 753 — Story 11.6: uncaught BIT 8 prints error -271: range + REPL recovers"; \
+	else \
+		echo "FAIL: REPL test 753 — expected 'error -271: range' + recovery + '99  ok'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
