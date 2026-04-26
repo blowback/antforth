@@ -74,3 +74,78 @@ HERE ' NOOP CATCH DROP HERE = .         \ expect: -1  ok
 \ "ok", and QUIT must reset CATCH-TOP to 0 (CCD-1 chain invariant).
 CATCH                                   \ expect: ? Stack underflow  ok
 CATCH-TOP @ .                           \ expect: 0  ok    (post-recovery CATCH-TOP zeroed)
+
+\ ===============================================================
+\ Story 11.3 — `THROW` + uncaught-THROW REPL handler
+\ ===============================================================
+\ Covers Forth 2014 / ANS Forth 1994 §9.6.1.2275 `THROW` semantics:
+\ n=0 no-op (Section 6), caught round-trip (Section 7), nested-CATCH
+\ chain-walk (Section 8), uncaught diagnostic + REPL recovery
+\ (Section 9). Per-line `\ expect:` fragments for single-line tests;
+\ multi-line uncaught scenarios are exercised by Makefile blocks
+\ that flatten output via `tr '\r\n' '  '` and ordered `grep -qE`.
+
+\ --- Section 6: `THROW 0` no-op (AC #3) ---
+1 2 0 THROW . .                         \ expect: 2 1  ok
+0 0 THROW .                             \ expect: 0  ok
+
+\ --- Section 7: Caught THROW round-trip (AC #1, AC #2, AC #8) ---
+: T1 42 THROW ;
+: T2 -13 THROW ;
+' T1 CATCH .                            \ expect: 42  ok
+' T2 CATCH .                            \ expect: -13  ok
+1 2 3 ' T1 CATCH . . . .                \ expect: 42 3 2 1  ok
+1 2 3 4 ' T1 CATCH DEPTH .              \ expect: 5  ok
+
+\ --- Section 8: Nested CATCH semantics (AC #1) ---
+: T3 -5 THROW ;
+: N3 ['] T3 CATCH ;
+' N3 CATCH . .                          \ expect: 0 -5  ok    (inner catches; outer normal-return)
+
+: T4 -5 THROW ;
+: N4 T4 ;
+' N4 CATCH .                            \ expect: -5  ok      (outer catches; inner has no CATCH)
+
+: T5 -5 THROW ;
+: M5 T5 ;
+: N5 M5 ;
+' N5 CATCH .                            \ expect: -5  ok      (3-deep, only outermost catches)
+
+: T6 -5 THROW ;
+: M6 ['] T6 CATCH DROP -7 THROW ;
+' M6 CATCH .                            \ expect: -7  ok      (inner catches, rethrows -7)
+
+: T7 -5 THROW ;
+: M7 ['] T7 CATCH ;
+: N7 M7 ;
+' N7 CATCH . .                          \ expect: 0 -5  ok    (3-deep, middle catches; outer normal-return)
+
+\ Adversarial-review F2: most-negative 16-bit code through both paths.
+\ -32768 = 0x8000; print_signed_dec_bc must emit "-32768" via the
+\ unsigned-aware div_bc_by_e (negate-wraps-to-self idiom).
+: T8 -32768 THROW ;
+' T8 CATCH .                            \ expect: -32768  ok
+
+\ Adversarial-review F3: THROW from non-colon IX frames. The 4-byte
+\ DO-LOOP frame between the THROW site and the target CATCH frame is
+\ abandoned wholesale by the IX restore (E11-D2 "snap back").
+: DT 10 0 DO -5 THROW LOOP ;
+' DT CATCH .                            \ expect: -5  ok
+
+\ Adversarial-review F3: THROW mid-EXECUTE. EXECUTE adds an extra
+\ return-addr frame on IX; the snap-back must skip past it.
+: T9 -5 THROW ;
+' T9 ['] EXECUTE CATCH .                \ expect: -5  ok
+
+\ --- Section 9: Uncaught THROW + diagnostic + REPL recovery ---
+\ AC #4 / AC #5. Multi-line scenarios live in the Makefile because the
+\ diagnostic-then-recovery sequence requires `tr '\r\n' '  '`-flattened
+\ output with ordered grep patterns. Sub-cases enforced by Makefile
+\ tests 686..695 (see Makefile for canonical assertions):
+\   - 42 THROW                       → "error 42"            (no description)
+\   - -13 THROW                      → "error -13: undefined word"
+\   - -1 THROW                       → "error -1: ABORT"     (Story 11.7 precursor)
+\   - dictionary intact post-recovery (define HELLO, throw, run HELLO)
+\   - BASE intact post-recovery     (HEX, throw, BASE @ DECIMAL .)
+\   - asm_mode cleaned post-recovery (CODE BAD, throw, then CODE GOOD)
+\   - CATCH-TOP zeroed post-recovery (throw, then CATCH-TOP @ .)

@@ -130,7 +130,7 @@ development_status:
   epic-11: in-progress
   11-1-abort-site-migration-inventory-throw-code-table-and-code-equs: done
   11-2-exception-frame-infrastructure-and-catch-word: done
-  11-3-throw-word-and-uncaught-throw-repl-handler: backlog
+  11-3-throw-word-and-uncaught-throw-repl-handler: done
   11-4-internal-error-migration-stack-arithmetic-memory-primitives: backlog
   11-5-internal-error-migration-dictionary-compiler-control-flow: backlog
   11-6-internal-error-migration-strings-io-remaining-error-sites: backlog

@@ -337,11 +337,47 @@ Per CCD-1 (`architecture.md:168-191`), the exception frames form a LIFO chain ro
 
 The frame's `+0` (saved SP) and `+2` (saved IX) slots are written but **never read** by Story 11.2 — they exist purely as the contract for Story 11.3's THROW-time restore. The catching-IP slot (`+4`) is read once on normal return (to restore DE), and Story 11.3 will also read it on the THROW path. Do not pre-implement THROW-time logic in `CATCH` itself; Story 11.3 owns that codepath.
 
-### Forward pointer (Stories 11.3–11.7)
+### Story 11.3 contract — THROW-time restore
 
-- **Story 11.3** — adds `THROW`, the uncaught-throw REPL handler, and the THROW-time restore (consumes saved-SP, saved-IX, catching-IP from this frame).
-- **Stories 11.4–11.6** — migrate existing internal `JP w_ABORT_cf` sites to `THROW <code>`; do not touch the frame layout.
-- **Story 11.7** — retargets `ABORT` and `ABORT"` themselves to `-1 THROW` / `-2 THROW` (the capstone).
+`THROW` (Story 11.3 in `src/exception.asm`) implements the symmetric pop on the exception side. It has three entry-time dispositions, decided in this order:
+
+1. **`n = 0` no-op** — Forth 2014 / ANS Forth 1994 §9.6.1.2275 says "If any bits of *n* are non-zero, ..." — zero is silent. `THROW` falls into a `POP BC / NEXT` two-instruction tail; the zero is consumed, the prior second-on-stack becomes new TOS, depth drops by 1. No CATCH-TOP read, no frame access, no diagnostic.
+2. **Caught (`CATCH-TOP ≠ 0`)** — execute the 7-step algorithm below.
+3. **Uncaught (`CATCH-TOP = 0`)** — print the diagnostic, then fall into the legacy ABORT chain for state reset and REPL recovery.
+
+#### 7-step caught-path algorithm (E11-D2)
+
+After the `n = 0` short-circuit and the `CATCH-TOP = 0` short-circuit, `THROW` runs:
+
+1. **Read CATCH-TOP** into HL — this is the target frame's base address (O(1) per CCD-1).
+2. **INCLUDE-TOP chain walk** — currently a no-op (Story 13.4 will insert the loop here, between this step and step 3, to close source-input frames more recent than the target exception frame; see CCD-1 dual-chain discipline).
+3. **Restore CATCH-TOP** from frame `+6` into `(IY+UserArea.catch_top)` — must read while IX = frame base (the next steps shuffle IX).
+4. **Read catching-IP** from frame `+4` into DE — the caller's IP at CATCH entry, one cell past the CATCH that wraps this THROW.
+5. **Read saved-SP** from frame `+0` into HL — the SP captured by `CATCH` *before* its `POP BC` consumed the xt cell, so the cell at this address is i*x's TOS-cell.
+6. **Pop the 8-byte frame** via `LD BC, 8 / ADD IX, BC` — the second kernel use of `ADD IX, BC` (the first is in `catch_resume_cf`, Story 11.2). The intermediate IX rstack — colon return-addr frames, DO-LOOP frames, etc. — is abandoned wholesale by this restore (E11-D2's "snap back" semantic).
+7. **Restore SP** (`LD SP, HL`) and **install BC = n** (`LD BC, (throw_saved_n)`) — n is parked in the dedicated scratch cell because BC is reused for the `LD BC, 8` of step 6. After this point, **do NOT** `POP BC` and re-push: the saved-SP value is exactly the SP that puts i*x's TOS at `[SP]` ready to be the new second-on-stack underneath BC = n. `NEXT` resumes execution at the caller's catching-IP.
+
+The frame field reads (steps 3, 4, 5) all happen *before* IX is advanced past the frame in step 6 — IX-relative reads need IX = frame base. Steps 3, 4, 5 are commutative among themselves but each must precede step 6.
+
+Post-NEXT invariants:
+- **BC = n** is a *real* TOS, not phantom — see `project_tos_in_register.md`. `DEPTH` (which counts SP cells, not BC) reports `pre-CATCH-DEPTH + 1`, since the saved-SP restore put i*x's TOS-cell at `[SP]` as the new second-on-stack.
+- **DE = catching-IP** matches the value `(CATCH-RESUME)` would land on a normal-return path; both routes converge on the same cell in the caller's compiled thread.
+- **CATCH-TOP** is restored to the value it held at CATCH entry — recursion-safe.
+
+#### Uncaught path (`CATCH-TOP = 0`)
+
+The uncaught path stashes `n` in `throw_saved_n` (BC is clobbered by the BDOS print helpers' `LD B, <len>` arg), prints `error <n>` via a hardcoded-decimal helper (`print_signed_dec_bc`, BASE-independent per FR21), looks up `n` in `throw_desc_table` and prints `: <description>` on hit, emits CR/LF, then `JP w_ABORT_cf`.
+
+Sharing the legacy ABORT chain (`asm_cleanup` → reset SP → `JP w_QUIT_cf`) means uncaught-THROW recovery is byte-for-byte identical to ABORT recovery: `STATE` zeroed, IX reset, `CATCH-TOP` zeroed, `asm_mode` cleared, dictionary intact (LATEST may be stale on partial CODE definitions, but the bucket head is restored). This forward-compatibility is what allows Story 11.7 to retarget `w_ABORT_cf` itself to `-1 THROW` without rewriting recovery — at that point, ABORT *is* uncaught-THROW.
+
+The description table is seeded with the standard codes Epic 11 issues (`-1`, `-2`, `-4`, `-10`, `-13`, `-14`, `-16`, `-17`, `-22`, `-58`, plus future-add slots Story 11.5 fills in for the antforth `-258..-269` assembler-error extensions).
+
+### Forward pointer (Stories 11.4–11.7, 13.4)
+
+- **Story 11.3** — see *Story 11.3 contract — THROW-time restore* (above).
+- **Stories 11.4–11.6** — migrate existing internal `JP w_ABORT_cf` sites to `THROW <code>`; do not touch the frame layout. Each migration inherits the caught/uncaught dispatch built here.
+- **Story 11.7** — retargets `ABORT` and `ABORT"` themselves to `-1 THROW` / `-2 THROW` (the capstone). At this point, ABORT's recovery becomes uncaught-THROW's recovery — the same code path either way.
+- **Story 13.4** — inserts the `INCLUDE-TOP` chain-walk loop into THROW's caught path (between steps 2 and 3 of the 7-step algorithm above), closing source-input frames that are more recent than the target exception frame.
 
 This section will be extended by Stories 11.3–11.7 as new fields, semantics, or interactions land. The 8-byte layout itself is locked at Story 11.2 — any change must be a deliberate revision to E11-D1, not a drift.
 

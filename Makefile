@@ -5843,6 +5843,182 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@OUTPUT=$$(printf '1 2 0 THROW . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '2 1  ok'; then \
+		echo "PASS: REPL test 674 — Story 11.3: THROW 0 is a no-op, only consumes the zero (AC #3)"; \
+	else \
+		echo "FAIL: REPL test 674 — expected '2 1  ok' for '1 2 0 THROW . .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '0 0 THROW .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '0 0 THROW \. 0  ok'; then \
+		echo "PASS: REPL test 675 — Story 11.3: THROW 0 with BC=0 from below is a no-op (AC #3)"; \
+	else \
+		echo "FAIL: REPL test 675 — expected '0  ok' for '0 0 THROW .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "' T1 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42  ok'; then \
+		echo "PASS: REPL test 676 — Story 11.3: caught THROW round-trip with user code 42 (AC #1, AC #2)"; \
+	else \
+		echo "FAIL: REPL test 676 — expected '42  ok' for caught-THROW round-trip"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T2 -13 THROW ;" "' T2 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-13  ok'; then \
+		echo "PASS: REPL test 677 — Story 11.3: caught THROW round-trip with std code -13 (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 677 — expected '-13  ok' for caught -13 THROW round-trip"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "1 2 3 ' T1 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 3 2 1  ok'; then \
+		echo "PASS: REPL test 678 — Story 11.3: i*x preservation across caught THROW (AC #2)"; \
+	else \
+		echo "FAIL: REPL test 678 — expected '42 3 2 1  ok' for i*x preservation"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "1 2 3 4 ' T1 CATCH DEPTH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '5  ok'; then \
+		echo "PASS: REPL test 679 — Story 11.3: post-THROW DEPTH = pre-CATCH-DEPTH + 1 (AC #8)"; \
+	else \
+		echo "FAIL: REPL test 679 — expected '5  ok' for post-THROW DEPTH check"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T3 -5 THROW ;" ": N3 ['] T3 CATCH ;" "' N3 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '0 -5  ok'; then \
+		echo "PASS: REPL test 680 — Story 11.3: nested CATCH, inner catches; outer normal-return (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 680 — expected '0 -5  ok' for nested-inner-catches scenario"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T4 -5 THROW ;" ": N4 T4 ;" "' N4 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
+		echo "PASS: REPL test 681 — Story 11.3: nested CATCH, outer catches when inner has no CATCH (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 681 — expected '-5  ok' for outer-catches-only scenario"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T5 -5 THROW ;" ": M5 T5 ;" ": N5 M5 ;" "' N5 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
+		echo "PASS: REPL test 682 — Story 11.3: 3-deep nesting, only outermost CATCH catches (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 682 — expected '-5  ok' for 3-deep outermost-catches scenario"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T6 -5 THROW ;" ": M6 ['] T6 CATCH DROP -7 THROW ;" "' M6 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-7  ok'; then \
+		echo "PASS: REPL test 683 — Story 11.3: inner catches and re-THROWs a different code (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 683 — expected '-7  ok' for catch-and-rethrow scenario"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T7 -5 THROW ;" ": M7 ['] T7 CATCH ;" ": N7 M7 ;" "' N7 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '0 -5  ok'; then \
+		echo "PASS: REPL test 684 — Story 11.3: 3-deep nesting, middle CATCH catches; outer normal-return (AC #1)"; \
+	else \
+		echo "FAIL: REPL test 684 — expected '0 -5  ok' for 3-deep middle-catches scenario"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '42 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error 42  '; then \
+		echo "PASS: REPL test 685 — Story 11.3: uncaught THROW with user code prints 'error <N>' (no description) (AC #4, AC #5)"; \
+	else \
+		echo "FAIL: REPL test 685 — expected 'error 42' (no ': <desc>') for uncaught user THROW"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-13 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word'; then \
+		echo "PASS: REPL test 686 — Story 11.3: uncaught THROW with std code -13 prints diagnostic + description (AC #4, AC #5)"; \
+	else \
+		echo "FAIL: REPL test 686 — expected 'error -13: undefined word' for uncaught -13 THROW"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-1 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT'; then \
+		echo "PASS: REPL test 687 — Story 11.3: uncaught -1 THROW prints 'error -1: ABORT' (Story 11.7 precursor) (AC #5)"; \
+	else \
+		echo "FAIL: REPL test 687 — expected 'error -1: ABORT' for uncaught -1 THROW"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": HELLO 99 ;" "-13 THROW" "HELLO ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+		echo "PASS: REPL test 688 — Story 11.3: dictionary intact across uncaught THROW + REPL recovery (AC #4)"; \
+	else \
+		echo "FAIL: REPL test 688 — expected diagnostic followed by '99  ok' (HELLO survives recovery)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "HEX -1 THROW" "BASE @ DECIMAL ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT.*16  ok'; then \
+		echo "PASS: REPL test 689 — Story 11.3: BASE preserved across uncaught THROW; diagnostic prints in decimal (AC #4, AC #13)"; \
+	else \
+		echo "FAIL: REPL test 689 — expected 'error -1: ABORT' (decimal) then '16  ok' (BASE still HEX)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n" "CODE BAD" "-13 THROW" "CODE GOOD" "NEXT, END-CODE" "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.* ok.* ok.* ok'; then \
+		echo "PASS: REPL test 690 — Story 11.3: asm_mode cleaned by uncaught THROW; subsequent CODE..END-CODE compiles (AC #4)"; \
+	else \
+		echo "FAIL: REPL test 690 — expected diagnostic + 3 'ok' (CODE BAD, recovery, CODE GOOD, END-CODE)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "-13 THROW" "CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*CATCH-TOP @ \. 0  ok'; then \
+		echo "PASS: REPL test 691 — Story 11.3: CATCH-TOP zeroed by QUIT after uncaught THROW (CCD-1 chain reset)"; \
+	else \
+		echo "FAIL: REPL test 691 — expected diagnostic followed by 'CATCH-TOP @ . 0  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T8 -32768 THROW ;" "' T8 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-32768  ok'; then \
+		echo "PASS: REPL test 692 — Story 11.3 (review F2): caught -32768 (most-negative 16-bit) round-trips correctly"; \
+	else \
+		echo "FAIL: REPL test 692 — expected '-32768  ok' for caught most-negative THROW"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf -- '-32768 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -32768  '; then \
+		echo "PASS: REPL test 693 — Story 11.3 (review F2): uncaught -32768 prints 'error -32768' via unsigned-aware print (no description suffix — code is not in throw_desc_table)"; \
+	else \
+		echo "FAIL: REPL test 693 — expected 'error -32768  ' (no ': <desc>') for uncaught most-negative THROW"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DT 10 0 DO -5 THROW LOOP ;" "' DT CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
+		echo "PASS: REPL test 694 — Story 11.3 (review F3): THROW from inside DO-LOOP body; snap-back skips DO frame (E11-D2)"; \
+	else \
+		echo "FAIL: REPL test 694 — expected '-5  ok' for THROW from DO-LOOP"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T9 -5 THROW ;" "' T9 ['] EXECUTE CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
+		echo "PASS: REPL test 695 — Story 11.3 (review F3): THROW mid-EXECUTE; snap-back skips EXECUTE return-addr frame"; \
+	else \
+		echo "FAIL: REPL test 695 — expected '-5  ok' for THROW mid-EXECUTE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
