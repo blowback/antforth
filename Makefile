@@ -26,11 +26,25 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test_key clean docker-build docker docker-test docker-disk
+.PHONY: all asm disk test test-repl test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test
 
 all: asm
 
 asm: $(TARGET)
+
+# --- Firmware BDOS register-preservation reproducer (Story 11.5.1.2) ---
+# Independent of antforth — does not depend on src/*.asm.
+BDOS_PROBE_SRC = tools/bdos_probe/bdos_probe.asm
+BDOS_PROBE_COM = $(BUILDDIR)/bdos_probe.com
+
+firmware-repro: $(BDOS_PROBE_COM)
+
+$(BDOS_PROBE_COM): $(BDOS_PROBE_SRC) | $(BUILDDIR)
+	cd tools/bdos_probe && $(ASM) $(ASMFLAGS) bdos_probe.asm --raw=../../$(BDOS_PROBE_COM)
+
+firmware-repro-test: $(BDOS_PROBE_COM)
+	@echo "Running BDOS probe under iz-cpm (negative-control gate)..."
+	@printf 'k\nhello\n\n' | $(IZCPM) $(BDOS_PROBE_COM) 2>/dev/null
 
 $(TARGET): $(SRCS) | $(BUILDDIR)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) antforth.asm --raw=../$(TARGET)

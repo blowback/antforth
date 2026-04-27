@@ -156,7 +156,24 @@ development_status:
   # placeholders; expect them to be edited or replaced by Story 11.5.5.
 
   epic-11.5: in-progress
-  11.5-1-real-microbeast-hardware-crash-audit: ready-for-dev
+  11.5-1-real-microbeast-hardware-crash-audit: review
+  # Story 11.5.1 verdict 2026-04-27: (c) shared-fault for both
+  # incidents (transcripts bestialitty-20260427-120911.bin +
+  # bestialitty-20260427-155200.bin). .S confirmed deterministic
+  # crash trigger via shadow-register clobber by MicroBeast BDOS
+  # function 2. Defensive-saves story (11.5.1.1) contingent —
+  # not filed until firmware reproducer is inconclusive.
+  # Story 11.5.1.2 dev pass closed 2026-04-27. Hardware run COMPLETE
+  # (4-run transcript bestialitty-20260427-163829.bin); verdict branch
+  # (b): firmware bug CONFIRMED on fns 1/10, registers BC'/DE'/HL'.
+  # PROJECT-LEAD RESOLUTION 2026-04-27: PRIMARY sequencing — escalation
+  # packet sent to Andy (no response yet). MicroBeast commit ced99d1
+  # (2026-04-16, interrupt-handler EXX→PUSH/POP refactor) matches the
+  # observed mechanism — strong signal next firmware revision closes
+  # this firmware-side. Story 11.5.1.1 stays UNSPAWNED on standby;
+  # re-test plan: re-run BDOS_PRO.COM after the next firmware release;
+  # if all-P, drop 11.5.1.1 permanently; if clobber persists, spawn it.
+  11.5-1-2-firmware-bdos-register-preservation-reproducer: done
   11.5-2-stack-overflow-throw-3-guard: backlog
   11.5-3-paren-evaluate-source-frame-fix: backlog
   11.5-4-print-throw-description-table-walk-hardening: backlog
