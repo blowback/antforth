@@ -1,6 +1,6 @@
 # Story 11.8: Epic 11 benchmark, survivability stress + regression gate (CCD-4)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

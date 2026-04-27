@@ -127,7 +127,7 @@ development_status:
   10-10-epic-10-compliance-audit-benchmark-and-regression-gate-ccd-4: done
   epic-10-retrospective: done
 
-  epic-11: in-progress
+  epic-11: done
   11-1-abort-site-migration-inventory-throw-code-table-and-code-equs: done
   11-2-exception-frame-infrastructure-and-catch-word: done
   11-3-throw-word-and-uncaught-throw-repl-handler: done
@@ -143,8 +143,27 @@ development_status:
   11-5-internal-error-migration-dictionary-compiler-control-flow: done
   11-6-internal-error-migration-strings-io-remaining-error-sites: done
   11-7-abort-and-abort-quote-retargeted-as-throw-wrappers-capstone: done
-  11-8-epic-11-benchmark-survivability-stress-and-regression-gate-ccd-4: review
-  epic-11-retrospective: optional
+  11-8-epic-11-benchmark-survivability-stress-and-regression-gate-ccd-4: done
+  epic-11-retrospective: done
+
+  # Epic 11 retro 2026-04-27 surfaced two epic-update signals (see
+  # epic-11-retro-2026-04-27.md §"Significant Discoveries"). Course
+  # correction approved 2026-04-27 via sprint-change-proposal-2026-04-27.md:
+  # Epic 11.5 inserted as a stabilisation interlude before Epic 12.
+  # Story 11.5.1 (hardware audit) is the gating story — verdict-only
+  # deliverable; fix-stories spawn from the verdict. Story 11.5.5
+  # redrafts Epic 12. Epic 12 backlog rows below are kept as
+  # placeholders; expect them to be edited or replaced by Story 11.5.5.
+
+  epic-11.5: in-progress
+  11.5-1-real-microbeast-hardware-crash-audit: ready-for-dev
+  11.5-2-stack-overflow-throw-3-guard: backlog
+  11.5-3-paren-evaluate-source-frame-fix: backlog
+  11.5-4-print-throw-description-table-walk-hardening: backlog
+  11.5-5-epic-12-redraft: backlog
+  11.5-6-throw-271-semantic-split: backlog
+  11.5-7-epic-11-5-close-out-gate: backlog
+  epic-11.5-retrospective: optional
 
   epic-12: backlog
   12-1-wordlist-struct-hash-parameterisation-and-forth-wordlist-bootstrap: backlog

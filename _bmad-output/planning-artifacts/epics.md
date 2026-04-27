@@ -23,7 +23,7 @@ phaseScope: 'Epics 9-13 — antforth 2.0 release'
 
 This document provides the epic and story breakdown for **antforth 2.0** (Phase 2), decomposing the PRD and Architecture into implementable stories for Epics 9 through 13. Phase 1 (Epics 1–8) is complete and preserved in `epics-phase1-epics-1-8.md`; its kernel, REPL, language-extension compiler, built-in Z80 assembler, MARKER, and shadow-register optimisations are the foundation on which Phase 2 builds.
 
-The phase delivers two mutually reinforcing goals — **100% ANS Forth Core compliance** and **on-device source development via the CP/M filesystem**. The built-in Z80 assembler is retained unchanged; Epic 12 wires the existing opcode words under a new `ASSEMBLER` wordlist with auto-activation inside `CODE`/`END-CODE`. The 2.0 release is tagged when the Epic 13 regression gate passes against a real MicroBeast.
+The phase delivers two mutually reinforcing goals — **100% ANS Forth Core compliance** and **on-device source development via the CP/M filesystem**. The built-in Z80 assembler is retained **unchanged and hard-coded** — no ASSEMBLER.FTH, no ASSEMBLER wordlist, no auto-activation (per project lead 2026-04-20 + 2026-04-27). Epic 12 delivers the user-facing Search-Order wordset. The 2.0 release is tagged when the Epic 13 regression gate passes against a real MicroBeast.
 
 ## Requirements Inventory
 
@@ -119,7 +119,7 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 **Integration (CP/M and Platform)**
 - NFR19: Terminal I/O portability — antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9); no ANSI escape codes, cursor positioning, or colour
 - NFR20: File path conventions — `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename); no wildcards; no Unix-style paths
-- NFR21: MicroBeast hardware dependency isolation — no MicroBeast-specific hardware word enters the kernel or ASSEMBLER wordlist during this phase
+- NFR21: MicroBeast hardware dependency isolation — no MicroBeast-specific hardware word enters the kernel during this phase
 
 ### Additional Requirements
 
@@ -192,7 +192,7 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 | FR27 | Epic 12 | `ONLY` |
 | FR28 | Epic 12 | `FORTH-WORDLIST` |
 | FR29 | Epic 12 | `SEARCH-WORDLIST` |
-| FR30 | Epic 12 | `ASSEMBLER` wordlist auto-activation on `CODE`/`END-CODE` |
+| ~~FR30~~ | ~~Epic 12~~ | ~~`ASSEMBLER` wordlist auto-activation~~ — **withdrawn 2026-04-27** per project-lead direction (no ASSEMBLER wordlist, no auto-activation; hard-coded assembler stays as-is). Surrounding FR numbering left intact; FR30 is a deliberate gap. |
 | FR31 | Epic 12 | Pre-phase CODE-word source files assemble unchanged |
 | FR32 | Epic 13 | `INCLUDE <filename>` |
 | FR33 | Epic 13 | `INCLUDE-FILE` |
@@ -922,9 +922,219 @@ So that the exception subsystem's performance, correctness, and safety envelopes
 **When** the full Epic-11 test suite (including the stress suite) is piped into the `.COM` on hardware
 **Then** it passes — PRD MVP rule satisfied; `antforth 1.11` release can be tagged.
 
-## Epic 12: Multi-Vocabulary Search-Order & ASSEMBLER Wordlist
+## Epic 11.5: Stabilisation, Hardware Audit, Debt Cleanup, Epic-12 Redraft Prep
 
-Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. The `ASSEMBLER` wordlist is populated from the existing kernel-resident opcode words (no migration to a Forth-source file is planned for Phase 2). Shippable as antforth 1.12.
+The Epic 11 retrospective (2026-04-27) surfaced two epic-update signals — a hardware-only crash class on real MicroBeast affecting print operations, and Epic 12's auto-activation plan invalidated by the wider 2026-04-20 ASSEMBLER rollback — plus six accumulated technical-debt items from Epics 10 and 11 that risk snowballing into Epic 12. Inserted as a stabilisation interlude before Epic 12 starts (sprint-change-proposal-2026-04-27.md). One audit story (verdict-only deliverable; fix-stories spawn from the verdict), four hardening / debt-retirement stories, one document-surgery story redrafting Epic 12 to match the rollback decisions, plus a CCD-4-equivalent close-out gate. Shippable as `antforth 1.11.5` (or carried implicitly into Epic 12's tag).
+
+### Story 11.5.1: Real-MicroBeast hardware crash audit
+
+As the antforth maintainer,
+I want a thorough audit of every BDOS-call register-preservation assumption, every shadow-register / IX / IY / stack interaction with print paths, and a hardware reproduction of the 2026-04-27-observed crashes,
+So that we produce a verdict (antforth defect / firmware bug / shared-fault) with reproducer for each path before approaching the MicroBeast firmware maintainer. **This story is verdict-only — fix-stories spawn from the verdict; small in-pass fixes are not authorised.**
+
+**Acceptance Criteria:**
+
+**Given** the 2026-04-27 hardware smoke transcript (`~/Downloads/bestialitty-20260427-120911.bin`)
+**When** each of the two reproducible incidents is reproduced on real MicroBeast hardware (incident #1: `1 2 3 ' ABORT CATCH . . . .` printed `-1 ` then soft-rebooted mid-line; incident #2: `error -3085` followed by `Bdos Err On B: Bad Sector` chain)
+**Then** the trigger sequence is documented byte-for-byte and the failure mode (hard reboot, BDOS error, hang) is recorded with timing and any pre-state.
+
+**Given** every BDOS call site in `src/*.asm`
+**When** audited
+**Then** the per-site shadow-register / IX / IY / stack-discipline assumption is documented and cross-referenced against the CP/M 2.2 BDOS contract (function-by-function — the contract is per-function and implementation-defined for many functions).
+
+**Given** Story 11.4.1's i*x preservation path (the `1 2 3 ' ABORT CATCH . . . .` form is exactly the path it redesigned)
+**When** the audit checks whether the Story-11.4.1 redesign is implicated in incident #1
+**Then** the verdict is recorded — either ruled out (with evidence) or implicated (with reproducer).
+
+**Given** the audit findings
+**When** synthesised
+**Then** a verdict is produced for each incident: **(a) antforth defect** — produce a fix-story spec with reproducer, expected fix scope, and risk assessment; **(b) firmware bug** — produce a minimal reproducer the MicroBeast maintainer can use, with antforth-side defensive options noted; **(c) shared-fault** — document the boundary, the antforth-side mitigation, and the firmware-side concern.
+
+**Given** the verdict for each incident
+**When** the audit lands
+**Then** the project lead reviews and approves the next-step plan (fix-stories, escalation, or both); approved fix-stories are added to Epic 11.5 sprint-status as new backlog rows.
+
+**Given** the verdict-only scope
+**When** the dev agent encounters a small in-pass fix temptation
+**Then** the temptation is recorded as a finding in the verdict, NOT applied — even one-line fixes spawn their own story so the audit's "this is the defect" claim remains independently verifiable.
+
+**Given** the close-out gate Story 11.5.7
+**When** Epic 11.5 is being measured
+**Then** the audit's verdict-with-reproducers stands as Story 11.5.1's deliverable; the absence of a kernel diff is the expected outcome.
+
+### Story 11.5.2: Stack-overflow `-3 THROW` guard
+
+As a Forth user,
+I want data-stack growth past `s0` to raise `-3 THROW` cleanly rather than corrupt whatever lives below,
+So that catastrophic stack-overflow becomes a recoverable error like every other migrated raise site (closes Story 11.8 NFR6 documented gap).
+
+**Acceptance Criteria:**
+
+**Given** `THROW_STACK_OVERFLOW EQU -3` (already reserved per `docs/throw-codes.md:74` row)
+**When** declared in `src/constants.asm`
+**Then** it carries the `; ANS Forth 1994 §9.3.5` citation per CCD-3.
+
+**Given** the existing `check_underflow{,_2,_3,_4}` infrastructure pattern
+**When** a symmetric guard is wired against `s0`
+**Then** any data-stack push past the limit raises `-3 THROW` via `JP w_THROW_cf.kernel_entry` (kernel-internal entry pattern from Story 11.4); the guard is invoked at every site that pushes onto the data stack from a depth-unaware caller.
+
+**Given** `tests/throw_migration_tests.fth`
+**When** Section 5 (or extension of Section 1) is added
+**Then** caught + uncaught -3 cases are exercised; uncaught case asserts `error -3: stack overflow.*<recovery-marker>`.
+
+**Given** Story 11.8 NFR6 verdict
+**When** the guard lands
+**Then** the verdict updates from "PASS-with-documented-gap" to "PASS"; test 766 gains its overflow corollary.
+
+**Given** Story 11.5.1's audit verdict
+**When** it identifies stack-overflow as the proximate cause of incident #1
+**Then** Story 11.5.2 is marked as closing that finding too; otherwise the guard stands as defensive hardening.
+
+### Story 11.5.3: `(` / EVALUATE source-frame fix
+
+As a Forth user,
+I want `(` to respect `EVALUATE`'s source-frame boundary,
+So that an unterminated `(` inside `EVALUATE` raises `-58 THROW` against EVALUATE's frame rather than walking past the EVALUATE source into outer REPL input — closes Story 11.6 F8 deferral.
+
+**Acceptance Criteria:**
+
+**Given** the pre-fix defect (Story 11.6 F8)
+**When** the reproducer `: T58 S" ( unterminated " EVALUATE ; ' T58 CATCH . CR DEPTH .` is run pre-fix
+**Then** subsequent REPL lines are consumed by the runaway parse (documented baseline).
+
+**Given** the fix landed in `src/strings.asm` `w_PAREN_cf` (parameterised on `EVALUATE`'s source-frame state)
+**When** the reproducer is re-run
+**Then** the output is `-58 0  ok` (caught the unexpected-end-of-input THROW; depth correct; subsequent REPL lines unaffected).
+
+**Given** asm-error THROW codes (-258..-271) carrying caught-form deferrals from Story 11.5 D2 / Story 11.6 F6
+**When** the EVALUATE source-frame is correctly bounded
+**Then** an EVALUATE-based caught-test harness becomes feasible; at least one caught-form test is added per asm-error THROW code (or covered by a parameterised test harness).
+
+**Given** the existing 787 PASS baseline
+**When** the fix lands
+**Then** zero regressions; new tests numbered from the post-Epic-11 high-water mark.
+
+### Story 11.5.4: `print_throw_description` table-walk hardening
+
+As an antforth maintainer,
+I want the description-table walk in `print_throw_description` to use 16-bit `ADD HL, A` rather than 8-bit `ADD A, L / INC H`,
+So that the walk does not wrap if the kernel grows past 32 KB and the table relocates near the top of memory — closes Story 11.5 F9 / Story 11.6 R-L6 carry.
+
+**Acceptance Criteria:**
+
+**Given** the current 8-bit walk in `src/exception.asm` `print_throw_description`
+**When** replaced with the 16-bit `ADD HL, A` form
+**Then** the walk is wrap-safe across the full 16-bit address space.
+
+**Given** all uncaught-THROW REPL tests (685–693, 716–717, 750–753, 762–764, 768–770)
+**When** re-run post-fix
+**Then** all PASS byte-identically.
+
+**Given** the binary-size delta
+**When** measured
+**Then** recorded in Completion Notes; expected near-zero (one form swap).
+
+### Story 11.5.5: Epic 12 redraft — drop ASSEMBLER wordlist entirely
+
+As an antforth maintainer,
+I want Epic 12 sections in `epics.md` and `sprint-status.yaml` updated so that no ASSEMBLER wordlist, no ASSEMBLER.FTH, and no auto-activation appear anywhere in the Epic 12 plan,
+So that Epic 12 reflects the project lead's 2026-04-27 direction (the existing hard-coded assembler implementation in `src/assembler.asm` is what we keep going forwards) and no Epic 12 story is started against a stale spec.
+
+**Acceptance Criteria:**
+
+**Given** the project lead's 2026-04-27 direction (no ASSEMBLER.FTH, no ASSEMBLER wordlist, no auto-activation, hard-coded assembler stays as-is)
+**When** Epic 12 sections in `_bmad-output/planning-artifacts/epics.md` are redrafted
+**Then** the Epic 12 title is renamed (drop the "& ASSEMBLER Wordlist" suffix — proposed: "Multi-Vocabulary Search-Order"); the Epic 12 intro paragraph removes every mention of ASSEMBLER wordlist activation, opcode-word registration, and `CODE`/`END-CODE` auto-activation.
+
+**Given** Story 12.1 (`FORTH-WORDLIST` bootstrap)
+**When** redrafted
+**Then** any ACs that pre-allocate an `ASSEMBLER` bucket slot or assume an ASSEMBLER wordlist will follow are stripped; the bucket-array layout is sized solely for the user-facing search-order wordsets.
+
+**Given** Story 12.6 ("ASSEMBLER wordlist + auto-activation in `CODE`/`END-CODE`")
+**When** the redraft lands
+**Then** the entire story is **deleted** from `epics.md`. The Story-10.7 asm-`#` dispatch hack is **permanent** (no retirement vehicle planned); `project_asm_hash_dispatch_hack.md` already reflects this 2026-04-27 update.
+
+**Given** Story 12.7 (Epic 12 close-out gate)
+**When** the redraft lands
+**Then** it is renumbered to **Story 12.6** (filling the gap left by the deleted story); ACs are pruned to drop the CODE-source-file backward-compat suite that referenced ASSEMBLER opcode-relocation (FR31 / NFR14 backward-compat is still verified — but framed against the unchanged hard-coded assembler subsystem, not against any opcode migration); ROM-delta accounting recalibrated.
+
+**Given** `sprint-status.yaml` Epic 12 rows
+**When** the redraft lands
+**Then** `12-6-assembler-wordlist-and-auto-activation-in-code-end-code: backlog` is removed; `12-7-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: backlog` is renamed to `12-6-...` (matching the renumbered story slug).
+
+**Given** the affected memories
+**When** the redraft lands
+**Then** `project_phase2_scope.md` Epic 12 entry is current (already updated 2026-04-27); `project_epic12_redraft_required.md` is replaced with a brief closure note or deleted; `project_assembler_keep_assembly.md` is current (already updated 2026-04-27); `project_asm_hash_dispatch_hack.md` is current (already marked permanent 2026-04-27); `project_epic_11_5_scope.md` is updated to show Story 11.5.5 closed.
+
+**Given** the PRD (`_bmad-output/planning-artifacts/prd.md`) and architecture spec (`_bmad-output/planning-artifacts/architecture.md`)
+**When** the redraft lands
+**Then** every residual ASSEMBLER-wordlist / auto-activation reference is scrubbed to match the post-2026-04-27 reality; the in-flight high-impact edits already made on 2026-04-27 (FR30 deletion, Executive Summary, MVP rule, vocabulary-model table, Mo's journey, runtime-model boot-flow, post-MVP first-consumer wording, requirements-summary table) are verified intact; any remaining narrative drift is reconciled. `grep -nE 'ASSEMBLER wordlist|ASSEMBLER\.FTH|auto-activat' _bmad-output/planning-artifacts/*.md` returns only historical / superseded-tagged hits, no forward-looking promises.
+
+**Given** the redraft is document-only
+**When** the changes land
+**Then** zero binary delta; zero test-count delta; `make test-repl` regression baseline preserved.
+
+### Story 11.5.6: `-271` semantic split
+
+As a Forth user,
+I want `THROW_ASM_RANGE = -271` to be split into `-271 +D` displacement and `-272 BIT,` bit-number out-of-range,
+So that the diagnostic gives instruction-locality rather than collapsing two distinct conditions onto one code (closes Story 11.6 F4 deferral).
+
+**Acceptance Criteria:**
+
+**Given** `THROW_ASM_RANGE EQU -271` (existing)
+**When** the split lands
+**Then** `THROW_ASM_RANGE` (or renamed `THROW_ASM_DISP_RANGE`) is retained for the `+D` displacement out-of-range raise; new `THROW_ASM_BIT_RANGE EQU -272` is allocated with the `; antforth extension — see docs/throw-codes.md` marker per CCD-3.
+
+**Given** the two raise sites in `src/assembler.asm` (`+D` displacement guard and `BIT,` bit-number guard, per Story 11.6 R-F1's corrected line numbers `:1135/:1138/:1143` and `:3076/:3113/:3145`)
+**When** split
+**Then** each raises its own code; `docs/throw-codes.md` §c gains the `-272` row with rationale; `src/exception.asm` `throw_desc_table` gains the `-272 "bit range"` (or equivalent) entry.
+
+**Given** existing tests that exercise the `-271` path
+**When** they run post-split
+**Then** they assert against the correct of `-271` / `-272` per the actual condition raised; no PASS-by-coincidence.
+
+**Given** the binary-size delta
+**When** measured
+**Then** recorded in Completion Notes; expected small positive (new EQU + table entry + per-site code routing).
+
+### Story 11.5.7: Epic 11.5 close-out gate (CCD-4 equivalent)
+
+As the antforth maintainer,
+I want Epic 11.5 to close with a CCD-4-equivalent gate covering full regression + ROM-delta accounting + hardware re-smoke,
+So that the audit verdict is silicon-validated, the debt cleanup is verified zero-regression, and Epic 12 starts from a known-clean baseline.
+
+**Acceptance Criteria:**
+
+**Given** the post-Story-11.5.6 binary
+**When** `make test-repl` and `make test` run
+**Then** zero regressions; PASS count = post-Story-11.7 baseline (787) + Epic 11.5 net additions; recorded in Completion Notes.
+
+**Given** the cumulative ROM delta from Stories 11.5.1–11.5.6
+**When** measured against post-Story-11.7 baseline (17,425 bytes)
+**Then** the delta is recorded and justified per NFR4 (per-epic budget); near-zero is the expected envelope, with any non-trivial delta tied to the audit verdict.
+
+**Given** the audit verdict from Story 11.5.1
+**When** Epic 11.5 close-out runs
+**Then** the verdict's reproducers are re-run on real MicroBeast hardware to confirm the antforth-side fixes (if any) hold and the firmware-escalation reproducers (if any) still trigger predictably.
+
+**Given** the Epic 12 redraft from Story 11.5.5
+**When** verified
+**Then** the post-redraft Epic 12 sprint-status rows match the redrafted epic-spec stories; the asm-`#` hack memory is consistent with the picked retirement path; no orphan memory references the pre-redraft plan.
+
+**Given** the full Phase-1 + Epic-9/10/11 + Epic-11.5 test suites
+**When** run on the close-out binary
+**Then** every test passes; hardware re-smoke (subset of the Story 11.8 12-line batch, plus any new audit-verdict reproducers) PASSes on real MicroBeast.
+
+**Given** Epic 11.5 closure
+**When** the gate verdict lands
+**Then** Epic 12 is unblocked to start from a known-clean baseline; sprint-status flips `epic-11.5: backlog → in-progress → done` per normal convention.
+
+## Epic 12: Multi-Vocabulary Search-Order
+
+⚠️ **STALE — pending Story 11.5.5 redraft (2026-04-27).** This section was drafted before the 2026-04-27 direction that there will be **no ASSEMBLER wordlist, no ASSEMBLER.FTH, and no auto-activation**. The hard-coded assembler in `src/assembler.asm` stays as-is forever. Story 11.5.5 will: (a) drop Story 12.6 entirely, (b) renumber Story 12.7 → Story 12.6, (c) scrub ASSEMBLER-wordlist references from this epic intro and any Story 12.1 ACs that assume them. Until that redraft lands, the sections below should be read as historical-with-known-stale-elements.
+
+Users can create and manage multiple wordlists, control the search order, and direct definitions into specific wordlists — all while existing CODE source files assemble unchanged against the unchanged hard-coded assembler subsystem. Shippable as antforth 1.12.
 
 ### Story 12.1: Wordlist struct + hash parameterisation + `FORTH-WORDLIST` bootstrap
 

@@ -60,7 +60,7 @@ The phase pursues two mutually reinforcing goals:
 1. **100% ANS Forth Core compliance** — driving from the current ~86% to full coverage, the headline credibility win for prospective users of the project
 2. **On-device source development via the CP/M filesystem** — unblocking the edit / test / persist cycle directly on the MicroBeast hardware, the personal success moment for the project's primary persona
 
-The phase ships as antforth 2.0 when both goals are met and all inter-epic infrastructure (numeric literal prefixes, Core gap words, CATCH/THROW, multi-vocabulary Search-Order + `ASSEMBLER` wordlist, File-Access) is operational and exercised by REPL-piped Forth test scripts against a real MicroBeast. The built-in Z80 assembler (Epics 4 / 4.3.5 / 4.4) is retained unchanged in Phase 2 and is simply wired under the new `ASSEMBLER` wordlist.
+The phase ships as antforth 2.0 when both goals are met and all inter-epic infrastructure (numeric literal prefixes, Core gap words, CATCH/THROW, multi-vocabulary Search-Order, File-Access) is operational and exercised by REPL-piped Forth test scripts against a real MicroBeast. The built-in Z80 assembler (Epics 4 / 4.3.5 / 4.4) is retained **unchanged and hard-coded** in Phase 2 — no ASSEMBLER.FTH, no ASSEMBLER wordlist, no auto-activation (per project lead 2026-04-20 + 2026-04-27).
 
 ### What Makes This Special
 
@@ -83,7 +83,7 @@ The phase ships as antforth 2.0 when both goals are met and all inter-epic infra
 **For "The OG" (experienced retrocomputing enthusiast):**
 
 - User loads a Forth source file from B: ramdisk via `INCLUDE`, modifies a word at the REPL, and saves it back — full edit / test / persist cycle on the device, no cross-compiler involved
-- User defines `CODE` words using the inline assembler; opcode words are visible only inside `CODE`/`END-CODE` thanks to the `ASSEMBLER` wordlist auto-activation, and invisible outside (no accidental opcode-word collisions with user words)
+- User defines `CODE` words using the unchanged hard-coded inline assembler; opcode words remain kernel-resident and reachable as before (no ASSEMBLER wordlist or auto-activation; the existing implementation is what we keep going forwards)
 - User catches and handles errors in their own code via `CATCH` rather than having the REPL `ABORT`
 - User organises their own words into named vocabularies using `WORDLIST` and `DEFINITIONS`
 
@@ -110,7 +110,7 @@ All items below are hard, verifiable acceptance criteria for the phase:
 - **Double-precision arithmetic** (`D+`, `D-`, `D*`, `DNEGATE`, `DABS`, `D<`, `D=`, `DMAX`, `DMIN`, `2@`, `2!`, `2DUP`, `2DROP`, `2SWAP`, `2OVER`, `M*`, `UM*`, `M+`, `SM/REM`, `FM/MOD`, `UM/MOD`, `>D`, `S>D`, `D>S`) fully operational
 - **Pictured numeric output** (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`) operational; `.`, `U.`, `D.`, `U.R`, `.R`, `D.R` reimplemented on top
 - **`CATCH` / `THROW`** operational; **every internal error path** migrated through the exception mechanism — no remaining ABORT paths outside the standard `-1 THROW` / `-2 THROW` wrappers for `ABORT` / `ABORT"`
-- **Multiple vocabularies** operational (`WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`); the **`ASSEMBLER` wordlist auto-activates** inside `CODE` / `END-CODE` and deactivates afterwards; **all existing CODE-word source files continue to assemble correctly** (backward-compatibility AC)
+- **Multiple vocabularies** operational (`WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`); **all existing CODE-word source files continue to assemble correctly** against the unchanged hard-coded assembler subsystem (backward-compatibility AC). No ASSEMBLER wordlist is created.
 - **File-Access wordset** operational against CP/M 2.2 BDOS (A: ROM, B: ramdisk); `INCLUDE` loads source files; source can be saved back to B:
 - **All new functionality exercised by REPL-piped Forth test scripts** (per project testing conventions)
 - **All existing Epic 1–8 test suites continue to pass** — regression guarantee
@@ -124,9 +124,9 @@ All items below are hard, verifiable acceptance criteria for the phase:
 | Double-precision arithmetic | Not implemented | Full set operational |
 | Pictured numeric output | Not implemented | Full set operational |
 | CATCH / THROW | Not implemented | Operational, all internal errors migrated |
-| Vocabulary model | Single flat | Full Search-Order + `ASSEMBLER` wordlist |
+| Vocabulary model | Single flat | Full Search-Order (Stories 12.1–12.5) |
 | CP/M file load/save | Not implemented | `INCLUDE` operational; save to B: operational |
-| Assembler opcodes | Baked into kernel dictionary | Baked into kernel, reachable under `ASSEMBLER` wordlist inside `CODE`/`END-CODE` |
+| Assembler opcodes | Baked into kernel dictionary | Unchanged — baked into kernel, hard-coded, reachable as before (no ASSEMBLER wordlist) |
 | External users | 0 (mild interest) | ≥ 1 active non-author user |
 | Kernel ROM footprint | Current size | Tracked per-epic; per-epic budgets maintained |
 | Numeric literal prefixes | Only `<BASEnum>` | Forth 2014 §3.4.1.3 + `0x` extension |
@@ -135,14 +135,14 @@ All items below are hard, verifiable acceptance criteria for the phase:
 
 ### MVP — Minimum Viable Product
 
-The **antforth 2.0** release (end of Epic 13) is the MVP for this phase. It ships when all items listed under *Technical Success* above pass as acceptance criteria — specifically: 100% ANS Core compliance, CATCH/THROW with full internal-error migration, Search-Order + `ASSEMBLER` wordlist auto-activation (with all pre-phase CODE sources assembling unchanged), File-Access operational against CP/M 2.2, numeric-literal prefixes system-wide, and all Epic 1–8 regressions intact.
+The **antforth 2.0** release (end of Epic 13) is the MVP for this phase. It ships when all items listed under *Technical Success* above pass as acceptance criteria — specifically: 100% ANS Core compliance, CATCH/THROW with full internal-error migration, Search-Order operational (with all pre-phase CODE sources assembling unchanged against the unchanged hard-coded assembler), File-Access operational against CP/M 2.2, numeric-literal prefixes system-wide, and all Epic 1–8 regressions intact.
 
 ### Growth Features (Post-MVP)
 
 Near-term additions, built on the antforth 2.0 foundation, that move the product from "standards-compliant" to "genuinely useful on MicroBeast":
 
 - **User-facing documentation** — beginner's guide, per-wordset reference, worked examples. Deferred during the phase per project decision ("no docs until features are done"); the first priority post-2.0.
-- **MicroBeast hardware vocabulary** — 14-segment LED display words, I/O port access. The first consumer of both the new `ASSEMBLER` wordlist and the new file-load workflow.
+- **MicroBeast hardware vocabulary** — 14-segment LED display words, I/O port access. The first major consumer of the new file-load workflow (and a natural home for words organised under their own wordlist via `WORDLIST` / `DEFINITIONS`).
 - **Locals wordset** — `{: a b -- c :}`, `VALUE`, `TO`
 - **SEE decompiler** + **`TRAVERSE-WORDLIST`** — enables xref tools and integrity checkers written in Forth itself
 - **Built-in `IN` / `OUT` primitives** — today available only via user-defined CODE words
@@ -171,13 +171,13 @@ antforth is a **single-user interactive REPL** running on personal retrocomputer
 
 **Opening scene.** Mo has been building and hacking on 8-bit machines for thirty years. She helped eight other people on the MicroBeast forum build their own kits. She's been following antforth's development on the project's Discord and downloaded the 2.0 release this morning. She boots it cold on her MicroBeast.
 
-**Rising action.** The banner reads `antforth 2.0 — ok`. Second nature: she types `HEX`, then `: BLINK 0xF0 @ 1 XOR 0xF0 ! ;`. Hits return. `ok`. She types `BLINK BLINK BLINK` and sees the LED on the bench flick three times. No disk activity — the opcode definitions live in the kernel as they always have, but now they're only visible inside `CODE`/`END-CODE` thanks to the `ASSEMBLER` wordlist's auto-activation. Outside a `CODE` block, her user words can't collide with opcode names anymore.
+**Rising action.** The banner reads `antforth 2.0 — ok`. Second nature: she types `HEX`, then `: BLINK 0xF0 @ 1 XOR 0xF0 ! ;`. Hits return. `ok`. She types `BLINK BLINK BLINK` and sees the LED on the bench flick three times. No disk activity — the opcode definitions live in the kernel as they always have, hard-coded into the kernel dictionary just like every prior antforth release.
 
 **Climax.** She loads her own work-in-progress driver from B: with `INCLUDE B:SPRITES.FTH`, picks up where she left off yesterday. Edits a word at the REPL — `MARKER -OLD`, redefines, tests. It works. Saves the updated source back to B: with `SAVE-SOURCE`. Tomorrow she'll `INCLUDE` it again. The machine is finally a development environment, not a relic.
 
 **Resolution.** Later in the afternoon, a bug in her ring-buffer code surfaces. Instead of the ABORT that would have wiped her session on pre-2.0 antforth, she wraps the failing word in `CATCH`, gets a clean error code back, fixes the issue, re-tests — all without losing her dictionary. Errors are survivable.
 
-**Requirements surfaced:** Epic 9 (hex prefixes in her CODE definition), Epic 11 (CATCH for error survivability), Epic 12 (`ASSEMBLER` wordlist auto-activation, no opcode leakage outside `CODE`/`END-CODE`), Epic 13 (`INCLUDE` / `SAVE-SOURCE` for on-device edit/test/persist).
+**Requirements surfaced:** Epic 9 (hex prefixes in her CODE definition), Epic 11 (CATCH for error survivability), Epic 12 (multi-vocabulary Search-Order for organising her own words into named wordlists), Epic 13 (`INCLUDE` / `SAVE-SOURCE` for on-device edit/test/persist).
 
 ### Journey 2 — Mo Catches a Bug (OG, edge case)
 
@@ -224,7 +224,7 @@ The four journeys above collectively surface the following PRD-level capability 
 | Numeric literal prefixes (Forth 2014 + `0x`) | ✓ | | ✓ | | Epic 9 |
 | ANS Core compliance (no regressions, formatted output) | ✓ | ✓ | ✓ | ✓ | Epic 10 |
 | `CATCH` / `THROW` + THROW codes | | ✓ | | ✓ | Epic 11 |
-| Multiple vocabularies / `ASSEMBLER` wordlist | ✓ | | | ✓ | Epic 12 |
+| Multiple vocabularies (Search-Order wordset) | ✓ | | | ✓ | Epic 12 |
 | `INCLUDE` / `SAVE-SOURCE` on CP/M filesystem | ✓ | ✓ | | ✓ | Epic 13 |
 | Existing REPL / compiler behaviour stable | ✓ | ✓ | ✓ | ✓ | Regression AC |
 
@@ -263,7 +263,7 @@ antforth is distributed as a **CP/M 2.2 `.COM` executable** that runs on the Mic
 
 ### Runtime Model
 
-- **Boot flow:** `.COM` loaded by CP/M → banner → REPL prompt. Assembler opcodes baked into the kernel dictionary, reachable under the `ASSEMBLER` wordlist (auto-activated inside `CODE`/`END-CODE`). Unchanged across pre-2.0 and 2.0.
+- **Boot flow:** `.COM` loaded by CP/M → banner → REPL prompt. Assembler opcodes baked into the kernel dictionary, reachable as before. Unchanged across pre-2.0 and 2.0; no ASSEMBLER wordlist or auto-activation is created in Phase 2.
 - **Persistence:** user words live in RAM until the machine is powered off. Persistence across sessions is achieved by saving source to B: and `INCLUDE`-ing on next boot. There is no image-save mechanism; this is by design (keeps the source-of-truth in the user's files, not in the interpreter's state)
 - **MARKER:** still the in-session rollback mechanism. Unchanged by this phase.
 
@@ -311,17 +311,20 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 | **Epic 9** | Forth 2014 §3.4.1.3 numeric literals + `0x` extension; case-insensitive; system-wide | First — every subsequent epic's test scripts and source benefit immediately |
 | **Epic 10** | Double-precision arithmetic; pictured numeric output; all remaining Core gap words; 100% Core compliance | Second — pictured output depends on double-precision; Core gaps unblock tests for later epics |
 | **Epic 11** | `CATCH` / `THROW`; all internal error paths migrated; standard THROW codes | Third — File-Access and Search-Order both benefit from throw-based error handling |
-| **Epic 12** | `WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`; `ASSEMBLER` wordlist created with all built-in opcodes registered; `ASSEMBLER` auto-activation inside `CODE` / `END-CODE`; all pre-phase CODE source files assemble unchanged | Fourth — consumes the exception infrastructure from Epic 11; delivers the vocabulary/namespace capability called out in Mo's and Pete's journeys |
+| **Epic 11.5** | Stabilisation interlude — real-MicroBeast hardware-crash audit (Story 11.5.1, verdict-only); stack-overflow `-3 THROW` guard (closes Story 11.8 NFR6 gap); `(`/EVALUATE source-frame fix; `print_throw_description` table-walk hardening; `-271` semantic split; **Epic 12 redraft** (per 2026-04-20 + 2026-04-27 ASSEMBLER rollback decisions); CCD-4 close-out gate | Inserted 2026-04-27 via sprint-change-proposal-2026-04-27 — Epic 11 retro surfaced (a) a hardware-only crash class on real MicroBeast affecting print operations, and (b) Epic 12's auto-activation plan invalidated by the wider 2026-04-20 ASSEMBLER rollback. Both must clear before Epic 12 starts |
+| **Epic 12** | `WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`, `FORTH-WORDLIST`; all pre-phase CODE source files continue to assemble unchanged against the unchanged hard-coded assembler subsystem. **No ASSEMBLER wordlist, no ASSEMBLER.FTH, no auto-activation** (per project lead 2026-04-20 + 2026-04-27; Story 11.5.5 scrubs the original Story 12.6 from `epics.md`) | Fourth — consumes the exception infrastructure from Epic 11 and the stabilised baseline from Epic 11.5; delivers the vocabulary/namespace capability called out in Mo's and Pete's journeys |
 | **Epic 13** | Full File-Access wordset; `INCLUDE` / `SAVE-SOURCE` against B: ramdisk and A: ROM; Phase-2 regression gate; BDOS-function-allow-list audit; ROM-delta accounting | Fifth — consumes everything above; tags antforth 2.0 on pass |
 
 **MVP rule:** no epic is considered done until its tests pass on real MicroBeast hardware (not just emulator) AND all prior epics' tests still pass. Regression is a blocker, not a deferrable.
+
+**Hardware crash class observed 2026-04-27 (Epic 11.5 gating):** The Story 11.8 hardware smoke surfaced a real-MicroBeast-only crash class on print operations not reproducible in iz-cpm (transcript `~/Downloads/bestialitty-20260427-120911.bin`). Epic 11.5 Story 11.5.1 audits this; Epic 12 hardware-smoke acceptance is gated on the audit verdict (clean / mitigated / accepted-as-firmware-bug-with-defensive-mitigation).
 
 ### Post-MVP Features
 
 **Phase 2 (post-2.0, near-term — 3 to 6 months after 2.0 ships):**
 
 - **User-facing documentation epic** — beginner's guide to antforth on MicroBeast, per-wordset reference pages, worked examples. First priority because the mild-interest signal becomes active adoption only when newcomers can onboard themselves.
-- **MicroBeast hardware vocabulary epic** — 14-segment LED display words, I/O port access, timer words. First consumer of the new `ASSEMBLER` wordlist and file-load workflow. High-value for both personas.
+- **MicroBeast hardware vocabulary epic** — 14-segment LED display words, I/O port access, timer words. First major consumer of the new file-load workflow (organisable under its own wordlist). High-value for both personas.
 - **Locals / `VALUE` / `TO` epic** — small scope, significant ergonomic win for complex colon definitions.
 - **SEE decompiler + `TRAVERSE-WORDLIST` epic** — makes the system self-inspectable, unlocks xref tools written in Forth.
 - **Built-in `IN` / `OUT` primitives epic** — promotes commonly-used hardware access from user CODE words into kernel-level words.
@@ -410,8 +413,9 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 - **FR27:** Users can reduce the search order to a minimal set with `ONLY`
 - **FR28:** Users can reference the built-in Forth wordlist with `FORTH-WORDLIST`
 - **FR29:** Users can search a specific wordlist for a word with `SEARCH-WORDLIST`
-- **FR30:** The `ASSEMBLER` wordlist is automatically activated on entry to `CODE` and deactivated on exit from `END-CODE`
-- **FR31:** Users with existing CODE-word source files authored against pre-phase antforth can assemble those files unchanged
+- **FR31:** Users with existing CODE-word source files authored against pre-phase antforth can assemble those files unchanged against the unchanged hard-coded assembler subsystem (`src/assembler.asm`).
+
+*(FR30 — ASSEMBLER wordlist auto-activation — withdrawn 2026-04-27 per project-lead direction. The hard-coded assembler stays kernel-resident; no ASSEMBLER wordlist is created. Surrounding FR numbering left intact to avoid cross-reference churn — FR30 is now a deliberate gap.)*
 
 ### Source File I/O (Epic 13)
 
@@ -453,7 +457,7 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 - **NFR1: Numeric literal prefix parsing overhead.** Recognition of a prefixed numeric literal (`#`, `$`, `%`, `0x`, `'c'`) adds no more than **~20 Z80 cycles** over the unprefixed parse path for the 99th-percentile literal (bare integer with no prefix). Measured at the `INTERPRET` / number-conversion hot path against the Epic 7/8 benchmark suite.
 - **NFR2: Word lookup across multiple vocabularies.** With a search order of up to 8 wordlists, word lookup shall not regress by more than **10%** of cycle count versus the pre-phase single-vocabulary baseline. Baseline is the existing XOR-rotate 64-bucket hash lookup benchmark. Measured with the standard benchmark script on real MicroBeast hardware.
 - **NFR3: CATCH / THROW overhead.** An uncaught `CATCH` frame adds no more than **~15 Z80 cycles** to the protected word's execution (frame setup + teardown on normal exit). A successful THROW unwind back to the catching frame shall complete in bounded time proportional to the return-stack depth at THROW time.
-- **NFR4: Kernel ROM footprint budget.** Each Phase-2 epic logs its kernel-size delta and justifies any increase against the capability delivered. Net-of-Phase-2 delta is expected to be positive (the new Phase-2 capabilities — double-cell + pictured output, exception wordset, Search-Order, File-Access — all add code that was not in the Epic-8 baseline). Size-reduction opportunities are spawned as dedicated follow-up stories rather than gated per epic.
+- **NFR4: Kernel ROM footprint budget.** Each Phase-2 epic logs its kernel-size delta and justifies any increase against the capability delivered. Net-of-Phase-2 delta is expected to be positive (the new Phase-2 capabilities — double-cell + pictured output, exception wordset, Search-Order, File-Access — all add code that was not in the Epic-8 baseline). Size-reduction opportunities are spawned as dedicated follow-up stories rather than gated per epic. Epic 11.5 (stabilisation interlude) is expected to land near-zero net ROM delta (audit + small hardening fixes); a non-trivial delta requires explicit justification per the Story-11.5.1 audit verdict.
 - **NFR5: Double-precision arithmetic performance.** Core double-precision primitives (`D+`, `D-`, `M*`, `UM/MOD`) execute in time comparable to hand-rolled Z80 equivalents (within ~20% — no algorithmic-class gap).
 
 ### Reliability
@@ -482,4 +486,4 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 
 - **NFR19: Terminal I/O portability.** antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9). No assumption of ANSI escape codes, cursor positioning, line-mode vs raw-mode toggles, or colour support. The interpreter runs on any CP/M 2.2 terminal.
 - **NFR20: File path conventions.** `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename) exactly. No wildcards in the PRD-scoped implementation; no Unix-style paths.
-- **NFR21: MicroBeast hardware dependency isolation.** No MicroBeast-specific hardware word enters the kernel or the ASSEMBLER wordlist during this phase. The MicroBeast hardware vocabulary is a post-2.0 epic and must be loadable as pure Forth source from disk, not kernel-resident.
+- **NFR21: MicroBeast hardware dependency isolation.** No MicroBeast-specific hardware word enters the kernel during this phase. The MicroBeast hardware vocabulary is a post-2.0 epic and must be loadable as pure Forth source from disk, not kernel-resident.

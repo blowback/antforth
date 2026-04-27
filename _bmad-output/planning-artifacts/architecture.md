@@ -44,7 +44,7 @@ The 2026-04-20-revised PRD specifies **47 Functional Requirements** organised in
 - **FR1–FR9 (Epic 9):** Numeric-literal prefix recognition (Forth 2014 §3.4.1.3 + `0x` extension). Architectural impact: extension of the outer-interpreter number-parsing path — a single hot loop touched by every token.
 - **FR10–FR15 (Epic 10):** Double-precision arithmetic, pictured numeric output, Core-gap word completion to 100%. Architectural impact: new data-type handling on the parameter stack (double-cells), a dedicated output-formatting buffer, and a scattering of primitive additions across existing modules.
 - **FR16–FR22 (Epic 11):** Exception wordset (`CATCH`/`THROW`) with **full internal error migration** — every error path in the interpreter, compiler, and primitives routes through THROW. Architectural impact: deep — touches the return stack discipline (exception frames), every error-raising primitive, and the REPL top-level loop.
-- **FR23–FR31 (Epic 12):** Multi-vocabulary Search-Order wordset (`WORDLIST`, `SET-ORDER`, `DEFINITIONS`, ...) plus `ASSEMBLER` wordlist auto-activation. Architectural impact: generalisation of the existing single-vocabulary hash dictionary into per-wordlist hash tables; new search-order data structure consumed by word lookup on every token. Built-in opcode words remain kernel-resident; the wordlist merely re-scopes their visibility to `CODE`/`END-CODE` blocks.
+- **FR23–FR29, FR31 (Epic 12):** Multi-vocabulary Search-Order wordset (`WORDLIST`, `SET-ORDER`, `DEFINITIONS`, ...). Architectural impact: generalisation of the existing single-vocabulary hash dictionary into per-wordlist hash tables; new search-order data structure consumed by word lookup on every token. Built-in opcode words remain kernel-resident in the global dictionary as today (no ASSEMBLER wordlist; FR30 withdrawn 2026-04-27).
 - **FR32–FR44 (Epic 13):** File-Access wordset against CP/M 2.2 BDOS. Architectural impact: new kernel subsystem for file-handle management, byte-stream I/O abstracted over CP/M's 128-byte record model.
 - **FR45–FR47 (phase-wide constraint):** Backward compatibility with all Epics 1–8 behaviour and test suites.
 
@@ -341,11 +341,11 @@ CATCH's implementation:
 
 **Rationale:** Zero-cost identifier — no translation table. Directly usable in `SEARCH-WORDLIST` as a pointer to the hash bucket array.
 
-#### E12-D4: ASSEMBLER wordlist auto-activation
+#### E12-D4: ~~ASSEMBLER wordlist auto-activation~~ — **WITHDRAWN 2026-04-27**
 
-**Decision:** `CODE` pushes the current `SEARCH-ORDER-DEPTH`, then adds the `ASSEMBLER` wordlist to the top of search order and sets it as the current compilation wordlist. `END-CODE` restores the saved search order state. Both are IMMEDIATE compile-only words (as they are today) with this additional behaviour layered on.
+**Decision (superseded):** This decision proposed `CODE` pushing the current `SEARCH-ORDER-DEPTH` and activating an `ASSEMBLER` wordlist at the top of the search order, with `END-CODE` restoring it.
 
-**Rationale:** Transparent to user source — no new syntax. The save/restore pattern composes cleanly with nested CODE blocks (not a common case but well-defined).
+**Status:** Withdrawn 2026-04-27 per project-lead direction (sprint-change-proposal-2026-04-27.md). The 2026-04-20 ASSEMBLER.FTH rollback (which deleted `ASSEMBLER.FTH` and lazy-load) was extended on 2026-04-27 to also drop the ASSEMBLER wordlist itself and its auto-activation. The hard-coded assembler in `src/assembler.asm` stays as-is forever; opcode words remain in the global dictionary as they are today. The Story 10.7 asm-`#` dispatch hack (`project_asm_hash_dispatch_hack.md`) is permanent — no retirement vehicle planned. Story 11.5.5 (Epic 12 redraft) deletes the original Story 12.6 from `epics.md`. This decision record is preserved for historical reference; no Epic 12 implementation work depends on it.
 
 ---
 
@@ -402,7 +402,7 @@ On THROW: handled by the unwind in E11-D2 (walks `INCLUDE-TOP` chain, closing ea
 1. **Epic 9 first** — numeric prefixes; zero dependencies on other decisions
 2. **Epic 10 second** — double-cell + pictured output; needed by several Core gap words and by later test scripts
 3. **Epic 11 third** — CATCH/THROW; exception frames land; internal errors migrate; preq for Epic 13 error paths
-4. **Epic 12 fourth** — multi-vocabulary dictionary; `ASSEMBLER` wordlist created and populated from the existing kernel opcode words; auto-activation in `CODE`/`END-CODE` wired
+4. **Epic 12 fourth** — multi-vocabulary Search-Order wordset only; existing kernel opcode words stay in the global dictionary (no ASSEMBLER wordlist; per 2026-04-27 direction)
 5. **Epic 13 last** — File-Access on top of the new exception system
 
 **Cross-component dependencies:**
@@ -674,7 +674,7 @@ antforth/
 ├── src/                               # kernel source (Z80 assembly)
 │   ├── antforth.asm                   # top-level kernel entry / banner
 │   ├── arithmetic.asm                 # [edit] Epic 10 — migrate error paths to THROW
-│   ├── assembler.asm                  # [edit] Epic 12 — add ASSEMBLER-wordlist auto-activation hooks to CODE/END-CODE (opcodes unchanged)
+│   ├── assembler.asm                  # unchanged in Phase 2 (no ASSEMBLER wordlist, no auto-activation; hard-coded as-is per 2026-04-27)
 │   ├── bootstrap.asm                  # kernel init, initial dictionary setup
 │   ├── compiler.asm                   # [edit] Epic 11 — migrate compile-error ABORT to THROW
 │   ├── constants.asm                  # [edit] Epic 11 — add ANS THROW code EQUs
@@ -720,7 +720,7 @@ antforth/
 │   ├── exception_tests.fth            # [new] Epic 11
 │   ├── throw_migration_tests.fth      # [new] Epic 11 (per-migrated-primitive REPL tests)
 │   ├── wordlist_tests.fth             # [new] Epic 12
-│   ├── assembler_wordlist_tests.fth   # [new] Epic 12 (ASSEMBLER auto-activation)
+│   # (assembler_wordlist_tests.fth — withdrawn 2026-04-27; no ASSEMBLER wordlist to test)
 │   └── file_access_tests.fth          # [new] Epic 13
 ├── examples/                          # demo source files, user-facing
 │   ├── extended-asm-demo.fth          # existing
@@ -786,7 +786,7 @@ Each `src/*.asm` file owns a coherent subsystem. Boundary rules:
 | Epic 9 | `src/number_prefixes.asm`; `tests/number_prefixes_tests.fth` | `src/outer_interpreter.asm` (wire recogniser) |
 | Epic 10 | `src/double.asm`, `src/pictured.asm`; `tests/{double,pictured,core_gap}_tests.fth` | `src/stack_ops.asm` (2DUP etc.); `src/formatting.asm` (migrate `.`/`U.` onto pictured); `src/arithmetic.asm` (possible M*/UM* shared code); `docs/ans-forth-core-compliance.md` |
 | Epic 11 | `src/exception.asm`; `docs/throw-codes.md`; `tests/{exception,throw_migration}_tests.fth` | `src/constants.asm` (THROW code EQUs); `src/system.asm` (ABORT retarget); **every other `*.asm` with ABORT paths** (phased migration per E11-D3) |
-| Epic 12 | `src/wordlists.asm`; `tests/{wordlist,assembler_wordlist}_tests.fth` | `src/dictionary.asm` (multi-vocab); `src/hash.asm` (per-wordlist bucket array); `src/assembler.asm` (register opcode words under the `ASSEMBLER` wordlist + `CODE`/`END-CODE` auto-activation hooks; no opcode migration) |
+| Epic 12 | `src/wordlists.asm`; `tests/wordlist_tests.fth` | `src/dictionary.asm` (multi-vocab); `src/hash.asm` (per-wordlist bucket array). `src/assembler.asm` is **unchanged** in Phase 2 per 2026-04-27 — no ASSEMBLER wordlist, no auto-activation hooks, no opcode migration. |
 | Epic 13 | `src/file_access.asm`; `tests/file_access_tests.fth` | `src/io.asm` (factor BDOS helpers) |
 
 **Cross-cutting concerns (not epic-specific):**
