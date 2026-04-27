@@ -6636,6 +6636,149 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# === Story 11.8 — Section 10: Epic-11 closure REPL survivability stress + state-integrity invariants ===
+	@# AC #3 stress recovery (NFR6): each uncaught error returns the REPL to a live
+	@# prompt and a follow-up line parses cleanly. AC #3(b) stack-overflow OMITTED:
+	@# Epic 11 wired no -3 guard (docs/throw-codes.md row -3 = "no | —"); documented
+	@# in Story 11.8 Completion Notes as a known gap deferred to a post-2.0 hardening story.
+	@# Section 10.1: stack-underflow stress recovery (NFR6 (a)).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*99  ok'; then \
+		echo "PASS: REPL test 766 — Story 11.8: stack underflow uncaught + REPL recovery (NFR6 a)"; \
+	else \
+		echo "FAIL: REPL test 766 — expected 'error -4: stack underflow' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: division-by-zero stress recovery (NFR6 (c)).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '1 0 /' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*99  ok'; then \
+		echo "PASS: REPL test 767 — Story 11.8: division by zero uncaught + REPL recovery (NFR6 c)"; \
+	else \
+		echo "FAIL: REPL test 767 — expected 'error -10: division by zero' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: undefined-word stress recovery (NFR6 (d)).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'THIS-DOES-NOT-EXIST' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+		echo "PASS: REPL test 768 — Story 11.8: undefined word uncaught + REPL recovery (NFR6 d)"; \
+	else \
+		echo "FAIL: REPL test 768 — expected 'error -13: undefined word' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: orphan-`;` compile-state mismatch (NFR6 (e)).
+	@# Verified at write time: kernel emits -14 ("interpreting a compile-only word"),
+	@# not -22 as the story spec drafted; the story's spec said "verify exact code at
+	@# write time" — adjusted regex to -14.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ';' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
+		echo "PASS: REPL test 769 — Story 11.8: orphan-; compile-state mismatch uncaught + REPL recovery (NFR6 e)"; \
+	else \
+		echo "FAIL: REPL test 769 — expected 'error -14: interpreting a compile-only word' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: ABORT" truthy uncaught (NFR6 (f)). Re-frames Story 11.7 test 763
+	@# as the closure-suite "every category in one place" entry; same scenario, fresh
+	@# numbering so a future maintainer can grep test 770 for "Epic 11 closure suite".
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T118F 1 ABORT" boom" ;' 'T118F' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
+		echo "PASS: REPL test 770 — Story 11.8: ABORT\" truthy uncaught + REPL recovery (NFR6 f)"; \
+	else \
+		echo "FAIL: REPL test 770 — expected 'boom...error -2: ABORT\"...99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# AC #4 state-integrity invariants (NFR7): post-error internal data structures
+	@# remain consistent. Eight invariants — each gets one Makefile test.
+	@# Section 10.2: invariant (i) input buffer reset — post-error line parses cleanly.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*3  ok'; then \
+		echo "PASS: REPL test 771 — Story 11.8: invariant (i) input buffer reset post-error (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 771 — expected 'error -4...3  ok' for input-buffer reset"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (ii) HERE rolled back after mid-: error.
+	@# H1 is a VARIABLE holding pre-: HERE; after the mid-: error, asm_cleanup unlinks
+	@# the partial NEW and rolls HERE back. H1 @ HERE = . prints "-1  ok" (true).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'VARIABLE H1' 'HERE H1 !' ': NEW THIS-DOES-NOT-EXIST ;' 'H1 @ HERE = .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*-1  ok'; then \
+		echo "PASS: REPL test 772 — Story 11.8: invariant (ii) HERE rolled back after mid-: error (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 772 — expected 'error -13...-1  ok' for HERE rollback"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (iii) parameter-stack DEPTH = 0 after recovery.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'DEPTH .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
+		echo "PASS: REPL test 773 — Story 11.8: invariant (iii) parameter-stack DEPTH = 0 post-recovery (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 773 — expected 'error -4...0  ok' for DEPTH=0 invariant"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (iv) return stack reset — define + call colon post-error.
+	@# A fresh : TT 1 ; TT . runs cleanly only if w_QUIT_cf re-init reset IX rstack.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' ': TT 1 ; TT .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*1  ok'; then \
+		echo "PASS: REPL test 774 — Story 11.8: invariant (iv) return stack reset post-recovery (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 774 — expected 'error -4...1  ok' for return-stack reset"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (v) CATCH-TOP @ . returns 0 after recovery.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'CATCH-TOP @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
+		echo "PASS: REPL test 775 — Story 11.8: invariant (v) CATCH-TOP = 0 post-recovery (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 775 — expected 'error -4...0  ok' for CATCH-TOP=0 invariant"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (vi) BASE preserved across error.
+	@# After HEX FE THIS-DOES-NOT-EXIST, BASE is still 16 (HEX) IF preserved.
+	@# Probe with BASE @ DECIMAL . — reads BASE first (pushes current value),
+	@# then switches print-base to DECIMAL, then prints the stacked value in
+	@# decimal. BASE preserved (HEX) → BASE @ pushes 16 → "16  ok"; BASE
+	@# reset to DECIMAL → BASE @ pushes 10 → "10  ok". Distinct outputs
+	@# catch a regression that resets BASE on recovery. (The prior probe
+	@# `BASE @ .` printed "10" in BOTH cases — HEX 16 and DECIMAL 10 both
+	@# render to the string "10" in their respective bases — a HEX/DECIMAL
+	@# coincidence false-PASS; Story 11.8 review M2.)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'HEX FE THIS-DOES-NOT-EXIST' 'BASE @ DECIMAL .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*16  ok'; then \
+		echo "PASS: REPL test 776 — Story 11.8: invariant (vi) BASE preserved across error (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 776 — expected 'error -13...16  ok' for BASE-preserved invariant"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (vii) MARKER-saved state recoverable post-error.
+	@# MARKER MK1 + : T 99 ; + DROP (errors) + MK1 (rolls back T) + T → "T ?" + -13.
+	@# Confirms (a) MARKER survived recovery and (b) post-MK1 dictionary is at the marked state.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER MK1' ': T 99 ;' 'DROP' 'MK1' 'T' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*T \?.*error -13: undefined word'; then \
+		echo "PASS: REPL test 777 — Story 11.8: invariant (vii) MARKER-saved state recoverable (NFR7)"; \
+	else \
+		echo "FAIL: REPL test 777 — expected '-4 stack underflow' then MK1 rolls back T then 'T ? error -13'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.2: invariant (viii) user dictionary preserved (FR22).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': USER-WORD 42 ;' 'THIS-DOES-NOT-EXIST' 'USER-WORD .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*42  ok'; then \
+		echo "PASS: REPL test 778 — Story 11.8: invariant (viii) user dictionary preserved across error (FR22)"; \
+	else \
+		echo "FAIL: REPL test 778 — expected 'error -13...42  ok' for user-dictionary preservation"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

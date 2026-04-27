@@ -131,7 +131,7 @@ development_status:
   11-1-abort-site-migration-inventory-throw-code-table-and-code-equs: done
   11-2-exception-frame-infrastructure-and-catch-word: done
   11-3-throw-word-and-uncaught-throw-repl-handler: done
-  11-4-internal-error-migration-stack-arithmetic-memory-primitives: review
+  11-4-internal-error-migration-stack-arithmetic-memory-primitives: done
   # Story 11.4.1 closed the CATCH/THROW i*x-preservation defect: CATCH
   # frame +2 slot repurposed from "saved IX" (dead) to "saved BC"
   # (i*x's TOS-cell value); CATCH captures saved-SP AFTER its POP BC
@@ -141,9 +141,9 @@ development_status:
   # 11.4.1 → re-tested with REPL tests 718..726.
   11-4-1-catch-throw-ix-preservation-bug-fix: done
   11-5-internal-error-migration-dictionary-compiler-control-flow: done
-  11-6-internal-error-migration-strings-io-remaining-error-sites: in-progress
+  11-6-internal-error-migration-strings-io-remaining-error-sites: done
   11-7-abort-and-abort-quote-retargeted-as-throw-wrappers-capstone: done
-  11-8-epic-11-benchmark-survivability-stress-and-regression-gate-ccd-4: backlog
+  11-8-epic-11-benchmark-survivability-stress-and-regression-gate-ccd-4: review
   epic-11-retrospective: optional
 
   epic-12: backlog

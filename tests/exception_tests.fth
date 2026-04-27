@@ -188,3 +188,30 @@ CATCH-TOP @ .                           \ expect: 0  ok    (post-recovery CATCH-
 \   - BASE intact post-recovery     (HEX, throw, BASE @ DECIMAL .)
 \   - asm_mode cleaned post-recovery (CODE BAD, throw, then CODE GOOD)
 \   - CATCH-TOP zeroed post-recovery (throw, then CATCH-TOP @ .)
+
+\ --- Section 10: Story 11.8 — Epic-11 closure: REPL survivability stress + state-integrity invariants ---
+\ Multi-line scenarios live in the Makefile (tests 766..778). Cases:
+\   Stress (NFR6, AC #3) — every uncaught error category returns the
+\   REPL to a live prompt; subsequent line parses cleanly:
+\     766 (a) stack underflow + recovery   (DROP → -4 → 99 .)
+\     767 (c) division by zero + recovery  (1 0 / → -10 → 99 .)
+\     768 (d) undefined word + recovery    (THIS-DOES-NOT-EXIST → -13 → 99 .)
+\     769 (e) compile-state mismatch       (orphan ; → -14 → 99 .)
+\     770 (f) ABORT" truthy + recovery     (1 ABORT" boom" → boom + -2 → 99 .)
+\     (b) stack overflow OMITTED — Epic 11 wired no -3 guard
+\         (docs/throw-codes.md row -3 = "no | —"); documented as a
+\         known gap in Story 11.8 Completion Notes, deferred to a
+\         post-2.0 hardening story.
+\   State-integrity invariants (NFR7, AC #4) — each error must leave
+\   internal data structures consistent:
+\     771 (i)   input buffer reset (post-error line parses cleanly)
+\     772 (ii)  HERE rolled back after mid-: error
+\     773 (iii) parameter-stack DEPTH = 0 after recovery
+\     774 (iv)  return stack reset (define + call colon post-error)
+\     775 (v)   CATCH-TOP @ . returns 0 after recovery
+\     776 (vi)  BASE preserved across error (HEX persists)
+\     777 (vii) MARKER-saved state recoverable post-error
+\     778 (viii) user dictionary preserved (FR22)
+\ These complement (don't duplicate) Sections 5–9 / Stories 11.4-11.7
+\ migration tests; the closure-suite framing is "every category in
+\ one place, regression-suite-now-and-forever" per Story 11.8 Task 4.4.
