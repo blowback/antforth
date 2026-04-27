@@ -122,10 +122,10 @@ w_STAR_cf:
 ;       `POP AF` is skipped.
 ;     - The user-word caller's `PUSH DE` (IP-stash) at
 ;       `w_SLASH_cf:265`, `w_MOD_cf:281`, `w_SLASH_MOD_cf:243`.
-;   The catch-frame `LD SP, HL` (caught path) and `JP w_ABORT_cf`
-;   (uncaught path) both wholesale-reset SP, so all stranded bytes
-;   are discarded. Future refactors that change either reset path
-;   inherit the leak.
+;   The catch-frame `LD SP, HL` (caught path) and the inlined recovery
+;   chain at .throw_uncaught (uncaught path; `LD SP, (sp_base)`) both
+;   wholesale-reset SP, so all stranded bytes are discarded. Future
+;   refactors that change either reset path inherit the leak.
 ; -----------------------------------------------
 udivmod:
     ; Divisor-zero guard (Story 11.4): BC = 0 → -10 THROW.

@@ -88,8 +88,10 @@ w_MARKER_cf:
 ; -----------------------------------------------
 ; (ABORT") ( flag -- ) runtime helper
 ;   If flag is zero, skip inline counted string and continue.
-;   If flag is non-zero, print inline string via TYPE, then ABORT.
+;   If flag is non-zero, print inline string then raise -2 THROW per
+;   ANS Forth 1994 §9.3.5 / §6.1.0680 / Forth 2014 §9.6.2.0680.
 ;   Inline string format: count byte + chars + cell-alignment padding
+;   Truthy flag → message + raise; zero flag → skip string and continue.
 ; -----------------------------------------------
 w_PAREN_ABORT_QUOTE:
         DEFCODE '(ABORT")', 0
@@ -118,9 +120,10 @@ w_PAREN_ABORT_QUOTE_cf:
         NEXT
 
 .paq_abort:
-        ; Non-zero flag: print string then ABORT.
-        ; No IP save needed: w_ABORT_cf resets SP wholesale and re-enters QUIT
-        ; (which resets IX and reloads DE), so any leftover state is erased.
+        ; Non-zero flag: print string then raise -2 THROW.
+        ; No IP save needed: -2 THROW's uncaught-handler resets SP wholesale
+        ; and re-enters QUIT (or, if caught, the catching frame's SP_safe +
+        ; IP discard the partial state).
         ; bdos_print_str preserves IX (established invariant — return stack is
         ; IX-based and all BDOS-calling words rely on this).
         LD      A, (DE)         ; A = count
@@ -134,7 +137,13 @@ w_PAREN_ABORT_QUOTE_cf:
         CALL    bdos_print_str
 
 .paq_do_abort:
-        JP      w_ABORT_cf      ; ABORT (never returns)
+        ; -2 THROW (Story 11.7): ABORT" with truthy flag per
+        ; ANS Forth 1994 §9.3.5 / §6.1.0680 / Forth 2014 §9.6.2.0680.
+        ; Pre-Story-11.7 this site jumped to w_ABORT_cf (the legacy
+        ; SP-reset + asm_cleanup + JP w_QUIT_cf chain); post-retarget
+        ; the same recovery happens via the uncaught-THROW handler.
+        LD      BC, THROW_ABORT_QUOTE
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; ABORT" ( "ccc<quote>" flag -- ) IMMEDIATE, compile-only
@@ -258,16 +267,27 @@ aq_src:         DW 0
 
 ; -----------------------------------------------
 ; ABORT ( -- )
-;   Reset parameter stack and restart QUIT
-;   Never returns
+;   Raise -1 THROW per ANS §6.1.0670 / Forth 2014 §9.6.2.0670.
+;   Uncaught: REPL recovery via the uncaught-THROW handler
+;   (src/exception.asm:.throw_uncaught — post-Story-11.7 this
+;   handler owns the asm_cleanup / SP-reset / JP w_QUIT_cf chain
+;   directly rather than delegating to w_ABORT_cf).
+;   Caught: -1 lands on the data stack as the THROW code; i*x
+;   cells underneath are preserved per the Story 11.4.1 contract.
+;
+;   Story 11.7 capstone: completes Epic 11's E11-D3 word-by-word
+;   internal-error migration. Every prior internal ABORT call
+;   site has been migrated to a direct THROW raise (Stories
+;   11.4-11.6); ABORT itself is now the user-facing entry point
+;   that raises -1 THROW.
 ; -----------------------------------------------
 w_ABORT:
         DEFCODE "ABORT", 0
 w_ABORT_cf:
-        CALL    asm_cleanup             ; If asm_mode set, restore HERE/bucket
-        LD      HL, (sp_base)
-        LD      SP, HL                  ; Reset parameter stack
-        JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE)
+        ; -1 THROW (Story 11.7): ABORT per ANS Forth 1994 §9.3.5 /
+        ; §6.1.0670 / Forth 2014 §9.6.2.0670.
+        LD      BC, THROW_ABORT
+        JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; ENVIRONMENT? ( c-addr u -- false | i*x true )
@@ -563,10 +583,11 @@ check_underflow_4:
 ;   ANS Forth 1994 §9.3.5.
 ;
 ;   Note: CALL check_underflow's return address remains on SP —
-;   harmless because the THROW-restore (caught) or the ABORT-chain
-;   (uncaught) both wholesale reset SP downstream. SP-may-be-corrupt
-;   safety is preserved: the new path neither reads nor writes
-;   SP-relative values until the downstream restore.
+;   harmless because the THROW-restore (caught) or the inlined
+;   recovery chain at .throw_uncaught (uncaught; post-Story-11.7)
+;   both wholesale reset SP downstream. SP-may-be-corrupt safety
+;   is preserved: the new path neither reads nor writes SP-relative
+;   values until the downstream restore.
 ; -----------------------------------------------
 do_underflow_error:
         ; -4 THROW (Story 11.4): stack underflow per ANS Forth 1994 §9.3.5

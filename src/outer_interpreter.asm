@@ -373,13 +373,16 @@ w_PAREN_RESTORE_INPUT_cf:
 ;   active input source with source_id = -1, run INTERPRET, then
 ;   restore the saved source spec.
 ;
-;   ABORT inside INTERPRET (unknown word, number-parse failure)
-;   resets both stacks via w_ABORT_cf -> w_QUIT_cf, which discards
+;   An unknown word or number-parse failure inside INTERPRET raises
+;   a THROW (e.g. -13 / -16); when uncaught, the .throw_uncaught
+;   recovery chain (asm_cleanup + SP-reset + JP w_QUIT_cf) discards
 ;   the saved source-spec frame on the return stack. w_QUIT_cf calls
 ;   w_QUERY_cf which overwrites the USER source fields with fresh
 ;   console input, so the live state is clean even though RESTORE
-;   never ran. This is the pre-Epic-11 baseline; Story 11.6 will
-;   migrate to a THROW-safe save/restore.
+;   never ran. This is the pre-Epic-11 baseline. A THROW-safe save/
+;   restore (where (RESTORE-INPUT) runs even when INTERPRET raises)
+;   is filed as a post-Epic-11 follow-up — the (-58 caught form) bug
+;   it would fix is documented in Story 11.6's Review Follow-up #1.
 ;
 ; ANS Forth 1994 §6.1.1360   EVALUATE   — interpret from string
 ; -----------------------------------------------

@@ -183,7 +183,7 @@ CATCH-TOP @ .                           \ expect: 0  ok    (post-recovery CATCH-
 \ tests 686..695 (see Makefile for canonical assertions):
 \   - 42 THROW                       → "error 42"            (no description)
 \   - -13 THROW                      → "error -13: undefined word"
-\   - -1 THROW                       → "error -1: ABORT"     (Story 11.7 precursor)
+\   - -1 THROW                       → "error -1: ABORT"     (Story 11.7 retargeted ABORT itself to -1 THROW)
 \   - dictionary intact post-recovery (define HELLO, throw, run HELLO)
 \   - BASE intact post-recovery     (HEX, throw, BASE @ DECIMAL .)
 \   - asm_mode cleaned post-recovery (CODE BAD, throw, then CODE GOOD)

@@ -216,8 +216,9 @@ catch_resume_cf:
 ;     (resumes one cell after the CATCH that wraps this THROW).
 ;   Non-zero n with CATCH-TOP = 0: uncaught — print "error <n>"
 ;     (decimal, BASE-independent) plus optional ": <description>" if n
-;     is in throw_desc_table, then route through w_ABORT_cf for state
-;     reset and REPL recovery (FR21, FR22, NFR3, NFR7, NFR8).
+;     is in throw_desc_table, then run the recovery chain (asm_cleanup
+;     + SP-reset + JP w_QUIT_cf) inline; routes back to the .quit_loop
+;     REPL prompt with dictionary preserved (FR21, FR22, NFR3, NFR7, NFR8).
 ;
 ;   See architecture.md:289-300 (E11-D2 algorithm) and CCD-1 dual-chain
 ;   discipline (architecture.md:168-191) — the INCLUDE-TOP chain walk is
@@ -276,8 +277,10 @@ w_THROW_cf:
         ; -----------------------------------------------
         ; Kernel-internal entry: callers from inside the kernel
         ; (do_underflow_error, the divisor-zero guards in udivmod / UM/MOD,
-        ; and any future internal ABORT-site migration in Stories 11.5 / 11.6)
-        ; JP w_THROW_cf.kernel_entry with BC pre-loaded to the THROW code.
+        ; the dictionary/compiler/control-flow/string/I-O sites migrated
+        ; by Stories 11.5 / 11.6, and the user-facing ABORT / (ABORT")
+        ; sites migrated by Story 11.7) JP w_THROW_cf.kernel_entry with
+        ; BC pre-loaded to the THROW code.
         ; The check_underflow guard above is skipped for two reasons:
         ;   (1) the caller's user stack is by definition in a degenerate
         ;       state on the underflow path (so check_underflow would
@@ -287,13 +290,15 @@ w_THROW_cf:
         ;       check_underflow enforces does not apply here.
         ; SP/IX may be in any state on entry — the caught-path's
         ; LD SP, HL from the catch frame +0, and the uncaught-path's
-        ; JP w_ABORT_cf, both perform a wholesale state reset before any
-        ; SP-dependent operation.
+        ; inlined recovery chain at .throw_uncaught (asm_cleanup +
+        ; SP-reset + JP w_QUIT_cf), both perform a wholesale state
+        ; reset before any SP-dependent operation.
         ; EXX hygiene: each kernel-internal call site must verify
         ; EXX-not-active at entry. The three sites added in Story 11.4
         ; (do_underflow_error, the udivmod guard, the UM/MOD guard)
-        ; satisfy this — they all run from primary-set context.
-        ; Stories 11.5/11.6 must re-verify per migrated site.
+        ; satisfy this — they all run from primary-set context. The
+        ; sites added in Stories 11.5 / 11.6 / 11.7 each re-verified
+        ; the contract per their AC #12 spot-checks.
         ; FUTURE-EDIT NOTE 1: any new code inserted between this label
         ; and the n=0 short-circuit below will be SKIPPED on the
         ; kernel-internal path. New pre-throw work belongs *after*
@@ -304,9 +309,10 @@ w_THROW_cf:
         ; the kernel-entry path SP may be indeterminate (per the
         ; "SP may be in any state" note above), so a BC=0 entry would
         ; pop a stale frame byte and corrupt the user stack. Today no
-        ; site does this (THROW codes are -4, -10); flagging for any
-        ; future Story 11.5/11.6/11.7 migration that wishes to raise
-        ; THROW 0 from the kernel.
+        ; site does this (post-Epic-11 the codes raised from the
+        ; kernel-internal entry are -1, -2, -4, -10, -13, -14, -16,
+        ; -17, -22, -58, -258..-271 — all non-zero); flagging for any
+        ; future migration that wishes to raise THROW 0 from the kernel.
         ; -----------------------------------------------
 .kernel_entry:
         ; --- n = 0 no-op (Forth 2014 §9.6.1.2275: "If any bits of n are
@@ -409,15 +415,20 @@ w_THROW_cf:
         CALL    print_throw_description
         ; --- Trailing CR/LF ---
         CALL    bdos_crlf
-        ; --- State reset + REPL recovery via the legacy ABORT chain.
-        ;     w_ABORT_cf calls asm_cleanup (clears asm_mode, restores
-        ;     HERE/bucket if mid-CODE), resets SP, then JP w_QUIT_cf
-        ;     (which resets IX, STATE, CATCH-TOP, then re-enters the
-        ;     .quit_loop REPL prompt). FR22 / NFR7 / NFR8.
-        ;     Story 11.7 will retarget w_ABORT_cf itself to -1 THROW —
-        ;     at which point this becomes a tail of ABORT's own
-        ;     machinery, with the same recovery semantics either way. ---
-        JP      w_ABORT_cf
+        ; --- State reset + REPL recovery (Story 11.7 inline).
+        ;     Pre-Story-11.7 this was `JP w_ABORT_cf` and the chain
+        ;     lived in w_ABORT_cf's body; Story 11.7 retargets
+        ;     w_ABORT_cf itself to -1 THROW so the chain `user-ABORT
+        ;     → -1 THROW → uncaught (CATCH-TOP=0) → JP w_ABORT_cf`
+        ;     would otherwise infinite-loop. The chain is moved
+        ;     here; w_QUIT_cf's IX/STATE/CATCH-TOP reset
+        ;     (outer_interpreter.asm:243-258) closes the recovery.
+        ;     FR22 / NFR7 / NFR8. ---
+        CALL    asm_cleanup             ; If asm_mode set, restore HERE/bucket
+        LD      HL, (sp_base)
+        LD      SP, HL                  ; Reset parameter stack
+        JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE
+                                        ; + CATCH-TOP per outer_interpreter.asm:252-255)
 
 ; -----------------------------------------------
 ; print_signed_dec_bc — Print BC as signed decimal via BDOS.
@@ -426,8 +437,9 @@ w_THROW_cf:
 ;   prefix and absolute-value reduction reuse print_neg_prefix from
 ;   src/formatting.asm; the digit loop reuses div_bc_by_e and
 ;   digit_to_char from the same file. The shared num_buf is safe here
-;   because the THROW path is the terminal action before NEXT or
-;   JP w_ABORT_cf — no print-during-print reentrancy is possible.
+;   because the THROW path is the terminal action before NEXT or the
+;   inlined recovery chain at .throw_uncaught — no print-during-print
+;   reentrancy is possible.
 ;
 ;   Input:  BC = signed 16-bit integer
 ;   Output: ASCII representation emitted via BDOS console
@@ -650,7 +662,8 @@ throw_desc_table:
 ;     - The uncaught path's three bdos_print_str calls (BC clobbered by
 ;       the `LD B, <len>` argument).
 ;   Never held across NEXT (THROW is the terminal call before NEXT or
-;   JP w_ABORT_cf). Never re-entered: single-threaded invariant.
+;   the inlined recovery chain at .throw_uncaught). Never re-entered:
+;   single-threaded invariant.
 ;
 ;   Storage note: this is 2 bytes of initialised data baked into the
 ;   .COM image (not a zero-page BSS allocation). CP/M loads the entire

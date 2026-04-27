@@ -5948,7 +5948,7 @@ test-repl: $(TARGET)
 	fi
 	@OUTPUT=$$(printf -- '-1 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT'; then \
-		echo "PASS: REPL test 687 — Story 11.3: uncaught -1 THROW prints 'error -1: ABORT' (Story 11.7 precursor) (AC #5)"; \
+		echo "PASS: REPL test 687 — Story 11.3: uncaught -1 THROW prints 'error -1: ABORT' (Story 11.7 retargeted ABORT itself to -1 THROW) (AC #5)"; \
 	else \
 		echo "FAIL: REPL test 687 — expected 'error -1: ABORT' for uncaught -1 THROW"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
@@ -6500,6 +6500,139 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 753 — Story 11.6: uncaught BIT 8 prints error -271: range + REPL recovers"; \
 	else \
 		echo "FAIL: REPL test 753 — expected 'error -271: range' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# ============================================================
+	@# Section 5 — ABORT / ABORT" retarget verification (Story 11.7)
+	@# ============================================================
+	@# Story 11.7 retargets ABORT → -1 THROW and ABORT" → -2 THROW
+	@# (per ANS Forth 1994 §6.1.0670 / §6.1.0680). The legacy SP-reset
+	@# / asm_cleanup / JP w_QUIT_cf chain moves into the uncaught-THROW
+	@# handler at exception.asm:.throw_uncaught.
+	@# Section 5.1: caught ABORT direct.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ABORT CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-1  ok'; then \
+		echo "PASS: REPL test 754 — Story 11.7: ' ABORT CATCH . returns -1 (caught ABORT direct, AC #7)"; \
+	else \
+		echo "FAIL: REPL test 754 — expected '-1  ok' for caught ABORT"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.1: caught ABORT via colon-body wrapper.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ABORTING ABORT ;' "' ABORTING CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-1  ok'; then \
+		echo "PASS: REPL test 755 — Story 11.7: ' ABORTING CATCH . returns -1 (caught ABORT through colon wrapper, AC #7)"; \
+	else \
+		echo "FAIL: REPL test 755 — expected '-1  ok' for caught ABORT-wrapper"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.1: i*x preservation across caught -1 (Story 11.4.1 contract).
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' ABORT CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '\-1 3 2 1  ok'; then \
+		echo "PASS: REPL test 756 — Story 11.7: i*x preserved across caught -1 (3 cells under) (AC #7)"; \
+	else \
+		echo "FAIL: REPL test 756 — expected '-1 3 2 1  ok' for i*x preservation across caught ABORT"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.1: DEPTH = 1 after caught ABORT.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ABORT CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1  ok'; then \
+		echo "PASS: REPL test 757 — Story 11.7: DEPTH = 1 after caught ABORT (AC #7)"; \
+	else \
+		echo "FAIL: REPL test 757 — expected '1  ok' for DEPTH after caught ABORT"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.2: caught ABORT" from compiled colon body. The (ABORT")
+	@# runtime prints the inline message then raises -2 THROW. Per AC #8
+	@# (verified at dev-pass), (ABORT") emits NO trailing CR/LF after the
+	@# message — observed output is `message-2  ok` with no break.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB1 1 ABORT" message" ;' "' TAB1 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'message\-2  ok'; then \
+		echo "PASS: REPL test 758 — Story 11.7: ' TAB1 CATCH . returns -2 with message print (caught ABORT\", AC #8)"; \
+	else \
+		echo "FAIL: REPL test 758 — expected 'message-2  ok' for caught ABORT\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.2: ABORT" flag-zero positive control — no print, no raise,
+	@# CATCH returns 0 (per ANS §6.1.0680). Distinctive message marker
+	@# `abz0msg` so absence of `abz0msg-` (which only appears when (ABORT")
+	@# fires + prints + raises -2) is the smoking gun.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB0 0 ABORT" abz0msg" ;' "' TAB0 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok' && ! echo "$$OUTPUT" | grep -q 'abz0msg-'; then \
+		echo "PASS: REPL test 759 — Story 11.7: ABORT\" flag-zero is no-op; CATCH returns 0 (AC #6)"; \
+	else \
+		echo "FAIL: REPL test 759 — expected '0  ok' AND no 'abz0msg-' for flag-zero ABORT\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.2: i*x preservation across caught -2 from ABORT".
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB1 1 ABORT" message" ;' "1 2 3 ' TAB1 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'message\-2 3 2 1  ok'; then \
+		echo "PASS: REPL test 760 — Story 11.7: i*x preserved across caught -2 (3 cells under) (AC #8)"; \
+	else \
+		echo "FAIL: REPL test 760 — expected 'message-2 3 2 1  ok' for i*x preservation across caught ABORT\""; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.3: positive control — no-abort colon body returns 0.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TNOAB 5 ;' "' TNOAB CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 761 — Story 11.7: ' TNOAB CATCH . returns 0 (success path, no ABORT)"; \
+	else \
+		echo "FAIL: REPL test 761 — expected '0  ok' for no-ABORT body CATCH"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.4: uncaught ABORT word + REPL recovery (capstone).
+	@# user-issued ABORT (now -1 THROW) flows through the uncaught-handler;
+	@# Story 11.3 test 687 covered raw -1 THROW; this covers the ABORT
+	@# word as the user-facing entry point.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'ABORT' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT.*99  ok'; then \
+		echo "PASS: REPL test 762 — Story 11.7: uncaught ABORT prints error -1: ABORT + REPL recovers (AC #17)"; \
+	else \
+		echo "FAIL: REPL test 762 — expected 'error -1: ABORT' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.4: uncaught ABORT" + REPL recovery. The (ABORT") runtime
+	@# prints the inline message before raising -2 THROW; the uncaught
+	@# handler prints `error -2: ABORT"` then runs the recovery chain.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': TUA1 1 ABORT" boom" ;' 'TUA1' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
+		echo "PASS: REPL test 763 — Story 11.7: uncaught ABORT\" prints message + error -2 + REPL recovers (AC #17)"; \
+	else \
+		echo "FAIL: REPL test 763 — expected 'boom...error -2: ABORT\"...99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.4: asm_cleanup integrity inside uncaught handler. An
+	@# in-CODE error must (a) error + recover, (b) leave the partial
+	@# CODE word unlinked from the dictionary. Mirror Makefile test 393.
+	@# `TRYX117` appears once in stdin echo; if asm_cleanup unlinked it,
+	@# it does NOT appear in the post-recovery WORDS output (one occurrence
+	@# total). If asm_cleanup failed, WORDS lists it (two occurrences).
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRYX117 UNDEFOPX117 END-CODE' 'WORDS' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13.*ok' && \
+	   [ "$$(echo "$$OUTPUT" | grep -c 'TRYX117')" = "1" ]; then \
+		echo "PASS: REPL test 764 — Story 11.7: asm_cleanup integrity — in-CODE -13 + recovery; TRYX117 unlinked (AC #18a, capstone)"; \
+	else \
+		echo "FAIL: REPL test 764 — expected error -13 recovery AND TRYX117 only in stdin echo (not WORDS)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 5.3 second positive control — i*x preservation through
+	@# success path: cells underneath survive the CATCH frame round-trip.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TNOAB 5 ;' "1 2 3 ' TNOAB CATCH . . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 5 3 2 1  ok'; then \
+		echo "PASS: REPL test 765 — Story 11.7: i*x cells preserved through success path CATCH (positive control)"; \
+	else \
+		echo "FAIL: REPL test 765 — expected '0 5 3 2 1  ok' for success-path i*x preservation"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

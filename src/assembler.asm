@@ -53,13 +53,15 @@
 ;   dispatch would require INTERPRET-level changes and is deferred past
 ;   Epic 4.
 ;   `END-CODE` clears SMUDGE on the new word and clears asm_mode.
-;   On any ABORT path while asm_mode is set, asm_cleanup restores HERE,
-;   unlinks the half-built hash entry, and clears asm_mode — hook is in
-;   system.asm's w_ABORT_cf.
+;   On any uncaught-THROW path while asm_mode is set, asm_cleanup
+;   restores HERE, unlinks the half-built hash entry, and clears
+;   asm_mode — hook is the first call in exception.asm's
+;   .throw_uncaught recovery chain (post-Story-11.7).
 ;
-; Error format: all assembler errors print `{subject} ?` followed by CR
-; LF, matching the interpreter's `word ?` convention, then jump to
-; w_ABORT_cf which calls asm_cleanup to unwind any half-built word.
+; Error format: all assembler errors raise an antforth-extension THROW
+; code (-258..-271 per src/constants.asm:60-74); the unified diagnostic
+; path in exception.asm prints `error -<N>: <desc>` and the inlined
+; recovery chain calls asm_cleanup to unwind any half-built word.
 ;
 ; Reserved single-letter dictionary words (will shadow any user word of
 ; the same name once assembler.asm is loaded):
@@ -398,7 +400,7 @@ asm_err_already:
         JP      asm_print_error_with_name
 
 ; -----------------------------------------------
-; asm_cleanup — Subroutine (called from w_ABORT_cf)
+; asm_cleanup — Subroutine (called from .throw_uncaught recovery chain)
 ;   If asm_mode != 0, restore HERE and hash bucket from the saved state
 ;   captured by CODE, then clear asm_mode. Leaves a clean dictionary.
 ; -----------------------------------------------

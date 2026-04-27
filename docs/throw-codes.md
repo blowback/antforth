@@ -69,10 +69,10 @@ back to the per-file inventory in §d.
 
 | Code | Name (verbatim) | Used this epic? | Migrating from |
 |---:|---|---|---|
-| -1  | ABORT | yes — Story 11.7 | `system.asm:260` (`w_ABORT_cf` entry) |
-| -2  | ABORT" | yes — Story 11.7 | `system.asm:131` (`(ABORT")` `.paq_do_abort`) |
+| -1  | ABORT | done — Story 11.7 | `system.asm:286` (`w_ABORT_cf` entry; **done — 11.7**) |
+| -2  | ABORT" | done — Story 11.7 | `system.asm:139` (`(ABORT")` `.paq_do_abort`; **done — 11.7**) |
 | -3  | stack overflow | no | — |
-| -4  | stack underflow | done — Story 11.4 | `system.asm:563` (`do_underflow_error`; migrated) |
+| -4  | stack underflow | done — Story 11.4 | `system.asm:591` (`do_underflow_error`; migrated) |
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |
 | -7  | do-loops nested too deeply during execution | no | — |
@@ -246,10 +246,11 @@ pictured overflow.
 ## (d) Per-File ABORT-Site Inventory
 
 Survey method: `grep -nE 'JP\s+w_ABORT_cf|DW\s+w_ABORT_cf' src/*.asm` plus
-the entry point of `w_ABORT_cf` itself (line 260 of `system.asm`, which is
-not a JP but is the ultimate ABORT target). Re-run during dev pass on
-2026-04-25 — 17 grep hits, all matching the pre-canned story inventory.
-The 18th row (the entry point) is added explicitly.
+the entry point of `w_ABORT_cf` itself (line 286 of `system.asm` post-
+Story-11.7 — was 260 at Story 11.1 dev-pass; line numbers drift across
+intervening migrations, see Story 11.7 Completion Notes). Re-run during
+dev pass on 2026-04-25 — 17 grep hits, all matching the pre-canned story
+inventory. The 18th row (the entry point) is added explicitly.
 
 Cross-checks:
 - `grep -nE 'CALL\s+check_underflow' src/*.asm` returns 50 hits, of
@@ -316,9 +317,9 @@ Inventory grouped by source file (alphabetical), then by line number.
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
 | 80  | `MARKER` `.marker_no_name` | `MARKER` parsed an empty name | `-16` | **done — 11.5** |
-| 131 | `(ABORT")` `.paq_do_abort` | runtime `(ABORT")` with truthy flag | `-2` | **11.7 (capstone — retarget)** |
-| 260 | `w_ABORT_cf` (the entry point itself) | direct `ABORT` invocation | `-1` | **11.7 (capstone — retarget)** |
-| 563 | `do_underflow_error` (fan-in: every `check_underflow{,_2,_3,_4}` caller — 49 callers) | parameter-stack underflow | `-4` | **done — 11.4** (`LD BC, -4 / JP w_THROW_cf.kernel_entry`) |
+| 139 | `(ABORT")` `.paq_do_abort` | runtime `(ABORT")` with truthy flag | `-2` | **done — 11.7** |
+| 286 | `w_ABORT_cf` (the entry point itself) | direct `ABORT` invocation | `-1` | **done — 11.7** |
+| 591 | `do_underflow_error` (fan-in: every `check_underflow{,_2,_3,_4}` caller — 49 callers) | parameter-stack underflow | `-4` | **done — 11.4** (`LD BC, -4 / JP w_THROW_cf.kernel_entry`) |
 
 ### Divisor-zero guards added by Story 11.4 (not pre-existing ABORT sites)
 
@@ -330,12 +331,18 @@ Inventory grouped by source file (alphabetical), then by line number.
 ### Inventory totals
 
 - 17 `JP w_ABORT_cf` / `DW w_ABORT_cf` sites surveyed (18 pre-Story-11.4;
-  `system.asm:559`'s `JP w_ABORT_cf` was retired by Story 11.4 in favour
-  of `LD BC, -4 / JP w_THROW_cf.kernel_entry`).
-- 1 entry-point row (`w_ABORT_cf` itself at `system.asm:260`).
+  `system.asm:559` (Story 11.1 line; now `:591`)'s `JP w_ABORT_cf` was
+  retired by Story 11.4 in favour of `LD BC, -4 / JP w_THROW_cf.kernel_entry`);
+  Story 11.7 retired the final 2 (`exception.asm:420` and `system.asm:131`,
+  pre-Story-11.7 lines; now inlined / retargeted at `exception.asm:412+`
+  and `system.asm:139` respectively); zero instruction-line ABORT-chain
+  references remain in the kernel.
+- 1 entry-point row (`w_ABORT_cf` itself at `system.asm:286` post-Story-
+  11.7; was `:260` pre-Story-11.7; retargeted to `-1 THROW` body by
+  Story 11.7 — label preserved as ABORT's DEFCODE entry).
 - 2 divisor-zero guard rows (added by Story 11.4 — `udivmod`, `UM/MOD`).
 - **17 surviving ABORT sites + 1 entry point + 2 divisor-zero guards →
-  20 rows total post-Story-11.4.**
+  20 rows total post-Story-11.4 → all retired post-Story-11.7.**
 
 ---
 
@@ -348,17 +355,20 @@ buffer-shaped I/O migrate after that (touch input source); `ABORT` and
 `ABORT"` retarget last (so legacy `JP w_ABORT_cf` paths don't double-throw
 during the transition).
 
-Story 11.7 is the capstone: by the time `ABORT`/`ABORT"` retarget to
-`-1 THROW` / `-2 THROW`, every internal caller is already on `THROW`. No
-site references `w_ABORT_cf` directly except the two retargeted bodies
-themselves.
+Story 11.7 is the capstone (**done**): by the time `ABORT`/`ABORT"`
+retargeted to `-1 THROW` / `-2 THROW`, every internal caller was already
+on `THROW`. Post-Story-11.7 no site references `w_ABORT_cf` as a `JP`
+target; only the entry-point label itself (`system.asm:286`) survives,
+as the entry to ABORT's `-1 THROW` raise. FR19 (internal errors raise
+THROW codes) and FR20 (ABORT/ABORT" become THROW wrappers) are both
+fully delivered post-Story-11.7.
 
 | Migration story | Theme | Sites migrated | Codes used |
 |---|---|---|---|
-| **11.4** | Stack / arithmetic / memory leaf primitives | `system.asm:559` (`do_underflow_error`) — done; `arithmetic.asm:126` (`udivmod` divisor=0 guard) — done; `double.asm:569` (`UM/MOD` divisor=0 guard) — done | `-4`, `-10` |
+| **11.4** | Stack / arithmetic / memory leaf primitives | `system.asm:559→591` (`do_underflow_error`) — done; `arithmetic.asm:130` (`udivmod` divisor=0 guard) — done; `double.asm:569` (`UM/MOD` divisor=0 guard) — done | `-4`, `-10` |
 | **11.5** | Compiler / dictionary / control flow / assembler-internal state | `compiler.asm:48`, `compiler.asm:398`, `compiler.asm:451`, `compiler.asm:469`, `compiler.asm:577`, `compiler.asm:624`, `compiler.asm:641`, `control_flow.asm:20`, `outer_interpreter.asm:226`, `system.asm:80` (`MARKER`), `assembler.asm:281` (`asm_die` fan-in), `assembler.asm:337` (`asm_err_bare_int`), `assembler.asm:381` (`asm_print_error_with_name` fan-in) | `-13`, `-14`, `-16`, `-258..-269` |
 | **11.6** | Strings / I-O / buffer-shaped errors + asm-die residual cleanup | `strings.asm:953` (`(` missing-`)`) — **done**; `pictured.asm:251` (pictured buffer overflow) — **done**; `assembler.asm:472` (`check_asm_mode`, Story 11.5 D1) — **done**; `assembler.asm:1213` (`asm_range_err`, Story 11.5 D1) — **done**; `asm_die` body retired | `-17`, `-58`, `-270`, `-271` |
-| **11.7** | `ABORT` / `ABORT"` retarget — capstone | `system.asm:131` (`(ABORT")` `.paq_do_abort`) → `-2 THROW`; `system.asm:260` (`w_ABORT_cf` entry) → `-1 THROW` | `-1`, `-2` |
+| **11.7** | `ABORT` / `ABORT"` retarget — capstone (**done**) | `system.asm:131→139` (`(ABORT")` `.paq_do_abort`) → `-2 THROW` (**done**); `system.asm:260→286` (`w_ABORT_cf` entry) → `-1 THROW` (**done**); `exception.asm:420` (`.throw_uncaught` recovery-chain delegate) → inlined chain at `exception.asm:412+` (**done**) | `-1`, `-2` |
 
 Each row in §d is tagged with its target story; the cross-reference rule
 holds (a site assigned to Story 11.x matches the AC topic of that story).

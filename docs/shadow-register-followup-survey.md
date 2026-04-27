@@ -86,6 +86,14 @@ w_CHAR_cf:
 
 ### A.2 — (ABORT") runtime (`src/system.asm:114`)
 
+**Status (post-Epic-11): superseded.** Story 11.7 retargeted `(ABORT")`
+truthy-flag exit from `JP w_ABORT_cf` to a `-2 THROW` raise (now at
+`src/system.asm:139-146`); `w_ABORT_cf` itself is now a `-1 THROW`
+raise. The code shape and rationale below document the pre-Epic-11
+state and are retained for historical context only — do not chase
+this optimization candidate against the current source.
+
+
 **Current shape:**
 ```
 .paq_abort:

@@ -18,7 +18,7 @@
 \ Story 11.4 owns Sections 1 and 2 (stack underflow -4; divisor zero -10).
 \ Story 11.5 will append Section 3 (compiler / dictionary / control flow).
 \ Story 11.6 will append Section 4 (strings / I-O).
-\ Story 11.7 will append Section 5 (ABORT / ABORT" retarget verification).
+\ Story 11.7 appends Section 5 (ABORT / ABORT" retarget — capstone).
 \
 \ DIAGNOSTIC-FORMAT DEPENDENCY: The uncaught-recovery tests below assert
 \ "error -4: stack underflow" / "error -10: division by zero" — those
@@ -254,3 +254,57 @@
 \ pictured_tests.fth / strings_tests.fth. ---
 : TOK 5 ( inline ok ) ;
 ' TOK CATCH .                           \ expect: 0  ok
+
+\ ============================================================
+\ Section 5 — ABORT / ABORT" retarget verification (Story 11.7 capstone)
+\               (-1 / -2)
+\ ============================================================
+\
+\ Story 11.7 retargets the two user-facing legacy error words:
+\   - ABORT     →  -1 THROW  (ANS Forth 1994 §6.1.0670)
+\   - ABORT"    →  -2 THROW  (ANS Forth 1994 §6.1.0680, after message)
+\ The legacy SP-reset / asm_cleanup / JP w_QUIT_cf chain that lived in
+\ w_ABORT_cf's body has moved into the uncaught-THROW handler at
+\ src/exception.asm:.throw_uncaught (so user-issued ABORT no longer
+\ infinite-loops through w_ABORT_cf when uncaught).
+\
+\ This section closes Epic 11's E11-D3 word-by-word internal-error
+\ migration crawl: post-Story-11.7 every internal kernel error path
+\ AND the two user-facing legacy error words raise standard ANS
+\ THROW codes (FR19 + FR20 fully delivered).
+\
+\ Caught-ABORT" CRLF observation (AC #8): (ABORT") prints the inline
+\ message via bdos_print_str with NO trailing CR/LF — only the
+\ uncaught-handler emits CR/LF (via bdos_crlf at exception.asm:411).
+\ So caught ABORT" output is `message-2  ok` with no CR/LF between
+\ `message` and `-2`. Verified at dev-pass.
+
+\ --- Section 5.1 — Caught ABORT (-1): direct + colon-body wrapper ---
+' ABORT CATCH .                         \ expect: -1  ok
+: ABORTING ABORT ;
+' ABORTING CATCH .                      \ expect: -1  ok
+
+\ --- i*x preservation across kernel-internal -1 raise (Story 11.4.1) ---
+1 2 3 ' ABORT CATCH . . . .             \ expect: -1 3 2 1  ok
+
+\ --- DEPTH-invariant after caught ABORT (post-THROW DEPTH = 1) ---
+' ABORT CATCH DEPTH .                   \ expect: 1  ok
+
+\ --- Section 5.2 — Caught ABORT" (-2) from compiled colon body ---
+\ The ABORT" word is IMMEDIATE compile-only, so we compile a colon
+\ body that contains the (ABORT") runtime call.
+: TAB1 1 ABORT" message" ;
+' TAB1 CATCH .                          \ expect: message-2  ok
+
+\ Flag-zero positive control: ABORT" with zero flag is a no-op
+\ (per ANS §6.1.0680 — no print, no raise, CATCH returns 0).
+: TAB0 0 ABORT" message" ;
+' TAB0 CATCH .                          \ expect: 0  ok
+
+\ --- i*x preservation across kernel-internal -2 raise ---
+1 2 3 ' TAB1 CATCH . . . .              \ expect: message-2 3 2 1  ok
+
+\ --- Section 5.3 — Positive controls (success path returns 0) ---
+: TNOAB 5 ;
+' TNOAB CATCH .                         \ expect: 0  ok
+1 2 3 ' TNOAB CATCH . . . . .           \ expect: 0 5 3 2 1  ok

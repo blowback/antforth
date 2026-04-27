@@ -261,7 +261,7 @@ Per-file breakdown of every convention-bound EXX site. In each table, the **Line
 
 ### Notable exceptions (NOT convention-bound EXX sites)
 
-- **`(ABORT")` runtime — `.paq_abort` inside `w_ABORT_QUOTE_cf`** (`src/system.asm:114`, where `w_ABORT_QUOTE:` is at line 138 / `_cf` at 140). Uses **no IP save at all** — no EXX, no `PUSH DE`, no `rpush_de`. Story 8.1 deleted the former `CALL rpush_de` + `INC IX / INC IX` unwind outright as dead code: `w_ABORT_cf` (at `src/system.asm:258`) resets SP via `LD SP, (sp_base)` and `JP w_QUIT_cf` resets IX and reloads DE, so any leftover IP/return-stack state is garbage-collected before anyone could read it. A future maintainer may be tempted to *add back* an IP save here for "safety" — do not. The inline comments at `src/system.asm:116–118` state the rationale in the source.
+- **`(ABORT")` runtime — `.paq_abort` inside `w_ABORT_QUOTE_cf`** (`src/system.asm:122`, where `w_ABORT_QUOTE:` is at line 153 / `_cf` at 155). Uses **no IP save at all** — no EXX, no `PUSH DE`, no `rpush_de`. Story 8.1 deleted the former `CALL rpush_de` + `INC IX / INC IX` unwind outright as dead code. Post-Story-11.7 `(ABORT")`'s truthy-flag exit raises `-2 THROW` (`src/system.asm:138-145`); the recovery topology is: (a) uncaught path → `.throw_uncaught`'s inlined chain (`asm_cleanup` + `LD SP, (sp_base)` + `JP w_QUIT_cf` at `src/exception.asm:412-426`) wholesale-resets SP/IX/STATE and reloads DE; (b) caught path → CATCH frame's `LD SP, HL` resets SP and the catch-IP discard + NEXT into the catching frame's continuation makes the partial DE/IP state moot. Either way any leftover IP/return-stack state is garbage-collected before anyone could read it. A future maintainer may be tempted to *add back* an IP save here for "safety" — do not. The inline comments at `src/system.asm:122–128` state the rationale in the source.
 
 **Total: ~22 convention-bound EXX-using words across 8 source files.**
 
@@ -274,7 +274,7 @@ The following `rpush_de`/`rpush_bc` call sites remain unconverted by explicit Ep
 - **`src/compiler.asm:689`** — `(;CODE)` / DOES> runtime exit. Category D exclusion (hot path, functional R-stack manipulation).
 - **`src/control_flow.asm:207`** — `(DO)` runtime. Category D (functional R-stack use — loop params pushed for `LOOP`/`+LOOP` to consume).
 - **`src/outer_interpreter.asm:99–127`** — the INTERPRET loop itself. Category D (*is* the main thread; any EXX here reframes the whole interpreter state model).
-- **`src/system.asm:114`** (`.paq_abort` inside `w_ABORT_QUOTE_cf` @ line 140) — the `(ABORT")` runtime. See §7 exception note.
+- **`src/system.asm:122`** (`.paq_abort` inside `w_ABORT_QUOTE_cf` @ line 155) — the `(ABORT")` runtime. See §7 exception note.
 
 ### Dormant resources
 
@@ -368,18 +368,18 @@ Post-NEXT invariants:
 
 #### Uncaught path (`CATCH-TOP = 0`)
 
-The uncaught path stashes `n` in `throw_saved_n` (BC is clobbered by the BDOS print helpers' `LD B, <len>` arg), prints `error <n>` via a hardcoded-decimal helper (`print_signed_dec_bc`, BASE-independent per FR21), looks up `n` in `throw_desc_table` and prints `: <description>` on hit, emits CR/LF, then `JP w_ABORT_cf`.
+The uncaught path stashes `n` in `throw_saved_n` (BC is clobbered by the BDOS print helpers' `LD B, <len>` arg), prints `error <n>` via a hardcoded-decimal helper (`print_signed_dec_bc`, BASE-independent per FR21), looks up `n` in `throw_desc_table` and prints `: <description>` on hit, emits CR/LF, then runs the inlined recovery chain (`CALL asm_cleanup` → `LD HL, (sp_base) / LD SP, HL` → `JP w_QUIT_cf`) at `src/exception.asm:412-426`.
 
-Sharing the legacy ABORT chain (`asm_cleanup` → reset SP → `JP w_QUIT_cf`) means uncaught-THROW recovery is byte-for-byte identical to ABORT recovery: `STATE` zeroed, IX reset, `CATCH-TOP` zeroed, `asm_mode` cleared, dictionary intact (LATEST may be stale on partial CODE definitions, but the bucket head is restored). This forward-compatibility is what allows Story 11.7 to retarget `w_ABORT_cf` itself to `-1 THROW` without rewriting recovery — at that point, ABORT *is* uncaught-THROW.
+The inlined recovery chain (post-Story-11.7 location) is byte-for-byte identical to the pre-Story-11.7 `w_ABORT_cf` body: `STATE` zeroed, IX reset, `CATCH-TOP` zeroed, `asm_mode` cleared, dictionary intact (LATEST may be stale on partial CODE definitions, but the bucket head is restored). Story 11.7 retargeted `w_ABORT_cf` itself to `-1 THROW` and moved the chain here so that `user-ABORT → -1 THROW → uncaught (CATCH-TOP=0) → JP w_ABORT_cf` would not infinite-loop. Post-Story-11.7, ABORT *is* uncaught-THROW — same code path either way.
 
 The description table is seeded with the standard codes Epic 11 issues (`-1`, `-2`, `-4`, `-10`, `-13`, `-14`, `-16`, `-17`, `-22`, `-58`, plus future-add slots Story 11.5 fills in for the antforth `-258..-269` assembler-error extensions).
 
-### Forward pointer (Stories 11.4–11.7, 13.4)
+### Historical (Stories 11.4–11.7 — landed; Story 13.4 — open)
 
 - **Story 11.3** — see *Story 11.3 contract — THROW-time restore* (above).
-- **Stories 11.4–11.6** — migrate existing internal `JP w_ABORT_cf` sites to `THROW <code>`; do not touch the frame layout. Each migration inherits the caught/uncaught dispatch built here.
-- **Story 11.7** — retargets `ABORT` and `ABORT"` themselves to `-1 THROW` / `-2 THROW` (the capstone). At this point, ABORT's recovery becomes uncaught-THROW's recovery — the same code path either way.
-- **Story 13.4** — inserts the `INCLUDE-TOP` chain-walk loop into THROW's caught path (between steps 2 and 3 of the 7-step algorithm above), closing source-input frames that are more recent than the target exception frame.
+- **Stories 11.4–11.6** — migrated the internal `JP w_ABORT_cf` sites to `THROW <code>`; the frame layout was unchanged. Each migration inherited the caught/uncaught dispatch built here.
+- **Story 11.7** — retargeted `ABORT` and `ABORT"` themselves to `-1 THROW` / `-2 THROW` (the capstone) and moved the recovery chain into `.throw_uncaught` (post-Story-11.7 the chain `user-ABORT → -1 THROW → uncaught → JP w_ABORT_cf` would otherwise infinite-loop). Post-Story-11.7 ABORT's recovery *is* uncaught-THROW's recovery — same code path either way.
+- **Story 13.4 (open)** — inserts the `INCLUDE-TOP` chain-walk loop into THROW's caught path (between steps 2 and 3 of the 7-step algorithm above), closing source-input frames that are more recent than the target exception frame.
 
 This section will be extended by Stories 11.3–11.7 as new fields, semantics, or interactions land. The 8-byte layout itself was locked at Story 11.2; the slot semantics at `+0` (saved-SP captured AFTER `POP BC`) and `+2` (saved-BC = i*x's TOS-cell value) were revised by Story 11.4.1 (a deliberate revision to E11-D1, not a drift). Further changes require the same level of deliberation.
 
