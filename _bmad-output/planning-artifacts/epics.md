@@ -65,7 +65,7 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 - FR27: Users can reduce the search order to a minimal set with `ONLY`
 - FR28: Users can reference the built-in Forth wordlist with `FORTH-WORDLIST`
 - FR29: Users can search a specific wordlist for a word with `SEARCH-WORDLIST`
-- FR30: The `ASSEMBLER` wordlist is automatically activated on entry to `CODE` and deactivated on exit from `END-CODE`
+- ~~FR30~~: ~~The `ASSEMBLER` wordlist is automatically activated on entry to `CODE` and deactivated on exit from `END-CODE`~~ — **withdrawn 2026-04-27** per project-lead direction (no ASSEMBLER wordlist, no auto-activation; hard-coded assembler stays as-is). FR30 is a deliberate gap.
 - FR31: Users with existing CODE-word source files authored against pre-phase antforth can assemble those files unchanged
 
 **Source File I/O (Epic 13)**
@@ -139,7 +139,7 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 
 **Source-file layout (Architecture §Source file organisation):**
 - `src/number_prefixes.asm` (Epic 9); `src/double.asm`, `src/pictured.asm` (Epic 10); `src/exception.asm` (Epic 11); `src/wordlists.asm` (Epic 12); `src/file_access.asm` (Epic 13)
-- Existing `src/*.asm` edited in-place for ABORT→THROW migration, multi-vocabulary changes, and `ASSEMBLER` wordlist registration
+- Existing `src/*.asm` edited in-place for ABORT→THROW migration and multi-vocabulary changes (`src/assembler.asm` itself is **unchanged** in Phase 2 — no ASSEMBLER wordlist registration, no auto-activation hooks, per 2026-04-27 rollback)
 - New tests under `tests/*.fth` (REPL-piped Forth); no new assembly test threads
 - New docs: `docs/throw-codes.md` (Epic 11); `docs/ans-forth-core-compliance.md` revised (Epic 10)
 
@@ -225,9 +225,9 @@ Users can do double-precision signed/unsigned arithmetic, manipulate double-cell
 Users can catch errors with `CATCH`/`THROW`, receive standard ANS THROW codes, and keep their REPL session alive across any error; every internal error path in the interpreter, compiler, and primitives is migrated from `ABORT` to `THROW` (word-by-word per E11-D3); `ABORT`/`ABORT"` become standard wrappers for `-1 THROW`/`-2 THROW`. A migration-inventory story at the front of the epic makes the crawl scope visible before the word-by-word work begins. Delivers Mo's "catch a bug without losing the session" moment. Standalone release as antforth 1.11.
 **FRs covered:** FR16, FR17, FR18, FR19, FR20, FR21, FR22
 
-### Epic 12: Multi-Vocabulary Search-Order & ASSEMBLER Wordlist
-Users can create and manage multiple wordlists, control the search order, direct definitions into specific wordlists, and benefit from automatic `ASSEMBLER` wordlist activation inside `CODE`/`END-CODE` — all while existing CODE source files assemble unchanged. The `ASSEMBLER` wordlist is populated from the existing kernel-resident opcode words; opcodes are not relocated to a Forth-source file during Phase 2. Standalone release as antforth 1.12.
-**FRs covered:** FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR31
+### Epic 12: Multi-Vocabulary Search-Order
+Users can create and manage multiple wordlists, control the search order, and direct definitions into specific wordlists — all while existing CODE source files assemble unchanged against the unchanged hard-coded assembler subsystem in `src/assembler.asm`. No `ASSEMBLER` wordlist, no `ASSEMBLER.FTH`, no `CODE`/`END-CODE` auto-activation (per project lead 2026-04-20 + 2026-04-27). Standalone release as antforth 1.12.
+**FRs covered:** FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR31 (FR30 withdrawn 2026-04-27 — see `:195`)
 
 ### Epic 13: File-Access
 Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Closes with the Phase-2 release gate — full regression of Epics 1–12, BDOS-function-allow-list audit, filesystem-error stress suite, kernel ROM-delta accounting, and MicroBeast hardware validation. Passing the gate tags **antforth 2.0**.
@@ -1132,7 +1132,7 @@ So that the audit verdict is silicon-validated, the debt cleanup is verified zer
 
 ## Epic 12: Multi-Vocabulary Search-Order
 
-⚠️ **STALE — pending Story 11.5.5 redraft (2026-04-27).** This section was drafted before the 2026-04-27 direction that there will be **no ASSEMBLER wordlist, no ASSEMBLER.FTH, and no auto-activation**. The hard-coded assembler in `src/assembler.asm` stays as-is forever. Story 11.5.5 will: (a) drop Story 12.6 entirely, (b) renumber Story 12.7 → Story 12.6, (c) scrub ASSEMBLER-wordlist references from this epic intro and any Story 12.1 ACs that assume them. Until that redraft lands, the sections below should be read as historical-with-known-stale-elements.
+> Redrafted 2026-04-27..2026-04-28 by Story 11.5.5 to match the 2026-04-20 + 2026-04-27 ASSEMBLER rollback decisions; see `_bmad-output/implementation-artifacts/11.5-5-epic-12-redraft.md`.
 
 Users can create and manage multiple wordlists, control the search order, and direct definitions into specific wordlists — all while existing CODE source files assemble unchanged against the unchanged hard-coded assembler subsystem. Shippable as antforth 1.12.
 
@@ -1140,7 +1140,7 @@ Users can create and manage multiple wordlists, control the search order, and di
 
 As an antforth maintainer,
 I want the per-wordlist 130-byte struct defined, the dictionary hash lookup parameterised on a wordlist-struct address, and the existing flat dictionary migrated to live inside a canonical `FORTH-WORDLIST`,
-So that the kernel has a working multi-vocabulary infrastructure before any user-facing wordlist words are introduced (FR28 delivered; FR23–FR30 unblocked).
+So that the kernel has a working multi-vocabulary infrastructure before any user-facing wordlist words are introduced (FR28 delivered; FR23–FR29, FR31 unblocked — FR30 withdrawn 2026-04-27).
 
 **Acceptance Criteria:**
 
@@ -1284,39 +1284,7 @@ So that I can clear out accumulated cruft and reset namespace visibility (FR27).
 **When** extended
 **Then** it confirms `SET-ORDER` to a 5-wordlist state followed by `ONLY` yields a depth of 1 with `FORTH-WORDLIST` at slot 0.
 
-### Story 12.6: `ASSEMBLER` wordlist + auto-activation in `CODE`/`END-CODE`
-
-As a Forth user,
-I want the `ASSEMBLER` wordlist to activate automatically inside `CODE`/`END-CODE` blocks and deactivate cleanly afterwards,
-So that opcode words are visible exactly where they're needed — no `ALSO ASSEMBLER` incantation required at every `CODE` site (FR30).
-
-**Acceptance Criteria:**
-
-**Given** the kernel boot sequence
-**When** it completes
-**Then** an `ASSEMBLER` wordlist struct exists (created via `WORDLIST`); every built-in Z80 opcode word from `src/assembler.asm` is registered under the `ASSEMBLER` wordlist rather than `FORTH-WORDLIST`. Opcodes remain kernel-resident for the life of Phase 2 — no relocation to a Forth-source file is planned.
-
-**Given** E12-D4's save/restore pattern
-**When** `CODE` is invoked
-**Then** it pushes the current `SEARCH-ORDER-DEPTH` onto the rstack (or a dedicated save slot), adds `ASSEMBLER` to the top of the search order, and sets `CURRENT-WORDLIST` to `ASSEMBLER` so assembler-level CODE helpers compile into it.
-
-**Given** `END-CODE`
-**When** invoked
-**Then** it restores the pre-`CODE` search order and `CURRENT-WORDLIST`.
-
-**Given** nested `CODE`/`END-CODE` blocks (unusual but well-defined)
-**When** invoked
-**Then** the save/restore composes correctly — outer restores pre-outer state, inner restores outer state.
-
-**Given** `tests/assembler_wordlist_tests.fth`
-**When** it runs
-**Then** it verifies: (a) assembler opcodes are invisible outside `CODE`/`END-CODE`; (b) they are visible inside; (c) `END-CODE` correctly restores pre-block search order; (d) every pre-phase CODE source file assembles unchanged (FR31, NFR14 — full coverage in Story 12.7).
-
-**Given** the Story 10.7 asm-`#` dispatch hack at `src/assembler.asm` (`w_HASH_cf` dispatches on `asm_mode`: clear → `JP w_PIC_HASH_cf` for the §6.1 pictured-output `#`, set → immediate-operand sigil)
-**When** Story 12.6 lands
-**Then** the hack **must be removed** — with the assembler `#` registered in the `ASSEMBLER` wordlist and the pictured `#` in `FORTH-WORDLIST`, the two words no longer share a name in the lookup path. Restore `w_HASH_cf` to its pre-Story-10.7 form (single `CALL check_asm_mode` preamble; sigil body unchanged). Verify by: (a) `asm_mode`-based `JP Z, w_PIC_HASH_cf` line is gone from `src/assembler.asm`; (b) `#` outside `CODE` resolves to the pictured word via normal search-order lookup (not via run-time dispatch); (c) Story 10.7's REPL tests 550..572 still pass byte-identically; (d) `tests/number_prefixes_tests.fth` CODE-block tests using `#` still pass. Record net kernel-size delta from hack removal (expected: −4 bytes).
-
-### Story 12.7: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
+### Story 12.6: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
 
 As an antforth maintainer,
 I want Epic 12 to close with NFR2 measurement, an exhaustive CODE-source-file backward-compat suite, ROM delta accounting, and a full regression pass,
@@ -1333,12 +1301,12 @@ So that multi-vocabulary lookup performance, byte-identical CODE assembly, and o
 **Then** the regression vs the pre-Epic-12 baseline is near-zero (the common case should not suffer).
 
 **Given** every pre-phase-2 CODE source file in the project's test corpus
-**When** assembled against the Epic-12 binary
+**When** assembled against the Epic-12 binary (against the unchanged hard-coded assembler subsystem in `src/assembler.asm` — no opcode migration occurred)
 **Then** output is byte-identical to the pre-phase-2 reference — FR31, NFR14 verified comprehensively.
 
 **Given** the kernel ROM size
 **When** measured against the post-Epic-11 baseline
-**Then** the Epic-12 kernel-size delta is recorded; the additions (Search-Order machinery, per-wordlist hash layout, `ASSEMBLER` wordlist registration, `CODE`/`END-CODE` auto-activation hooks) are expected to grow the kernel, and the growth is justified line-by-line against NFR4 (per-epic budget, not a net-negative gate).
+**Then** the Epic-12 kernel-size delta is recorded; the additions (Search-Order machinery, per-wordlist hash layout) are expected to grow the kernel, and the growth is justified line-by-line against NFR4 (per-epic budget, not a net-negative gate).
 
 **Given** the full Phase-1 + Epics 9/10/11 test suites
 **When** run against the Epic-12 binary

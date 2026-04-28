@@ -345,7 +345,7 @@ CATCH's implementation:
 
 **Decision (superseded):** This decision proposed `CODE` pushing the current `SEARCH-ORDER-DEPTH` and activating an `ASSEMBLER` wordlist at the top of the search order, with `END-CODE` restoring it.
 
-**Status:** Withdrawn 2026-04-27 per project-lead direction (sprint-change-proposal-2026-04-27.md). The 2026-04-20 ASSEMBLER.FTH rollback (which deleted `ASSEMBLER.FTH` and lazy-load) was extended on 2026-04-27 to also drop the ASSEMBLER wordlist itself and its auto-activation. The hard-coded assembler in `src/assembler.asm` stays as-is forever; opcode words remain in the global dictionary as they are today. The Story 10.7 asm-`#` dispatch hack (`project_asm_hash_dispatch_hack.md`) is permanent — no retirement vehicle planned. Story 11.5.5 (Epic 12 redraft) deletes the original Story 12.6 from `epics.md`. This decision record is preserved for historical reference; no Epic 12 implementation work depends on it.
+**Status:** Withdrawn 2026-04-27 per project-lead direction (sprint-change-proposal-2026-04-27.md). The 2026-04-20 ASSEMBLER.FTH rollback (which deleted `ASSEMBLER.FTH` and lazy-load) was extended on 2026-04-27 to also drop the ASSEMBLER wordlist itself and its auto-activation. The hard-coded assembler in `src/assembler.asm` stays as-is forever; opcode words remain in the global dictionary as they are today. The Story 10.7 asm-`#` dispatch hack (`project_asm_hash_dispatch_hack.md`) is permanent — no retirement vehicle planned. Story 11.5.5 (Epic 12 redraft, closed 2026-04-28) deleted the original Story 12.6 from `epics.md`. This decision record is preserved for historical reference; no Epic 12 implementation work depends on it.
 
 ---
 
