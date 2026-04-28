@@ -492,14 +492,13 @@ print_signed_dec_bc:
 ;   (only fires on errors) and a hash table would cost more bytes than
 ;   it would save cycles.
 ;
-;   The 8-bit `ADD A, L / INC H` carry handling assumes string length
-;   <= 255 — enforced by every entry (max length seeded is 43 bytes).
-;   It also assumes HL stays below $FF00 across the walk (so the final
-;   `INC H` never wraps from $FF to $00). Currently safe: throw_desc_
-;   table sits near the start of the .COM image (~17KB total). If the
-;   kernel ever grows past 32KB and this table is relocated near the
-;   top of memory, replace the carry handler with a 16-bit `ADD HL, A`
-;   pattern (e.g., LD E,A / LD D,0 / ADD HL,DE).
+;   The 16-bit `ADD HL, DE` walk (LD E,(HL) / INC HL / LD D,0 /
+;   ADD HL,DE) assumes string length <= 255 — enforced by every entry
+;   (max length seeded is 43 bytes). The 16-bit add wraps modulo 65536
+;   per Zilog UM008011 §8, so the walk is wrap-safe regardless of
+;   table base address (closes Story 11.5 F9 / Story 11.6 R-L6 — see
+;   _bmad-output/implementation-artifacts/
+;     11.5-4-print-throw-description-table-walk-hardening.md).
 ;
 ;   Input:  BC = THROW code (signed 16-bit)
 ;   Output: ": <desc>" emitted on match; nothing on miss.
@@ -536,12 +535,12 @@ print_throw_description:
         JP      bdos_print_str          ; tail-call
 .ptd_skip:
         ; Advance HL past length byte + string body to next entry's code-DW.
-        LD      A, (HL)                 ; A = length
+        ; 16-bit ADD HL,DE form: wraps mod 65536 (UM008011 §8) — wrap-safe
+        ; regardless of table address. Story 11.5.4 (closes 11.5 F9 / 11.6 R-L6).
+        LD      E, (HL)                 ; E = length (LD r,(HL) is flag-neutral)
         INC     HL                      ; HL → first text byte
-        ADD     A, L
-        LD      L, A
-        JR      NC, .ptd_loop
-        INC     H
+        LD      D, 0
+        ADD     HL, DE                  ; HL → next entry's code-DW
         JR      .ptd_loop
 
 ; -----------------------------------------------

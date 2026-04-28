@@ -176,7 +176,7 @@ development_status:
   11.5-1-2-firmware-bdos-register-preservation-reproducer: done
   11.5-2-stack-overflow-throw-3-guard: done
   11.5-3-paren-evaluate-source-frame-fix: done
-  11.5-4-print-throw-description-table-walk-hardening: backlog
+  11.5-4-print-throw-description-table-walk-hardening: done
   11.5-5-epic-12-redraft: backlog
   11.5-6-throw-271-semantic-split: backlog
   11.5-7-epic-11-5-close-out-gate: backlog
