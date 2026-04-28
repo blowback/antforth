@@ -1331,10 +1331,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD150 8 # A BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'error -271: range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 150 — bit 8 raises error -271: range, clean recovery (Story 11.6)"; \
+	if echo "$$OUTPUT" | grep -q 'error -272: bit range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 150 — bit 8 raises error -272: bit range, clean recovery (Story 11.5.6)"; \
 	else \
-		echo "FAIL: REPL test 150 — expected 'error -271: range' and '3 '"; \
+		echo "FAIL: REPL test 150 — expected 'error -272: bit range' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -1504,10 +1504,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CODE BAD171 (IX) 200 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'error -271: range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
-		echo "PASS: REPL test 171 — displacement 200 out of range, clean recovery (Story 11.6: -271)"; \
+	if echo "$$OUTPUT" | grep -q 'error -271: disp range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 171 — displacement 200 out of range, clean recovery (Story 11.5.6: -271 disp range)"; \
 	else \
-		echo "FAIL: REPL test 171 — expected 'error -271: range' and '3 '"; \
+		echo "FAIL: REPL test 171 — expected 'error -271: disp range' and '3 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -6507,13 +6507,14 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@# Section 4.3: uncaught -271 (BIT 8 — bit number out of 0..7 range)
-	@# + REPL recovery. Triggers asm_range_err via .bop_reg8's range check.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRG271 8 # B BIT, END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -271: range.*99  ok'; then \
-		echo "PASS: REPL test 753 — Story 11.6: uncaught BIT 8 prints error -271: range + REPL recovers"; \
+	@# Section 4.3: uncaught -272 (BIT 8 — bit number out of 0..7 range)
+	@# + REPL recovery. Triggers asm_bit_range_err via .bop_reg8's range
+	@# check. (Was -271 pre-Story-11.5.6; split into -272 bit range.)
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRG272 8 # B BIT, END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -272: bit range.*99  ok'; then \
+		echo "PASS: REPL test 753 — Story 11.5.6: uncaught BIT 8 prints error -272: bit range + REPL recovers"; \
 	else \
-		echo "FAIL: REPL test 753 — expected 'error -271: range' + recovery + '99  ok'"; \
+		echo "FAIL: REPL test 753 — expected 'error -272: bit range' + recovery + '99  ok'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -6952,11 +6953,60 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T271 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;' "' T271 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T271 S" CODE BAD7 (IX) 200 +D A LD, END-CODE " EVALUATE ;' "' T271 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-271  ok'; then \
-		echo "PASS: REPL test 796 — Story 11.5.3: caught -271 (range) via EVALUATE"; \
+		echo "PASS: REPL test 796 — Story 11.5.6: caught -271 (disp range) via EVALUATE"; \
 	else \
 		echo "FAIL: REPL test 796 — expected '-271  ok' for caught -271 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Story 11.5.6 — coverage for the two BIT-op call sites NOT covered
+	@# by tests 150 / 753 / 796 (those exercise .bop_reg8 only). Tests
+	@# 797 / 798 exercise .bop_ihl (assembler.asm:3132 → asm_bit_range_err)
+	@# and .bop_ixiyd (assembler.asm:3164 → asm_bit_range_err).
+	@OUTPUT=$$(printf 'CODE BAD797 8 # (HL) BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'error -272: bit range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 797 — Story 11.5.6: bit 8 with (HL) raises error -272: bit range, clean recovery (.bop_ihl)"; \
+	else \
+		echo "FAIL: REPL test 797 — expected 'error -272: bit range' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD798 8 # (IX) 0 +D BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'error -272: bit range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 798 — Story 11.5.6: bit 8 with (IX+0) raises error -272: bit range, clean recovery (.bop_ixiyd)"; \
+	else \
+		echo "FAIL: REPL test 798 — expected 'error -272: bit range' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Story 11.5.6 — coverage for the +D negative-side range guards NOT
+	@# exercised by test 171 (which uses 200, hitting the positive-side
+	@# guard at :1149). Test 799 uses -129 to hit :1144 (B=0xFF and
+	@# C bit-7 clear); test 800 uses 32768 to hit :1141 (B neither 0x00
+	@# nor 0xFF). Both raise -271 disp range.
+	@OUTPUT=$$(printf 'CODE BAD799 (IX) -129 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'error -271: disp range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 799 — Story 11.5.6: +D -129 raises error -271: disp range, clean recovery (.pd_neg :1144)"; \
+	else \
+		echo "FAIL: REPL test 799 — expected 'error -271: disp range' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf 'CODE BAD800 (IX) 32768 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'error -271: disp range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
+		echo "PASS: REPL test 800 — Story 11.5.6: +D 32768 raises error -271: disp range, clean recovery (.pd_neg :1141)"; \
+	else \
+		echo "FAIL: REPL test 800 — expected 'error -271: disp range' and '3 '"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T272 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;' "' T272 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-272  ok'; then \
+		echo "PASS: REPL test 801 — Story 11.5.6: caught -272 (bit range) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 801 — expected '-272  ok' for caught -272 via EVALUATE"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

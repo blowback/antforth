@@ -301,8 +301,11 @@
 : T270 S" NOP, " EVALUATE ;
 ' T270 CATCH .                          \ expect: -270  ok    (assembler.asm:472 .check_asm_mode)
 
-: T271 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;
-' T271 CATCH .                          \ expect: -271  ok    (assembler.asm:1213 .asm_range_err — bit 8 out of range 0..7)
+: T271 S" CODE BAD7 (IX) 200 +D A LD, END-CODE " EVALUATE ;
+' T271 CATCH .                          \ expect: -271  ok    (assembler.asm:1204 .asm_disp_range_err — +D 200 out of -128..127 range; Story 11.5.6 split -271 → -271 disp range)
+
+: T272 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;
+' T272 CATCH .                          \ expect: -272  ok    (assembler.asm:1210 .asm_bit_range_err — BIT, bit 8 out of 0..7 range; Story 11.5.6 split -271 → -272 for bit-number)
 
 \ --- Section 4.4 — Positive controls: success path returns 0 ---
 \ A successful pictured-output round-trip — converts 1234 to

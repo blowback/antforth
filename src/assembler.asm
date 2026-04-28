@@ -194,9 +194,11 @@ asm_label_dict:    DS ASM_LABEL_DICT_SIZE
 ; str_asm_too_labels, str_asm_too_fixups, str_asm_equ_in_code) along with
 ; their *_LEN EQUs — those error sites now raise -258..-266 THROW and
 ; the description text lives in throw_desc_table (src/exception.asm:560).
-; Story 11.6 retired the asm_die residual: check_asm_mode and
-; asm_range_err migrated to -270 / -271 THROW, asm_die body deleted,
-; str_asm_notcode / str_asm_range / asm_print_error all deleted.
+; Story 11.6 retired the asm_die residual: check_asm_mode and the
+; +D / bit-op range guards migrated to -270 / -271 THROW, asm_die body
+; deleted, str_asm_notcode / str_asm_range / asm_print_error all
+; deleted. (Story 11.5.6 later split -271 → -271 disp range /
+; -272 bit range; see asm_disp_range_err / asm_bit_range_err below.)
 ; The remaining strings drive dynamic-print error paths that THROW alone
 ; cannot replace — they print a label name (str_asm_unresolved,
 ; str_asm_already) or a hex value (str_asm_bare_int) before " ?" CR LF
@@ -1138,15 +1140,15 @@ w_PLUS_D_cf:
         OR      A
         JR      Z, .pd_pos
         CP      0xFF
-        JP      NZ, asm_range_err
+        JP      NZ, asm_disp_range_err
         ; B=0xFF: check C >= 0x80
         BIT     7, C
-        JP      Z, asm_range_err
+        JP      Z, asm_disp_range_err
         JR      .pd_range_ok
 .pd_pos:
         ; B=0x00: check C <= 0x7F
         BIT     7, C
-        JP      NZ, asm_range_err
+        JP      NZ, asm_disp_range_err
 .pd_range_ok:
         ; Save displacement
         LD      A, C
@@ -1189,15 +1191,26 @@ w_PLUS_D_cf:
         NEXT
 
 ; -----------------------------------------------
-; asm_range_err — Raise -271 THROW per antforth extension.
-;   Callers (+D's range guards at :1135/:1138/:1143, the bit-op range
-;   guards at :3076/:3113/:3145) are primary-set DEFCODE bodies — no
-;   EXX-restore needed at the raise.
+; asm_disp_range_err — Raise -271 THROW (+D 8-bit displacement out of
+;   range). Callers: +D's range guards at :1143/:1146/:1151, primary-set
+;   DEFCODE bodies — no EXX-restore needed at the raise.
+; asm_bit_range_err — Raise -272 THROW (BIT,/RES,/SET, bit number not in
+;   0..7). Callers: bit-op range guards at :3095/:3132/:3164, primary-set
+;   DEFCODE bodies — no EXX-restore needed at the raise.
+; Story 11.5.6 split the original generic -271 "range" raise (the
+; asm_disp_range_err routine here was the prior single point) into these
+; two routines per docs/throw-codes.md §c closure note.
 ; -----------------------------------------------
-asm_range_err:
-        ; -271 THROW (Story 11.6): range per antforth extension —
+asm_disp_range_err:
+        ; -271 THROW (Story 11.5.6): +D displacement out of range —
         ; see docs/throw-codes.md
-        LD      BC, THROW_ASM_RANGE
+        LD      BC, THROW_ASM_DISP_RANGE
+        JP      w_THROW_cf.kernel_entry
+
+asm_bit_range_err:
+        ; -272 THROW (Story 11.5.6): BIT,/RES,/SET, bit number not in
+        ; 0..7 — see docs/throw-codes.md
+        LD      BC, THROW_ASM_BIT_RANGE
         JP      w_THROW_cf.kernel_entry
 
 ; =====================================================================
@@ -3079,7 +3092,7 @@ asm_bit_op_word:
         POP     BC                      ; BC = bit number
         LD      A, C
         CP      8
-        JP      NC, asm_range_err
+        JP      NC, asm_bit_range_err
         ; Emit CB, then base | (bit<<3) | r
         PUSH    BC
         LD      A, 0xCB
@@ -3116,7 +3129,7 @@ asm_bit_op_word:
         POP     BC                      ; BC = bit number
         LD      A, C
         CP      8
-        JP      NC, asm_range_err
+        JP      NC, asm_bit_range_err
         PUSH    BC
         LD      A, 0xCB
         CALL    asm_emit_byte
@@ -3148,7 +3161,7 @@ asm_bit_op_word:
         POP     BC
         LD      A, C
         CP      8
-        JP      NC, asm_range_err
+        JP      NC, asm_bit_range_err
         LD      (asm_tmp+2), A          ; save bit number
         ; All operands validated — emit: DD/FD CB disp opcode
         LD      A, (asm_ip_save)

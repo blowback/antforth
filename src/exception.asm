@@ -602,12 +602,15 @@ throw_desc_table:
         DW      -58
         DB      23
         DB      "unexpected end of input"
-        ; --- antforth extension codes -258..-271 (assembler errors) ---
-        ; Added by Story 11.5 (-258..-269) and extended by Story 11.6
+        ; --- antforth extension codes -258..-272 (assembler errors) ---
+        ; Added by Story 11.5 (-258..-269), extended by Story 11.6
         ; (-270 / -271 to retire the asm_die residual: check_asm_mode
-        ; and asm_range_err — the two non-fan-in callers Story 11.1's
-        ; inventory missed). Description text matches the pre-Story-
-        ; 11.5/11.6 str_asm_<name> string contents — the migration
+        ; and the +D / bit-op range guards — the two non-fan-in callers
+        ; Story 11.1's inventory missed), and split by Story 11.5.6
+        ; (-271 disp range + new -272 bit range; see assembler.asm
+        ; asm_disp_range_err / asm_bit_range_err). Description text
+        ; matches the pre-Story-11.5/11.6 str_asm_<name> string contents
+        ; — the migration
         ; moved the diagnostic from inline pre-prints to the unified
         ; "error -<N>: <desc>" format via this table. Length bytes
         ; hand-counted to match the literal string contents (mismatch
@@ -652,9 +655,12 @@ throw_desc_table:
         DW      THROW_ASM_NOT_IN_CODE       ; -270
         DB      11
         DB      "not in CODE"
-        DW      THROW_ASM_RANGE             ; -271
-        DB      5
-        DB      "range"
+        DW      THROW_ASM_DISP_RANGE        ; -271
+        DB      10
+        DB      "disp range"
+        DW      THROW_ASM_BIT_RANGE         ; -272
+        DB      9
+        DB      "bit range"
         DW      0                       ; terminator
 
 ; -----------------------------------------------

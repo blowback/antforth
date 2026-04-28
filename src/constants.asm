@@ -73,14 +73,17 @@ THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5
 ; lazy-load assembler also in Epic 13.
 THROW_FCB_EXHAUSTED     EQU -69  ; ANS Forth 1994 §9.3.5 (post-1994 extension; Forth 2014 retains)
 
-; --- antforth extensions: assembler-error codes (-258..-271) ---
+; --- antforth extensions: assembler-error codes (-258..-272) ---
 ; Allocated as one contiguous block for grep-ability; one code per error
 ; entry point in src/assembler.asm. The block starts at -258 (not -256)
 ; to leave -256 reserved for future use and -257 reserved for
 ; architecture-mandated THROW_ASM_LOAD_FAIL (architecture.md:478,606).
-; The block extends to -271 per Story 11.6's asm_die-residual cleanup
-; (the two non-fan-in callers check_asm_mode and asm_range_err were
-; missed by Story 11.1's inventory; -270 / -271 retire them).
+; The block extends to -272 post-Story 11.5.6: Story 11.6 added -270 /
+; -271 for the asm_die residual (check_asm_mode plus the +D / bit-op
+; range guards, both originally raising the generic -271 "range"); Story
+; 11.5.6 split the original -271 into -271 disp range / -272 bit range
+; — see this file's THROW_ASM_DISP_RANGE / THROW_ASM_BIT_RANGE entries
+; and _bmad-output/implementation-artifacts/11.5-6-throw-271-semantic-split.md.
 ; See docs/throw-codes.md §c.
 THROW_ASM_LOAD_FAIL         EQU -257 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_BAD_OPERAND       EQU -258 ; antforth extension — see docs/throw-codes.md
@@ -96,4 +99,5 @@ THROW_ASM_BARE_INT          EQU -267 ; antforth extension — see docs/throw-cod
 THROW_ASM_UNRESOLVED        EQU -268 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_ALREADY_FIXED     EQU -269 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_NOT_IN_CODE       EQU -270 ; antforth extension — see docs/throw-codes.md
-THROW_ASM_RANGE             EQU -271 ; antforth extension — see docs/throw-codes.md
+THROW_ASM_DISP_RANGE        EQU -271 ; antforth extension — see docs/throw-codes.md
+THROW_ASM_BIT_RANGE         EQU -272 ; antforth extension — see docs/throw-codes.md

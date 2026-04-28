@@ -51,9 +51,10 @@ resolve to ANS codes, no extension needed).
 `THROW_ASM_LOAD_FAIL` (Epic 13 lazy-load assembler). The Epic 11
 assembler-error contiguous block therefore starts at `-258`, not `-256`,
 leaving `-256` as a one-code gap (reserved for future use) and `-257` as
-the architecture-mandated reservation. The block extends through `-271`
-post-Story-11.6 (Story 11.5 allocated `-258..-269`; Story 11.6 added
-`-270` / `-271` for the asm_die residual).
+the architecture-mandated reservation. The block extends through `-272`
+post-Story-11.5.6 (Story 11.5 allocated `-258..-269`; Story 11.6 added
+`-270` / `-271` for the asm_die residual; Story 11.5.6 split the
+generic `-271 range` into `-271 disp range` / `-272 bit range`).
 
 **Naming pattern (architecture.md:471-479):** `THROW_<UPPER_SNAKE_NAME>`
 matching the human-readable name from the standard table (or, for
@@ -172,7 +173,8 @@ Epic 11 migration references it. That covers:
 ## (c) antforth Extension Codes (Range -256 to -32767)
 
 All extensions allocated by Epic 11 sit in a contiguous block
-`-258..-271` for grep-ability. Every extension comes from the assembler
+`-258..-272` for grep-ability (Epic 11.5 / Story 11.5.6 added one
+code by splitting -271). Every extension comes from the assembler
 (`src/assembler.asm`) — the kernel's ABORT sites otherwise resolve to ANS
 codes. `-256` is unallocated (reserved gap). `-257` is reserved by
 `architecture.md:478,606` for `THROW_ASM_LOAD_FAIL` (Epic 13 lazy-load
@@ -191,8 +193,9 @@ discovered a second-tier `asm_die` residual: two non-fan-in callers
 (`check_asm_mode` and `asm_range_err`) had also been missed by Story
 11.1's grep-of-`JP\sw_ABORT_cf` inventory because they routed through
 `asm_die` rather than ABORT directly. Story 11.6 retires those two with
-`-270 THROW_ASM_NOT_IN_CODE` and `-271 THROW_ASM_RANGE`, extending the
-contiguous block to `-258..-271`. The two-tier reconciliation is
+`-270 THROW_ASM_NOT_IN_CODE` and `-271 THROW_ASM_RANGE` (the latter
+later split by Story 11.5.6 — see Note below), extending the
+contiguous block to `-258..-272`. The two-tier reconciliation is
 recorded here per the "no drafting-spec errors slip into the deliverable"
 discipline.
 
@@ -212,34 +215,34 @@ discipline.
 | -268 | THROW_ASM_UNRESOLVED        | unresolved label NAME at `END-CODE`                   | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_unresolved`) | **done — 11.5** |
 | -269 | THROW_ASM_ALREADY_FIXED     | already-fixed label NAME (double `FIX`)               | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_already`)    | **done — 11.5** |
 | -270 | THROW_ASM_NOT_IN_CODE       | inline-assembler word used outside `CODE` block       | `assembler.asm:472` (`check_asm_mode` direct raise)                      | **done — 11.6** |
-| -271 | THROW_ASM_RANGE             | numeric operand out of range (e.g., `BIT`/`+D` disp)  | `assembler.asm:1191` (`asm_range_err` direct raise)                      | **done — 11.6** |
+| -271 | THROW_ASM_DISP_RANGE        | `+D` 8-bit displacement out of range                  | `assembler.asm:1204` (`asm_disp_range_err` direct raise)                 | **done — 11.5.6** |
+| -272 | THROW_ASM_BIT_RANGE         | `BIT,`/`RES,`/`SET,` bit number not in 0..7           | `assembler.asm:1210` (`asm_bit_range_err` direct raise)                  | **done — 11.5.6** |
 
-**Note on -271 semantic collapse.** `THROW_ASM_RANGE` covers two
-distinct conditions: `+D`'s 8-bit-signed displacement check (`assembler.asm:1135/:1138/:1143`)
-and the `BIT,/RES,/SET,` bit-number 0..7 check
-(`assembler.asm:3076/:3113/:3145`). The user diagnostic
-`error -271: range` is generic — it carries no locality hint. This
-collapse mirrors the pre-Story-11.6 `range ?` literal (legacy defect
-inherited intact, not introduced). A future refactor could split into
-`-271 THROW_ASM_DISP_RANGE` / `-272 THROW_ASM_BIT_RANGE` per the
-"design upfront for full scope" rule (`feedback_design_upfront.md`);
-deferred from Story 11.6 because the story spec (AC #4) committed to
-a single `-271` allocation, and the diagnostic information loss is
-addressable contextually (the user knows which `CODE` body they were
-writing). Logged as a Story 11.6 review finding (F4 LOW-deferred).
+**Note on -271 / -272 split (Story 11.5.6 closure).** The original
+Story 11.6 allocation collapsed two structurally-different conditions
+onto a single `-271 THROW_ASM_RANGE`: `+D`'s 8-bit-signed displacement
+check (`assembler.asm:1143/:1146/:1151`) and the `BIT,/RES,/SET,`
+bit-number 0..7 check (`assembler.asm:3095/:3132/:3164`). The user
+diagnostic `error -271: range` was generic and carried no locality hint.
+Story 11.5.6 split this — see Story 11.5.6 file at
+`_bmad-output/implementation-artifacts/11.5-6-throw-271-semantic-split.md`.
+Post-split, `-271 THROW_ASM_DISP_RANGE` raises `error -271: disp range`
+and `-272 THROW_ASM_BIT_RANGE` raises `error -272: bit range`.
 
 **Subgroup justification:** Story 11.5 migrated 12 extensions (`-258..-269`)
 covering the `asm_die` fan-in plus the three non-fan-in callers that did
 their own raise (`asm_err_bare_int`, `asm_err_unresolved`, `asm_err_already`).
 Story 11.6 added `-270` / `-271` for the two non-fan-in `asm_die` callers
 that were missed by Story 11.1's enumerated inventory (Story 11.5 D1
-deviation forward-pointer). All 14 assembler-error codes form one contiguous
-grep-able block. Rationale: assembler errors are structurally compiler-
-state errors — they fire while the assembler is parsing source and
-building an in-progress CODE definition. Story 11.5 (compiler/dictionary)
-covered the bulk; Story 11.6 (strings/I-O + asm-die residual) covered the
-two latecomers plus the standard-code migrations for `(` missing-`)` /
-pictured overflow.
+deviation forward-pointer). Story 11.5.6 then split the generic `-271`
+into `-271 disp range` / `-272 bit range` for diagnostic locality. All
+15 assembler-error codes form one contiguous grep-able block. Rationale:
+assembler errors are structurally compiler-state errors — they fire
+while the assembler is parsing source and building an in-progress CODE
+definition. Story 11.5 (compiler/dictionary) covered the bulk; Story 11.6
+(strings/I-O + asm-die residual) covered the two latecomers plus the
+standard-code migrations for `(` missing-`)` / pictured overflow; Story
+11.5.6 split `-271` per the F4 LOW-deferred closure.
 
 ---
 
@@ -274,7 +277,8 @@ Inventory grouped by source file (alphabetical), then by line number.
 | 337 | `asm_err_bare_int` (own JP, prints HL) | tagged operand expected, bare integer received | antforth extension `-267` | **done — 11.5** |
 | 381 | `asm_print_error_with_name` (fan-in: `asm_err_unresolved`, `asm_err_already`) | unresolved / already-fixed label | antforth extension `-268`, `-269` | **done — 11.5** |
 | 472 | `check_asm_mode` (Story 11.5 D1 deviation — missed by Story 11.1's grep-of-`JP\sw_ABORT_cf` because it routed through `asm_die`) | inline-assembler word used outside `CODE` block | antforth extension `-270 THROW_ASM_NOT_IN_CODE` | **done — 11.6** |
-| 1213 | `asm_range_err` (Story 11.5 D1 deviation — same reason) | numeric operand out of range (e.g., `BIT,` bit number, `+D` displacement) | antforth extension `-271 THROW_ASM_RANGE` | **done — 11.6** |
+| 1204 | `asm_disp_range_err` (Story 11.5 D1 deviation — same reason; was `asm_range_err`, split by Story 11.5.6) | `+D` 8-bit displacement out of range | antforth extension `-271 THROW_ASM_DISP_RANGE` | **done — 11.6 / 11.5.6** |
+| 1210 | `asm_bit_range_err` (Story 11.5.6 — split sibling of `asm_disp_range_err`) | `BIT,`/`RES,`/`SET,` bit number not in 0..7 | antforth extension `-272 THROW_ASM_BIT_RANGE` | **done — 11.5.6** |
 
 ### `src/compiler.asm`
 
@@ -367,7 +371,8 @@ fully delivered post-Story-11.7.
 |---|---|---|---|
 | **11.4** | Stack / arithmetic / memory leaf primitives | `system.asm:559→591` (`do_underflow_error`) — done; `arithmetic.asm:130` (`udivmod` divisor=0 guard) — done; `double.asm:569` (`UM/MOD` divisor=0 guard) — done | `-4`, `-10` |
 | **11.5** | Compiler / dictionary / control flow / assembler-internal state | `compiler.asm:48`, `compiler.asm:398`, `compiler.asm:451`, `compiler.asm:469`, `compiler.asm:577`, `compiler.asm:624`, `compiler.asm:641`, `control_flow.asm:20`, `outer_interpreter.asm:226`, `system.asm:80` (`MARKER`), `assembler.asm:281` (`asm_die` fan-in), `assembler.asm:337` (`asm_err_bare_int`), `assembler.asm:381` (`asm_print_error_with_name` fan-in) | `-13`, `-14`, `-16`, `-258..-269` |
-| **11.6** | Strings / I-O / buffer-shaped errors + asm-die residual cleanup | `strings.asm:953` (`(` missing-`)`) — **done**; `pictured.asm:251` (pictured buffer overflow) — **done**; `assembler.asm:472` (`check_asm_mode`, Story 11.5 D1) — **done**; `assembler.asm:1213` (`asm_range_err`, Story 11.5 D1) — **done**; `asm_die` body retired | `-17`, `-58`, `-270`, `-271` |
+| **11.6** | Strings / I-O / buffer-shaped errors + asm-die residual cleanup | `strings.asm:953` (`(` missing-`)`) — **done**; `pictured.asm:251` (pictured buffer overflow) — **done**; `assembler.asm:472` (`check_asm_mode`, Story 11.5 D1) — **done**; `assembler.asm:1204` (`asm_disp_range_err`, ex-`asm_range_err`, Story 11.5 D1; later split by Story 11.5.6) — **done**; `asm_die` body retired | `-17`, `-58`, `-270`, `-271` |
+| **11.5.6** | F4 LOW-deferred closure: split generic `-271 range` into per-condition codes | `assembler.asm:1204` (`asm_disp_range_err`, +D path) — **done**; `assembler.asm:1210` (`asm_bit_range_err`, BIT/RES/SET path) — **done** | `-271` (semantic), `-272` (new) |
 | **11.7** | `ABORT` / `ABORT"` retarget — capstone (**done**) | `system.asm:131→139` (`(ABORT")` `.paq_do_abort`) → `-2 THROW` (**done**); `system.asm:260→286` (`w_ABORT_cf` entry) → `-1 THROW` (**done**); `exception.asm:420` (`.throw_uncaught` recovery-chain delegate) → inlined chain at `exception.asm:412+` (**done**) | `-1`, `-2` |
 
 Each row in §d is tagged with its target story; the cross-reference rule
