@@ -444,6 +444,10 @@ w_TO_NUMBER_cf:
 w_NUMBER_Q:
         DEFCODE "NUMBER?", 0
 w_NUMBER_Q_cf:
+        ; Story 11.5.2: -3 THROW guard. NUMBER? grows the data stack
+        ; by 1 cell on BOTH the success path (n + true) and the fail
+        ; path (c-addr + false), so guard at entry covers both.
+        CALL    check_overflow
         ; BC = c-addr (TOS, points to counted string)
         ; Stage c-addr into main HL while saving TOS/IP/W to shadows.
         ; Shadow BC' implicitly preserves original c-addr for the fail path.

@@ -19,6 +19,7 @@
 \ Story 11.5 will append Section 3 (compiler / dictionary / control flow).
 \ Story 11.6 will append Section 4 (strings / I-O).
 \ Story 11.7 appends Section 5 (ABORT / ABORT" retarget — capstone).
+\ Story 11.5.2 appends Section 6 (stack overflow -3 — closes Epic 11 NFR6 gap).
 \
 \ DIAGNOSTIC-FORMAT DEPENDENCY: The uncaught-recovery tests below assert
 \ "error -4: stack underflow" / "error -10: division by zero" — those
@@ -308,3 +309,37 @@
 : TNOAB 5 ;
 ' TNOAB CATCH .                         \ expect: 0  ok
 1 2 3 ' TNOAB CATCH . . . . .           \ expect: 0 5 3 2 1  ok
+
+\ ============================================================
+\ Section 6 — Stack overflow caught (-3) (Story 11.5.2)
+\ ============================================================
+\ Story 11.5.2 closes the Story 11.8 NFR6 (b) documented gap by adding a
+\ -3 THROW guard at the inner-interpreter dispatch primitives (LIT,
+\ DOCON, DOVAR, DODOES) plus the outer-interpreter parsed-number push
+\ sites (NUMBER?, NUMBER-PREFIX?, ASM-RECOGNIZE) plus push_user_var.
+\
+\ TOV exercises the LIT guard. antforth has no AGAIN, so the infinite-
+\ grow-loop is `BEGIN 1 0 UNTIL`: each iteration pushes 1 (LIT 1),
+\ pushes 0 (LIT 0), then UNTIL's ?BRANCH pops the 0 and branches back
+\ because the popped flag is zero. Net stack delta per iteration: +1
+\ cell. Each LIT call invokes check_overflow before its PUSH BC, so
+\ eventually HL >= PS_SIZE - 32 trips and -3 fires. Inside CATCH the
+\ throw is contained; -3 lands on the user data stack alongside the
+\ i*x cells that were below the CATCH frame's xt.
+
+: TOV BEGIN 1 0 UNTIL ;
+
+\ --- Section 6.1 — Caught -3 from compiled BEGIN..UNTIL body ---
+' TOV CATCH .                           \ expect: -3  ok
+
+\ --- Section 6.2 — i*x preservation under caught -3 (Story 11.4.1) ---
+\ Three i*x cells (1 2 3) survive the THROW caught path's
+\ LD SP, HL / PUSH BC restore. -3 lands on top.
+1 2 3 ' TOV CATCH . . . .               \ expect: -3 3 2 1  ok
+
+\ --- Section 6.3 — DEPTH-invariant after caught -3 (combined probe) ---
+\ Per Story 11.4.1: DEPTH = pre-CATCH-DEPTH after caught throw, with
+\ the throw code replacing xt on top. Pre-CATCH had 4 SP cells
+\ (1 2 3 + xt before POP); post-throw has 4 (1 2 3 + -3). After the
+\ first `.` consumes -3 from BC, SP-cells = 3, so DEPTH reports 3.
+1 2 3 ' TOV CATCH . DEPTH .             \ expect: -3 3  ok

@@ -8,6 +8,14 @@
 ;   Exit:  BC = IY + offset (address of user variable)
 ; -----------------------------------------------
 push_user_var:
+        ; Story 11.5.2: -3 THROW guard (depth +1). check_overflow
+        ; clobbers AF/HL; A holds the offset and must be preserved
+        ; across the CALL (it's the input contract). Spill A through
+        ; the data stack via PUSH AF / POP AF (transient SP +2,
+        ; covered by the 32-byte safety margin).
+        PUSH    AF              ; spill A (= offset)
+        CALL    check_overflow
+        POP     AF              ; recover A
         PUSH    BC              ; Save current TOS
         PUSH    IY
         POP     HL              ; HL = IY (user area base)

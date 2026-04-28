@@ -56,6 +56,7 @@ F_LENMASK       EQU     0x1F            ; Bits 0-4: name length (max 31)
 ; codebase. See docs/throw-codes.md §a for the reconciliation note.
 THROW_ABORT             EQU -1   ; ANS Forth 1994 §9.3.5
 THROW_ABORT_QUOTE       EQU -2   ; ANS Forth 1994 §9.3.5
+THROW_STACK_OVERFLOW    EQU -3   ; ANS Forth 1994 §9.3.5
 THROW_STACK_UNDERFLOW   EQU -4   ; ANS Forth 1994 §9.3.5
 THROW_DIV_BY_ZERO       EQU -10  ; ANS Forth 1994 §9.3.5
 THROW_UNDEFINED_WORD    EQU -13  ; ANS Forth 1994 §9.3.5

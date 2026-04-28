@@ -47,6 +47,12 @@ EXIT_CODE:
 ; Body = HL+5 (skips 3-byte JP + 2-byte does-addr slot)
 ; ( -- addr )
 DOVAR:
+        ; Story 11.5.2: -3 THROW guard. PUSH HL spills W across the
+        ; check (check_overflow clobbers HL); the +2-byte transient SP
+        ; pressure is covered by check_overflow's 32-byte safety margin.
+        PUSH    HL              ; spill W (= code field addr)
+        CALL    check_overflow
+        POP     HL              ; recover W
         PUSH    BC              ; Save old TOS
         LD      BC, 5
         ADD     HL, BC          ; HL = body address (cf+5)
@@ -59,6 +65,10 @@ DOVAR:
 ; Value = HL+3 (no does-addr slot for constants)
 ; ( -- x )
 DOCON:
+        ; Story 11.5.2: -3 THROW guard (depth +1). PUSH HL spills W.
+        PUSH    HL              ; spill W (= code field addr)
+        CALL    check_overflow
+        POP     HL              ; recover W
         PUSH    BC              ; Save old TOS
         INC     HL
         INC     HL
@@ -86,6 +96,11 @@ DODOES:
         INC     HL
         LD      D, (HL)         ; DE = does-addr (new IP)
         INC     HL              ; HL = body address (cf+5)
+        ; Story 11.5.2: -3 THROW guard before the data-stack push (depth +1).
+        ; PUSH HL spills the body addr across the check.
+        PUSH    HL              ; spill body addr
+        CALL    check_overflow
+        POP     HL              ; recover body addr
         ; Push body address as new TOS
         PUSH    BC              ; Save old TOS
         LD      B, H
@@ -181,6 +196,11 @@ rpop_hl:                        ; Pop HL from return stack
 w_LIT:
         DEFCODE "LIT", 0
 w_LIT_cf:
+        ; Story 11.5.2: -3 THROW guard (depth +1). HL on entry is W
+        ; (= code field addr) but LIT does not use it — it uses DE
+        ; (= IP). check_overflow clobbers AF/HL, both unused, so no
+        ; spill is needed.
+        CALL    check_overflow
         PUSH    BC              ; Push current TOS to parameter stack
         EX      DE, HL          ; HL = IP
         LD      C, (HL)

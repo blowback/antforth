@@ -573,6 +573,55 @@ check_underflow_4:
         JP      do_underflow_error
 
 ; -----------------------------------------------
+; check_overflow — Internal subroutine (not a Forth word)
+;   Verify enough headroom remains for the upcoming PUSH BC at the
+;   caller, AND for the THROW-uncaught path itself if this guard fires.
+;
+;   Computes HL = sp_base - SP_measured (= bytes already used below
+;   sp_base, including this CALL's 2-byte return address). Triggers
+;   overflow when HL >= (PS_SIZE - SAFETY_MARGIN). The safety margin
+;   covers (a) the 2 ret-addr bytes already on SP at this point;
+;   (b) the 2 bytes the about-to-execute PUSH BC will consume; AND
+;   (c) the THROW-uncaught path's worst-case nested-CALL SP usage
+;   (.throw_uncaught → CALL bdos_print_str → CALL bdos_putchar →
+;   CALL BDOS_ENTRY → BDOS internals; deepest measured ~30 bytes).
+;   32 bytes chosen for 8-byte alignment headroom over the measured
+;   worst case. -3 THROW per ANS Forth 1994 §9.3.5 (Story 11.5.2).
+;
+;   Threshold derivation (see story 11.5.2 Completion Notes Task 3):
+;     - HL_computed at guard entry = U_caller + 2 (CALL ret addr).
+;     - On normal return + caller's PUSH BC: used = HL_computed.
+;     - On overflow path: SP at .throw_uncaught entry = caller_SP - 2;
+;       deepest SP usage in .throw_uncaught path = HL_computed + ~28
+;       (bdos_print_str's PUSH HL + PUSH BC + CALL bdos_putchar +
+;       CALL BDOS_ENTRY + BDOS internals).
+;     - Safety: trigger overflow when HL_computed >= PS_SIZE - 32 = 224.
+;       Both paths have headroom: caught path uses 0 additional bytes
+;       (LD SP, HL is wholesale restore via the catch frame's saved
+;       SP_safe); uncaught path's ~28-byte deepest-CALL fits in 32.
+;
+;   On overflow: JP do_overflow_error (raises -3 THROW via
+;     w_THROW_cf.kernel_entry; mirrors do_underflow_error pattern).
+;     Never returns to caller.
+;   On success: returns normally.
+;   Clobbers: AF, HL.
+;   Preserves: BC (TOS), DE (IP), IX, IY, SP.
+; -----------------------------------------------
+check_overflow:
+        LD      HL, (sp_base)
+        OR      A               ; Clear carry
+        SBC     HL, SP          ; HL = sp_base - SP_measured (bytes used incl. CALL ret)
+        JR      C, .overflow    ; SP > sp_base = corrupt → treat as overflow
+        LD      A, H
+        OR      A
+        JR      NZ, .overflow   ; HL >= 256 = beyond PS_SIZE — definite overflow
+        LD      A, L
+        CP      PS_SIZE - 32    ; Threshold = 224 = PS_SIZE (256) - 32-byte margin
+        RET     C               ; HL < 224 — OK, return
+.overflow:
+        JP      do_overflow_error
+
+; -----------------------------------------------
 ; do_underflow_error — Internal subroutine (not a Forth word)
 ;   Migrated by Story 11.4 from `JP w_ABORT_cf` (with a "? Stack
 ;   underflow" pre-print) to a clean -4 THROW. The diagnostic the
@@ -592,4 +641,21 @@ check_underflow_4:
 do_underflow_error:
         ; -4 THROW (Story 11.4): stack underflow per ANS Forth 1994 §9.3.5
         LD      BC, THROW_STACK_UNDERFLOW
+        JP      w_THROW_cf.kernel_entry
+
+; -----------------------------------------------
+; do_overflow_error — Internal subroutine (not a Forth word)
+;   Raise -3 THROW (stack overflow per ANS Forth 1994 §9.3.5).
+;   Mirror of do_underflow_error: the SP-may-be-tight property is
+;   preserved here because this routine neither reads nor writes SP-
+;   relative data — the JP into w_THROW_cf.kernel_entry takes the
+;   stack to a wholesale restore (caught path: LD SP, HL via catch
+;   frame +0; uncaught path: LD SP, (sp_base) at .throw_uncaught
+;   tail). The CALL check_overflow's return address remains on SP —
+;   harmless for the same reason underflow's ret-addr is harmless.
+;   Story 11.5.2 closes the Story 11.8 NFR6 documented gap.
+; -----------------------------------------------
+do_overflow_error:
+        ; -3 THROW: stack overflow per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_STACK_OVERFLOW
         JP      w_THROW_cf.kernel_entry

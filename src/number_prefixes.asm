@@ -151,6 +151,10 @@
 ;
 ; Forth 2014 §3.4.1.3      #<num>        — decimal-base numeric literal prefix
 w_NUMBER_PREFIX_Q_cf:
+        ; Story 11.5.2: -3 THROW guard. NUMBER-PREFIX? grows the data
+        ; stack by 1 cell on BOTH success (n + true) and fail (c-addr
+        ; + false) paths.
+        CALL    check_overflow
         LD      H, B
         LD      L, C                    ; HL = c-addr
         LD      A, (HL)                 ; A = count

@@ -576,6 +576,9 @@ throw_desc_table:
         DW      -2
         DB      6
         DB      "ABORT", 0x22           ; ABORT" — 0x22 = ASCII '"'
+        DW      -3
+        DB      14
+        DB      "stack overflow"
         DW      -4
         DB      15
         DB      "stack underflow"

@@ -6652,9 +6652,10 @@ test-repl: $(TARGET)
 	fi
 	@# === Story 11.8 — Section 10: Epic-11 closure REPL survivability stress + state-integrity invariants ===
 	@# AC #3 stress recovery (NFR6): each uncaught error returns the REPL to a live
-	@# prompt and a follow-up line parses cleanly. AC #3(b) stack-overflow OMITTED:
-	@# Epic 11 wired no -3 guard (docs/throw-codes.md row -3 = "no | —"); documented
-	@# in Story 11.8 Completion Notes as a known gap deferred to a post-2.0 hardening story.
+	@# prompt and a follow-up line parses cleanly.
+	@# Section 10.1 originally omitted -3 stack overflow per Epic 11 scope; Story
+	@# 11.5.2 wired the guard at LIT/DOCON/DOVAR/DODOES/push_user_var/NUMBER?-family
+	@# and added test 779 below as the NFR6 (b) corollary closure.
 	@# Section 10.1: stack-underflow stress recovery (NFR6 (a)).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*99  ok'; then \
@@ -6790,6 +6791,23 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 778 — Story 11.8: invariant (viii) user dictionary preserved across error (FR22)"; \
 	else \
 		echo "FAIL: REPL test 778 — expected 'error -13...42  ok' for user-dictionary preservation"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: stack-overflow stress recovery (NFR6 (b) — Story 11.5.2 closure).
+	@# Trigger: define a colon body that runs BEGIN 1 AGAIN, then call it at REPL
+	@# (no enclosing CATCH). Each LIT push of 1 calls check_overflow; eventually
+	@# HL >= PS_SIZE - 32 trips, do_overflow_error raises -3 THROW; CATCH-TOP=0
+	@# routes through .throw_uncaught (asm_cleanup + SP-reset + JP w_QUIT_cf).
+	@# The trigger pattern is hardware-shadow-clobber-immune (per Story 11.5.1.2
+	@# verdict: BDOS fns 1/10 clobber BC'/DE'/HL'): the inner-loop BEGIN 1 AGAIN
+	@# never enters BDOS until the THROW path's diagnostic emission, by which
+	@# time SP has been reset wholesale.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T779 BEGIN 1 0 UNTIL ;' 'T779' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -3: stack overflow.*99  ok'; then \
+		echo "PASS: REPL test 779 — Story 11.5.2: stack overflow uncaught + REPL recovery (NFR6 b — gap closed)"; \
+	else \
+		echo "FAIL: REPL test 779 — expected 'error -3: stack overflow' + recovery + '99  ok'"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

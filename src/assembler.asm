@@ -914,6 +914,10 @@ asm_reg_table:
 ; for a case-insensitive match. Fast-fails when asm_mode == 0.
 ; No dictionary header — only called from INTERPRET thread, not user-visible.
 w_ASM_RECOGNIZE_cf:
+        ; Story 11.5.2: -3 THROW guard. ASM-RECOGNIZE grows the data
+        ; stack by 1 cell on BOTH success (value + true) and fail
+        ; (c-addr + false) paths.
+        CALL    check_overflow
         ; Fast-fail if not in assembler mode — BC still = c-addr here
         LD      A, (asm_mode)
         OR      A

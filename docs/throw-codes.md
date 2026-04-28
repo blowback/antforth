@@ -71,7 +71,7 @@ back to the per-file inventory in §d.
 |---:|---|---|---|
 | -1  | ABORT | done — Story 11.7 | `system.asm:286` (`w_ABORT_cf` entry; **done — 11.7**) |
 | -2  | ABORT" | done — Story 11.7 | `system.asm:139` (`(ABORT")` `.paq_do_abort`; **done — 11.7**) |
-| -3  | stack overflow | no | — |
+| -3  | stack overflow | done — Story 11.5.2 | `system.asm` (`do_overflow_error`; defensive guard at LIT/DOCON/DOVAR/DODOES/push_user_var/NUMBER?-family) |
 | -4  | stack underflow | done — Story 11.4 | `system.asm:591` (`do_underflow_error`; migrated) |
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |

@@ -174,7 +174,7 @@ development_status:
   # re-test plan: re-run BDOS_PRO.COM after the next firmware release;
   # if all-P, drop 11.5.1.1 permanently; if clobber persists, spawn it.
   11.5-1-2-firmware-bdos-register-preservation-reproducer: done
-  11.5-2-stack-overflow-throw-3-guard: backlog
+  11.5-2-stack-overflow-throw-3-guard: review
   11.5-3-paren-evaluate-source-frame-fix: backlog
   11.5-4-print-throw-description-table-walk-hardening: backlog
   11.5-5-epic-12-redraft: backlog
