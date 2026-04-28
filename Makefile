@@ -6841,6 +6841,125 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# --- Story 11.5.3 — `(` / EVALUATE source-frame fix (-58 caught form + asm-error coverage) ---
+	@# Section 11.0: caught -58 via EVALUATE harness — closes Story 11.6 F8 / Review Follow-up #1.
+	@# Source spec: tests/throw_migration_tests.fth Section 4.0.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-58  ok'; then \
+		echo "PASS: REPL test 783 — Story 11.5.3: caught -58 via EVALUATE harness (closes 11.6 F8)"; \
+	else \
+		echo "FAIL: REPL test 783 — expected '-58  ok' for caught -58 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 11.0: depth-invariant after caught -58 (the AC #1 / AC #4 reproducer in test form).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH . CR DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\-58\s+0\s+ok'; then \
+		echo "PASS: REPL test 784 — Story 11.5.3: depth-invariant after caught -58 (AC #1 / AC #4 reproducer)"; \
+	else \
+		echo "FAIL: REPL test 784 — expected '-58' then '0  ok' (depth=0) after caught -58"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 11.0: i*x preservation across kernel-internal -58 raise (AC #10).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "1 2 3 ' T58 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-58 3 2 1  ok'; then \
+		echo "PASS: REPL test 785 — Story 11.5.3: i*x preservation under caught -58 (AC #10)"; \
+	else \
+		echo "FAIL: REPL test 785 — expected '-58 3 2 1  ok' for i*x preservation under caught -58"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 11.3: asm-error caught forms via EVALUATE harness (closes Story 11.6 -270/-271 deferral; extends to 11 of 14 codes).
+	@# Source spec: tests/throw_migration_tests.fth Section 4.3.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T258 S" CODE BAD8 B (BC) LD, END-CODE " EVALUATE ;' "' T258 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-258  ok'; then \
+		echo "PASS: REPL test 786 — Story 11.5.3: caught -258 (bad operand) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 786 — expected '-258  ok' for caught -258 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T259 S" CODE A CODE B " EVALUATE ;' "' T259 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-259  ok'; then \
+		echo "PASS: REPL test 787 — Story 11.5.3: caught -259 (nested CODE) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 787 — expected '-259  ok' for caught -259 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T260 S" CODE " EVALUATE ;' "' T260 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-260  ok'; then \
+		echo "PASS: REPL test 788 — Story 11.5.3: caught -260 (CODE needs name) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 788 — expected '-260  ok' for caught -260 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T261 S" END-CODE " EVALUATE ;' "' T261 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-261  ok'; then \
+		echo "PASS: REPL test 789 — Story 11.5.3: caught -261 (END-CODE without CODE) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 789 — expected '-261  ok' for caught -261 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T262 S" CODE BAD2 NEXT, LABEL X END-CODE " EVALUATE ;' "' T262 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-262  ok'; then \
+		echo "PASS: REPL test 790 — Story 11.5.3: caught -262 (LABEL must precede opcodes) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 790 — expected '-262  ok' for caught -262 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T266 S" CODE BAD6 1 EQU FOO NEXT, END-CODE " EVALUATE ;' "' T266 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-266  ok'; then \
+		echo "PASS: REPL test 791 — Story 11.5.3: caught -266 (EQU outside CODE only) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 791 — expected '-266  ok' for caught -266 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T267 S" CODE BADI 5 BIT, NEXT, END-CODE " EVALUATE ;' "' T267 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-267  ok'; then \
+		echo "PASS: REPL test 792 — Story 11.5.3: caught -267 (bare integer) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 792 — expected '-267  ok' for caught -267 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T268 S" CODE BAD8 LABEL X X JR, NEXT, END-CODE " EVALUATE ;' "' T268 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-268  ok'; then \
+		echo "PASS: REPL test 793 — Story 11.5.3: caught -268 (unresolved label) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 793 — expected '-268  ok' for caught -268 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T269 S" CODE BAD9 LABEL Y Y FIX Y FIX NEXT, END-CODE " EVALUATE ;' "' T269 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-269  ok'; then \
+		echo "PASS: REPL test 794 — Story 11.5.3: caught -269 (already fixed) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 794 — expected '-269  ok' for caught -269 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T270 S" NOP, " EVALUATE ;' "' T270 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-270  ok'; then \
+		echo "PASS: REPL test 795 — Story 11.5.3: caught -270 (not in CODE) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 795 — expected '-270  ok' for caught -270 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T271 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;' "' T271 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-271  ok'; then \
+		echo "PASS: REPL test 796 — Story 11.5.3: caught -271 (range) via EVALUATE"; \
+	else \
+		echo "FAIL: REPL test 796 — expected '-271  ok' for caught -271 via EVALUATE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

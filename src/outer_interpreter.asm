@@ -130,6 +130,20 @@ w_QUERY_cf:
         LD      (IY+UserArea.tib_in), A         ; A = 0
         LD      (IY+UserArea.tib_in+1), A
 
+        ; Story 11.5.3 (option b — defensive): re-assert canonical REPL
+        ; source-spec (tib_addr = tib_buffer, source_id = 0) so that any
+        ; leaked source-frame state from a pre-existing EVALUATE /
+        ; INCLUDE source-spec cannot survive into the next REPL line.
+        ; EVALUATE's CATCH wrapper (option c below) closes the
+        ; structural case; this catches future leak paths uncovered by
+        ; option c. source_id = 0 per Forth 2014 §6.2.2218 (terminal
+        ; input). A is already 0 from the tib_in reset above.
+        LD      HL, tib_buffer
+        LD      (IY+UserArea.tib_addr), L
+        LD      (IY+UserArea.tib_addr+1), H
+        LD      (IY+UserArea.source_id), A      ; A still 0 from above
+        LD      (IY+UserArea.source_id+1), A
+
         ; Restore BC (TOS) and DE (IP) from return stack
         CALL    rpop_bc
         CALL    rpop_de
@@ -307,6 +321,12 @@ w_QUIT_cf:
 ;   INCLUDE will own the second. The (paren) naming per architecture.md:425
 ;   warns of internal-helper status — convention only, NOT enforced by
 ;   SMUDGE/F_HIDDEN. Treat as private.
+;
+;   THROW-survival (Story 11.5.3): EVALUATE wraps INTERPRET in CATCH so
+;   (RESTORE-INPUT) runs on both the success and the THROW paths. QUERY
+;   also defensively re-asserts tib_addr = tib_buffer and source_id = 0
+;   (Story 11.5.3 option b). Combined defence closes Story 11.6 Review
+;   Follow-up #1 (-58 caught form via EVALUATE harness).
 ; -----------------------------------------------
 w_PAREN_SAVE_INPUT:
         DEFCODE "(SAVE-INPUT)", 0
@@ -381,16 +401,20 @@ w_PAREN_RESTORE_INPUT_cf:
 ;   active input source with source_id = -1, run INTERPRET, then
 ;   restore the saved source spec.
 ;
-;   An unknown word or number-parse failure inside INTERPRET raises
-;   a THROW (e.g. -13 / -16); when uncaught, the .throw_uncaught
-;   recovery chain (asm_cleanup + SP-reset + JP w_QUIT_cf) discards
-;   the saved source-spec frame on the return stack. w_QUIT_cf calls
-;   w_QUERY_cf which overwrites the USER source fields with fresh
-;   console input, so the live state is clean even though RESTORE
-;   never ran. This is the pre-Epic-11 baseline. A THROW-safe save/
-;   restore (where (RESTORE-INPUT) runs even when INTERPRET raises)
-;   is filed as a post-Epic-11 follow-up — the (-58 caught form) bug
-;   it would fix is documented in Story 11.6's Review Follow-up #1.
+;   THROW-safety (Story 11.5.3): INTERPRET runs inside an internal
+;   CATCH so (RESTORE-INPUT) ALWAYS runs — on the success path AND on
+;   the THROW path. The wrapping pattern is:
+;       (SAVE-INPUT) ['] INTERPRET CATCH (RESTORE-INPUT) THROW EXIT
+;   On success, CATCH leaves 0 → THROW is silent (Forth 2014
+;   §6.1.2275: "If any bits of n are non-zero, ...") → EXIT. On a
+;   THROW from inside INTERPRET, CATCH re-emerges with n on TOS,
+;   (RESTORE-INPUT) runs (data-stack-neutral), then THROW re-raises n
+;   to the caller's wrapping CATCH. This closes Story 11.6 Review
+;   Follow-up #1 (-58 caught form via EVALUATE harness). Pre-Epic-13:
+;   the source-frame is NOT yet linked into the CCD-1 INCLUDE-TOP
+;   chain (Story 13.4 will absorb this hand-rolled wrapper into the
+;   architectural mechanism); the wrapper here is the tactical fix
+;   that survives until Epic 13 lands.
 ;
 ; ANS Forth 1994 §6.1.1360   EVALUATE   — interpret from string
 ; -----------------------------------------------
@@ -398,7 +422,9 @@ w_EVALUATE:
         DEFWORD "EVALUATE", 0
 w_EVALUATE_body:
 w_EVALUATE_cf EQU w_EVALUATE_body - 3
-        DW      w_PAREN_SAVE_INPUT_cf
-        DW      w_INTERPRET_cf
-        DW      w_PAREN_RESTORE_INPUT_cf
-        DW      EXIT_CODE
+        DW      w_PAREN_SAVE_INPUT_cf       ; ( c-addr u -- ) install eval source
+        DW      w_LIT_cf, w_INTERPRET_cf    ; ( -- xt-of-INTERPRET )
+        DW      w_CATCH_cf                  ; ( xt -- 0 | n )  Story 11.5.3
+        DW      w_PAREN_RESTORE_INPUT_cf    ; restore source-spec on both paths
+        DW      w_THROW_cf                  ; THROW 0 silent; non-zero re-raises
+        DW      EXIT_CODE                   ; reached on success path only

@@ -206,24 +206,37 @@
 \               (-17 / -58 / -270 / -271)
 \ ============================================================
 \
-\ AC #13 caveat: -58 caught form is deferred to uncaught-recovery
-\ only. The intuitive caught harness `: T58 S" ( unterminated " EVALUATE ;`
-\ does not return a -58 value to a wrapping CATCH in antforth's
-\ EVALUATE — the source-frame interaction with the kernel-internal
-\ THROW yields a silent CATCH return rather than the expected -58.
-\ Investigated at dev-pass; the standard-text -58 emission via the
-\ uncaught path (Makefile Section 4.2) covers the THROW code +
-\ description-text coverage. A future refactor of EVALUATE's
-\ source-frame discipline could restore caught coverage; out of
-\ scope for Story 11.6.
+\ Story 11.5.3 closes the Story 11.6 -58 caught-form deferral. The
+\ EVALUATE source-frame is now THROW-safe: EVALUATE wraps its inner
+\ INTERPRET in a kernel-level CATCH, so (RESTORE-INPUT) runs on the
+\ THROW path as well as the success path. QUERY also defensively
+\ re-asserts tib_addr (option b in the Story 11.5.3 design). The
+\ caught harness `: T58 S" ( unterminated " EVALUATE ;` now returns
+\ -58 cleanly to the wrapping CATCH; subsequent REPL lines are not
+\ corrupted. Section 4.0 below exercises the closure.
 \
-\ AC #13 caveat: -270 / -271 caught forms are deferred to uncaught-
-\ recovery (mirror Story 11.5 D2 deferral rationale) — exercising
-\ the assembler-error path inside a CATCH frame requires nested-
-\ compile shapes that introduce more test-engineering risk than
-\ the coverage value. The uncaught path validates each code lands
-\ with its description; the THROW code itself is identical on
-\ either path.
+\ Story 11.5.3 also re-opens caught-form coverage for the asm-error
+\ codes (-258..-271): the source-frame fix means an asm-error raised
+\ inside an EVALUATE'd source string is now caught cleanly. Section
+\ 4.3 below exercises a representative subset; each per-code trigger
+\ is constructed from the docs/throw-codes.md §c table cross-checked
+\ against the Makefile uncaught-recovery harness (per
+\ feedback_systematic_reference_check.md).
+
+\ --- Section 4.0 — Unexpected end of input (-58): caught + i*x preservation (Story 11.5.3) ---
+\ Reproducer for the Story 11.6 F8 finding: `(` reads past
+\ EVALUATE's source-string end, raises -58 from .paren_missing.
+\ Story 11.5.3 fix: EVALUATE wraps INTERPRET in CATCH so source-
+\ spec is restored on both the success and the THROW paths; the
+\ wrapping CATCH receives -58 cleanly.
+: T58 S" ( unterminated " EVALUATE ;
+' T58 CATCH .                           \ expect: -58  ok
+
+\ --- DEPTH-invariant after caught -58: depth=0 (no leftover stack) ---
+' T58 CATCH . CR DEPTH .                \ expect: -58 \n0  ok
+
+\ --- i*x preservation across kernel-internal -58 raise (AC #10) ---
+1 2 3 ' T58 CATCH . . . .               \ expect: -58 3 2 1  ok
 
 \ --- Section 4.1 — Pictured overflow (-17): caught + i*x preservation ---
 \ HOLD writes RTL into pic_buf (40 bytes per PIC_BUF_SIZE). After
@@ -240,7 +253,58 @@
 \ --- DEPTH-invariant after caught -17 ---
 ' T17 CATCH DEPTH .                     \ expect: 1  ok
 
-\ --- Section 4.2 — Positive controls: success path returns 0 ---
+\ --- Section 4.3 — Asm-error caught forms (-258..-271) via EVALUATE harness (Story 11.5.3) ---
+\ Closes the Story 11.6 AC #13 deferral for -270 / -271 and
+\ extends caught-form coverage to 11 of the 14 asm-error codes. Each
+\ trigger is constructed from docs/throw-codes.md §c plus the existing
+\ Makefile uncaught-recovery harness; the assembler raise site (.asm
+\ line) is cited per code per feedback_systematic_reference_check.md.
+\
+\ Three codes are deferred per AC #6.4 (test-engineering complexity):
+\   -263 (JR out of range): trigger requires forward-JR body >127 bytes
+\         on a single S" line, exceeding the BDOS line-buffer (128 chars).
+\   -264 (too many labels): trigger requires 17+ LABEL declarations on
+\         a single S" line, also exceeds the BDOS line-buffer.
+\   -265 (too many fixups): trigger requires 33+ forward JRs on a single
+\         line, exceeds the BDOS line-buffer.
+\ All three remain covered by the existing Makefile uncaught-recovery
+\ tests (Section 4.x in Makefile); the THROW code itself is identical
+\ on either path.
+
+: T258 S" CODE BAD8 B (BC) LD, END-CODE " EVALUATE ;
+' T258 CATCH .                          \ expect: -258  ok    (assembler.asm:255 .asm_bad_operand)
+
+: T259 S" CODE A CODE B " EVALUATE ;
+' T259 CATCH .                          \ expect: -259  ok    (assembler.asm:261 .asm_err_nested)
+
+: T260 S" CODE " EVALUATE ;
+' T260 CATCH .                          \ expect: -260  ok    (assembler.asm:267 .asm_err_noname)
+
+: T261 S" END-CODE " EVALUATE ;
+' T261 CATCH .                          \ expect: -261  ok    (assembler.asm:273 .asm_err_orphan)
+
+: T262 S" CODE BAD2 NEXT, LABEL X END-CODE " EVALUATE ;
+' T262 CATCH .                          \ expect: -262  ok    (assembler.asm:279 .asm_err_label_after)
+
+: T266 S" CODE BAD6 1 EQU FOO NEXT, END-CODE " EVALUATE ;
+' T266 CATCH .                          \ expect: -266  ok    (assembler.asm:303 .asm_err_equ_in_code)
+
+: T267 S" CODE BADI 5 BIT, NEXT, END-CODE " EVALUATE ;
+' T267 CATCH .                          \ expect: -267  ok    (assembler.asm:309 .asm_err_bare_int — pre-prints "bare integer 0005 ?")
+
+: T268 S" CODE BAD8 LABEL X X JR, NEXT, END-CODE " EVALUATE ;
+' T268 CATCH .                          \ expect: -268  ok    (assembler.asm:381 .asm_err_unresolved — pre-prints "unresolved label X ?")
+
+: T269 S" CODE BAD9 LABEL Y Y FIX Y FIX NEXT, END-CODE " EVALUATE ;
+' T269 CATCH .                          \ expect: -269  ok    (assembler.asm:394 .asm_err_already — pre-prints "already fixed: Y ?")
+
+: T270 S" NOP, " EVALUATE ;
+' T270 CATCH .                          \ expect: -270  ok    (assembler.asm:472 .check_asm_mode)
+
+: T271 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;
+' T271 CATCH .                          \ expect: -271  ok    (assembler.asm:1213 .asm_range_err — bit 8 out of range 0..7)
+
+\ --- Section 4.4 — Positive controls: success path returns 0 ---
 \ A successful pictured-output round-trip — converts 1234 to
 \ "1234" via 4 # iterations, drops the residual ud, leaves
 \ ( c-addr u ) on the stack ready for TYPE/.S.
