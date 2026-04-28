@@ -584,9 +584,10 @@ check_underflow_4:
 ;   (b) the 2 bytes the about-to-execute PUSH BC will consume; AND
 ;   (c) the THROW-uncaught path's worst-case nested-CALL SP usage
 ;   (.throw_uncaught → CALL bdos_print_str → CALL bdos_putchar →
-;   CALL BDOS_ENTRY → BDOS internals; deepest measured ~30 bytes).
-;   32 bytes chosen for 8-byte alignment headroom over the measured
-;   worst case. -3 THROW per ANS Forth 1994 §9.3.5 (Story 11.5.2).
+;   CALL BDOS_ENTRY → BDOS internals; ~26 bytes deepest per the
+;   trace below, with conservative slack for variable BDOS impls).
+;   32 bytes chosen to give 6-byte slack over the measured worst
+;   case. -3 THROW per ANS Forth 1994 §9.3.5 (Story 11.5.2).
 ;
 ;   Threshold derivation (see story 11.5.2 Completion Notes Task 3):
 ;     - HL_computed at guard entry = U_caller + 2 (CALL ret addr).

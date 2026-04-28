@@ -6795,19 +6795,49 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.1: stack-overflow stress recovery (NFR6 (b) — Story 11.5.2 closure).
-	@# Trigger: define a colon body that runs BEGIN 1 AGAIN, then call it at REPL
-	@# (no enclosing CATCH). Each LIT push of 1 calls check_overflow; eventually
+	@# Trigger: define a colon body that runs BEGIN 1 0 UNTIL (antforth has no
+	@# AGAIN; the 0 flag drives the unconditional loop-back via UNTIL's ?BRANCH,
+	@# net +1 cell per iteration), then call it at REPL (no enclosing CATCH).
+	@# Each LIT push of 1 calls check_overflow; eventually
 	@# HL >= PS_SIZE - 32 trips, do_overflow_error raises -3 THROW; CATCH-TOP=0
 	@# routes through .throw_uncaught (asm_cleanup + SP-reset + JP w_QUIT_cf).
-	@# The trigger pattern is hardware-shadow-clobber-immune (per Story 11.5.1.2
-	@# verdict: BDOS fns 1/10 clobber BC'/DE'/HL'): the inner-loop BEGIN 1 AGAIN
-	@# never enters BDOS until the THROW path's diagnostic emission, by which
-	@# time SP has been reset wholesale.
+	@# The trigger pattern is hardware-shadow-clobber-immune (relevant to the
+	@# pre-2026-04-28 MicroBeast firmware where BDOS fns 1/10 clobbered shadow
+	@# regs; firmware fix verified clean 2026-04-28): the inner BEGIN 1 0 UNTIL
+	@# loop never enters BDOS until the THROW path's diagnostic emission, by
+	@# which time SP has been reset wholesale.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T779 BEGIN 1 0 UNTIL ;' 'T779' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -3: stack overflow.*99  ok'; then \
 		echo "PASS: REPL test 779 — Story 11.5.2: stack overflow uncaught + REPL recovery (NFR6 b — gap closed)"; \
 	else \
 		echo "FAIL: REPL test 779 — expected 'error -3: stack overflow' + recovery + '99  ok'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: caught -3 stack overflow (Section 6.1 of throw_migration_tests.fth).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "' TOV CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-3  ok'; then \
+		echo "PASS: REPL test 780 — Story 11.5.2: caught -3 stack overflow (Section 6.1)"; \
+	else \
+		echo "FAIL: REPL test 780 — expected '-3  ok' for caught stack overflow"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: i*x preservation under caught -3 (Section 6.2 — Story 11.4.1 invariant).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "1 2 3 ' TOV CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-3 3 2 1  ok'; then \
+		echo "PASS: REPL test 781 — Story 11.5.2: i*x preservation under caught -3 (Section 6.2)"; \
+	else \
+		echo "FAIL: REPL test 781 — expected '-3 3 2 1  ok' for caught -3 with i*x"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# Section 10.1: DEPTH-invariant after caught -3 (Section 6.3 — Story 11.4.1 invariant).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "1 2 3 ' TOV CATCH . DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-3 3  ok'; then \
+		echo "PASS: REPL test 782 — Story 11.5.2: DEPTH-invariant after caught -3 (Section 6.3)"; \
+	else \
+		echo "FAIL: REPL test 782 — expected '-3 3  ok' for DEPTH after caught -3"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
