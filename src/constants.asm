@@ -18,7 +18,8 @@ PS_SIZE         EQU     256             ; Parameter stack: 128 cells (256 bytes)
 RS_SIZE         EQU     256             ; Return stack: 128 cells (256 bytes)
 
 ; === Dictionary ===
-HASH_BUCKETS    EQU     64              ; Number of hash buckets
+; HASH_BUCKETS retired in Story 12.1 (AC #5(d)(i)) — single source of truth
+; is now WORDLIST_BUCKETS in src/wordlists.asm.
 
 ; === Text Input Buffer ===
 TIB_SIZE        EQU     128             ; TIB size in bytes

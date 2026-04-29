@@ -7010,6 +7010,70 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# Story 12.1 — FORTH-WORDLIST regression smoke. Tests 802..806
+	@# verify that the kernel-resident FORTH-WORDLIST struct is wired
+	@# correctly through the regression net: define a word, FIND it,
+	@# execute it, MARKER-roll it back, and re-confirm it is gone. Per
+	@# AC #7, FORTH-WORDLIST is not yet a Forth word in Story 12.1
+	@# (lands in Story 12.3) — coverage is by-construction (only one
+	@# wordlist exists). Source spec: tests/wordlist_tests.fth.
+	@OUTPUT=$$(printf ': TWFOO 42 ; TWFOO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42 '; then \
+		echo "PASS: REPL test 802 — Story 12.1: define + lookup + execute via FORTH-WORDLIST (T1)"; \
+	else \
+		echo "FAIL: REPL test 802 — expected '42 ' from ': TWFOO 42 ; TWFOO .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T2 — MARKER round-trip via FORTH-WORDLIST. Define MARKER TWMK,
+	@# define TWBAR, execute it (prints 99), MARKER-rollback, then
+	@# referring to TWBAR raises -13 at REPL parse-time (uncaught — `'`
+	@# is REPL-immediate). The REPL prints "TWBAR ?" and "error -13:
+	@# undefined word"; both are evidence that MARKER unlinked TWBAR
+	@# from FORTH-WORDLIST's bucket array. Recovery is verified by the
+	@# follow-on `1 2 + .` printing "3 ".
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER TWMK : TWBAR 99 ; TWBAR . TWMK' 'TWBAR' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99 ' && echo "$$OUTPUT" | grep -q 'TWBAR ?' && echo "$$OUTPUT" | grep -q 'error -13: undefined word' && echo "$$OUTPUT" | grep -q '3 '; then \
+		echo "PASS: REPL test 803 — Story 12.1: MARKER round-trip via FORTH-WORDLIST (T2)"; \
+	else \
+		echo "FAIL: REPL test 803 — expected '99 ' pre-MARKER, 'TWBAR ?' + '-13' post-MARKER, REPL recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T3 — WORDS smoke. Walks all 64 buckets of FORTH-WORDLIST without
+	@# crashing; output must include the kernel primitive DUP and the
+	@# REPL must keep running afterwards (verified by `1 2 + .` after).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDS' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'DUP' && echo "$$OUTPUT" | grep -q '3 '; then \
+		echo "PASS: REPL test 804 — Story 12.1: WORDS walks FORTH-WORDLIST without crash (T3)"; \
+	else \
+		echo "FAIL: REPL test 804 — expected WORDS to include 'DUP' and REPL to survive afterwards"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T4 — pre-Epic-12 regression sentinel. Exercises FIND / compile /
+	@# execute end-to-end through the FORTH-WORDLIST bucket array; `=`
+	@# returns -1 (true) on equality.
+	@OUTPUT=$$(printf '1 2 + 3 = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
+		echo "PASS: REPL test 805 — Story 12.1: pre-Epic-12 regression sentinel via FORTH-WORDLIST (T4)"; \
+	else \
+		echo "FAIL: REPL test 805 — expected '-1 ' from '1 2 + 3 = .'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T5 — FIND of kernel word MARKER returns valid xt with -1 flag
+	@# (non-IMMEDIATE). BL WORD MARKER parses "MARKER" as a counted
+	@# string at HERE; FIND walks FORTH-WORDLIST's bucket array; flag
+	@# = -1 because MARKER lacks the IMMEDIATE bit.
+	@OUTPUT=$$(printf 'BL WORD MARKER FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
+		echo "PASS: REPL test 806 — Story 12.1: FIND MARKER via FORTH-WORDLIST returns -1 flag (T5)"; \
+	else \
+		echo "FAIL: REPL test 806 — expected '-1 ' (non-IMMEDIATE flag) from FIND MARKER"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

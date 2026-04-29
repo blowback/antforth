@@ -81,7 +81,7 @@ w_BRACKET_CHAR_cf EQU w_BRACKET_CHAR_body - 3
 bh_name_start:       DW 0   ; Pointer to name in TIB
 bh_name_len:         DB 0   ; Clamped name length
 bh_bucket_index:     DB 0   ; Hash bucket index (0-63)
-bh_bucket_addr:      DW 0   ; Address in hash_table
+bh_bucket_addr:      DW 0   ; Address in FORTH-WORDLIST bucket array
 bh_entry_start:      DW 0   ; HERE at entry (entry start address)
 bh_old_bucket_head:  DW 0   ; Previous bucket head (for error recovery)
 bh_count_flags_addr: DW 0   ; Address of count_flags byte (for unsmudging)
@@ -212,12 +212,12 @@ build_header:
         CALL    hash_name                       ; A = bucket index
         LD      (bh_bucket_index), A
 
-        ; Compute bucket head address: hash_table + A*2
+        ; Compute bucket head address: forth_wordlist bucket array + A*2
         LD      L, A
         LD      H, 0
         ADD     HL, HL
-        LD      BC, hash_table
-        ADD     HL, BC                          ; HL = &hash_table[bucket]
+        LD      BC, forth_wordlist + WORDLIST_BUCKET0
+        ADD     HL, BC                          ; HL = &FORTH-WORDLIST.buckets[bucket]
         LD      (bh_bucket_addr), HL
         ; Read current bucket head
         LD      C, (HL)
@@ -435,8 +435,8 @@ w_COMP_ERROR_cf:
         LD      L, A
         LD      H, 0
         ADD     HL, HL                          ; HL = bucket * 2
-        LD      BC, hash_table
-        ADD     HL, BC                          ; HL = &hash_table[bucket]
+        LD      BC, forth_wordlist + WORDLIST_BUCKET0
+        ADD     HL, BC                          ; HL = &FORTH-WORDLIST.buckets[bucket]
         LD      BC, (colon_saved_head)
         LD      (HL), C
         INC     HL

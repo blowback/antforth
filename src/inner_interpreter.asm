@@ -109,7 +109,8 @@ DODOES:
 
 ; === DOMARKER — Restore dictionary state from marker body ===
 ; HL points to code field (JP DOMARKER)
-; Body at cf+3: [saved_here(2)][saved_hash_table(128)]
+; Body at cf+3: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
+; the wordlist struct's next-link cell is NOT snapshotted (Story 12.1 AC #6).
 ; ( -- ) no stack effect
 DOMARKER:
         ; Skip code field to reach body
@@ -131,8 +132,8 @@ DOMARKER:
         LD      (IY+UserArea.here), E
         LD      (IY+UserArea.here+1), D
 
-        ; Copy 128 bytes from body to hash_table
-        LD      DE, hash_table          ; DE = destination
+        ; Copy 128 bytes from body to FORTH-WORDLIST bucket array
+        LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only — Story 12.1 AC #6)
         LD      BC, 128
         LDIR                            ; Restore all 64 hash bucket heads
 

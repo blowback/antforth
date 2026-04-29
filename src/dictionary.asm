@@ -40,12 +40,12 @@ w_FIND_cf:
         LD      B, A            ; B = name length
         CALL    hash_name       ; A = bucket index (0-63)
 
-        ; Compute bucket head address: hash_table + A*2
+        ; Compute bucket head address: forth_wordlist bucket array + A*2
         LD      L, A
         LD      H, 0            ; HL = bucket index
         ADD     HL, HL          ; HL = bucket index * 2
-        LD      BC, hash_table
-        ADD     HL, BC          ; HL = &hash_table[bucket]
+        LD      BC, forth_wordlist + WORDLIST_BUCKET0
+        ADD     HL, BC          ; HL = &FORTH-WORDLIST.buckets[bucket]
 
         ; Load bucket head pointer
         LD      A, (HL)
@@ -155,6 +155,8 @@ w_FIND_cf:
 ; -----------------------------------------------
 ; WORDS ( -- )
 ;   List all words in the dictionary by traversing all 64 hash buckets
+;   of FORTH-WORDLIST. (Epic 12 multi-wordlist support adds search-order
+;   iteration in Story 12.3 — Story 12.1 walks FORTH-WORDLIST only.)
 ; -----------------------------------------------
 w_WORDS:
         DEFCODE "WORDS", 0
@@ -163,8 +165,8 @@ w_WORDS_cf:
         LD      (words_saved_ip), DE
         PUSH    BC              ; save TOS
 
-        LD      HL, hash_table
-        LD      A, HASH_BUCKETS         ; 64
+        LD      HL, forth_wordlist + WORDLIST_BUCKET0
+        LD      A, WORDLIST_BUCKETS     ; 64
 .words_bucket:
         LD      (words_bucket_count), A
         LD      (words_bucket_ptr), HL

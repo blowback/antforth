@@ -424,8 +424,8 @@ asm_cleanup:
         LD      L, A
         LD      H, 0
         ADD     HL, HL                          ; bucket * 2
-        LD      BC, hash_table
-        ADD     HL, BC                          ; HL = &hash_table[bucket]
+        LD      BC, forth_wordlist + WORDLIST_BUCKET0
+        ADD     HL, BC                          ; HL = &FORTH-WORDLIST.buckets[bucket]
         LD      BC, (asm_saved_head)
         LD      (HL), C
         INC     HL
@@ -836,12 +836,12 @@ asm_unlink_labels:
         LD      E, (HL)             ; E = old_head lo
         INC     HL
         LD      D, (HL)             ; D = old_head hi
-        ; Compute &hash_table[bucket]
+        ; Compute &FORTH-WORDLIST.buckets[bucket]
         LD      L, A
         LD      H, 0
         ADD     HL, HL              ; *2
         PUSH    DE
-        LD      DE, hash_table
+        LD      DE, forth_wordlist + WORDLIST_BUCKET0
         ADD     HL, DE
         POP     DE
         ; Restore bucket head
@@ -2342,7 +2342,7 @@ w_LABEL_cf:
         ; build_header signalled "no name" — restore real HERE and abort.
         ; The slot allocated above must be released BEFORE the abort path
         ; runs asm_unlink_labels (which would otherwise read the slot's
-        ; uninitialised bucket=0 / old_head=0 fields and zero hash_table[0],
+        ; uninitialised bucket=0 / old_head=0 fields and zero forth_wordlist's bucket 0,
         ; corrupting whatever pre-CODE word lived in bucket 0).
         LD      HL, asm_label_count
         DEC     (HL)

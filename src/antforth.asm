@@ -80,7 +80,7 @@ cold_start:
         LD      (IY+UserArea.hld), L
         LD      (IY+UserArea.hld+1), H
 
-        ; 9. Hash table is pre-populated in the binary (see hash_table below)
+        ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 
         ; 10. Enter execution
@@ -198,14 +198,13 @@ test_colon_cfa:                 ; Code field address (execution token)
         INCLUDE "tests/test_outer.asm"
         ENDIF
 
-; === Runtime data areas ===
-hash_table:
-    LUA ALLPASS
-        for i = 0, 63 do
-            _pc(string.format("DW 0x%04X", _hash_buckets[i]))
-        end
-    ENDLUA
+; === Wordlist struct + canonical FORTH-WORDLIST (Epic 12) ===
+; Must follow ALL DEFCODE/DEFWORD invocations (including TEST_MODE-only
+; words like TESTIMM and TEST-BRIDGE) so the LUA _hash_buckets[] table is
+; fully populated when the bucket-array is emitted.
+        INCLUDE "wordlists.asm"
 
+; === Runtime data areas ===
 sp_base:        DW      0               ; Initial SP value, set during cold start (for DEPTH)
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
 str_banner1:    DB      "AntForth v1.1.0 (C) ant.org 2026"

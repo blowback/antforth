@@ -16,7 +16,9 @@ w_BYE_cf:
 ; MARKER ( "<spaces>name" -- )
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
-;   Body layout: [saved_here(2)][saved_hash_table(128)]
+;   Body layout: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
+;   the wordlist struct's next-link cell is NOT snapshotted (Story 12.1 AC #6: byte-count
+;   stays at 128 for binary-compat with pre-Epic-12 markers).
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
 ;   when the parsed name is empty (Story 11.5).
 ; -----------------------------------------------
@@ -48,11 +50,11 @@ w_MARKER_cf:
         ; Save body hash start address for fixup later
         PUSH    HL                      ; body_hash_start on stack
 
-        ; Copy 128 bytes from hash_table to body
+        ; Copy 128 bytes from FORTH-WORDLIST bucket array to body
         ; Need LDIR: HL=src, DE=dst, BC=count
         ; Currently HL = body dest, need to swap
         EX      DE, HL                  ; DE = body dest
-        LD      HL, hash_table          ; HL = source
+        LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only — Story 12.1 AC #6)
         LD      BC, 128
         LDIR                            ; DE = past end of body
 

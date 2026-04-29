@@ -27,5 +27,5 @@ hash_name:
         INC     HL              ; Advance string pointer
         DJNZ    .hash_loop      ; Decrement B, loop if not zero
 .hash_done:
-        AND     63              ; Mask to 6-bit bucket index
+        AND     63              ; Mask to 6-bit bucket index — must equal WORDLIST_BUCKETS-1 (src/wordlists.asm)
         RET
