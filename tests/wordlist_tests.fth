@@ -180,3 +180,124 @@ FORTH-WORDLIST WORDLIST 2 SET-ORDER : TWFOO 99 ; TWFOO . -1 SET-ORDER    \ Makef
 \ walk: 1 2 + . prints "3 " (FIND of `+` and `.` via depth-1 walk),
 \ : TWBAZ 7 ; TWBAZ . prints "7 " (compile + execute via the new walk).
 1 2 + . : TWBAZ 7 ; TWBAZ .             \ Makefile test 822 asserts: output contains "3 " AND "7 "
+
+\ ============================================================
+\ Section 8 — Story 12.4 — compilation wordlist control
+\ ============================================================
+\ Coverage of GET-CURRENT, SET-CURRENT, DEFINITIONS, and the
+\ build_header parameterisation per Story 12.4 AC #14. Tests
+\ 823..836 (14 tests).
+
+\ T-GC1 — initial GET-CURRENT state: current = FORTH-WORDLIST at boot.
+GET-CURRENT FORTH-WORDLIST = .          \ Makefile test 823 asserts: output contains "-1  ok"
+
+\ T-SC1 — SET-CURRENT round-trip: WORDLIST pushes a wid; SET-CURRENT
+\ stores it; GET-CURRENT returns the same wid. Reset to FORTH-WORDLIST.
+WORDLIST DUP SET-CURRENT GET-CURRENT = .   FORTH-WORDLIST SET-CURRENT
+\ Makefile test 824 asserts: output contains "-1  ok"
+
+\ T-SC2a — `:` lands in the current wordlist (negative — NOT in FORTH-WORDLIST).
+\ Define WL1, switch to it, define SC2FOO, switch back, prove FORTH-WORDLIST
+\ does NOT have SC2FOO via SEARCH-WORDLIST miss flag = 0.
+WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT
+S" SC2FOO" FORTH-WORDLIST SEARCH-WORDLIST .
+\ Makefile test 825 asserts: output contains "0  ok"
+
+\ T-SC2b — `:` lands in the current wordlist (positive — IS in WL1).
+\ SEARCH-WORDLIST hit on SC2FOO via WL1 returns ( xt -1 ); SWAP DROP keeps
+\ the flag; `.` prints -1.
+S" SC2FOO" WL1 SEARCH-WORDLIST SWAP DROP .
+\ Makefile test 826 asserts: output contains "-1  ok"
+
+\ T-SC3a — SET-CURRENT does NOT change search order: define SC3BAR in
+\ a new wordlist; SC3BAR is unfindable from the search order (only
+\ FORTH-WORDLIST is searched), so we get error -13.
+WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT
+SC3BAR
+\ Makefile test 827 asserts: output contains "SC3BAR ?" AND "error -13: undefined word"
+
+\ T-SC3b — SET-CURRENT does NOT change search order (positive): adding
+\ WL2 to the search order makes SC3BAR findable. After execute, restore.
+WL2 1 SET-ORDER   SC3BAR .   -1 SET-ORDER
+\ Makefile test 828 asserts: output contains "33 "
+
+\ T-DEF1 — DEFINITIONS sets current to slot 0 of search order. Install
+\ depth-2 order [WL3, FORTH-WORDLIST] (slot 0 = WL3 for DEFINITIONS, slot
+\ 1 = FORTH-WORDLIST so kernel words remain findable), then DEFINITIONS,
+\ then verify GET-CURRENT = WL3. Reset minimum order + FORTH-WORDLIST
+\ current afterwards.
+WORDLIST CONSTANT WL3   FORTH-WORDLIST WL3 2 SET-ORDER   DEFINITIONS   GET-CURRENT WL3 = .
+-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT
+\ Makefile test 829 asserts: output contains "-1  ok"
+
+\ T-DEF2 — DEFINITIONS-driven partition with depth=2 search order.
+\ Install [WL4, FORTH-WORDLIST] (slot 0 = WL4), DEFINITIONS makes WL4
+\ current; define DEF2BAZ; reset; prove DEF2BAZ is NOT in FORTH-WORDLIST.
+WORDLIST CONSTANT WL4   FORTH-WORDLIST WL4 2 SET-ORDER   DEFINITIONS   : DEF2BAZ 88 ;
+-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT
+S" DEF2BAZ" FORTH-WORDLIST SEARCH-WORDLIST .
+\ Makefile test 830 asserts: output contains "0  ok"
+
+\ T-CCV-CREATE — CREATE in custom wordlist (negative — not in FORTH-WORDLIST).
+WORDLIST CONSTANT WL5C   WL5C SET-CURRENT   CREATE CR5A   FORTH-WORDLIST SET-CURRENT
+S" CR5A" FORTH-WORDLIST SEARCH-WORDLIST .
+\ Makefile test 831 asserts: output contains "0  ok"
+
+\ T-CCV-CONSTANT — CONSTANT in custom wordlist (negative).
+WORDLIST CONSTANT WL5K   WL5K SET-CURRENT   42 CONSTANT CO5B   FORTH-WORDLIST SET-CURRENT
+S" CO5B" FORTH-WORDLIST SEARCH-WORDLIST .
+\ Makefile test 832 asserts: output contains "0  ok"
+
+\ T-CCV-VARIABLE — VARIABLE in custom wordlist (negative).
+WORDLIST CONSTANT WL5V   WL5V SET-CURRENT   VARIABLE VA5C   FORTH-WORDLIST SET-CURRENT
+S" VA5C" FORTH-WORDLIST SEARCH-WORDLIST .
+\ Makefile test 833 asserts: output contains "0  ok"
+
+\ T-CCV-MARKER — MARKER in custom wordlist (negative). MARKER's header
+\ lands in WL5M (per AC #5); the snapshot/restore body still reads
+\ FORTH-WORDLIST (per AC #8 pick (a) limitation, documented).
+WORDLIST CONSTANT WL5M   WL5M SET-CURRENT   MARKER MK5D   FORTH-WORDLIST SET-CURRENT
+S" MK5D" FORTH-WORDLIST SEARCH-WORDLIST .
+\ Makefile test 834 asserts: output contains "0  ok"
+
+\ T-COMP-ERROR — error-recovery rolls back the wordlist that was current
+\ at colon time, not FORTH-WORDLIST. Define WL6, switch to it, attempt
+\ `: CE6FOO BOGUSWORD ;` — BOGUSWORD raises -13; the partial CE6FOO header
+\ must be rolled back from WL6 (not FORTH-WORDLIST). REPL recovers.
+WORDLIST CONSTANT WL6   WL6 SET-CURRENT   : CE6FOO BOGUSWORD ;
+FORTH-WORDLIST SET-CURRENT   1 2 + .
+S" CE6FOO" WL6 SEARCH-WORDLIST .
+\ Makefile test 835 asserts: output contains "BOGUSWORD ?", "error -13: undefined word",
+\ "3  ok" (REPL recovery), AND "0  ok" (CE6FOO rolled back from WL6).
+
+\ T-DEF-DEPTH0 — DEFINITIONS with depth=0 (AC #4 pick (a) edge case):
+\ DEFINITIONS reads slot 0 unconditionally regardless of depth. SET-ORDER
+\ 0 only updates the depth field — it does NOT zero slot 0. At boot,
+\ slot 0 = FORTH-WORDLIST (cold-start init step 8d), so `0 SET-ORDER
+\ DEFINITIONS` yields current = FORTH-WORDLIST (the cached slot-0 value).
+\ Wrap the depth-0 dance in a colon definition so its compiled body can
+\ reach DEFINITIONS / GET-CURRENT / SET-ORDER / SET-CURRENT before
+\ parsing returns to the REPL with an empty search order.
+: T836 0 SET-ORDER DEFINITIONS GET-CURRENT FORTH-WORDLIST 1 SET-ORDER FORTH-WORDLIST SET-CURRENT ;
+T836 FORTH-WORDLIST = .
+: TWREC 9 ; TWREC .
+\ Makefile test 836 asserts: output contains "-1  ok" AND "9 ".
+
+\ T-MARKER-XWID-EXEC — MARKER from foreign wid does not corrupt
+\ FORTH-WORDLIST when executed (Story 12.4 review H1). hash("MX") = 5.
+\ FORTH-WORDLIST.buckets[5] lives at FORTH-WORDLIST + WORDLIST_BUCKET0
+\ + 5*2 = FORTH-WORDLIST + 12. Capture pre-MX value, allocate XLM
+\ (lands in bucket 41, not 5), define MARKER MX in XLM, switch back to
+\ FORTH-WORDLIST, execute MX. With the H1 fix, the snapshot's bucket-5
+\ fixup is skipped (because bh_wid != forth_wordlist), so DOMARKER
+\ restores bucket 5 to its pre-MX value. Without the fix, the fixup
+\ would overwrite snapshot[5] with XLM's old bucket-5 head (= 0 for a
+\ fresh wordlist), and DOMARKER would zero out FORTH-WORDLIST.buckets[5]
+\ — silently dropping every kernel word in that bucket.
+FORTH-WORDLIST 12 + @
+WORDLIST CONSTANT XLM   XLM SET-CURRENT   MARKER MX
+FORTH-WORDLIST XLM 2 SET-ORDER          \ make MX findable for execution
+MX
+-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT
+FORTH-WORDLIST 12 + @ = .
+\ Makefile test 837 asserts: output contains "-1  ok"

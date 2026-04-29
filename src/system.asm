@@ -21,6 +21,14 @@ w_BYE_cf:
 ;   stays at 128 for binary-compat with pre-Epic-12 markers).
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
 ;   when the parsed name is empty (Story 11.5).
+;   Story 12.4 limitation (AC #8 pick (a)): MARKER snapshots FORTH-WORDLIST's
+;   bucket array regardless of CURRENT-WORDLIST. Definitions placed into
+;   other wordlists between MARKER-create and MARKER-execute are NOT
+;   rolled back. Broader-wordlist MARKER semantics deferred to a later story.
+;   When MARKER itself is created with current_wordlist != FORTH-WORDLIST,
+;   the snapshot's bucket-head fixup is skipped — bh_old_bucket_head is the
+;   foreign wid's chain head, and writing it into FORTH-WORDLIST's snapshot
+;   would corrupt FORTH-WORDLIST on DOMARKER restore.
 ; -----------------------------------------------
 w_MARKER:
         DEFCODE "MARKER", 0
@@ -58,10 +66,24 @@ w_MARKER_cf:
         LD      BC, 128
         LDIR                            ; DE = past end of body
 
-        ; Fixup: restore pre-MARKER bucket value in body copy
-        ; Body hash copy starts at (saved on stack)
-        ; Modified bucket = bh_bucket_index, old value = bh_old_bucket_head
+        ; Fixup: restore pre-MARKER bucket value in body copy.
+        ; Body hash copy starts at (saved on stack). Only valid when MARKER's
+        ; header was inserted INTO FORTH-WORDLIST itself: in that case
+        ; bh_old_bucket_head is FORTH-WORDLIST's pre-MARKER bucket head and
+        ; the snapshot's bucket (now pointing at MARKER's new entry) must be
+        ; reverted. When current_wordlist != FORTH-WORDLIST the snapshot
+        ; already reflects FORTH-WORDLIST's true bucket head (MARKER didn't
+        ; touch FORTH-WORDLIST) and bh_old_bucket_head is the FOREIGN wid's
+        ; bucket head — applying the fixup would corrupt FORTH-WORDLIST on
+        ; DOMARKER restore (per AC #8 pick (a) snapshot-scope discipline).
         POP     HL                      ; HL = body_hash_start
+        LD      BC, (bh_wid)
+        LD      A, C
+        CP      LOW forth_wordlist
+        JR      NZ, .marker_skip_fixup
+        LD      A, B
+        CP      HIGH forth_wordlist
+        JR      NZ, .marker_skip_fixup
         LD      A, (bh_bucket_index)
         LD      C, A
         LD      B, 0
@@ -71,6 +93,7 @@ w_MARKER_cf:
         LD      (HL), C
         INC     HL
         LD      (HL), B
+.marker_skip_fixup:
 
         ; Update HERE = DE (past end of body, from LDIR)
         LD      (IY+UserArea.here), E

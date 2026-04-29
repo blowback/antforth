@@ -247,6 +247,55 @@ do_search_order_overflow:
         LD      BC, THROW_SEARCH_ORDER_OVERFLOW
         JP      w_THROW_cf.kernel_entry
 
+; === Story 12.4 — compilation wordlist control ===
+; GET-CURRENT, SET-CURRENT, DEFINITIONS — emitted before forth_wordlist:
+; for the same _hash_buckets[] LUA-pass-ordering reason as the words above.
+; All three operate on (IY+UserArea.current_wordlist) — the USER-var added
+; in Story 12.4 (src/structures.asm) and initialised at cold start in
+; src/antforth.asm step 8e to forth_wordlist.
+
+; ANS Forth 1994 §16.6.1.1643   GET-CURRENT    ( -- wid )
+;   Push the wid of the compilation wordlist (the wordlist into which new
+;   definitions are placed) onto TOS.
+w_GET_CURRENT:
+        DEFCODE "GET-CURRENT", 0
+w_GET_CURRENT_cf:
+        PUSH    BC                      ; old TOS -> SP-stack
+        LD      C, (IY+UserArea.current_wordlist)
+        LD      B, (IY+UserArea.current_wordlist+1)
+        NEXT
+
+; ANS Forth 1994 §16.6.1.2193   SET-CURRENT    ( wid -- )
+;   Set the compilation wordlist to wid. Subsequent definitions
+;   ( :, CODE, CREATE, VARIABLE, CONSTANT, MARKER ) place their headers
+;   into the bucket array of the wordlist identified by wid.
+w_SET_CURRENT:
+        DEFCODE "SET-CURRENT", 0
+w_SET_CURRENT_cf:
+        CALL    check_underflow         ; wid on TOS — 1-cell guard
+        LD      (IY+UserArea.current_wordlist),   C
+        LD      (IY+UserArea.current_wordlist+1), B
+        POP     BC                      ; new TOS = cell below the consumed wid
+        NEXT
+
+; ANS Forth 1994 §16.6.1.1180   DEFINITIONS    ( -- )
+;   Set the compilation wordlist to the same as the first wordlist in
+;   the search order (slot 0). No stack effect.
+;   Note (AC #4 pick (a)): slot 0 is read unconditionally regardless of
+;   search-order depth. SET-ORDER 0 only updates the depth field — it
+;   does NOT zero slot 0; the cached slot-0 value persists from the prior
+;   SET-ORDER call (or the cold-start default = FORTH-WORDLIST). The user
+;   that empties the search order and runs DEFINITIONS gets whatever was
+;   last in slot 0; subsequent definitions land there.
+w_DEFINITIONS:
+        DEFCODE "DEFINITIONS", 0
+w_DEFINITIONS_cf:
+        LD      A, (IY+UserArea.search_order)
+        LD      (IY+UserArea.current_wordlist), A
+        LD      A, (IY+UserArea.search_order+1)
+        LD      (IY+UserArea.current_wordlist+1), A
+        NEXT
+
 srch_saved_ip:  DW      0               ; shared IP slot for GET-ORDER / SET-ORDER
 
 ; === FORTH-WORDLIST struct (kernel-resident, canonical) ===

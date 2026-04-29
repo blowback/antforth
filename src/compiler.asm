@@ -81,12 +81,13 @@ w_BRACKET_CHAR_cf EQU w_BRACKET_CHAR_body - 3
 bh_name_start:       DW 0   ; Pointer to name in TIB
 bh_name_len:         DB 0   ; Clamped name length
 bh_bucket_index:     DB 0   ; Hash bucket index (0-63)
-bh_bucket_addr:      DW 0   ; Address in FORTH-WORDLIST bucket array
+bh_bucket_addr:      DW 0   ; Address in current wordlist's bucket array
 bh_entry_start:      DW 0   ; HERE at entry (entry start address)
 bh_old_bucket_head:  DW 0   ; Previous bucket head (for error recovery)
 bh_count_flags_addr: DW 0   ; Address of count_flags byte (for unsmudging)
 bh_flags:            DB 0   ; Flags to OR into count_flags
 bh_code_field:       DW 0   ; Code field position (saved for return)
+bh_wid:              DW 0   ; Wid used for header insertion (Story 12.4 — for error recovery)
 
 ; === COLON error recovery variables ===
 ; (Used by SEMICOLON and COMP-ERROR — populated from bh_* after build_header)
@@ -94,6 +95,7 @@ colon_saved_here:    DW 0
 colon_smudge_addr:   DW 0
 colon_saved_bucket:  DB 0
 colon_saved_head:    DW 0
+colon_saved_wid:     DW 0   ; Wid the colon header was inserted into (Story 12.4)
 
 ; -----------------------------------------------
 ; build_header — Shared subroutine for :, CREATE, CONSTANT
@@ -212,12 +214,26 @@ build_header:
         CALL    hash_name                       ; A = bucket index
         LD      (bh_bucket_index), A
 
-        ; Compute bucket head address: forth_wordlist bucket array + A*2
+        ; Compute bucket head address: current_wordlist bucket array + A*2
+        ; Story 12.4 — bucket array now lives in (IY+UserArea.current_wordlist),
+        ; not in forth_wordlist directly. Capture the wid into bh_wid for
+        ; the error-recovery paths (w_COMP_ERROR_cf, asm_cleanup,
+        ; asm_unlink_labels) to read from colon_saved_wid / asm_saved_wid.
+        ; Lifecycle invariant: bh_wid is written ONLY on the success path
+        ; below this point; the .bh_no_name early-exit at :161 returns CF=1
+        ; without touching bh_wid. Callers that consume bh_wid (colon /
+        ; CODE / MARKER prologues) MUST first test the carry flag and skip
+        ; the bh_wid read on error — otherwise they read a stale wid from
+        ; a previous successful build_header invocation.
         LD      L, A
         LD      H, 0
         ADD     HL, HL
-        LD      BC, forth_wordlist + WORDLIST_BUCKET0
-        ADD     HL, BC                          ; HL = &FORTH-WORDLIST.buckets[bucket]
+        LD      C, (IY+UserArea.current_wordlist)
+        LD      B, (IY+UserArea.current_wordlist+1)
+        LD      (bh_wid), BC                    ; capture wid (Story 12.4)
+        INC     BC
+        INC     BC                              ; BC = wid + WORDLIST_BUCKET0
+        ADD     HL, BC                          ; HL = &<current_wordlist>.buckets[bucket]
         LD      (bh_bucket_addr), HL
         ; Read current bucket head
         LD      C, (HL)
@@ -381,6 +397,8 @@ w_COLON_cf:
         LD      (colon_saved_head), BC
         LD      BC, (bh_count_flags_addr)
         LD      (colon_smudge_addr), BC
+        LD      BC, (bh_wid)                     ; Story 12.4 — save wid for COMP-ERROR rollback
+        LD      (colon_saved_wid), BC
 
         ; HL = code field position — emit JP DOCOL
         LD      (HL), 0xC3                       ; JP opcode
@@ -430,13 +448,15 @@ w_COMP_ERROR_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; --- 5.2: Restore hash bucket head ---
+        ; --- 5.2: Restore hash bucket head (Story 12.4 — saved wid from colon prologue) ---
         LD      A, (colon_saved_bucket)
         LD      L, A
         LD      H, 0
         ADD     HL, HL                          ; HL = bucket * 2
-        LD      BC, forth_wordlist + WORDLIST_BUCKET0
-        ADD     HL, BC                          ; HL = &FORTH-WORDLIST.buckets[bucket]
+        LD      BC, (colon_saved_wid)
+        INC     BC
+        INC     BC                              ; BC = saved_wid + WORDLIST_BUCKET0
+        ADD     HL, BC                          ; HL = &<saved_wid>.buckets[bucket]
         LD      BC, (colon_saved_head)
         LD      (HL), C
         INC     HL

@@ -182,7 +182,7 @@ development_status:
   12-1-wordlist-struct-hash-parameterisation-and-forth-wordlist-bootstrap: done
   12-2-wordlist-and-search-wordlist: done
   12-3-search-order-infrastructure: done
-  12-4-compilation-wordlist-control: backlog
+  12-4-compilation-wordlist-control: done
   12-5-only: backlog
   12-6-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: backlog
   epic-12-retrospective: optional

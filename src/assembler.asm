@@ -81,6 +81,10 @@ asm_body_start:    DW 0   ; HERE at the start of the CODE word body
                           ; (= code field address; for LABEL "no opcodes" check)
 asm_saved_bucket:  DB 0   ; hash bucket for new word
 asm_saved_head:    DW 0   ; previous bucket head (for unlink)
+asm_saved_wid:     DW 0   ; wid the CODE word's header was inserted into
+                          ; (Story 12.4 — single per-CODE-block wid; all
+                          ; LABELs in the block share this wid; mid-CODE
+                          ; SET-CURRENT is unsupported per AC #7 pick)
 asm_smudge_addr:   DW 0   ; count_flags address (for END-CODE)
 asm_tmp:           DB 0   ; 1-byte spill slot shared by LD, / PUSH, /
                           ; POP, / arith-word helpers (never nested)
@@ -420,12 +424,15 @@ asm_cleanup:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
         ; Restore hash bucket head for the in-progress CODE word
+        ; (Story 12.4 — saved wid captured at CODE entry)
         LD      A, (asm_saved_bucket)
         LD      L, A
         LD      H, 0
         ADD     HL, HL                          ; bucket * 2
-        LD      BC, forth_wordlist + WORDLIST_BUCKET0
-        ADD     HL, BC                          ; HL = &FORTH-WORDLIST.buckets[bucket]
+        LD      BC, (asm_saved_wid)
+        INC     BC
+        INC     BC                              ; BC = saved_wid + WORDLIST_BUCKET0
+        ADD     HL, BC                          ; HL = &<saved_wid>.buckets[bucket]
         LD      BC, (asm_saved_head)
         LD      (HL), C
         INC     HL
@@ -836,12 +843,16 @@ asm_unlink_labels:
         LD      E, (HL)             ; E = old_head lo
         INC     HL
         LD      D, (HL)             ; D = old_head hi
-        ; Compute &FORTH-WORDLIST.buckets[bucket]
+        ; Compute &<asm_saved_wid>.buckets[bucket] (Story 12.4 — single
+        ; per-CODE-block wid; all LABELs in the block live in the wordlist
+        ; that was current when CODE was entered).
         LD      L, A
         LD      H, 0
         ADD     HL, HL              ; *2
         PUSH    DE
-        LD      DE, forth_wordlist + WORDLIST_BUCKET0
+        LD      DE, (asm_saved_wid)
+        INC     DE
+        INC     DE                  ; DE = saved_wid + WORDLIST_BUCKET0
         ADD     HL, DE
         POP     DE
         ; Restore bucket head
@@ -1249,6 +1260,8 @@ w_CODE_cf:
         LD      (asm_saved_head), BC
         LD      BC, (bh_count_flags_addr)
         LD      (asm_smudge_addr), BC
+        LD      BC, (bh_wid)                    ; Story 12.4 — wid for error-recovery + LABEL unlink
+        LD      (asm_saved_wid), BC
 
         ; HL = code field position (from build_header).
         ; CODE words are native: HERE := HL with NO JP DOCOL prefix.

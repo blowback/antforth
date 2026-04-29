@@ -7245,6 +7245,164 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# === Story 12.4 — compilation wordlist control (tests 823-836) ===
+	@# T-GC1 (test 823) — initial GET-CURRENT state: current = FORTH-WORDLIST.
+	@OUTPUT=$$(printf 'GET-CURRENT FORTH-WORDLIST = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 823 — Story 12.4: GET-CURRENT initial = FORTH-WORDLIST (T-GC1)"; \
+	else \
+		echo "FAIL: REPL test 823 — expected '-1  ok' from GET-CURRENT FORTH-WORDLIST = ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SC1 (test 824) — SET-CURRENT round-trip via WORDLIST DUP SET-CURRENT.
+	@OUTPUT=$$(printf 'WORDLIST DUP SET-CURRENT GET-CURRENT = .   FORTH-WORDLIST SET-CURRENT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 824 — Story 12.4: SET-CURRENT round-trip (T-SC1)"; \
+	else \
+		echo "FAIL: REPL test 824 — expected '-1  ok' from WORDLIST DUP SET-CURRENT GET-CURRENT ="; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SC2a (test 825) — `:` lands in current wordlist; NOT in FORTH-WORDLIST.
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT   S" SC2FOO" FORTH-WORDLIST SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 825 — Story 12.4: SC2FOO not in FORTH-WORDLIST after WL1 SET-CURRENT (T-SC2a)"; \
+	else \
+		echo "FAIL: REPL test 825 — expected '0  ok' (SC2FOO not findable in FORTH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SC2b (test 826) — `:` lands in current wordlist; IS in WL1.
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT   S" SC2FOO" WL1 SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 826 — Story 12.4: SC2FOO IS in WL1 (T-SC2b)"; \
+	else \
+		echo "FAIL: REPL test 826 — expected '-1  ok' (SC2FOO findable via WL1 SEARCH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SC3a (test 827) — SET-CURRENT does not change search order: SC3BAR
+	@# is in WL2 but search order only has FORTH-WORDLIST → -13 THROW at parse.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'SC3BAR' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'SC3BAR ?' && echo "$$OUTPUT" | grep -q 'error -13: undefined word'; then \
+		echo "PASS: REPL test 827 — Story 12.4: SET-CURRENT does NOT change search order (T-SC3a)"; \
+	else \
+		echo "FAIL: REPL test 827 — expected 'SC3BAR ?' AND 'error -13: undefined word'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SC3b (test 828) — adding WL2 to the search order makes SC3BAR findable.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'WL2 1 SET-ORDER   SC3BAR .   -1 SET-ORDER' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '33 '; then \
+		echo "PASS: REPL test 828 — Story 12.4: WL2 in search order makes SC3BAR findable (T-SC3b)"; \
+	else \
+		echo "FAIL: REPL test 828 — expected '33 ' from SC3BAR after WL2 1 SET-ORDER"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-DEF1 (test 829) — DEFINITIONS sets current to slot 0. Use depth-2
+	@# search order [WL3, FORTH-WORDLIST] so kernel words remain findable
+	@# while WL3 occupies slot 0 (the DEFINITIONS target).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL3   FORTH-WORDLIST WL3 2 SET-ORDER   DEFINITIONS   GET-CURRENT WL3 = .' '-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 829 — Story 12.4: DEFINITIONS sets current to slot 0 (T-DEF1)"; \
+	else \
+		echo "FAIL: REPL test 829 — expected '-1  ok' from DEFINITIONS GET-CURRENT WL3 ="; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-DEF2 (test 830) — DEFINITIONS-driven partition with depth=2 search order.
+	@# DEF2BAZ lands in WL4 (slot 0 of search order) via DEFINITIONS, NOT in FORTH-WORDLIST.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL4   FORTH-WORDLIST WL4 2 SET-ORDER   DEFINITIONS   : DEF2BAZ 88 ;   -1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'S" DEF2BAZ" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 830 — Story 12.4: DEFINITIONS partitions definitions by search-order top (T-DEF2)"; \
+	else \
+		echo "FAIL: REPL test 830 — expected '0  ok' (DEF2BAZ not in FORTH-WORDLIST after DEFINITIONS into WL4)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCV-CREATE (test 831) — CREATE in custom wordlist (negative).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5C   WL5C SET-CURRENT   CREATE CR5A   FORTH-WORDLIST SET-CURRENT   S" CR5A" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 831 — Story 12.4: CREATE honours SET-CURRENT (T-CCV-CREATE)"; \
+	else \
+		echo "FAIL: REPL test 831 — expected '0  ok' (CR5A not in FORTH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCV-CONSTANT (test 832) — CONSTANT in custom wordlist (negative).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5K   WL5K SET-CURRENT   42 CONSTANT CO5B   FORTH-WORDLIST SET-CURRENT' 'S" CO5B" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 832 — Story 12.4: CONSTANT honours SET-CURRENT (T-CCV-CONSTANT)"; \
+	else \
+		echo "FAIL: REPL test 832 — expected '0  ok' (CO5B not in FORTH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCV-VARIABLE (test 833) — VARIABLE in custom wordlist (negative).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5V   WL5V SET-CURRENT   VARIABLE VA5C   FORTH-WORDLIST SET-CURRENT' 'S" VA5C" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 833 — Story 12.4: VARIABLE honours SET-CURRENT (T-CCV-VARIABLE)"; \
+	else \
+		echo "FAIL: REPL test 833 — expected '0  ok' (VA5C not in FORTH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCV-MARKER (test 834) — MARKER header lands in custom wordlist (negative).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5M   WL5M SET-CURRENT   MARKER MK5D   FORTH-WORDLIST SET-CURRENT' 'S" MK5D" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 834 — Story 12.4: MARKER header honours SET-CURRENT (T-CCV-MARKER)"; \
+	else \
+		echo "FAIL: REPL test 834 — expected '0  ok' (MK5D not in FORTH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-COMP-ERROR (test 835) — error-recovery rolls back the SAVED wid, not
+	@# FORTH-WORDLIST. WL6 SET-CURRENT then `: CE6FOO BOGUSWORD ;` raises -13;
+	@# the partial CE6FOO header must be rolled back from WL6 (= 0  ok via
+	@# WL6 SEARCH-WORDLIST). REPL recovers via 1 2 + . = 3.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL6   WL6 SET-CURRENT   : CE6FOO BOGUSWORD ;' 'FORTH-WORDLIST SET-CURRENT   1 2 + .' 'S" CE6FOO" WL6 SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'BOGUSWORD ?' && echo "$$OUTPUT" | grep -q 'error -13: undefined word' && echo "$$OUTPUT" | grep -q '3  ok' && echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 835 — Story 12.4: COMP-ERROR rollback targets saved wid (T-COMP-ERROR)"; \
+	else \
+		echo "FAIL: REPL test 835 — expected 'BOGUSWORD ?', 'error -13', '3  ok' (REPL recovery), AND '0  ok' (CE6FOO rolled back from WL6)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-DEF-DEPTH0 (test 836) — DEFINITIONS with depth=0 reads slot 0
+	@# unconditionally (AC #4 pick (a): match standard verbatim, no guard).
+	@# SET-ORDER 0 only updates depth — it does NOT zero slot 0. At boot,
+	@# slot 0 = FORTH-WORDLIST (cold-start step 8d), so `0 SET-ORDER
+	@# DEFINITIONS` yields current = FORTH-WORDLIST (cached slot 0). Wrap
+	@# the depth-0 dance in a colon definition so its compiled body can
+	@# reach DEFINITIONS / GET-CURRENT / SET-ORDER / SET-CURRENT before
+	@# parsing returns to the REPL with an empty search order.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T836 0 SET-ORDER DEFINITIONS GET-CURRENT FORTH-WORDLIST 1 SET-ORDER FORTH-WORDLIST SET-CURRENT ;' 'T836 FORTH-WORDLIST = .   : TWREC 9 ; TWREC .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1 9  ok'; then \
+		echo "PASS: REPL test 836 — Story 12.4: DEFINITIONS with depth=0 reads slot 0 unconditionally (T-DEF-DEPTH0)"; \
+	else \
+		echo "FAIL: REPL test 836 — expected '-1 9  ok' (slot 0 = FORTH-WORDLIST cached → -1; TWREC recovers → 9)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-MARKER-XWID-EXEC (test 837) — MARKER created in a foreign wid
+	@# and then executed must NOT corrupt FORTH-WORDLIST's bucket array.
+	@# hash("MX") = 5; FORTH-WORDLIST.buckets[5] lives at offset +12.
+	@# Capture pre-value, allocate XLM (bucket 41, doesn't touch 5), build
+	@# MARKER MX in XLM, switch to FORTH-WORDLIST, execute MX. Compare
+	@# post-MX bucket-5 head against the captured pre-value. With the H1
+	@# review fix, foreign-wid markers skip the fixup → bucket 5 is
+	@# preserved bit-exactly (-1). Without the fix, snapshot[5] would be
+	@# zeroed and DOMARKER would corrupt FORTH-WORDLIST (= 0).
+	@OUTPUT=$$(printf '%s\r\n' 'FORTH-WORDLIST 12 + @' 'WORDLIST CONSTANT XLM   XLM SET-CURRENT   MARKER MX' 'FORTH-WORDLIST XLM 2 SET-ORDER' 'MX' '-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'FORTH-WORDLIST 12 + @ = .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 837 — Story 12.4: foreign-wid MARKER exec preserves FORTH-WORDLIST buckets (T-MARKER-XWID-EXEC)"; \
+	else \
+		echo "FAIL: REPL test 837 — expected '-1  ok' (FORTH-WORDLIST.buckets[5] preserved across MX exec)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

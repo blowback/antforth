@@ -195,10 +195,13 @@ find_slot_ptr:      DW      0
 ; -----------------------------------------------
 ; WORDS ( -- )
 ;   List all words in the dictionary by traversing all 64 hash buckets
-;   of FORTH-WORDLIST. Story 12.3 AC #10 picked option (a) — keep WORDS
-;   scoped to FORTH-WORDLIST. ANS does not standardise WORDS across
-;   wordlists; revisit when Story 12.4's DEFINITIONS / SET-CURRENT lands
-;   and definitions can land in non-FORTH-WORDLIST wordlists.
+;   of FORTH-WORDLIST. Story 12.3 AC #10 + Story 12.4 AC #9 picked option
+;   (a) — keep WORDS scoped to FORTH-WORDLIST. ANS does not standardise
+;   WORDS across wordlists. With SET-CURRENT (Story 12.4) live, a user
+;   can place definitions into non-FORTH-WORDLIST wordlists; those words
+;   are NOT visible to WORDS. Workaround: dump the bucket array of the
+;   target wordlist by hand. Revisit if MicroBeast hardware wordlists
+;   land in Phase 3.
 ; -----------------------------------------------
 w_WORDS:
         DEFCODE "WORDS", 0

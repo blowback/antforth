@@ -106,6 +106,12 @@ cold_start:
         INC     HL
         DJNZ    .so_init_zero
 
+        ; 8e. CURRENT-WORDLIST init — default compilation wordlist = FORTH-WORDLIST.
+        ;     ANS Forth 1994 §16.6.1.2193 SET-CURRENT default-state convention.
+        LD      HL, forth_wordlist
+        LD      (IY+UserArea.current_wordlist),   L
+        LD      (IY+UserArea.current_wordlist+1), H
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 

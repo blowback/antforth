@@ -29,4 +29,5 @@ catch_top   DW      0               ; CATCH-TOP: most recent exception frame add
 pic_buf     DS      PIC_BUF_SIZE    ; Pictured-output buffer (fills RTL)
 search_order_depth  DW      0       ; SEARCH-ORDER-DEPTH USER var (E12-D2 — architecture.md:332-336)
 search_order        DS      32      ; 16 × 2-byte wid slots; slot 0 (offset 0) = top-of-search-order
+current_wordlist    DW      0       ; CURRENT-WORDLIST USER var (Story 12.4 — wid for next dictionary insert)
     ENDS
