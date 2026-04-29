@@ -17,26 +17,62 @@ w_COUNT_cf:
         NEXT
 
 ; === FIND ( c-addr -- c-addr 0 | xt 1 | xt -1 ) ===
-; Search FORTH-WORDLIST for the counted-string name at c-addr.
-; Wraps the shared helper `search_wid_for_name` (Story 12.2 AC #5 pick (a))
-; with FIND's counted-string input adapter and `c-addr 0` miss shape.
+; Search the current search order (slot 0 down) for the counted-string
+; name at c-addr. Story 12.3 — walks UserArea.search_order[0..depth-1],
+; calling the shared helper `search_wid_for_name` once per wid; returns
+; on the first hit. On full miss returns ( c-addr 0 ) per the existing
+; ANS contract.
 w_FIND:
         DEFCODE "FIND", 0
 w_FIND_cf:
         PUSH    DE              ; save IP
         PUSH    BC              ; save c-addr (for miss case)
-        ; HL = c-addr; load count byte; advance to name; mask length.
+        ; Parse counted-string input: HL = c-addr → name addr + length.
         LD      H, B
         LD      L, C
         LD      A, (HL)         ; A = count_flags byte
-        AND     F_LENMASK       ; mask off any flags (FIND parses counted strings)
+        AND     F_LENMASK       ; mask off any flags (counted-string discipline)
         INC     HL              ; HL = name address
         LD      B, A            ; B = name length
-        LD      DE, forth_wordlist
+        ; Save name addr + length so each helper call can re-load them
+        ; (the helper clobbers BC, HL).
+        LD      (find_search_name), HL
+        LD      A, B
+        LD      (find_search_len), A
+        ; Load search-order depth; depth = 0 = pure miss (no walk).
+        LD      A, (IY+UserArea.search_order_depth)
+        OR      A
+        JR      Z, .find_not_found
+        LD      C, A            ; C = remaining slots to walk
+        ; HL = &slot[0] = IY + UserArea.search_order
+        PUSH    IY
+        POP     HL
+        LD      DE, UserArea.search_order
+        ADD     HL, DE
+        LD      (find_slot_ptr), HL
+.find_walk:
+        ; DE = wid at current slot.
+        LD      HL, (find_slot_ptr)
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      (find_slot_ptr), HL     ; advance to next slot
+        ; Re-load name addr (HL) + length (B) for the helper.
+        LD      HL, (find_search_name)
+        LD      A, (find_search_len)
+        LD      B, A
+        ; Save loop counter (C) — helper clobbers BC.
+        PUSH    BC
         CALL    search_wid_for_name
-        ; Helper: HL = xt + A = count_flags + NC on hit; HL = 0 + CF on miss.
-        JR      C, .find_not_found
-        ; Hit — drop saved c-addr; restore IP; push xt; format flag from A.
+        POP     BC                       ; restore loop counter (flags preserved)
+        JR      NC, .find_hit            ; helper CF clear = hit
+        DEC     C
+        JR      NZ, .find_walk
+        ; All slots exhausted → miss.
+        JR      .find_not_found
+.find_hit:
+        ; HL = xt; A = count_flags. Format ( xt 1 | xt -1 ).
         POP     BC              ; discard saved c-addr
         POP     DE              ; restore IP
         PUSH    HL              ; xt second-on-stack
@@ -150,11 +186,19 @@ sw_search_len:  DB      0               ; saved name length
 sw_search_name: DW      0               ; saved name address
 sw_match_cf:    DB      0               ; count_flags of matched entry
 
+; FIND scratch — saved across the search-order walk (CODE words don't
+; reentrantly nest, so a single set is safe).
+find_search_name:   DW      0
+find_search_len:    DB      0
+find_slot_ptr:      DW      0
+
 ; -----------------------------------------------
 ; WORDS ( -- )
 ;   List all words in the dictionary by traversing all 64 hash buckets
-;   of FORTH-WORDLIST. (Epic 12 multi-wordlist support adds search-order
-;   iteration in Story 12.3 — Story 12.1 walks FORTH-WORDLIST only.)
+;   of FORTH-WORDLIST. Story 12.3 AC #10 picked option (a) — keep WORDS
+;   scoped to FORTH-WORDLIST. ANS does not standardise WORDS across
+;   wordlists; revisit when Story 12.4's DEFINITIONS / SET-CURRENT lands
+;   and definitions can land in non-FORTH-WORDLIST wordlists.
 ; -----------------------------------------------
 w_WORDS:
         DEFCODE "WORDS", 0

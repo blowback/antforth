@@ -65,6 +65,7 @@ THROW_COMPILE_ONLY      EQU -14  ; ANS Forth 1994 §9.3.5
 THROW_ZERO_LEN_NAME     EQU -16  ; ANS Forth 1994 §9.3.5
 THROW_PIC_OVERFLOW      EQU -17  ; ANS Forth 1994 §9.3.5
 THROW_CONTROL_MISMATCH  EQU -22  ; ANS Forth 1994 §9.3.5
+THROW_SEARCH_ORDER_OVERFLOW EQU -49  ; ANS Forth 1994 §9.3.5 (search-order overflow; Story 12.3 SET-ORDER bounds check)
 THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5
 
 ; --- Architecture-mandated example EQUs (architecture.md:476-478) ---

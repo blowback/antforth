@@ -113,3 +113,70 @@ WORDLIST   S" " ROT SEARCH-WORDLIST .   \ Makefile test 811 asserts: output cont
 \ regression-clean — `BL WORD DUP FIND SWAP DROP .` should still
 \ print -1 for the kernel DUP word.
 BL WORD DUP FIND SWAP DROP .            \ Makefile test 812 asserts: output contains "-1 "
+
+\ ============================================================
+\ Section 7 — Story 12.3 — search-order infrastructure
+\ ============================================================
+\ Coverage of FORTH-WORDLIST, GET-ORDER, SET-ORDER, and the rewritten
+\ FIND search-order walk per Story 12.3 AC #15. Tests 815/816/817 close
+\ Story 12.2 review CR-L3 / CR-L4 (direct SEARCH-WORDLIST hit-path probe
+\ + FIND/SEARCH-WORDLIST IMMEDIATE-flag probes).
+
+\ T-GO1 — initial GET-ORDER state: depth=1, slot 0 = FORTH-WORDLIST.
+GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .   \ Makefile test 813 asserts: output contains "-1  ok"
+
+\ T-FW1 — FORTH-WORDLIST self-consistency: pushed twice, both copies equal.
+FORTH-WORDLIST FORTH-WORDLIST = .       \ Makefile test 814 asserts: output contains "-1  ok"
+
+\ T-FW2 — FORTH-WORDLIST drives the canonical kernel wordlist (CR-L3
+\ from Story 12.2 review): SEARCH-WORDLIST hit on a kernel word DUP
+\ returns ( xt -1 ); SWAP DROP keeps the flag; `.` prints -1 (non-
+\ IMMEDIATE). Proves SEARCH-WORDLIST hit path against the canonical
+\ wordlist for the first time. (Story spec sketch had `DROP DROP DUP`
+\ which empties the stack and DUPs stale BC — corrected here to
+\ `SWAP DROP` per the flag-extraction pattern used in T-FW3a/b.)
+S" DUP" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .  \ Makefile test 815 asserts: output contains "-1  ok"
+
+\ T-FW3a — FIND IMMEDIATE-flag probe (CR-L4 from Story 12.2 review):
+\ IF is IMMEDIATE; FIND returns flag = 1.
+BL WORD IF FIND SWAP DROP .             \ Makefile test 816 asserts: output contains "1  ok"
+
+\ T-FW3b — SEARCH-WORDLIST IMMEDIATE-flag probe (CR-L4 from Story 12.2
+\ review): IF via SEARCH-WORDLIST against FORTH-WORDLIST returns flag = 1.
+S" IF" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .   \ Makefile test 817 asserts: output contains "1  ok"
+
+\ T-SO1 — SET-ORDER round-trip preserves state.
+GET-ORDER SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .   \ Makefile test 818 asserts: output contains "-1  ok"
+
+\ T-SO2 — SET-ORDER -1 minimum reset. After installing depth=2 with
+\ FORTH-WORDLIST at slot 0 (top-of-search-order — the wid pushed last
+\ before n goes to slot 0 per ANS direction) + a custom wordlist at
+\ slot 1 (FORTH-WORDLIST kept in slot 0 so `-1 SET-ORDER` itself stays
+\ findable), `-1 SET-ORDER` resets to the canonical depth=1 /
+\ FORTH-WORDLIST minimum.
+WORDLIST FORTH-WORDLIST 2 SET-ORDER -1 SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .  \ Makefile test 819 asserts: output contains "-1  ok"
+
+\ T-SO3 — SET-ORDER depth-overflow raises -49. Pushes 17 cells then
+\ asks for depth = 17. The REPL prints "error -49: search-order
+\ overflow"; subsequent `1 2 + .` confirms recovery.
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 SET-ORDER   \ Makefile test 820 sequence (line 1 of 2)
+1 2 + .                                 \ Makefile test 820 sequence (line 2 of 2)
+\ Makefile test 820 asserts: output contains "error -49: search-order overflow" AND "3  ok".
+
+\ T-SO5 — depth-2 search-order walk: FIND must walk PAST an empty
+\ slot 0 to find TWFOO in slot 1. ANS direction: the wid pushed
+\ LAST before n goes to slot 0, so `FORTH-WORDLIST WORDLIST 2
+\ SET-ORDER` puts the (empty) custom wordlist in slot 0 and
+\ FORTH-WORDLIST in slot 1. : TWFOO 99 ; lands in FORTH-WORDLIST
+\ (Story 12.4 SET-CURRENT not yet wired); FIND walks slot 0 (custom,
+\ empty — miss) → slot 1 (FORTH-WORDLIST — hits TWFOO). This is
+\ the genuine multi-slot walk probe; the prior shape
+\ `WORDLIST FORTH-WORDLIST 2 SET-ORDER` placed FORTH-WORDLIST in
+\ slot 0 and never iterated past the first slot. Restores depth-1
+\ minimum order at the end so subsequent tests are unaffected.
+FORTH-WORDLIST WORDLIST 2 SET-ORDER : TWFOO 99 ; TWFOO . -1 SET-ORDER    \ Makefile test 821 asserts: output contains "99 "
+
+\ T-FIND-REGRESSION — pre-Story-12.3 sentinel via the new search-order
+\ walk: 1 2 + . prints "3 " (FIND of `+` and `.` via depth-1 walk),
+\ : TWBAZ 7 ; TWBAZ . prints "7 " (compile + execute via the new walk).
+1 2 + . : TWBAZ 7 ; TWBAZ .             \ Makefile test 822 asserts: output contains "3 " AND "7 "

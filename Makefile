@@ -7140,6 +7140,111 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# === Story 12.3 — search-order infrastructure (tests 813-822) ===
+	@# T-GO1 (test 813) — initial GET-ORDER state: depth=1, slot 0 = FORTH-WORDLIST.
+	@OUTPUT=$$(printf 'GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 813 — Story 12.3: initial GET-ORDER state (T-GO1)"; \
+	else \
+		echo "FAIL: REPL test 813 — expected '-1  ok' (depth=1 AND slot-0 wid = FORTH-WORDLIST)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-FW1 (test 814) — FORTH-WORDLIST self-consistency.
+	@OUTPUT=$$(printf 'FORTH-WORDLIST FORTH-WORDLIST = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 814 — Story 12.3: FORTH-WORDLIST self-consistency (T-FW1)"; \
+	else \
+		echo "FAIL: REPL test 814 — expected '-1  ok' from FORTH-WORDLIST FORTH-WORDLIST = ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-FW2 (test 815) — SEARCH-WORDLIST hit on canonical FORTH-WORDLIST
+	@# (CR-L3 carryover from Story 12.2 review).
+	@OUTPUT=$$(printf 'S" DUP" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 815 — Story 12.3: SEARCH-WORDLIST hit via FORTH-WORDLIST (T-FW2 / CR-L3)"; \
+	else \
+		echo "FAIL: REPL test 815 — expected '-1  ok' from SEARCH-WORDLIST hit on canonical FORTH-WORDLIST"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-FW3a (test 816) — FIND IMMEDIATE-flag probe
+	@# (CR-L4 carryover from Story 12.2 review): IF is IMMEDIATE → flag = 1.
+	@OUTPUT=$$(printf 'BL WORD IF FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1  ok'; then \
+		echo "PASS: REPL test 816 — Story 12.3: FIND IMMEDIATE-flag probe (T-FW3a / CR-L4)"; \
+	else \
+		echo "FAIL: REPL test 816 — expected '1  ok' from FIND IF (IMMEDIATE)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-FW3b (test 817) — SEARCH-WORDLIST IMMEDIATE-flag probe
+	@# (CR-L4 carryover from Story 12.2 review): IF via SEARCH-WORDLIST → flag = 1.
+	@OUTPUT=$$(printf 'S" IF" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1  ok'; then \
+		echo "PASS: REPL test 817 — Story 12.3: SEARCH-WORDLIST IMMEDIATE-flag probe (T-FW3b / CR-L4)"; \
+	else \
+		echo "FAIL: REPL test 817 — expected '1  ok' from SEARCH-WORDLIST IF (IMMEDIATE)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SO1 (test 818) — SET-ORDER round-trip preserves state.
+	@OUTPUT=$$(printf 'GET-ORDER SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 818 — Story 12.3: GET-ORDER → SET-ORDER round-trip (T-SO1)"; \
+	else \
+		echo "FAIL: REPL test 818 — expected '-1  ok' from GET-ORDER SET-ORDER GET-ORDER round-trip"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SO2 (test 819) — SET-ORDER -1 minimum reset after depth=2 install.
+	@OUTPUT=$$(printf 'WORDLIST FORTH-WORDLIST 2 SET-ORDER -1 SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 819 — Story 12.3: SET-ORDER -1 minimum reset (T-SO2)"; \
+	else \
+		echo "FAIL: REPL test 819 — expected '-1  ok' from -1 SET-ORDER reset to depth=1 / FORTH-WORDLIST"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SO3 (test 820) — SET-ORDER depth-overflow raises -49 (search-order overflow).
+	@# 17 dummy wids on stack + 17 SET-ORDER → depth bound check fails → -49 THROW.
+	@# Follow-up `1 2 + .` confirms REPL recovery.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 SET-ORDER' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'error -49: search-order overflow' && echo "$$OUTPUT" | grep -q '3  ok'; then \
+		echo "PASS: REPL test 820 — Story 12.3: SET-ORDER depth-overflow raises -49 (T-SO3)"; \
+	else \
+		echo "FAIL: REPL test 820 — expected 'error -49: search-order overflow' + '3  ok' recovery"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SO5 (test 821) — depth-2 search-order walk: FIND must walk PAST
+	@# an empty slot 0 to find TWFOO in slot 1. ANS direction: wid pushed
+	@# last before n goes to slot 0, so FORTH-WORDLIST WORDLIST 2 SET-ORDER
+	@# puts the (empty) custom wordlist in slot 0 and FORTH-WORDLIST in
+	@# slot 1. : TWFOO 99 ; lands in FORTH-WORDLIST per Story 12.3 ground-
+	@# truth (Story 12.4 SET-CURRENT not yet wired); FIND walks slot 0
+	@# (custom, empty — miss) → slot 1 (FORTH-WORDLIST — hits TWFOO).
+	@# -1 SET-ORDER restores minimum order at the end.
+	@OUTPUT=$$(printf 'FORTH-WORDLIST WORDLIST 2 SET-ORDER : TWFOO 99 ; TWFOO . -1 SET-ORDER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99 '; then \
+		echo "PASS: REPL test 821 — Story 12.3: depth-2 search-order walk hits FORTH-WORDLIST entry (T-SO5)"; \
+	else \
+		echo "FAIL: REPL test 821 — expected '99 ' from FIND walk past empty slot 0 to FORTH-WORDLIST in slot 1"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-FIND-REGRESSION (test 822) — pre-Story-12.3 sentinel via the new
+	@# search-order walk: arithmetic + colon define + execute all driven
+	@# through FIND's depth-1 walk over FORTH-WORDLIST.
+	@OUTPUT=$$(printf '1 2 + . : TWBAZ 7 ; TWBAZ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '3 ' && echo "$$OUTPUT" | grep -q '7 '; then \
+		echo "PASS: REPL test 822 — Story 12.3: pre-Story-12.3 FIND sentinel via search-order walk (T-FIND-REGRESSION)"; \
+	else \
+		echo "FAIL: REPL test 822 — expected '3 ' and '7 ' from arithmetic + colon-define-execute via the new FIND walk"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

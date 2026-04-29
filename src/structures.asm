@@ -27,4 +27,6 @@ source_id   DW      0               ; SOURCE-ID: 0 = console
 hld         DW      0               ; HLD: pictured-output write cursor
 catch_top   DW      0               ; CATCH-TOP: most recent exception frame addr, 0 if none (CCD-1)
 pic_buf     DS      PIC_BUF_SIZE    ; Pictured-output buffer (fills RTL)
+search_order_depth  DW      0       ; SEARCH-ORDER-DEPTH USER var (E12-D2 — architecture.md:332-336)
+search_order        DS      32      ; 16 × 2-byte wid slots; slot 0 (offset 0) = top-of-search-order
     ENDS

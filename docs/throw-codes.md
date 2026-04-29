@@ -118,7 +118,7 @@ back to the per-file inventory in §d.
 | -46 | floating-point invalid argument | no | — |
 | -47 | compilation word list deleted | no | — |
 | -48 | invalid POSTPONE | no | — |
-| -49 | search-order overflow | no | — |
+| -49 | search-order overflow | done — Story 12.3 | `wordlists.asm:do_search_order_overflow` (SET-ORDER bounds check; **done — 12.3**) |
 | -50 | search-order underflow | no | — |
 | -51 | compilation word list changed | no | — |
 | -52 | control-flow stack overflow | no | — |

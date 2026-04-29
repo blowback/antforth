@@ -80,6 +80,32 @@ cold_start:
         LD      (IY+UserArea.hld), L
         LD      (IY+UserArea.hld+1), H
 
+        ; 8d. SEARCH-ORDER init — slot 0 = forth_wordlist; depth = 1.
+        ;     ANS Forth 1994 §16.6.1.2195 SET-ORDER (-1) "minimum search order".
+        ;     Slots 1..15 zero-initialised defensively (Story 12.3 AC #11
+        ;     recommended pick) via plain DJNZ store loop. An LDIR cascade-
+        ;     zero variant was ruled out: it shifted the binary layout in
+        ;     a way that produced a layout-sensitive iz-cpm hang on the */
+        ;     stack-underflow regression test (test 643). DJNZ keeps the
+        ;     same defensive intent without that side effect — see
+        ;     _bmad-output/implementation-artifacts/12-3-… Completion Notes
+        ;     Task 8 in-pass-fix log.
+        LD      HL, forth_wordlist
+        LD      (IY+UserArea.search_order),   L
+        LD      (IY+UserArea.search_order+1), H
+        LD      (IY+UserArea.search_order_depth),   1
+        LD      (IY+UserArea.search_order_depth+1), 0
+        PUSH    IY
+        POP     HL
+        LD      BC, UserArea.search_order + 2
+        ADD     HL, BC                          ; HL = &slot[1]
+        LD      B, 30                           ; 30 bytes (slot 1..15)
+        XOR     A
+.so_init_zero:
+        LD      (HL), A
+        INC     HL
+        DJNZ    .so_init_zero
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 

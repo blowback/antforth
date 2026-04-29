@@ -599,6 +599,10 @@ throw_desc_table:
         DW      -22
         DB      26
         DB      "control structure mismatch"
+        ; -49 — Story 12.3: SET-ORDER bounds check (search-order overflow)
+        DW      THROW_SEARCH_ORDER_OVERFLOW
+        DB      21
+        DB      "search-order overflow"
         DW      -58
         DB      23
         DB      "unexpected end of input"

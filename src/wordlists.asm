@@ -107,6 +107,148 @@ w_SEARCH_WORDLIST_cf:
 
 sw_saved_ip:    DW      0               ; SEARCH-WORDLIST IP slot
 
+; === Story 12.3 — search-order infrastructure ===
+; FORTH-WORDLIST, GET-ORDER, SET-ORDER (and the do_search_order_overflow
+; raise site) — all emitted BEFORE the forth_wordlist: label below so the
+; DEFCODE macros' _hash_buckets[] updates run before the bucket array is
+; emitted.
+
+; ANS Forth 1994 §16.6.1.1595   FORTH-WORDLIST    ( -- wid )
+;   Push the canonical Forth wordlist's struct address onto TOS.
+w_FORTH_WORDLIST:
+        DEFCODE "FORTH-WORDLIST", 0
+w_FORTH_WORDLIST_cf:
+        PUSH    BC                      ; old TOS -> SP-stack
+        LD      BC, forth_wordlist      ; new TOS = canonical wid
+        NEXT
+
+; ANS Forth 1994 §16.6.1.1647   GET-ORDER    ( -- widn ... wid1 n )
+;   Push the search-order wordlists onto the stack with slot 0
+;   (top-of-search-order) deepest (= immediately below n).
+;
+;   Stack-direction discipline (Story 12.3 AC #18(a) trap): slot 0
+;   is the FIRST wordlist consulted by FIND, so wid1 = slot 0 and
+;   wid1 must end up adjacent to n. Algorithm: walk slots from
+;   index `depth-1` down to `0`, pushing each wid; finally BC = depth.
+w_GET_ORDER:
+        DEFCODE "GET-ORDER", 0
+w_GET_ORDER_cf:
+        ; check_overflow: covers PUSH BC + ≤15-deep search order cleanly
+        ; via the standard 32-byte margin. For depth=16 (34 bytes) the
+        ; margin shrinks 2 bytes — practical impact zero in normal use.
+        CALL    check_overflow
+        LD      (srch_saved_ip), DE     ; save IP — DE used for pointer math
+        PUSH    BC                      ; old TOS -> SP-stack
+        LD      A, (IY+UserArea.search_order_depth)
+        OR      A
+        JR      Z, .go_done             ; depth = 0: only n=0 to push
+        LD      C, A                    ; C = loop counter (depth)
+        ; HL = IY + UserArea.search_order + 2*(depth-1)
+        ;    = IY + (UserArea.search_order - 2) + 2*depth
+        PUSH    IY
+        POP     HL
+        LD      D, 0
+        LD      E, A
+        ADD     HL, DE
+        ADD     HL, DE                  ; HL += 2*depth
+        LD      DE, UserArea.search_order - 2
+        ADD     HL, DE                  ; HL = &slot[depth-1] (low byte)
+.go_loop:
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)                 ; DE = wid at slot[i]
+        PUSH    DE                      ; push wid to SP-stack
+        DEC     HL
+        DEC     HL
+        DEC     HL                      ; HL -= 3 → &slot[i-1] low byte
+        DEC     C
+        JR      NZ, .go_loop
+.go_done:
+        LD      C, A                    ; new TOS = depth
+        LD      B, 0
+        LD      DE, (srch_saved_ip)     ; restore IP
+        NEXT
+
+; ANS Forth 1994 §16.6.1.2195   SET-ORDER    ( widn ... wid1 n -- )
+;   Replace the search order with the n wids from the stack.
+;   Special case n = -1: install the implementation-defined minimum
+;   search order (FORTH-WORDLIST at slot 0, depth 1).
+;   n > 16 OR n < -1 raises THROW_SEARCH_ORDER_OVERFLOW (-49)
+;   per ANS §9.3.5.
+w_SET_ORDER:
+        DEFCODE "SET-ORDER", 0
+w_SET_ORDER_cf:
+        CALL    check_underflow         ; n on TOS (BC) — 1-cell guard
+        LD      (srch_saved_ip), DE     ; save IP — DE used for math
+        ; Test sign of n.
+        LD      A, B
+        AND     A
+        JP      P, .so_nonneg
+        ; n is negative. n = -1 ⟺ BC = 0xFFFF.
+        LD      A, B
+        AND     C
+        INC     A                       ; Z iff (B AND C) = 0xFF iff B=C=0xFF
+        JP      NZ, do_search_order_overflow
+        ; n = -1: install implementation-defined minimum search order.
+        LD      HL, forth_wordlist
+        LD      (IY+UserArea.search_order),   L
+        LD      (IY+UserArea.search_order+1), H
+        LD      (IY+UserArea.search_order_depth),   1
+        LD      (IY+UserArea.search_order_depth+1), 0
+        POP     BC                      ; new TOS = cell below the consumed n
+        LD      DE, (srch_saved_ip)     ; restore IP
+        NEXT
+.so_nonneg:
+        ; n >= 0. Bound: n ≤ 16.
+        LD      A, B
+        OR      A
+        JP      NZ, do_search_order_overflow   ; n >= 256
+        LD      A, C
+        CP      17
+        JP      NC, do_search_order_overflow   ; n >= 17
+        ; n in 0..16. Verify n more cells on SP-stack (variable underflow).
+        ; Need sp_base - SP >= 2*n bytes below current SP for the n wids.
+        LD      H, 0
+        LD      L, A                    ; HL = n
+        ADD     HL, HL                  ; HL = 2*n (max 32)
+        EX      DE, HL                  ; DE = 2*n
+        LD      HL, (sp_base)
+        OR      A
+        SBC     HL, SP                  ; HL = sp_base - SP (bytes below SP)
+        SBC     HL, DE                  ; HL = bytes_below_SP - 2*n
+        JP      C, do_underflow_error   ; insufficient cells below SP
+        ; All checks passed. Set depth = n.
+        LD      A, C
+        LD      (IY+UserArea.search_order_depth),   A
+        LD      (IY+UserArea.search_order_depth+1), 0
+        OR      A
+        JR      Z, .so_done             ; n = 0: empty search order, skip pop loop
+        ; Pop n wids; first pop = wid1 → slot[0]; last = widn → slot[n-1].
+        LD      B, A                    ; B = n (DJNZ counter)
+        PUSH    IY
+        POP     HL
+        LD      DE, UserArea.search_order
+        ADD     HL, DE                  ; HL = &slot[0]
+.so_loop:
+        POP     DE                      ; DE = wid (LIFO: wid1 first)
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+        INC     HL                      ; HL = &slot[i+1]
+        DJNZ    .so_loop
+.so_done:
+        POP     BC                      ; new TOS = cell below the consumed wids
+        LD      DE, (srch_saved_ip)     ; restore IP
+        NEXT
+
+; ANS Forth 1994 §9.3.5   THROW -49 raise site for SET-ORDER bounds checks.
+; Mirrors do_overflow_error / do_underflow_error idiom (Story 11.5.2).
+do_search_order_overflow:
+        LD      BC, THROW_SEARCH_ORDER_OVERFLOW
+        JP      w_THROW_cf.kernel_entry
+
+srch_saved_ip:  DW      0               ; shared IP slot for GET-ORDER / SET-ORDER
+
 ; === FORTH-WORDLIST struct (kernel-resident, canonical) ===
 ; The bucket array is populated at assembly time by the LUA `_hash_buckets`
 ; table (src/macros.asm:7-12), which DEFCODE / DEFWORD update via
