@@ -151,8 +151,8 @@ development_status:
   # current Story 12.6 row is the renumbered close-out gate, formerly
   # Story 12.7). See _bmad-output/implementation-artifacts/11.5-5-epic-12-redraft.md.
 
-  epic-11.5: in-progress
-  11.5-1-real-microbeast-hardware-crash-audit: review
+  epic-11.5: done
+  11.5-1-real-microbeast-hardware-crash-audit: done
   # Story 11.5.1 verdict 2026-04-27: (c) shared-fault for both
   # incidents (transcripts bestialitty-20260427-120911.bin +
   # bestialitty-20260427-155200.bin). .S confirmed deterministic
@@ -175,8 +175,8 @@ development_status:
   11.5-4-print-throw-description-table-walk-hardening: done
   11.5-5-epic-12-redraft: done
   11.5-6-throw-271-semantic-split: done
-  11.5-7-epic-11-5-close-out-gate: backlog
-  epic-11.5-retrospective: optional
+  11.5-7-epic-11-5-close-out-gate: done
+  epic-11.5-retrospective: done
 
   epic-12: backlog
   12-1-wordlist-struct-hash-parameterisation-and-forth-wordlist-bootstrap: backlog
