@@ -17,140 +17,138 @@ w_COUNT_cf:
         NEXT
 
 ; === FIND ( c-addr -- c-addr 0 | xt 1 | xt -1 ) ===
-; Search dictionary for word named by counted string at c-addr
+; Search FORTH-WORDLIST for the counted-string name at c-addr.
+; Wraps the shared helper `search_wid_for_name` (Story 12.2 AC #5 pick (a))
+; with FIND's counted-string input adapter and `c-addr 0` miss shape.
 w_FIND:
         DEFCODE "FIND", 0
 w_FIND_cf:
-        ; Save DE (IP) — we need registers as scratch
-        PUSH    DE              ; Stack: [saved_IP, ...]
-
-        ; BC = c-addr (TOS), save it for not-found case
-        PUSH    BC              ; Stack: [c-addr, saved_IP, ...]
-
-        ; Load name length and compute name address
-        LD      A, (BC)         ; A = count byte (length)
-        AND     F_LENMASK       ; Mask off any flags
-        LD      (.find_len), A  ; Store search length
-        INC     BC              ; BC = name address (c-addr+1)
-        LD      (.find_name), BC ; Store name address
-
-        ; Hash the name to get bucket index
+        PUSH    DE              ; save IP
+        PUSH    BC              ; save c-addr (for miss case)
+        ; HL = c-addr; load count byte; advance to name; mask length.
         LD      H, B
-        LD      L, C            ; HL = name address
+        LD      L, C
+        LD      A, (HL)         ; A = count_flags byte
+        AND     F_LENMASK       ; mask off any flags (FIND parses counted strings)
+        INC     HL              ; HL = name address
         LD      B, A            ; B = name length
-        CALL    hash_name       ; A = bucket index (0-63)
+        LD      DE, forth_wordlist
+        CALL    search_wid_for_name
+        ; Helper: HL = xt + A = count_flags + NC on hit; HL = 0 + CF on miss.
+        JR      C, .find_not_found
+        ; Hit — drop saved c-addr; restore IP; push xt; format flag from A.
+        POP     BC              ; discard saved c-addr
+        POP     DE              ; restore IP
+        PUSH    HL              ; xt second-on-stack
+        BIT     7, A            ; F_IMMEDIATE
+        JR      Z, .find_non_immediate
+        LD      BC, 1           ; +1 IMMEDIATE
+        NEXT
+.find_non_immediate:
+        LD      BC, 0xFFFF      ; -1 non-IMMEDIATE
+        NEXT
+.find_not_found:
+        ; Miss — restore c-addr (second-on-stack) and IP; flag = 0.
+        POP     BC              ; BC = original c-addr
+        POP     DE              ; restore IP
+        PUSH    BC              ; c-addr second-on-stack
+        LD      BC, 0           ; flag = 0
+        NEXT
 
-        ; Compute bucket head address: forth_wordlist bucket array + A*2
+; -----------------------------------------------
+; search_wid_for_name — Walk a single wordlist's bucket chain for a name match.
+; Story 12.2 — shared by FIND (passing forth_wordlist) and SEARCH-WORDLIST
+; (passing the user-supplied wid). Designed-up-front to also serve Story
+; 12.3's per-wid search-order walk (per `feedback_design_upfront.md`).
+;
+; Input:  HL = name address (raw characters, NOT counted)
+;         B  = name length (passed unchanged; chain compare rejects entries
+;              whose stored length-mask doesn't match B, so u > 31 yields
+;              a pure miss without crashing — AC #11(b) pick (ii))
+;         DE = wid (wordlist struct base address)
+; Output: On HIT:  HL = xt (code field address);
+;                  A  = count_flags byte of matched entry (caller checks F_IMMEDIATE);
+;                  CF clear (NC).
+;         On MISS: HL = 0;
+;                  A  = 0;
+;                  CF set.
+; Clobbers: AF, BC, DE, HL
+; Preserves: IX, IY, SP
+; -----------------------------------------------
+search_wid_for_name:
+        LD      A, B
+        LD      (sw_search_len), A      ; save length for chain-compare
+        LD      (sw_search_name), HL    ; save name addr for chain-compare
+        ; hash_name takes HL = name, B = length; returns A = bucket (0-63).
+        CALL    hash_name
+        ; Compute &bucket = wid + WORDLIST_BUCKET0 + 2*A.
         LD      L, A
-        LD      H, 0            ; HL = bucket index
-        ADD     HL, HL          ; HL = bucket index * 2
-        LD      BC, forth_wordlist + WORDLIST_BUCKET0
-        ADD     HL, BC          ; HL = &FORTH-WORDLIST.buckets[bucket]
-
-        ; Load bucket head pointer
+        LD      H, 0
+        ADD     HL, HL                  ; HL = 2 * bucket
+        INC     HL
+        INC     HL                      ; HL = WORDLIST_BUCKET0 + 2 * bucket
+        ADD     HL, DE                  ; HL = &wid.buckets[bucket]
+        ; Load chain head pointer.
         LD      A, (HL)
         INC     HL
         LD      H, (HL)
-        LD      L, A            ; HL = first entry address (or 0)
+        LD      L, A                    ; HL = first entry (or 0)
 
-        ; === Chain traversal loop ===
-        ; Base stack: [c-addr, saved_IP, ...]
-.find_chain:
-        ; Check if end of chain (HL == 0)
+.sw_chain:
         LD      A, H
         OR      L
-        JR      Z, .find_not_found
-
-        ; HL points to dict entry: [hash_link 2B][count_flags 1B][name nB]
-        ; Save entry address for following the chain
-        PUSH    HL              ; Stack: [entry, c-addr, saved_IP, ...]
-
-        ; Skip hash_link (2 bytes) to get count_flags
+        JR      Z, .sw_miss             ; end of chain
+        PUSH    HL                      ; save entry-start
         INC     HL
-        INC     HL              ; HL = &count_flags
-        LD      A, (HL)         ; A = count_flags byte
-        LD      (.find_cf_byte), A ; Save for later IMMEDIATE check
-
-        ; Check SMUDGE flag — skip if set
-        BIT     6, A            ; Test F_SMUDGE bit
-        JR      NZ, .find_skip  ; Smudged entry, skip it
-
-        ; Compare lengths
-        AND     F_LENMASK       ; A = entry name length
-        LD      C, A            ; C = entry name length
-        LD      A, (.find_len)  ; A = search name length
-        CP      C               ; Compare lengths
-        JR      NZ, .find_skip  ; Different lengths, skip
-
-        ; Lengths match — compare names case-insensitively
-        INC     HL              ; HL = entry name start
-        LD      DE, (.find_name) ; DE = search name start
-        LD      B, C            ; B = name length (for loop counter)
-
-.find_compare:
-        LD      A, (HL)         ; Load entry char
-        UPPER                   ; Convert to uppercase
-        LD      C, A            ; C = uppercase entry char
-
-        LD      A, (DE)         ; Load search char
-        UPPER                   ; Convert to uppercase
-
-        ; Compare
+        INC     HL                      ; HL = &count_flags
+        LD      A, (HL)
+        LD      (sw_match_cf), A        ; remember count_flags for caller
+        BIT     6, A                    ; F_SMUDGE
+        JR      NZ, .sw_skip
+        AND     F_LENMASK
+        LD      C, A                    ; C = entry length
+        LD      A, (sw_search_len)
         CP      C
-        JR      NZ, .find_skip  ; Mismatch, skip entry
-
-        INC     HL              ; Next entry char
-        INC     DE              ; Next search char
-        DJNZ    .find_compare   ; Loop for all chars
-
-        ; === Match found ===
-        ; HL now points past the name = code field address (xt)
-        ; Stack: [entry, c-addr, saved_IP, ...]
-
-        POP     AF              ; Discard saved entry start
-        POP     AF              ; Discard original c-addr
-        POP     DE              ; Restore IP
-        ; Stack: [...]
-
-        PUSH    HL              ; Push xt as second-on-stack
-
-        ; Check IMMEDIATE flag to determine return flag
-        LD      A, (.find_cf_byte)
-        BIT     7, A            ; Test F_IMMEDIATE bit
-        JR      Z, .find_non_immediate
-
-        ; IMMEDIATE word: flag = +1
-        LD      BC, 1
-        NEXT
-
-.find_non_immediate:
-        ; Non-immediate word: flag = -1 (0xFFFF)
-        LD      BC, 0xFFFF
-        NEXT
-
-.find_not_found:
-        ; Stack: [c-addr, saved_IP, ...]
-        ; Return original c-addr and 0
-        POP     BC              ; BC = original c-addr
-        POP     DE              ; DE = saved IP
-        PUSH    BC              ; Push c-addr as second-on-stack
-        LD      BC, 0           ; BC = 0 (TOS = not-found flag)
-        NEXT
-
-.find_skip:
-        ; Follow hash_link to next entry in chain
-        ; Stack: [entry, c-addr, saved_IP, ...]
-        POP     HL              ; HL = current entry start
-        LD      A, (HL)         ; Low byte of hash_link
+        JR      NZ, .sw_skip
+        ; Lengths match — compare names case-insensitively.
+        INC     HL                      ; HL = entry name start
+        LD      DE, (sw_search_name)    ; DE = search name start
+        LD      B, C                    ; B = length
+.sw_compare:
+        LD      A, (HL)
+        UPPER
+        LD      C, A
+        LD      A, (DE)
+        UPPER
+        CP      C
+        JR      NZ, .sw_skip
         INC     HL
-        LD      H, (HL)         ; High byte of hash_link
-        LD      L, A            ; HL = next entry (or 0)
-        JR      .find_chain
+        INC     DE
+        DJNZ    .sw_compare
+        ; Match — HL points past the name = code field address (xt).
+        POP     DE                      ; discard saved entry-start (DE clobbered next)
+        LD      A, (sw_match_cf)        ; A = count_flags
+        OR      A                       ; clear CF (NC = hit)
+        RET
 
-; === Scratch storage for FIND ===
-.find_len:      DB      0       ; Search name length
-.find_name:     DW      0       ; Search name address
-.find_cf_byte:  DB      0       ; Count/flags byte of current entry
+.sw_skip:
+        POP     HL                      ; restore entry-start
+        LD      A, (HL)
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                    ; HL = next entry (or 0)
+        JR      .sw_chain
+
+.sw_miss:
+        XOR     A                       ; A = 0
+        LD      H, A
+        LD      L, A                    ; HL = 0
+        SCF                             ; CF set = miss
+        RET
+
+sw_search_len:  DB      0               ; saved name length
+sw_search_name: DW      0               ; saved name address
+sw_match_cf:    DB      0               ; count_flags of matched entry
 
 ; -----------------------------------------------
 ; WORDS ( -- )

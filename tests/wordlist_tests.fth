@@ -69,3 +69,47 @@ WORDS                                   \ Makefile test 804 sequence (line 1 of 
 \ walks FORTH-WORDLIST's bucket array and returns ( xt -1 ) for a
 \ non-IMMEDIATE match.
 BL WORD MARKER FIND SWAP DROP .         \ Makefile test 806 asserts: output contains "-1 "
+
+\ ============================================================
+\ Section 6 — Story 12.2 — WORDLIST + SEARCH-WORDLIST
+\ ============================================================
+
+\ T-WL1 — WORDLIST advances HERE by exactly 130 bytes.
+\
+\ NOTE: Story 12.2 AC #8 sketched `HERE WORDLIST OVER OVER SWAP - .`
+\ but that prints 0 — wid equals the pre-WORDLIST HERE (the struct's
+\ base address per E12-D3 / AC #1), so the difference is zero. Use
+\ the post-call HERE instead to prove the +130 advance. (In-pass-fix
+\ per Task 6; AC #11(e) HERE-advance probe.)
+HERE WORDLIST DROP HERE SWAP - .        \ Makefile test 807 asserts: output contains "130 "
+
+\ T-WL2 — fresh wid's next-link cell and first bucket are both zero.
+\ Probes WORDLIST's full zero-init via the two boundary cells of the
+\ struct: WORDLIST_NEXT (offset 0) and WORDLIST_BUCKET0 (offset 2).
+WORDLIST DUP @ . DUP 2 + @ . DROP       \ Makefile test 808 asserts: output contains "0 0 "
+
+\ T-SW1 — SEARCH-WORDLIST against an empty wordlist returns single 0.
+\ Verifies the (depth 3 -> depth 1) stack-shrink on miss per AC #11(a).
+\ DEPTH after the `.` (which prints the 0 flag) must be 0 — proves no
+\ residual c-addr/u was left on the stack.
+WORDLIST CONSTANT WL1   S" DUP" WL1 SEARCH-WORDLIST .   DEPTH .
+\ Makefile test 809 asserts: output contains "0 0 " (the miss flag,
+\ then DEPTH=0 confirming clean shrink).
+
+\ T-SW2 — length > F_LENMASK (33 chars). Per AC #11(b) pick (ii) the
+\ length is passed unchanged; the chain compare rejects every entry
+\ whose stored length-mask doesn't match → pure miss; no crash.
+WORDLIST   S" XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" ROT SEARCH-WORDLIST .
+\ Makefile test 810 asserts: output contains "0 ".
+
+\ T-SW3 — zero-length name. hash_name returns bucket 0; bucket walk
+\ on an empty wordlist sees a 0 head and returns miss immediately.
+\ Per AC #11(c).
+WORDLIST   S" " ROT SEARCH-WORDLIST .   \ Makefile test 811 asserts: output contains "0 "
+
+\ T-SW4 — pre-Story-12.1 regression sentinel re-asserted. FIND walks
+\ the same shared helper (search_wid_for_name, post-Story-12.2) so a
+\ trailing FIND probe re-confirms the helper-extract refactor is
+\ regression-clean — `BL WORD DUP FIND SWAP DROP .` should still
+\ print -1 for the kernel DUP word.
+BL WORD DUP FIND SWAP DROP .            \ Makefile test 812 asserts: output contains "-1 "

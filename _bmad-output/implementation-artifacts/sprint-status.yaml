@@ -180,7 +180,7 @@ development_status:
 
   epic-12: in-progress
   12-1-wordlist-struct-hash-parameterisation-and-forth-wordlist-bootstrap: done
-  12-2-wordlist-and-search-wordlist: backlog
+  12-2-wordlist-and-search-wordlist: done
   12-3-search-order-infrastructure: backlog
   12-4-compilation-wordlist-control: backlog
   12-5-only: backlog

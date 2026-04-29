@@ -7074,6 +7074,72 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# Story 12.2 — WORDLIST + SEARCH-WORDLIST. Tests 807..812 cover
+	@# WORDLIST's structural output (HERE +130, all-zero init) and
+	@# SEARCH-WORDLIST's miss path (empty wid; u > F_LENMASK; zero-length
+	@# name; depth 3->1 shrink). Hit-path tests are deferred to Stories
+	@# 12.3 (FORTH-WORDLIST as a Forth word) and 12.4 (SET-CURRENT). Source
+	@# spec: tests/wordlist_tests.fth.
+	@# T-WL1 — WORDLIST advances HERE by exactly 130. (The story-spec
+	@# sketch `HERE WORDLIST OVER OVER SWAP - .` prints 0 because wid =
+	@# pre-WORDLIST HERE per E12-D3; using post-WORDLIST HERE gives 130.)
+	@OUTPUT=$$(printf 'HERE WORDLIST DROP HERE SWAP - .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '130 '; then \
+		echo "PASS: REPL test 807 — Story 12.2: WORDLIST advances HERE by exactly 130 (T-WL1)"; \
+	else \
+		echo "FAIL: REPL test 807 — expected '130 ' from HERE WORDLIST DROP HERE SWAP -"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-WL2 — fresh wid's next-link cell and first bucket are zero.
+	@OUTPUT=$$(printf 'WORDLIST DUP @ . DUP 2 + @ . DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 0 '; then \
+		echo "PASS: REPL test 808 — Story 12.2: fresh WORDLIST is zero-initialised (T-WL2)"; \
+	else \
+		echo "FAIL: REPL test 808 — expected '0 0 ' from WORDLIST next-link + first bucket fetch"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SW1 — SEARCH-WORDLIST on empty wid returns single 0; DEPTH = 0.
+	@# Proves the depth-3 -> depth-1 stack-shrink on miss (AC #11(a)).
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   S" DUP" WL1 SEARCH-WORDLIST .   DEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0 0 '; then \
+		echo "PASS: REPL test 809 — Story 12.2: SEARCH-WORDLIST miss returns single 0; DEPTH=0 (T-SW1)"; \
+	else \
+		echo "FAIL: REPL test 809 — expected '0 0 ' (miss flag + DEPTH=0) from SEARCH-WORDLIST on empty wid"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SW2 — length > F_LENMASK (33 chars). Per AC #11(b) pick (ii)
+	@# length is passed unchanged; chain compare rejects → pure miss.
+	@OUTPUT=$$(printf 'WORDLIST   S" XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" ROT SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 810 — Story 12.2: SEARCH-WORDLIST u>31 returns 0 cleanly (T-SW2)"; \
+	else \
+		echo "FAIL: REPL test 810 — expected '0  ok' (clean miss + REPL prompt) for SEARCH-WORDLIST with 33-char name"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SW3 — zero-length name. hash_name -> bucket 0; empty bucket -> miss.
+	@OUTPUT=$$(printf 'WORDLIST   S" " ROT SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 811 — Story 12.2: SEARCH-WORDLIST u=0 returns 0 cleanly (T-SW3)"; \
+	else \
+		echo "FAIL: REPL test 811 — expected '0  ok' (clean miss + REPL prompt) for SEARCH-WORDLIST with zero-length name"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-SW4 — FIND helper-extract regression sentinel. After Story 12.2
+	@# refactors FIND to use the shared `search_wid_for_name` helper
+	@# (AC #5 pick (a)), FIND DUP must still return ( xt -1 ).
+	@OUTPUT=$$(printf 'BL WORD DUP FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
+		echo "PASS: REPL test 812 — Story 12.2: FIND helper-extract regression sentinel (T-SW4)"; \
+	else \
+		echo "FAIL: REPL test 812 — expected '-1 ' from FIND DUP via shared helper"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*
