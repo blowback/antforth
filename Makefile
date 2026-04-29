@@ -7403,6 +7403,70 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# === Story 12.5 — ONLY (Search-Order Extension) (tests 838-843) ===
+	@# T-ONLY-FROM-DEFAULT (test 838) — ONLY from boot state (minimum already).
+	@OUTPUT=$$(printf 'ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 838 — Story 12.5: ONLY from boot state yields minimum search order (T-ONLY-FROM-DEFAULT)"; \
+	else \
+		echo "FAIL: REPL test 838 — expected '-1  ok' from ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-ONLY-FROM-5 (test 839) — ONLY from a 5-wordlist state. Push order
+	@# FORTH-WORDLIST WLD WLC WLB WLA 5 SET-ORDER puts WLA at slot 0
+	@# (SET-ORDER pops first → slot 0 per src/wordlists.asm:226-238). After
+	@# ONLY, slot 0 = FORTH-WORDLIST.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLA   WORDLIST CONSTANT WLB   WORDLIST CONSTANT WLC   WORDLIST CONSTANT WLD' 'FORTH-WORDLIST WLD WLC WLB WLA 5 SET-ORDER' 'ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 839 — Story 12.5: ONLY shrinks 5-wordlist order to minimum (T-ONLY-FROM-5)"; \
+	else \
+		echo "FAIL: REPL test 839 — expected '-1  ok' from ONLY after 5-wordlist SET-ORDER"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-ONLY-FROM-0 (test 840) — ONLY recovers from depth-0 empty state.
+	@# Wrap the depth-0 dance in a colon definition (mirroring test 836's
+	@# T-DEF-DEPTH0 pattern): depth-0 search order is unparseable at the
+	@# REPL because ONLY itself becomes unfindable. Compiling the body
+	@# pre-resolves ONLY's xt into the thread.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T840 0 SET-ORDER ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND ;' 'T840 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 840 — Story 12.5: ONLY recovers from depth-0 empty search order (T-ONLY-FROM-0)"; \
+	else \
+		echo "FAIL: REPL test 840 — expected '-1  ok' from : T840 ... 0 SET-ORDER ONLY ... ; T840 ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-ONLY-IDEMPOTENT (test 841) — ONLY ONLY = ONLY. Self-contained: defines
+	@# its own WLI for order-independence from test 839.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLI   FORTH-WORDLIST WLI 2 SET-ORDER' 'ONLY ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 841 — Story 12.5: ONLY ONLY back-to-back is idempotent (T-ONLY-IDEMPOTENT)"; \
+	else \
+		echo "FAIL: REPL test 841 — expected '-1  ok' from ONLY ONLY round-trip"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-ONLY-PRESERVES-CURRENT (test 842) — ONLY does NOT touch current_wordlist.
+	@# Resets compilation wordlist to FORTH-WORDLIST for downstream tests.
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WLO   WLO SET-CURRENT   ONLY   GET-CURRENT WLO = .   FORTH-WORDLIST SET-CURRENT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 842 — Story 12.5: ONLY preserves current_wordlist (T-ONLY-PRESERVES-CURRENT)"; \
+	else \
+		echo "FAIL: REPL test 842 — expected '-1  ok' (current still WLO after ONLY)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-ONLY-TOS-PRESERVES (test 843) — ONLY's ( -- ) preserves BC bit-exactly.
+	@OUTPUT=$$(printf '42 ONLY .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '42  ok'; then \
+		echo "PASS: REPL test 843 — Story 12.5: ONLY preserves TOS (BC) bit-exactly (T-ONLY-TOS-PRESERVES)"; \
+	else \
+		echo "FAIL: REPL test 843 — expected '42  ok' from 42 ONLY ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

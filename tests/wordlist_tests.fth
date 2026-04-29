@@ -301,3 +301,52 @@ MX
 -1 SET-ORDER   FORTH-WORDLIST SET-CURRENT
 FORTH-WORDLIST 12 + @ = .
 \ Makefile test 837 asserts: output contains "-1  ok"
+
+\ ============================================================
+\ Section 9 — Story 12.5 — ONLY (Search-Order Extension)
+\ ============================================================
+\ Coverage of ONLY (ANS §16.6.2.1965). ONLY sets the search order to
+\ the implementation-defined minimum (slot 0 = FORTH-WORDLIST, depth=1)
+\ — matching the SET-ORDER -1 path. Tests 838..843 (6 tests).
+
+\ T-ONLY-FROM-DEFAULT (test 838) — ONLY from boot state. The boot state
+\ already IS the minimum search order, so ONLY is idempotent on it.
+ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .   \ Makefile test 838 asserts: output contains "-1  ok"
+
+\ T-ONLY-FROM-5 (test 839) — ONLY from a 5-wordlist state. Push
+\ FORTH-WORDLIST WLD WLC WLB WLA so SET-ORDER pops WLA → slot 0 (foreign);
+\ then ONLY shrinks depth to 1 with FORTH-WORDLIST at slot 0.
+WORDLIST CONSTANT WLA   WORDLIST CONSTANT WLB   WORDLIST CONSTANT WLC   WORDLIST CONSTANT WLD
+FORTH-WORDLIST WLD WLC WLB WLA 5 SET-ORDER
+ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .   \ Makefile test 839 asserts: output contains "-1  ok"
+
+\ T-ONLY-FROM-0 (test 840) — ONLY from a degenerate empty search order.
+\ 0 SET-ORDER zeroes depth without zeroing slot 0 (per Story 12.4
+\ DEFINITIONS depth=0 cache analysis); ONLY restores depth=1 + slot 0.
+\ Wrap the depth-0 dance in a colon definition (mirroring test 836's
+\ T-DEF-DEPTH0 fix): a depth-0 search order is unparseable at the REPL
+\ because ONLY itself becomes unfindable via FIND. Compiling the body
+\ resolves ONLY at compile time (xt cached in the thread) so execute-
+\ time depth-0 doesn't matter.
+: T840 0 SET-ORDER ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND ;
+T840 .                                   \ Makefile test 840 asserts: output contains "-1  ok"
+
+\ T-ONLY-IDEMPOTENT (test 841) — ONLY ONLY = ONLY. Build a non-trivial
+\ search order [WLI, FORTH-WORDLIST] (slot 0 = WLI, foreign); call
+\ ONLY twice; assert post-state is the canonical minimum.
+WORDLIST CONSTANT WLI   FORTH-WORDLIST WLI 2 SET-ORDER
+ONLY ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .   \ Makefile test 841 asserts: output contains "-1  ok"
+
+\ T-ONLY-PRESERVES-CURRENT (test 842) — ONLY does NOT touch
+\ current_wordlist. WLO SET-CURRENT, ONLY, GET-CURRENT → still WLO.
+\ Reset compilation wordlist to FORTH-WORDLIST for downstream tests.
+WORDLIST CONSTANT WLO   WLO SET-CURRENT   ONLY   GET-CURRENT WLO = .   FORTH-WORDLIST SET-CURRENT
+\ Makefile test 842 asserts: output contains "-1  ok"
+
+\ T-ONLY-TOS-PRESERVES (test 843) — ONLY's stack effect ( -- ) means BC
+\ (TOS) is preserved bit-exactly. Push 42, call ONLY, print 42. The
+\ Makefile assertion anchors on '42  ok' (two spaces — `.`'s trailing
+\ space + REPL's leading-space `ok`) so the iz-cpm input echo (which
+\ contains "42 ONLY .") cannot satisfy the pattern; only `.` printing
+\ 42 followed by the REPL prompt produces that substring.
+42 ONLY .                                \ Makefile test 843 asserts: output contains "42  ok"

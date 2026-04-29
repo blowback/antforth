@@ -296,6 +296,33 @@ w_DEFINITIONS_cf:
         LD      (IY+UserArea.current_wordlist+1), A
         NEXT
 
+; ANS Forth 1994 §16.6.2.1965   ONLY    ( -- )
+;   Set the search order to the implementation-defined minimum search
+;   order. For antforth this is slot 0 = forth_wordlist, depth = 1 —
+;   matching the SET-ORDER -1 path at src/wordlists.asm:192-200 (which
+;   itself implements the §16.6.1.2195 -1 special case).
+;
+;   Stack effect ( -- ) — BC (TOS) preserved bit-exactly. No underflow
+;   or overflow guard required (no stack-cell math).
+;
+;   Note: slots 1..15 are NOT touched — they retain whatever they were
+;   last set to. This matches the SET-ORDER -1 behaviour exactly. The
+;   cold-start init at src/antforth.asm zero-fills slots 1..15 once at
+;   boot; subsequent SET-ORDER / ONLY calls don't re-zero them.
+;
+;   Note: (IY+UserArea.current_wordlist) is NOT touched — ONLY operates
+;   on the search order, not the compilation wordlist. Per ANS §16.6.2
+;   the compilation wordlist is independent of the search order.
+w_ONLY:
+        DEFCODE "ONLY", 0
+w_ONLY_cf:
+        LD      HL, forth_wordlist
+        LD      (IY+UserArea.search_order),   L
+        LD      (IY+UserArea.search_order+1), H
+        LD      (IY+UserArea.search_order_depth),   1
+        LD      (IY+UserArea.search_order_depth+1), 0
+        NEXT
+
 srch_saved_ip:  DW      0               ; shared IP slot for GET-ORDER / SET-ORDER
 
 ; === FORTH-WORDLIST struct (kernel-resident, canonical) ===
