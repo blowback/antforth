@@ -230,10 +230,11 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
 .try_pn_drop:
         DW      w_DROP_cf               ; drop the duplicated false
 .try_prefix_num:                         ; Epic 9 — NUMBER-PREFIX?
-        ; ( c-addr -- n 0xFFFF | d.hi d.lo 2 | c-addr 0 )
+        ; ( c-addr -- n 0xFFFF | d.lo d.hi 2 | c-addr 0 )
         ; Story 13.0: 3-shape return: single (flag=0xFFFF), double
         ; (flag=2), or fail (flag=0). DUP+QBRANCH preserves flag for
-        ; .got_value dispatch.
+        ; .got_value dispatch. Story 13.0.1: double-shape now d.lo
+        ; below d.hi (high cell on TOS per §3.1.4.1).
         DW      w_NUMBER_PREFIX_Q_cf
         DW      w_DUP_cf
         DW      w_QBRANCH_cf
@@ -243,7 +244,7 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
 .try_rn_drop:
         DW      w_DROP_cf
 .try_real_number:
-        DW      w_NUMBER_Q_cf           ; ( c-addr -- n 0xFFFF | d.hi d.lo 2 | c-addr 0 )
+        DW      w_NUMBER_Q_cf           ; ( c-addr -- n 0xFFFF | d.lo d.hi 2 | c-addr 0 )
         DW      w_DUP_cf
         DW      w_QBRANCH_cf
         DW      .not_number_drop - $
@@ -266,12 +267,17 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_EQUALS_cf             ; ( ... flag eq2? )
         DW      w_QBRANCH_cf
         DW      .compile_single - $     ; flag != 2 → single
-        ; flag == 2: emit (DLIT) + low + high. Stack: ( d.hi d.lo flag )
-        DW      w_DROP_cf               ; drop flag → ( d.hi d.lo )
-        DW      w_LIT_cf, w_D_LIT_cf    ; ( d.hi d.lo (DLIT)-xt )
+        ; flag == 2: emit (DLIT) + high + low. Stack: ( d.lo d.hi flag )
+        ; per ANS Forth 1994 §3.1.4.1 (post-Story-13.0.1 hi-on-TOS).
+        ; The 3 COMMA calls are unchanged from pre-flip — only the cell
+        ; labels swapped; BC walks d.hi then d.lo (was d.lo then d.hi).
+        ; Inline data layout: [w_D_LIT_cf addr][d.hi lo,hi][d.lo lo,hi]
+        ; — high cell at lower address per §6.1.0350 (matches 2!).
+        DW      w_DROP_cf               ; drop flag → ( d.lo d.hi )
+        DW      w_LIT_cf, w_D_LIT_cf    ; ( d.lo d.hi (DLIT)-xt )
         DW      w_COMMA_cf              ; emit (DLIT) xt
+        DW      w_COMMA_cf              ; emit d.hi (high cell at lower address)
         DW      w_COMMA_cf              ; emit d.lo
-        DW      w_COMMA_cf              ; emit d.hi
         DW      w_BRANCH_cf
         DW      .interp_loop - $
 .compile_single:

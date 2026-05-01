@@ -76,27 +76,32 @@ w_PIC_HASH:
 w_PIC_HASH_cf:
         CALL    check_underflow_2
         LD      (pictured_ip_stash), DE ; stash IP — DE needed as scratch
-        POP     HL                      ; HL = ud-hi; BC already = ud-lo
+        ; Story 13.0.1: under §3.1.4.1 hi-on-TOS, BC = ud-hi and HL (popped)
+        ; = ud-lo. The 40-bit shift register is (A : BC : HL) where HL holds
+        ; the LOW 16 bits and BC the HIGH 16 bits — flipped vs pre-flip
+        ; (where BC was low). Shift HL first (low), propagate carry into
+        ; BC (high), then A (overflow). INC L sets the next quotient bit.
+        POP     HL                      ; HL = ud-lo; BC already = ud-hi
         XOR     A                       ; A = 8-bit remainder accumulator
         LD      D, 32                   ; 32-iteration loop counter
 .pic_hash_loop:
-        ; Shift (A : HL : BC) left by 1 — 40-bit shift
-        SLA     C
-        RL      B                       ; BC <<= 1; CF = old bit 15
-        RL      L
-        RL      H                       ; HL <<= 1 with CF; CF = old bit 31
+        ; Shift (A : BC : HL) left by 1 — 40-bit shift, low-bits-first
+        SLA     L
+        RL      H                       ; HL <<= 1; CF = old bit 15 of low cell
+        RL      C
+        RL      B                       ; BC <<= 1 with CF; CF = old bit 31 of high cell
         RLA                             ; A <<= 1 with CF; CF = old bit 39
         JR      C, .pic_hash_force_sub  ; 9-bit remainder overflow → unconditional sub
         CP      (IY+UserArea.base)
         JR      C, .pic_hash_no_sub
 .pic_hash_force_sub:
         SUB     (IY+UserArea.base)
-        INC     C                       ; set bit 0 of quotient (SLA left it clear)
+        INC     L                       ; set bit 0 of quotient (in low cell = HL)
 .pic_hash_no_sub:
         DEC     D
         JR      NZ, .pic_hash_loop
-        ; Loop done: BC = ud2-lo, HL = ud2-hi, A = remainder (0..BASE-1)
-        PUSH    HL                      ; push ud2-hi (second on stack)
+        ; Loop done: HL = ud2-lo, BC = ud2-hi, A = remainder (0..BASE-1)
+        PUSH    HL                      ; push ud2-lo (second on stack)
         CALL    digit_to_char           ; A = ASCII digit ('0'..'9' or 'A'..)
         CALL    hold_common             ; decrement HLD, store A
         LD      DE, (pictured_ip_stash) ; restore IP
@@ -134,7 +139,7 @@ w_PIC_GREATER_HASH:
 w_PIC_GREATER_HASH_cf:
         CALL    check_underflow_2
         LD      (pictured_ip_stash), DE ; stash IP; DE free for compute
-        POP     HL                      ; discard xd-hi (BC held xd-lo, about to be overwritten)
+        POP     HL                      ; discard xd-lo (BC held xd-hi, about to be overwritten — post-Story-13.0.1 §3.1.4.1)
         LD      L, (IY+UserArea.hld)
         LD      H, (IY+UserArea.hld+1)  ; HL = c-addr (= HLD)
         PUSH    HL                      ; push c-addr (second on stack)

@@ -416,10 +416,13 @@ w_TO_NUMBER_cf:
         JR      .tonum_loop
 
 .tonum_done:
-        ; Push ud2-high, ud2-low, c-addr2 back in the E10-D1 order.
-        LD      HL, (.tonum_ud_hi)
-        PUSH    HL
+        ; Push ud2-low, ud2-high, c-addr2 — high cell ends up second-on-
+        ; stack-just-under-c-addr2 per ANS Forth 1994 §3.1.4.1 (post-
+        ; Story-13.0.1 hi-on-TOS). After EXX + BC=u2: stack picture is
+        ; ( ud2-lo ud2-hi c-addr2 u2 ) with u2=BC=TOS.
         LD      HL, (.tonum_ud_lo)
+        PUSH    HL
+        LD      HL, (.tonum_ud_hi)
         PUSH    HL
         LD      HL, (.tonum_ptr)
         PUSH    HL
@@ -510,7 +513,9 @@ w_NUMBER_Q_cf:
         NEXT
 
 .numq_double:
-        ; Double-cell: apply 32-bit sign, write DPL, push high+low, flag=2.
+        ; Double-cell: apply 32-bit sign, write DPL, push low+high, flag=2.
+        ; Story 13.0.1: high cell on TOS per ANS Forth 1994 §3.1.4.1
+        ; (post-flip from pre-13.0.1 low-on-TOS).
         LD      A, (.numq_negate)
         OR      A
         CALL    NZ, dlit_negate
@@ -518,10 +523,10 @@ w_NUMBER_Q_cf:
         LD      (IY+UserArea.dpl),   A
         XOR     A
         LD      (IY+UserArea.dpl+1), A
-        LD      HL, (dlit_acc_hi)
-        PUSH    HL              ; second-on-stack (high)
         LD      HL, (dlit_acc_lo)
-        PUSH    HL              ; would-be-TOS (low)
+        PUSH    HL              ; second-on-stack (low)
+        LD      HL, (dlit_acc_hi)
+        PUSH    HL              ; would-be-TOS (high)
         EXX                     ; restore IP to main DE
         LD      BC, 2           ; flag = 2 (double)
         NEXT

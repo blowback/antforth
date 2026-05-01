@@ -3,9 +3,19 @@
 **Date:** 2026-04-24 (Story 10.9 refresh — §6.1 Core gap closed)
 **Last full audit:** 2026-04-13 (Story 5.3)
 **Story 13.0 back-fill:** 2026-05-01 — §3.4.1.3 dot-marker recogniser (parser-level rule, not a word; missed by Epic 10's word-counted survey).
+**Story 13.0.1 back-fill:** 2026-05-01 — §3.1.4.1 double-cell stack-layout (high-on-TOS) flipped from inverted convention. Two §-level structural-rule gaps closed by back-fills inside Epic 13 ahead of v2.0 (§3.4.1.3 + §3.1.4.1); both were structurally invisible to Epic 10's word-counted survey. A full §-by-§ pre-2.0 re-audit pass remains a wishlist item.
 **System:** antforth (Z80 Forth for CP/M)
-**Reference:** DPANS94 (ANSI X3.215-1994), §3.4.1.3 (Conversion of digit strings), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
+**Reference:** DPANS94 (ANSI X3.215-1994), §3.1.4.1 (Double-cell integers), §3.4.1.3 (Conversion of digit strings), §6.1 (Core), §6.1.0310 (`2!`), §6.1.0350 (`2@`), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
 **Source:** `src/*.asm`
+
+## §3.1.4.1 — Double-cell integers (stack-layout rule)
+
+| Rule | Status | Stories | Notes |
+|---|---|---|---|
+| **High cell on top of stack, low cell below** | **Implemented (post-flip)** | **13.0.1** | "On the stack, the cell containing the most significant part of a double-cell integer shall be above the cell containing the least significant part" |
+| **High cell at lower address (`2@`/`2!` per §6.1.0310 + §6.1.0350)** | **Implemented (post-flip)** | **13.0.1** | x2 (= MSC = high cell) stored at a-addr; low cell at a-addr+2; cell-pair big-endian, each cell internally little-endian |
+
+Pre-Story-13.0.1 the convention was inverted (low-on-TOS / low-at-low-address); Epic 10's word-counted survey missed §3.1.4.1 (a stack-layout rule, not a per-word rule). Closed 2026-05-01. The full §-by-§ re-audit is recorded as a post-2.0 carry-forward opportunity (see also Story 13.0 Task 10's identical note).
 
 ## §3.4.1.3 — Conversion of digit strings (parser-level rule)
 

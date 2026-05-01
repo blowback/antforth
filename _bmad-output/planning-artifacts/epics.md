@@ -455,9 +455,9 @@ So that I have a working stack foundation for all subsequent double-precision wo
 
 **Acceptance Criteria:**
 
-**Given** E10-D1's byte-order decision (low cell on TOS, high cell below)
+**Given** E10-D1's byte-order decision (low cell on TOS, high cell below — *Superseded 2026-05-01 by Story 13.0.1; the live convention is high-on-TOS / high-at-low-address per ANS Forth 1994 §3.1.4.1 + §6.1.0350. See `architecture.md:248` E10-D1 decision history. The original wording is preserved here for the Story 10.2 historical AC.*)
 **When** `2@` fetches a 32-bit value from an address
-**Then** the low cell is on top of stack and the high cell is second on stack — ANS Forth 1994 §6.1.0350 behaviour.
+**Then** the low cell is on top of stack and the high cell is second on stack — ANS Forth 1994 §6.1.0350 behaviour. *(Superseded by Story 13.0.1: post-flip the high cell is on TOS, low cell second-on-stack.)*
 
 **Given** `2DUP`, `2DROP`, `2SWAP`, `2OVER`
 **When** executed against a two-cell pair
@@ -1385,6 +1385,48 @@ So that I can enter double-precision values directly at the REPL and in source �
 **Given** Story 13.0 is the back-fill predecessor to Story 13.1
 **When** sprint sequencing runs
 **Then** 13.0 lands and goes to `done` *before* 13.1 dev-pass starts; 13.1 stays `ready-for-dev` (already authored) and inherits the new literal recogniser as test infrastructure for any future double-cell file-position math.
+
+### Story 13.0.1: Flip double-cell stack convention to ANS-compliant high-on-TOS — ANS §3.1.4.1 (Epic 10 back-fill)
+
+As a Forth user,
+I want a double-cell value on the stack to put the **most-significant (high) cell on TOS** with the least-significant (low) cell below — and the in-memory `2!`/`2@`/`(DLIT)` layout to put the **high cell at the lower address** — exactly as ANS Forth 1994 §3.1.4.1 and §6.1.0350 mandate,
+So that double-cell idioms portable from any other ANS-compliant Forth work as written, the v2.0 release tag can credibly claim §-level Core compliance, and Story 13.1's file-position double-cell math (per §11.3.5) is built atop the correct convention from day one.
+
+**Context (back-fill rationale):** Epic 10's "100% Core" claim was assembled from a word-coverage survey. §3.1.4.1 ("Double-cell integers") is a *stack-layout rule* that applies uniformly across ~25 Core+CoreExt+Double-Number words; it is not itself a word and so was invisible to the survey. Architecture decision E10-D1 (`architecture.md:248-252`) committed the *inverted* convention while citing the standard. Story 13.0's §3.4.1.3 retro caught a sibling gap (parser-level rule); Story 13.0.1 closes the stack-layout sibling. Symptom that exposed it: `1024. .S → <2> 0 1024  ok` (low on TOS) where the standard requires `<2> 1024 0  ok` (high on TOS). Per project lead 2026-05-01: not a verdict-only audit — the deviation is documented, the fix is mandatory, and the work lands inside this single story before Story 13.1's file-access dev-pass starts.
+
+**Acceptance Criteria:**
+
+**Given** ANS Forth 1994 §3.1.4.1 ("Double-cell integers") and §6.1.0350 (`2@ ( a-addr -- x1 x2 )`)
+**When** any double-cell value lives on the parameter stack
+**Then** the high cell is on TOS and the low cell is second-on-stack; in memory at `a-addr`, the high cell is at `a-addr` and the low cell is at `a-addr+2` (each cell little-endian within itself per Z80 native; the cell-pair is "big-endian"). `1024. .S → <2> 1024 0  ok`.
+
+**Given** every double-cell-touching word in the kernel
+**When** Story 13.0.1 lands
+**Then** each word's stack-effect-comment AND the runtime push/pop order are flipped to the new convention. Words to touch: 24 in `src/double.asm` (D+, D-, D*, DNEGATE, DABS, D=, D<, DMAX, DMIN, M+, M*, UM*, UM/MOD, SM/REM, FM/MOD, S>D, D>S, 2DUP, 2DROP, 2SWAP, 2OVER, 2@, 2!, (DLIT)); 2 in `src/formatting.asm` (D., D.R); 4 in `src/pictured.asm` (<#, #, #S, #>); plus `pref_finish_value` in `src/number_prefixes.asm`, `.numq_double` in `src/strings.asm`, and `.got_value`'s double-emit in `src/outer_interpreter.asm`.
+
+**Given** the architecture-decision register E10-D1 (`architecture.md:248-252`) and the project memory `project_tos_in_register.md`
+**When** Story 13.0.1 lands
+**Then** both load-bearing knowledge artifacts are rewritten in place to the new direction with §3.1.4.1 + §6.1.0350 citations. The pre-13.0.1 wording is preserved in E10-D1 as a "Superseded 2026-05-01" footnote so future readers see the decision history. The MEMORY.md index line for the project memory is updated alongside.
+
+**Given** the test corpus in `tests/double_tests.fth` and the Makefile REPL tests
+**When** Story 13.0.1 lands
+**Then** every hand-stacked double in the test corpus is reviewed and every test that inspects on-stack cell layout (`.S`-style assertions) has its expected output flipped. Story 13.0's literal-input tests (Makefile 853-902) are mostly unchanged because the recogniser produces cells in the right order for the active convention. New probes added: `2!`/`2@` byte-pattern audit (verify high cell at low address) and `(DLIT)` body byte-pattern audit (verify high cell at lower IP-offset).
+
+**Given** the regression baseline at Story-13.0-close (902 tests / 0 FAIL, 18,665 bytes)
+**When** Story 13.0.1's edits land
+**Then** zero regression on the 1..902 baseline (with expected outputs flipped where AC applies); byte-count delta envelope is **−10 to +30 bytes** (push/pop reordering is byte-symmetric on Z80); any delta beyond ±50 bytes warrants explicit justification.
+
+**Given** `docs/ans-forth-core-compliance.md` already gained a §3.4.1.3 row in Story 13.0
+**When** Story 13.0.1 lands
+**Then** a new §3.1.4.1 row is added at the same level, citing this story; plus a top-of-doc note: two §-level structural-rule gaps closed by Epic 13 back-fills (§3.4.1.3 + §3.1.4.1); full §-by-§ pre-2.0 audit pass remains a wishlist item.
+
+**Given** Story 13.1 sits at `ready-for-dev` and inherits the double-cell convention for file-position math
+**When** Story 13.0.1 reaches `done`
+**Then** Story 13.1's dev-pass is unblocked. 13.1's spec does not need re-editing — file positions are doubles and the FCB-pool design is independent of the cell-order convention; 13.1 inherits the new convention transparently.
+
+**Given** the adversarial-review discipline
+**When** Story 13.0.1's review runs
+**Then** at least 1-3 LOW/MEDIUM findings are expected; likely probes: orphaned old-convention sites in non-double words; `M*`/`UM*` mixed-cell-width edges; `SM/REM`/`FM/MOD` cell-pop order; `2@`/`2!` byte-pattern audit; `(DLIT)` runtime + emit symmetry; pictured-output `# / #S / #>` re-derivation; stale memory or stale E10-D1 wording verification.
 
 ### Story 13.1: File I/O sanity — FCB pool + BDOS wrapper layer (PRD risk mitigation)
 

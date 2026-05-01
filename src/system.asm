@@ -411,9 +411,10 @@ w_ENVIRONMENT_QUERY_cf:
         JR      .env_advance
 .env_kind_double:
         ; DE -> 4 bytes: lo_low, lo_high, hi_low, hi_high.
-        ; E10-D1 byte-order: low cell on TOS, high cell second.
-        ; We want stack ( hi lo true ) with true as TOS, so push hi first
-        ; (deepest), then lo (above hi), then BC = -1 (new TOS = true).
+        ; Story 13.0.1: per ANS Forth 1994 §3.1.4.1 the high cell is on
+        ; TOS (post-flip from pre-13.0.1 low-on-TOS). We want stack
+        ; ( lo hi true ) with true as TOS, so push lo first (deepest),
+        ; then hi (above lo), then BC = -1 (new TOS = true).
         LD      A, (DE)
         LD      L, A
         INC     DE
@@ -425,8 +426,8 @@ w_ENVIRONMENT_QUERY_cf:
         INC     DE
         LD      A, (DE)
         LD      B, A                    ; BC = hi
-        PUSH    BC                      ; hi (deepest)
-        PUSH    HL                      ; lo (above hi)
+        PUSH    HL                      ; lo (deepest)
+        PUSH    BC                      ; hi (above lo)
         LD      BC, -1                  ; TOS = true
         LD      DE, (env_saved_ip)
         NEXT

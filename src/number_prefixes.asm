@@ -1161,16 +1161,17 @@ pfv_single:
         LD      BC, 0xFFFF                      ; flag = TRUE (single)
         NEXT
 pfv_double:
-        ; Double-cell: DPL = (dlit_dpl) zero-extended, push high then
-        ; low (low ends up TOS per E10-D1), flag = 2.
+        ; Double-cell: DPL = (dlit_dpl) zero-extended, push low then
+        ; high (high ends up TOS per ANS Forth 1994 §3.1.4.1, post-
+        ; Story-13.0.1), flag = 2.
         LD      A, (dlit_dpl)
         LD      (IY+UserArea.dpl),   A
         XOR     A
         LD      (IY+UserArea.dpl+1), A
-        LD      HL, (dlit_acc_hi)
-        PUSH    HL                              ; second-on-stack (high)
         LD      HL, (dlit_acc_lo)
-        PUSH    HL                              ; would-be-TOS (low)
+        PUSH    HL                              ; second-on-stack (low)
+        LD      HL, (dlit_acc_hi)
+        PUSH    HL                              ; would-be-TOS (high)
         EXX                                     ; restore IP to main DE
         LD      BC, 2                           ; flag = 2 (double)
         NEXT

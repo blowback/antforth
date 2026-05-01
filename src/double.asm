@@ -9,16 +9,26 @@
 ;   Sign:         DNEGATE, DABS                    (Story 10.4)
 ;   Compare:      D=, D<, DMAX, DMIN               (Story 10.4)
 ;
-; Byte-order convention (architecture decision E10-D1): on the parameter
-; stack, the low cell is on top and the high cell below — matching
-; DPANS94 §6.1.0350 `2@ ( a-addr -- x1 x2 )` where x2 (low) is TOS.
-; In memory, the low cell is stored at a-addr and the high cell at
-; a-addr+2.
+; Byte-order convention (architecture decision E10-D1, post-Story-13.0.1):
+; on the parameter stack, the HIGH cell is on top and the LOW cell below —
+; matching ANS Forth 1994 §3.1.4.1 ("the cell containing the most
+; significant part of a double-cell integer shall be above the cell
+; containing the least significant part") and §6.1.0350 `2@ ( a-addr --
+; x1 x2 )` where x2 (the most-significant cell, MSC) is TOS. In memory,
+; the HIGH cell is stored at a-addr and the LOW cell at a-addr+2 (each
+; cell internally little-endian per Z80 native order; the cell-pair is
+; "big-endian"). Story 13.0.1 (2026-05-01) flipped from the inverted
+; pre-13.0.1 convention; see architecture.md E10-D1 decision history.
 
 ; -----------------------------------------------
 ; 2@ ( a-addr -- x1 x2 )
-;   Fetch double-cell at a-addr: low cell (x2) ends on TOS, high cell
-;   (x1) second on stack. x2 = M[a-addr], x1 = M[a-addr+2].
+;   Fetch double-cell at a-addr: x2 (high cell, MSC) ends on TOS;
+;   x1 (low cell) second on stack. x2 = M[a-addr], x1 = M[a-addr+2].
+;   Per ANS Forth 1994 §3.1.4.1 + §6.1.0350: high-on-TOS / high-at-low-
+;   address. Story 13.0.1 — previously the labelling was inverted
+;   (low-on-TOS / low-at-low-address); the assembly code is unchanged
+;   because the pair-load is layout-symmetric — only the conceptual
+;   labels of M[a-addr] and second-on-stack flipped.
 ; ANS Forth 1994 §6.1.0350   2@   — double-cell fetch
 ; -----------------------------------------------
 w_TWO_FETCH:
@@ -29,21 +39,24 @@ w_TWO_FETCH_cf:
         LD      L, C            ; HL = a-addr
         INC     HL
         INC     HL              ; HL = a-addr + 2
-        LD      A, (HL)         ; A = low byte of x1
+        LD      A, (HL)         ; A = low byte of x1 (the LOW cell)
         INC     HL
         LD      H, (HL)         ; H = high byte of x1 (HL scratch after this)
-        LD      L, A            ; HL = x1 (high cell)
-        PUSH    HL              ; Push x1 (second on stack)
+        LD      L, A            ; HL = x1 (LOW cell, second-on-stack)
+        PUSH    HL              ; Push x1 (LOW cell, second on stack)
         LD      H, B
         LD      L, C            ; HL = a-addr (BC was preserved)
         LD      C, (HL)
         INC     HL
-        LD      B, (HL)         ; BC = x2 (low cell, new TOS)
+        LD      B, (HL)         ; BC = x2 (HIGH cell, new TOS per §3.1.4.1)
         NEXT
 
 ; -----------------------------------------------
 ; 2! ( x1 x2 a-addr -- )
-;   Store double-cell at a-addr: x2 (low) at a-addr, x1 (high) at a-addr+2.
+;   Store double-cell at a-addr: x2 (HIGH cell, was on TOS) at a-addr;
+;   x1 (LOW cell, was second-on-stack) at a-addr+2. Per §3.1.4.1 +
+;   §6.1.0310: high cell at lower address. Story 13.0.1 — same
+;   assembly code as pre-flip; only the cell labels swapped.
 ; ANS Forth 1994 §6.1.0310   2!   — double-cell store
 ; -----------------------------------------------
 w_TWO_STORE:
@@ -52,15 +65,15 @@ w_TWO_STORE_cf:
         CALL    check_underflow_3
         LD      H, B
         LD      L, C            ; HL = a-addr
-        POP     BC              ; BC = x2 (low cell)
+        POP     BC              ; BC = x2 (HIGH cell, was TOS-of-pair)
         LD      (HL), C
         INC     HL
-        LD      (HL), B         ; M[a-addr], M[a-addr+1] = x2
+        LD      (HL), B         ; M[a-addr], M[a-addr+1] = x2 (HIGH)
         INC     HL              ; HL = a-addr + 2
-        POP     BC              ; BC = x1 (high cell)
+        POP     BC              ; BC = x1 (LOW cell, was second)
         LD      (HL), C
         INC     HL
-        LD      (HL), B         ; M[a-addr+2], M[a-addr+3] = x1
+        LD      (HL), B         ; M[a-addr+2], M[a-addr+3] = x1 (LOW)
         POP     BC              ; New TOS from below
         NEXT
 
@@ -148,8 +161,9 @@ w_TWO_OVER_cf:
 
 ; -----------------------------------------------
 ; S>D ( n -- d )
-;   Sign-extend single to double. BC (= n) stays as the low cell on TOS;
-;   high cell is 0 if n >= 0, or -1 ($FFFF) if n < 0, pushed under BC.
+;   Sign-extend single to double. Per §3.1.4.1 the HIGH cell is on TOS:
+;   push n (low cell) as second-on-stack, then set BC = sign-extended
+;   high cell (0 if n >= 0, $FFFF if n < 0).
 ; ANS Forth 1994 §6.1.2170   S>D   — sign-extend single to double
 ; -----------------------------------------------
 w_S_TO_D:
@@ -157,44 +171,43 @@ w_S_TO_D:
 w_S_TO_D_cf:
         CALL    check_underflow
         LD      A, B            ; A = high byte of n (sign bit in bit 7)
+        PUSH    BC              ; Push n (LOW cell) as second-on-stack
         RLA                     ; Carry = sign bit of n
         SBC     A, A            ; A = 0 if n >= 0, $FF if n < 0
-        LD      H, A
-        LD      L, A            ; HL = 0 or $FFFF (sign-extended high cell)
-        PUSH    HL              ; Push high cell under BC (low cell = TOS)
+        LD      B, A
+        LD      C, A            ; BC = 0 or $FFFF (sign-extended HIGH cell, new TOS)
         NEXT
 
 ; -----------------------------------------------
 ; D>S ( d -- n )
-;   Narrow double to single by dropping the high cell. BC already holds
-;   x2 (low cell, TOS) on entry and is the correct ANS output.
-;   Truncation is ANS implementation-defined: the high cell is
-;   unconditionally dropped — safe when d is within single-cell range,
-;   silently truncating otherwise.
+;   Narrow double to single by dropping the high cell. Post-Story-13.0.1
+;   per §3.1.4.1: BC holds the HIGH cell on entry; pop the LOW cell
+;   from second-on-stack into BC, discarding the high cell (it was the
+;   incoming BC, overwritten). Truncation is ANS implementation-defined.
 ; ANS Forth 1994 §8.6.1140   D>S   — narrow double to single (truncating)
 ; -----------------------------------------------
 w_D_TO_S:
         DEFCODE "D>S", 0
 w_D_TO_S_cf:
         CALL    check_underflow_2
-        POP     HL              ; Discard x1 (high cell); BC (= x2) stays as TOS
+        POP     BC              ; BC = LOW cell (new TOS); HIGH cell discarded
         NEXT
 
 ; -----------------------------------------------
 ; M+ ( d1 n -- d2 )
-;   Mixed single+double add. n is sign-extended to 32 bits then added
-;   to d1; low cell on TOS, high cell below. CF from the low-cell add
-;   is stashed on the return (AF) stack while BC is rewritten to the
-;   sign-extended high half of n.
+;   Mixed single+double add. n (BC, TOS) is sign-extended to 32 bits
+;   then added to d1; per §3.1.4.1 the HIGH cell of d2 ends on TOS.
+;   Entry stack: ( lo(d1) hi(d1) n ); BC=n. SP-top=hi(d1), SP-2nd=lo(d1).
+;   CF from the low-cell add is preserved across sign-extend via PUSH AF.
 ; ANS Forth 1994 §8.6.1830   M+   — mixed single+double add (sign-extended)
 ; -----------------------------------------------
 w_M_PLUS:
         DEFCODE "M+", 0
 w_M_PLUS_cf:
         CALL    check_underflow_3
-        POP     HL              ; HL = x2 (low of d1)
-        ADD     HL, BC          ; HL = x2 + n = new low; CF = carry
-        EX      (SP), HL        ; HL = x1 (high of d1); SP top = new low
+        POP     HL              ; HL = hi(d1); SP-top now = lo(d1)
+        EX      (SP), HL        ; HL = lo(d1); SP-top = hi(d1) (stashed)
+        ADD     HL, BC          ; HL = lo(d1) + n = new lo; CF = carry
         PUSH    AF              ; Save CF across sign-extend
         LD      A, B            ; A = high byte of n (sign in bit 7)
         RLA                     ; CF = sign bit of n
@@ -202,18 +215,20 @@ w_M_PLUS_cf:
         LD      B, A
         LD      C, A            ; BC = sign-extended high half of n
         POP     AF              ; Restore CF = carry from low-cell add
-        ADC     HL, BC          ; HL = x1 + sign_ext(n) + carry = new high
-        EX      (SP), HL        ; HL = new low; SP top = new high
+        EX      (SP), HL        ; HL = hi(d1); SP-top = new lo (stashed)
+        ADC     HL, BC          ; HL = hi(d1) + sign_ext(n) + carry = new hi
         LD      B, H
-        LD      C, L            ; BC = new low (TOS)
+        LD      C, L            ; BC = new hi (TOS per §3.1.4.1)
         NEXT
 
 ; -----------------------------------------------
 ; D+ ( d1 d2 -- d3 )
 ;   Double-cell add: d3 = d1 + d2 with 32-bit carry propagation.
-;   IP (DE) is stashed to scratch memory so DE is available for the
-;   intermediate register juggle. CF from the low-cell ADD survives
-;   the ensuing POP BC because POP does not affect flags.
+;   Per §3.1.4.1: stack ( lo1 hi1 lo2 hi2 ) with hi2 = BC = TOS;
+;   output ( lo3 hi3 ) with hi3 = BC. The lo-cell add must precede
+;   the hi-cell add so CF propagates correctly. IP (DE) is stashed
+;   so DE is available as scratch. PUSH preserves flags so CF
+;   survives the intermediate stack moves.
 ; ANS Forth 1994 §8.6.1040   D+   — double-cell add
 ; -----------------------------------------------
 w_D_PLUS:
@@ -221,22 +236,26 @@ w_D_PLUS:
 w_D_PLUS_cf:
         CALL    check_underflow_4
         LD      (double_ip_stash), DE
-        POP     HL              ; HL = x3 (high of d2)
-        POP     DE              ; DE = x2 (low of d1)
-        EX      DE, HL          ; HL = x2; DE = x3
-        ADD     HL, BC          ; HL = x2 + x4 = new low; CF = carry
-        POP     BC              ; BC = x1; CF preserved
-        EX      DE, HL          ; HL = x3; DE = new low; CF preserved
-        ADC     HL, BC          ; HL = x3 + x1 + carry = new high
-        PUSH    HL              ; Push new high
-        LD      B, D
-        LD      C, E            ; BC = new low (TOS)
+        POP     DE              ; DE = lo2; SP-top = hi1
+        POP     HL              ; HL = hi1; SP-top = lo1
+        EX      (SP), HL        ; HL = lo1; SP-top = hi1 (stashed)
+        ADD     HL, DE          ; HL = lo1 + lo2 = new lo; CF = carry
+        POP     DE              ; DE = hi1; CF preserved
+        PUSH    HL              ; Push new lo as second-on-stack; CF preserved
+        LD      H, D
+        LD      L, E            ; HL = hi1
+        ADC     HL, BC          ; HL = hi1 + hi2 + carry = new hi
+        LD      B, H
+        LD      C, L            ; BC = new hi (TOS per §3.1.4.1)
         LD      DE, (double_ip_stash)
         NEXT
 
 ; -----------------------------------------------
 ; D- ( d1 d2 -- d3 )
 ;   Double-cell subtract: d3 = d1 - d2 with 32-bit borrow propagation.
+;   Per §3.1.4.1: stack ( lo1 hi1 lo2 hi2 ) with hi2 = BC = TOS;
+;   output ( lo3 hi3 ) with hi3 = BC. The lo-cell subtract must
+;   precede the hi-cell subtract so borrow propagates correctly.
 ; ANS Forth 1994 §8.6.1050   D-   — double-cell subtract
 ; -----------------------------------------------
 w_D_MINUS:
@@ -244,34 +263,39 @@ w_D_MINUS:
 w_D_MINUS_cf:
         CALL    check_underflow_4
         LD      (double_ip_stash), DE
-        POP     DE              ; DE = x3 (high of d2)
-        POP     HL              ; HL = x2 (low of d1)
+        POP     DE              ; DE = lo2; SP-top = hi1
+        POP     HL              ; HL = hi1; SP-top = lo1
+        EX      (SP), HL        ; HL = lo1; SP-top = hi1 (stashed)
         OR      A               ; Clear CF
-        SBC     HL, BC          ; HL = x2 - x4 = new low; CF = borrow
-        POP     BC              ; BC = x1; CF preserved
-        PUSH    HL              ; Save new low; CF preserved
-        LD      H, B
-        LD      L, C            ; HL = x1
-        LD      B, D
-        LD      C, E            ; BC = x3
-        SBC     HL, BC          ; HL = x1 - x3 - borrow = new high
-        POP     BC              ; BC = new low (TOS)
-        PUSH    HL              ; Push new high
+        SBC     HL, DE          ; HL = lo1 - lo2 = new lo; CF = borrow
+        POP     DE              ; DE = hi1; CF preserved
+        PUSH    HL              ; Push new lo as second-on-stack; CF preserved
+        LD      H, D
+        LD      L, E            ; HL = hi1
+        SBC     HL, BC          ; HL = hi1 - hi2 - borrow = new hi
+        LD      B, H
+        LD      C, L            ; BC = new hi (TOS per §3.1.4.1)
         LD      DE, (double_ip_stash)
         NEXT
 
 ; -----------------------------------------------
-; (DLIT) ( -- d.hi-2nd d.lo-tos )
+; (DLIT) ( -- d.lo-2nd d.hi-tos )
 ;   Runtime for a compiled double-cell literal. Reads 4 inline bytes
-;   from the thread following its own code-field: low cell first, then
-;   high cell. Pushes the pair so the low cell is on TOS (per E10-D1)
-;   and the high cell is second-on-stack — matching D+ / 2@ / D.
-;   consumption order. Advances IP by 4 bytes.
-;   Inline layout in compiled code: [w_D_LIT_cf addr][d.lo lo,hi][d.hi lo,hi]
+;   from the thread following its own code-field: HIGH cell first
+;   (at IP+0..1, since high-at-low-address per §6.1.0350), then LOW
+;   cell (at IP+2..3). Pushes the pair so the HIGH cell is on TOS
+;   (per ANS Forth 1994 §3.1.4.1) and the LOW cell is second-on-stack
+;   — matching D+ / 2@ / D. consumption order. Advances IP by 4 bytes.
+;   Inline layout in compiled code: [w_D_LIT_cf addr][d.hi lo,hi][d.lo lo,hi]
 ;   so a 2! of the same value at (HERE+2) round-trips byte-for-byte.
+;   The Z80 assembly code is unchanged from pre-Story-13.0.1 — only
+;   the cell-label interpretation flipped (BC reads from IP+0..1 which
+;   is now the HIGH cell, DE reads from IP+2..3 which is now the LOW
+;   cell). Same opcodes; conventionally re-labelled.
 ; ANS Forth 1994 §3.4.1.3 — runtime for compile-state double-literal emitted
 ;   by NUMBER-PREFIX? / NUMBER? when a dot-bearing digit string is parsed.
 ; Story 13.0 — paren-convention internal helper (architecture.md:438).
+; Story 13.0.1 — flipped to high-on-TOS / high-at-low-address per §3.1.4.1.
 ; -----------------------------------------------
 w_D_LIT:
         DEFCODE "(DLIT)", 0
@@ -280,23 +304,25 @@ w_D_LIT_cf:
         ; the 32-byte safety margin in check_overflow covers both cells.
         CALL    check_overflow
         PUSH    BC                      ; spill old TOS (3rd-on-stack)
-        EX      DE, HL                  ; HL = IP (→ low cell)
+        EX      DE, HL                  ; HL = IP (→ HIGH cell)
         LD      C, (HL)
         INC     HL
-        LD      B, (HL)                 ; BC = d.lo (new TOS)
-        INC     HL                      ; HL → high cell
+        LD      B, (HL)                 ; BC = d.hi (new TOS per §3.1.4.1)
+        INC     HL                      ; HL → LOW cell
         LD      E, (HL)
         INC     HL
-        LD      D, (HL)                 ; DE = d.hi
+        LD      D, (HL)                 ; DE = d.lo
         INC     HL                      ; HL = new IP (past 4 inline bytes)
-        PUSH    DE                      ; push d.hi as second-on-stack
+        PUSH    DE                      ; push d.lo as second-on-stack
         NEXTHL                          ; HL is already new IP — skip the EX
 
 ; -----------------------------------------------
 ; DNEGATE ( d -- -d )
-;   Double-cell two's-complement negation: -d = 0 - d. The unique
-;   $80000000 fixed-point case negates to itself (ANS-conformant;
-;   mirrors single-cell NEGATE of $8000).
+;   Double-cell two's-complement negation: -d = 0 - d. Per §3.1.4.1
+;   BC = high cell on entry; SP-top = low cell. Subtract low first
+;   (CF = borrow), then high (with borrow). Output BC = -hi (TOS),
+;   SP-top = -lo. The unique $80000000 fixed-point case negates to
+;   itself (ANS-conformant; mirrors single-cell NEGATE of $8000).
 ; ANS Forth 1994 §8.6.1230   DNEGATE   — double-cell two's-complement negate
 ; -----------------------------------------------
 w_D_NEGATE:
@@ -304,35 +330,34 @@ w_D_NEGATE:
 w_D_NEGATE_cf:
         CALL    check_underflow_2
         LD      (double_ip_stash), DE
+        POP     DE              ; DE = low cell
         OR      A               ; Clear CF
         LD      HL, 0
-        SBC     HL, BC          ; HL = 0 - low = -low; CF = borrow
-        LD      B, H
-        LD      C, L            ; BC = new low
-        POP     DE              ; DE = high; CF preserved
+        SBC     HL, DE          ; HL = 0 - low = -low; CF = borrow
+        PUSH    HL              ; Push new low (second-on-stack); CF preserved
         LD      HL, 0
-        SBC     HL, DE          ; HL = 0 - high - borrow = new high
-        PUSH    HL              ; Push new high
+        SBC     HL, BC          ; HL = 0 - high - borrow = new high
+        LD      B, H
+        LD      C, L            ; BC = new high (TOS per §3.1.4.1)
         LD      DE, (double_ip_stash)
         NEXT
 
 ; -----------------------------------------------
 ; DABS ( d -- ud )
-;   Double-cell absolute value. Peek the high cell's sign bit via
-;   SP+1 (high byte of the cell directly beneath BC) without popping;
-;   fall through for non-negative d; tail-call DNEGATE for negative d.
-;   The re-entry into DNEGATE re-checks underflow (cheap, ~30 T-states).
+;   Double-cell absolute value. Per §3.1.4.1 the high cell is on TOS
+;   (in BC); its sign bit is bit 7 of B. Fall through for non-negative
+;   d; tail-call DNEGATE for negative d. The re-entry into DNEGATE
+;   re-checks underflow (cheap, ~30 T-states).
 ; ANS Forth 1994 §8.6.1160   DABS   — double-cell absolute value
+; Story 13.0.1 — sign-bit peek moved from M[SP+1] (old: high cell at
+;   SP) to register B.bit7 (new: high cell in BC).
 ; -----------------------------------------------
 w_D_ABS:
         DEFCODE "DABS", 0
 w_D_ABS_cf:
         CALL    check_underflow_2
-        LD      HL, 1
-        ADD     HL, SP          ; HL = addr of high byte of the high cell
-        LD      A, (HL)         ; A = high byte of high cell
-        OR      A               ; S = bit 7 = sign of d
-        JP      P, .dabs_done   ; Non-negative: pass through unchanged
+        BIT     7, B            ; Sign bit of high cell (= TOS = BC)
+        JR      Z, .dabs_done   ; Non-negative: pass through unchanged
         JP      w_D_NEGATE_cf   ; Negative: tail-call DNEGATE
 .dabs_done:
         NEXT
@@ -340,8 +365,11 @@ w_D_ABS_cf:
 ; -----------------------------------------------
 ; D= ( d1 d2 -- flag )
 ;   True flag iff d1 equals d2 bit-for-bit across both cells. Short-
-;   circuits on low-cell mismatch but still drops x1 so the stack net
-;   is (4 consumed, 1 pushed).
+;   circuits on first-popped-cell mismatch but still drops the deeper
+;   cell so the stack net is (4 consumed, 1 pushed). Algorithm is
+;   convention-symmetric — just compares both cells; the cell labels
+;   (high/low) are irrelevant to equality. Story 13.0.1 — code
+;   unchanged from pre-flip; only comment labels updated.
 ; ANS Forth 1994 §8.6.1120   D=   — double-cell equality → flag
 ; -----------------------------------------------
 w_D_EQUALS:
@@ -349,19 +377,19 @@ w_D_EQUALS:
 w_D_EQUALS_cf:
         CALL    check_underflow_4
         LD      (double_ip_stash), DE
-        POP     DE              ; DE = x3 (high of d2)
-        POP     HL              ; HL = x2 (low of d1)
+        POP     DE              ; DE = low cell of d2 (post-flip)
+        POP     HL              ; HL = high cell of d1 (post-flip)
         OR      A
-        SBC     HL, BC          ; Z iff x2 == x4
+        SBC     HL, BC          ; Z iff hi(d1) == hi(d2)
         JR      NZ, .deq_false_pop1
-        POP     HL              ; HL = x1 (high of d1)
+        POP     HL              ; HL = low cell of d1
         OR      A
-        SBC     HL, DE          ; Z iff x1 == x3
+        SBC     HL, DE          ; Z iff lo(d1) == lo(d2)
         JR      NZ, .deq_false
         LD      BC, -1          ; TRUE
         JR      .deq_done
 .deq_false_pop1:
-        POP     HL              ; Drop x1 (low-cell mismatch already decided)
+        POP     HL              ; Drop low cell of d1 (high mismatch already decided)
 .deq_false:
         LD      BC, 0           ; FALSE
 .deq_done:
@@ -373,10 +401,9 @@ w_D_EQUALS_cf:
 ;   Double-cell signed less-than. Compute (d1 - d2) as a full 32-bit
 ;   subtract; the high-cell SBC's S and P/V flags encode the signed
 ;   compare of the *whole* 32-bit difference: the result is signed-
-;   negative iff (S XOR P/V) = 1. This naturally handles the two
-;   distinct regimes — high cells differ (decided at the high SBC) and
-;   high cells equal (in which case the high SBC reduces to 0 - borrow,
-;   whose sign reflects the unsigned low-cell compare).
+;   negative iff (S XOR P/V) = 1. Per §3.1.4.1: BC = hi(d2) on entry;
+;   pop lo(d2), hi(d1), lo(d1) from SP. Subtract lo first (CF=borrow),
+;   then hi (with borrow); flag from S/V of the high SBC.
 ; ANS Forth 1994 §8.6.1110   D<   — double-cell signed less-than → flag
 ; -----------------------------------------------
 w_D_LESS:
@@ -384,13 +411,15 @@ w_D_LESS:
 w_D_LESS_cf:
         CALL    check_underflow_4
         LD      (double_ip_stash), DE
-        POP     HL              ; HL = x3
-        EX      (SP), HL        ; HL = x2; SP top = x3
+        POP     DE              ; DE = lo(d2); SP-top = hi(d1)
+        POP     HL              ; HL = hi(d1); SP-top = lo(d1)
+        EX      (SP), HL        ; HL = lo(d1); SP-top = hi(d1) (stashed)
         OR      A               ; Clear CF
-        SBC     HL, BC          ; HL = x2 - x4 (low-cell diff); CF = borrow
-        POP     BC              ; BC = x3; CF preserved
-        POP     HL              ; HL = x1; CF preserved
-        SBC     HL, BC          ; HL = x1 - x3 - borrow; S, P/V set
+        SBC     HL, DE          ; HL = lo(d1) - lo(d2); CF = borrow
+        POP     DE              ; DE = hi(d1); CF preserved
+        LD      H, D
+        LD      L, E            ; HL = hi(d1)
+        SBC     HL, BC          ; HL = hi(d1) - hi(d2) - borrow; S, P/V set
         LD      BC, 0           ; Assume FALSE
         JP      PO, .dlt_no_ov  ; P/V = 0: no signed overflow
         ; P/V = 1: 16-bit signed overflow flipped the result's sign
@@ -450,13 +479,16 @@ w_D_MIN_cf EQU w_D_MIN_body - 3
 
 ; -----------------------------------------------
 ; UM* ( u1 u2 -- ud )
-;   Unsigned mixed multiply: 16-bit u1 × 16-bit u2 → 32-bit ud.
-;   Right-shift schoolbook method: BC starts holding u2 (multiplier) and
-;   drains as bits are consumed from its LSB; HL accumulates the high
-;   half of the product. The 32-bit accumulator (HL:BC) is shifted right
-;   by 1 each iteration; the carry-out of ADD HL,DE is captured by the
-;   subsequent RR H, giving an effective 33-bit shift register so the
-;   $FFFF × $FFFF = $FFFE0001 corner case settles correctly.
+;   Unsigned mixed multiply: 16-bit u1 × 16-bit u2 → 32-bit ud. Per
+;   §3.1.4.1 the HIGH cell of ud is on TOS. Right-shift schoolbook:
+;   BC starts holding u2 (multiplier) and drains as bits are consumed
+;   from its LSB; HL accumulates the high half. The 32-bit accumulator
+;   (HL:BC) is shifted right by 1 each iteration; the carry-out of
+;   ADD HL,DE is captured by the subsequent RR H, giving an effective
+;   33-bit shift register so the $FFFF × $FFFF = $FFFE0001 corner
+;   case settles correctly. Story 13.0.1 — final push/load swapped:
+;   push LOW cell (was BC) as second-on-stack, then load BC = HIGH
+;   cell (= HL) as the new TOS.
 ; ANS Forth 1994 §6.1.2360   UM*   — unsigned mixed multiply (single × single → double)
 ; -----------------------------------------------
 w_U_M_STAR:
@@ -479,8 +511,10 @@ w_U_M_STAR_cf:
         RR      C               ; Multiplier LSB shifted out (consumed)
         DEC     A
         JR      NZ, .umstar_loop
-        ; HL = product high cell, BC = product low cell (TOS)
-        PUSH    HL              ; Push high cell under BC (low cell stays TOS)
+        ; HL = product HIGH cell, BC = product LOW cell
+        PUSH    BC              ; Push LOW cell as second-on-stack
+        LD      B, H
+        LD      C, L            ; BC = HIGH cell (TOS per §3.1.4.1)
         LD      DE, (double_ip_stash)
         NEXT
 
@@ -525,30 +559,37 @@ w_M_STAR_cf EQU w_M_STAR_body - 3
 ;
 ;   Algebra (treating both as unsigned, with d_i = a_i*2^16 + b_i):
 ;       d3 = (b1*b2) + ((b1*a2 + a1*b2) << 16)  mod 2^32
-;   The cross terms (b1*a2 and a1*b2) contribute only to the high cell
-;   so we use the truncating single-cell `*` for them and add into the
-;   high half of the full UM*(b1, b2) product.
+;   where a = HIGH cell, b = LOW cell.
 ;
-;   Threaded body:
-;       2OVER 2DROP       \ underflow_4 guard via 2OVER's check
-;       >R                \ stash b2 on R
-;       OVER R@ UM*       \ ( a1 b1 a2 P_hi P_lo )      P = b1*b2 (32-bit)
-;       2SWAP * ROT +     \ ( a1 P_lo H1 ); H1 = (P_hi + b1*a2) mod 2^16
-;       R> 3 PICK *       \ ( a1 P_lo H1 a1*b2 )
-;       SWAP +            \ ( a1 P_lo res_hi )
-;       ROT DROP SWAP     \ ( res_hi P_lo ) = ( res_hi res_lo )
+;   Story 13.0.1: high-on-TOS convention flipped from low-on-TOS. The
+;   pre-13.0.1 body was structured around input ( a1 b1 a2 b2 ) with
+;   b2 (low) on TOS. The new convention has input ( b1 a1 b2 a2 ) with
+;   a2 (high) on TOS. Rather than rewrite the algebra from scratch we
+;   adapt: convert NEW input → OLD-style with "SWAP 2SWAP SWAP 2SWAP",
+;   run the OLD body (with one inner SWAP after UM* to flip its NEW
+;   output back to OLD-style), then SWAP the final result back to NEW
+;   ( res_lo res_hi ) with res_hi on TOS. Cost: +6 cells = +12 bytes.
+;   Native rewrite would shave a few bytes but at significant
+;   readability/correctness risk; the adapter approach is transparent.
 ; ANS Forth 1994 §8.6.1090   D*   — double-cell signed multiply (truncating)
 ; -----------------------------------------------
 w_D_STAR:
         DEFWORD "D*", 0
 w_D_STAR_body:
 w_D_STAR_cf EQU w_D_STAR_body - 3
+        ; Convert NEW input ( lo1 hi1 lo2 hi2 ) → OLD-style ( hi1 lo1 hi2 lo2 ).
+        DW      w_SWAP_cf               ; ( lo1 hi1 hi2 lo2 )
+        DW      w_TWO_SWAP_cf           ; ( hi2 lo2 lo1 hi1 )
+        DW      w_SWAP_cf               ; ( hi2 lo2 hi1 lo1 )
+        DW      w_TWO_SWAP_cf           ; ( hi1 lo1 hi2 lo2 ) — OLD-style ( a1 b1 a2 b2 )
+        ; Pre-Story-13.0.1 body (OLD conv internally):
         DW      w_TWO_OVER_cf           ; Underflow guard (needs >= 4)
         DW      w_TWO_DROP_cf           ; Drop the duplicates from 2OVER
         DW      w_TO_R_cf               ; >R: stash b2
         DW      w_OVER_cf               ; copy b1
         DW      w_R_FETCH_cf            ; R@: copy b2
-        DW      w_U_M_STAR_cf           ; UM*(b1,b2) → (P_hi, P_lo)
+        DW      w_U_M_STAR_cf           ; UM*(b1,b2) — under NEW outputs ( P_lo P_hi )
+        DW      w_SWAP_cf               ; flip UM* NEW output → OLD-style ( P_hi P_lo )
         DW      w_TWO_SWAP_cf           ; ( a1 P_hi P_lo b1 a2 )
         DW      w_STAR_cf               ; ( a1 P_hi P_lo (b1*a2) ) — single * truncates
         DW      w_ROT_cf                ; ( a1 P_lo (b1*a2) P_hi )
@@ -562,7 +603,9 @@ w_D_STAR_cf EQU w_D_STAR_body - 3
         DW      w_PLUS_cf               ; ( a1 P_lo res_hi )
         DW      w_ROT_cf                ; ( P_lo res_hi a1 )
         DW      w_DROP_cf               ; ( P_lo res_hi )
-        DW      w_SWAP_cf               ; ( res_hi P_lo ) = ( res_hi res_lo )
+        DW      w_SWAP_cf               ; ( res_hi P_lo ) — OLD-style output ( res_hi res_lo )
+        ; Convert OLD-style output → NEW ( res_lo res_hi ) with res_hi on TOS.
+        DW      w_SWAP_cf               ; ( res_lo res_hi )
         DW      EXIT_CODE
 
 ; -----------------------------------------------
@@ -611,8 +654,12 @@ w_U_M_SLASH_MOD_cf:
         JP      w_THROW_cf.kernel_entry
 .ummod_proceed:
         LD      (double_ip_stash), DE   ; Stash IP — DE now free
-        POP     HL                      ; HL = ud-lo (quotient accumulator)
+        ; Story 13.0.1: under §3.1.4.1 hi-on-TOS, the cell layout for ud is
+        ; ( ud-lo ud-hi ) with ud-hi at SP-top. Swap the two POPs so DE
+        ; receives ud-hi (running remainder) and HL receives ud-lo
+        ; (quotient accumulator). Body algorithm unchanged.
         POP     DE                      ; DE = ud-hi (running remainder)
+        POP     HL                      ; HL = ud-lo (quotient accumulator)
         LD      A, 16                   ; 16-iteration shift-subtract loop
 .ummod_loop:
         ADD     HL, HL                  ; Quot-accum <<= 1; CF = bit shifted out
@@ -682,23 +729,23 @@ w_S_M_SLASH_REM:
         DEFWORD "SM/REM", 0
 w_S_M_SLASH_REM_body:
 w_S_M_SLASH_REM_cf EQU w_S_M_SLASH_REM_body - 3
+        ; Story 13.0.1: under §3.1.4.1 hi-on-TOS, entry stack is
+        ; ( d-lo d-hi n1 ) with d-hi at depth 1 (not depth 2 as under
+        ; pre-flip OLD conv). Use 2DUP to copy (d-hi n1) for the
+        ; sign-XOR, and OVER to copy d-hi for the rem-sign. Saves 10
+        ; bytes vs the pre-flip "LIT 2 PICK" pattern.
         DW      w_QGUARD_3_cf           ; Underflow guard (3 cells)
-        DW      w_LIT_cf                ; 2 PICK — copy d-hi
-        DW      2
-        DW      w_PICK_cf
-        DW      w_OVER_cf               ; copy n1 (was TOS before PICK, now 2nd)
-        DW      w_XOR_cf                ; d-hi XOR n1
+        DW      w_TWO_DUP_cf            ; ( d-lo d-hi n1 d-hi n1 )
+        DW      w_XOR_cf                ; ( d-lo d-hi n1 (d-hi^n1) )
         DW      w_ZERO_LESS_cf          ; quotient-sign flag (true if signs differ)
         DW      w_TO_R_cf               ; R: (quot-sign)
-        DW      w_LIT_cf                ; 2 PICK — copy d-hi again
-        DW      2
-        DW      w_PICK_cf
+        DW      w_OVER_cf               ; ( d-lo d-hi n1 d-hi )
         DW      w_ZERO_LESS_cf          ; remainder-sign flag (true if d < 0)
         DW      w_TO_R_cf               ; R: (quot-sign rem-sign)
         DW      w_ABS_cf                ; |n1|
         DW      w_TO_R_cf               ; R: (quot-sign rem-sign |n1|)
         DW      w_D_ABS_cf              ; |d|
-        DW      w_R_FROM_cf             ; recover |n1|: ( |d-hi| |d-lo| |n1| )
+        DW      w_R_FROM_cf             ; recover |n1|: ( |d-lo| |d-hi| |n1| )
         DW      w_U_M_SLASH_MOD_cf      ; ( urem uquot )
         DW      w_SWAP_cf               ; ( uquot urem )
         DW      w_R_FROM_cf             ; ( uquot urem rem-sign )

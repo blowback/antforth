@@ -136,10 +136,12 @@ w_D_DOT_R_cf    EQU     w_D_DOT_R_body - 3
         ; Underflow: >R is unchecked; OVER below (check_underflow_2) traps for
         ; DEPTH < 3.  ABORT resets both SP and RP, so the stashed +n on R-stack
         ; is cleaned up; <# has not yet been called, so pictured state is intact.
-        DW      w_TO_R_cf               ; >R     ( hi lo ; R:+n )
-        DW      w_OVER_cf               ; OVER   ( hi lo hi ; R:+n )
-        DW      w_TO_R_cf               ; >R     ( hi lo ; R:+n hi )
-        DW      w_D_ABS_cf              ; DABS   ( uhi ulo ; R:+n hi )
+        ; Story 13.0.1: under §3.1.4.1 hi=BC=TOS. Replace pre-flip OVER
+        ; (depth-1 under OLD = hi) with DUP (TOS under NEW = hi).
+        DW      w_TO_R_cf               ; >R     ( lo hi ; R:+n )
+        DW      w_DUP_cf                ; DUP    ( lo hi hi ; R:+n )
+        DW      w_TO_R_cf               ; >R     ( lo hi ; R:+n hi )
+        DW      w_D_ABS_cf              ; DABS   ( ulo uhi ; R:+n hi )
         DW      w_PIC_LESS_HASH_cf      ; <#
         DW      w_PIC_HASH_S_cf         ; #S     ( 0 0 ; R:+n hi )
         DW      w_R_FROM_cf             ; R>     ( 0 0 hi ; R:+n )
@@ -160,9 +162,12 @@ w_D_DOT:
         DEFWORD "D.", 0
 w_D_DOT_body:
 w_D_DOT_cf      EQU     w_D_DOT_body - 3
-        DW      w_OVER_cf               ; OVER   ( hi lo hi )   — copy hi (carries sign)
-        DW      w_TO_R_cf               ; >R     ( hi lo ; R:hi )
-        DW      w_D_ABS_cf              ; DABS   ( uhi ulo ; R:hi )
+        ; Story 13.0.1: under §3.1.4.1 hi=BC=TOS. Replace pre-flip OVER
+        ; (which copied hi from depth-1 under OLD conv) with DUP (which
+        ; copies hi from TOS under NEW conv).
+        DW      w_DUP_cf                ; DUP    ( lo hi hi )   — copy hi (carries sign)
+        DW      w_TO_R_cf               ; >R     ( lo hi ; R:hi )
+        DW      w_D_ABS_cf              ; DABS   ( ulo uhi ; R:hi )
         DW      w_PIC_LESS_HASH_cf      ; <#
         DW      w_PIC_HASH_S_cf         ; #S     ( 0 0 ; R:hi )
         DW      w_R_FROM_cf             ; R>     ( 0 0 hi )
@@ -192,8 +197,10 @@ w_U_DOT:
         DEFWORD "U.", 0
 w_U_DOT_body:
 w_U_DOT_cf      EQU     w_U_DOT_body - 3
-        DW      w_LIT_cf, 0             ; 0      ( u 0 )
-        DW      w_SWAP_cf               ; SWAP   ( 0 u )  — E10-D1: hi=0, lo=u
+        ; Story 13.0.1: high-on-TOS per §3.1.4.1. Push 0 as the high cell
+        ; (becomes new TOS = BC); the original u stays as the low cell on
+        ; SP-top. No SWAP needed (pre-flip needed SWAP to put u on TOS).
+        DW      w_LIT_cf, 0             ; ( u 0 )  — BC=0 (high), SP-top=u (low)
         DW      w_D_DOT_cf              ; D.
         DW      EXIT_CODE
 
@@ -223,12 +230,14 @@ w_U_DOT_R:
         DEFWORD "U.R", 0
 w_U_DOT_R_body:
 w_U_DOT_R_cf    EQU     w_U_DOT_R_body - 3
-        ; Underflow: >R unchecked; SWAP (check_underflow_2) traps for DEPTH < 2.
+        ; Underflow: >R unchecked; LIT/+ (check_underflow) traps for DEPTH < 1
+        ; before the >R; D.R itself does check_underflow_3 on entry.
         ; ABORT resets RP, clearing the stashed +n.
+        ; Story 13.0.1: SWAP removed — under §3.1.4.1 the high cell (0)
+        ; is on TOS = BC; LIT 0 already places it correctly.
         DW      w_TO_R_cf               ; >R     ( u ; R:+n )
-        DW      w_LIT_cf, 0             ; 0      ( u 0 )
-        DW      w_SWAP_cf               ; SWAP   ( 0 u )
-        DW      w_R_FROM_cf             ; R>     ( 0 u +n )
+        DW      w_LIT_cf, 0             ; ( u 0 ) — BC=0 (high), SP-top=u (low)
+        DW      w_R_FROM_cf             ; R>     ( u 0 +n )
         DW      w_D_DOT_R_cf            ; D.R
         DW      EXIT_CODE
 

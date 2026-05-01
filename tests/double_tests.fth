@@ -2,13 +2,23 @@
 \ AntForth — A Forth for CP/M on Z80
 \
 \ Covers 2@, 2!, 2DUP, 2DROP, 2SWAP, 2OVER per DPANS94 §6.1.0310,
-\ §6.1.0350, §6.1.0370, §6.1.0380, §6.1.0400, §6.1.0430 with the
-\ E10-D1 byte-order convention (low cell on TOS, high cell below;
-\ low cell stored at a-addr, high cell at a-addr+2).
+\ §6.1.0350, §6.1.0370, §6.1.0380, §6.1.0400, §6.1.0430. Post-
+\ Story-13.0.1 (2026-05-01) the byte-order convention is HIGH cell on
+\ TOS, LOW cell below (per ANS Forth 1994 §3.1.4.1); HIGH cell at
+\ a-addr, LOW cell at a-addr+2 (per §6.1.0310 + §6.1.0350).
+\
+\ NOTE: the `expect:` annotations in the Epic-10 hand-stacked sections
+\ below (lines ~14-260) document the PRE-Story-13.0.1 convention (low
+\ cell on TOS) for historical reference. The authoritative runners are
+\ the Makefile `test-repl` entries (tests 397..); those have been
+\ rewritten to the new high-on-TOS convention. To validate against
+\ live antforth, consult the Makefile runners. The Story 13.0
+\ literal-input section (lines ~264+) is convention-symmetric — the
+\ recogniser produces the cells in the right order for the active
+\ convention, so those tests work either way.
 \
 \ Each block is a one-liner sent to the REPL with the expected stdout
-\ fragment next to it. The corresponding Makefile `test-repl` entries
-\ (tests 397..) are the authoritative runners — keep these in sync.
+\ fragment next to it (see NOTE above re: convention).
 
 \ --- 2DUP depth and values ---
 1 2 2DUP .S                              \ expect: <4> 1 2 1 2

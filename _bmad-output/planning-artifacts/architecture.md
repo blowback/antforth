@@ -247,9 +247,11 @@ All phase-2 architectural decisions build on this foundation without replacing a
 
 #### E10-D1: Double-cell stack byte-order
 
-**Decision:** **Low cell on top of stack, high cell below** (i.e., `2@` fetches low cell first into TOS, high cell becomes second-on-stack). This is the ANS Forth convention. `S>D` pushes high cell (zero or sign-extended) under the original single cell, which then becomes the low cell.
+**Decision (post-Story-13.0.1, 2026-05-01):** **High cell on top of stack, low cell below** (i.e., `2@` fetches the high cell into TOS, low cell becomes second-on-stack). The high cell is stored at the **lower** address (`a-addr`); the low cell is at `a-addr+2`. Each cell internally is little-endian per Z80 native order; the cell-pair is "big-endian" across cells. `S>D` pushes the original single cell (the new low cell) as second-on-stack, then sets BC = sign-extended high cell as the new TOS.
 
-**Rationale:** Locked by the standard — the stack diagrams in ANS Forth 1994 §6.1.0350 (`2@`) and related specifications dictate this order. Any other choice breaks portability. Implementation cost is neutral either way.
+**Rationale:** Locked by ANS Forth 1994 §3.1.4.1 — *"On the stack, the cell containing the most significant part of a double-cell integer shall be above the cell containing the least significant part"* — and §6.1.0350 (`2@ ( a-addr -- x1 x2 )` with x2 stored at a-addr; per §3.1.4.1, x2 is on TOS = MSC = high cell). Any other choice breaks portability of double-cell idioms from other ANS-compliant Forths. Implementation cost is neutral; correctness against §3.1.4.1 is non-negotiable.
+
+**Decision history.** *Superseded 2026-05-01 (Story 13.0.1).* The original Epic-10 decision (2026-04-XX) committed the **inverted** convention (low-on-TOS / low-at-low-address) while citing the standard. The error was caught post-Epic-12 retro 2026-05-01 (party-mode discussion); Epic 10's word-counted compliance survey was structurally blind to §3.1.4.1 (a stack-layout rule, not a per-word rule). The pre-13.0.1 wording — *"Low cell on top of stack, high cell below ... 2@ fetches low cell first into TOS"* — is preserved in this footnote for decision-history traceability. Same shape gap as §3.4.1.3 (Story 13.0): both §-level structural-rule gaps were back-filled inside Epic 13 ahead of the v2.0 release. See Story 13.0.1's adversarial-review log (`_bmad-output/implementation-artifacts/13-0-1-flip-double-cell-stack-order-ans-3-1-4-1.md`) for the full kernel-flip audit.
 
 #### E10-D2: Pictured-output buffer placement
 

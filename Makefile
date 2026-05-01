@@ -3740,10 +3740,10 @@ test-repl: $(TARGET)
 	@# --- Story 10.3 single<->double conversions (423..445) ---
 	@# S>D value/boundary checks: TOS = low = n; second = high = 0 or -1.
 	@OUTPUT=$$(printf '5 S>D .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 5 '; then \
-		echo "PASS: REPL test 423 — '5 S>D .S' outputs '<2> 0 5 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
+		echo "PASS: REPL test 423 — '5 S>D .S' outputs '<2> 5 0 '"; \
 	else \
-		echo "FAIL: REPL test 423 — expected '<2> 0 5 ' in output"; \
+		echo "FAIL: REPL test 423 — expected '<2> 5 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -3756,26 +3756,26 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-5 S>D .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -5 '; then \
-		echo "PASS: REPL test 425 — '-5 S>D .S' outputs '<2> -1 -5 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> -5 -1 '; then \
+		echo "PASS: REPL test 425 — '-5 S>D .S' outputs '<2> -5 -1 '"; \
 	else \
-		echo "FAIL: REPL test 425 — expected '<2> -1 -5 ' in output"; \
+		echo "FAIL: REPL test 425 — expected '<2> -5 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '32767 S>D .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 32767 '; then \
-		echo "PASS: REPL test 426 — '32767 S>D .S' outputs '<2> 0 32767 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> 32767 0 '; then \
+		echo "PASS: REPL test 426 — '32767 S>D .S' outputs '<2> 32767 0 '"; \
 	else \
-		echo "FAIL: REPL test 426 — expected '<2> 0 32767 ' in output"; \
+		echo "FAIL: REPL test 426 — expected '<2> 32767 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-32768 S>D .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -32768 '; then \
-		echo "PASS: REPL test 427 — '-32768 S>D .S' outputs '<2> -1 -32768 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> -32768 -1 '; then \
+		echo "PASS: REPL test 427 — '-32768 S>D .S' outputs '<2> -32768 -1 '"; \
 	else \
-		echo "FAIL: REPL test 427 — expected '<2> -1 -32768 ' in output"; \
+		echo "FAIL: REPL test 427 — expected '<2> -32768 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -3788,26 +3788,26 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D>S pure-sign-extended doubles → single cell (round-trip preserving).
-	@OUTPUT=$$(printf '0 5 D>S .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 D>S .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<1> 5 '; then \
-		echo "PASS: REPL test 429 — '0 5 D>S .S' outputs '<1> 5 '"; \
+		echo "PASS: REPL test 429 — '5 0 D>S .S' outputs '<1> 5 '"; \
 	else \
 		echo "FAIL: REPL test 429 — expected '<1> 5 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 -5 D>S .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-5 -1 D>S .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<1> -5 '; then \
-		echo "PASS: REPL test 430 — '-1 -5 D>S .S' outputs '<1> -5 '"; \
+		echo "PASS: REPL test 430 — '-5 -1 D>S .S' outputs '<1> -5 '"; \
 	else \
 		echo "FAIL: REPL test 430 — expected '<1> -5 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# D>S truncation: non-sign-extended double silently drops high cell (AC#2).
-	@OUTPUT=$$(printf '1 5 D>S .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 1 D>S .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<1> 5 '; then \
-		echo "PASS: REPL test 431 — '1 5 D>S .S' (truncates high=1) outputs '<1> 5 '"; \
+		echo "PASS: REPL test 431 — '5 1 D>S .S' (truncates high=1) outputs '<1> 5 '"; \
 	else \
 		echo "FAIL: REPL test 431 — expected '<1> 5 ' (high cell 1 discarded) in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
@@ -3873,29 +3873,29 @@ test-repl: $(TARGET)
 	@# >NUMBER single-cell accumulation (baseline, pre-existing semantics).
 	@# Stack after: <4> ud2-high=0 ud2-low=42 c-addr2 u2=0 (TOS). Check ud2-low=42 and u2=0.
 	@OUTPUT=$$(printf '0 0 S" 42" DROP 2 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 42 '; then \
-		echo "PASS: REPL test 439 — '0 0 S\" 42\" DROP 2 >NUMBER 2DROP .S' outputs '<2> 0 42 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> 42 0 '; then \
+		echo "PASS: REPL test 439 — '0 0 S\" 42\" DROP 2 >NUMBER 2DROP .S' outputs '<2> 42 0 '"; \
 	else \
-		echo "FAIL: REPL test 439 — expected '<2> 0 42 ' (ud2 = 42) in output"; \
+		echo "FAIL: REPL test 439 — expected '<2> 42 0 ' (ud2 = 42) in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# >NUMBER double-cell accumulation across the 16-bit boundary.
 	@# "65536" decimal = high:1 low:0. 2DROP trims c-addr2/u2 so .S surfaces ud2.
 	@OUTPUT=$$(printf '0 0 S" 65536" DROP 5 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo "PASS: REPL test 440 — '0 0 S\" 65536\" DROP 5 >NUMBER 2DROP .S' outputs '<2> 1 0 ' (ud2 = 65536)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 440 — '0 0 S\" 65536\" DROP 5 >NUMBER 2DROP .S' outputs '<2> 0 1 ' (ud2 = 65536)"; \
 	else \
-		echo "FAIL: REPL test 440 — expected '<2> 1 0 ' (ud2-high=1, ud2-low=0, ie 65536) in output"; \
+		echo "FAIL: REPL test 440 — expected '<2> 0 1 ' (ud2-high=1, ud2-low=0, ie 65536) in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# >NUMBER well above the 16-bit boundary: 1_000_000 = 15*65536 + 16960.
 	@OUTPUT=$$(printf '0 0 S" 1000000" DROP 7 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 15 16960 '; then \
-		echo "PASS: REPL test 441 — '0 0 S\" 1000000\" DROP 7 >NUMBER 2DROP .S' outputs '<2> 15 16960 ' (ud2 = 1000000)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 16960 15 '; then \
+		echo "PASS: REPL test 441 — '0 0 S\" 1000000\" DROP 7 >NUMBER 2DROP .S' outputs '<2> 16960 15 ' (ud2 = 1000000)"; \
 	else \
-		echo "FAIL: REPL test 441 — expected '<2> 15 16960 ' (ud2 = 1_000_000) in output"; \
+		echo "FAIL: REPL test 441 — expected '<2> 16960 15 ' (ud2 = 1_000_000) in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -3960,10 +3960,10 @@ test-repl: $(TARGET)
 	@# >NUMBER BASE=2: 17-bit binary string "10000000000000000" parses to 65536 (ud2-high=1, ud2-low=0).
 	@# Numeric literals are decimal on entry; BASE is flipped to 2 only for >NUMBER itself, then restored.
 	@OUTPUT=$$(printf '0 0 S" 10000000000000000" DROP 17 2 BASE ! >NUMBER DECIMAL 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo "PASS: REPL test 449 — BASE=2 '>NUMBER' on 17-bit string outputs '<2> 1 0 ' (ud2 = 65536)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 449 — BASE=2 '>NUMBER' on 17-bit string outputs '<2> 0 1 ' (ud2 = 65536)"; \
 	else \
-		echo "FAIL: REPL test 449 — expected '<2> 1 0 ' (ud2 = 65536) in output"; \
+		echo "FAIL: REPL test 449 — expected '<2> 0 1 ' (ud2 = 65536) in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -3977,23 +3977,23 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 0 7 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 12 '; then \
-		echo "PASS: REPL test 451 — '0 5 0 7 D+ .S 2DROP' outputs '<2> 0 12 ' (5 + 7 = 12)"; \
+	@OUTPUT=$$(printf '5 0 7 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 12 0 '; then \
+		echo "PASS: REPL test 451 — '5 0 7 0 D+ .S 2DROP' outputs '<2> 12 0 ' (5 + 7 = 12)"; \
 	else \
-		echo "FAIL: REPL test 451 — expected '<2> 0 12 ' in output"; \
+		echo "FAIL: REPL test 451 — expected '<2> 12 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 0 1 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo "PASS: REPL test 452 — '0 -1 0 1 D+ .S 2DROP' outputs '<2> 1 0 ' (low-cell carry ripples)"; \
+	@OUTPUT=$$(printf -- '-1 0 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 452 — '-1 0 1 0 D+ .S 2DROP' outputs '<2> 0 1 ' (low-cell carry ripples)"; \
 	else \
-		echo "FAIL: REPL test 452 — expected '<2> 1 0 ' in output"; \
+		echo "FAIL: REPL test 452 — expected '<2> 0 1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 0 1 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 453 — '-1 -1 0 1 D+ .S 2DROP' outputs '<2> 0 0 ' (full 32-bit wrap)"; \
 	else \
@@ -4001,32 +4001,32 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '32767 -1 0 1 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -32768 0 '; then \
-		echo "PASS: REPL test 454 — '32767 -1 0 1 D+ .S 2DROP' outputs '<2> -32768 0 ' (32-bit signed overflow silently wraps)"; \
+	@OUTPUT=$$(printf -- '-1 32767 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
+		echo "PASS: REPL test 454 — '-1 32767 1 0 D+ .S 2DROP' outputs '<2> 0 -32768 ' (32-bit signed overflow silently wraps)"; \
 	else \
-		echo "FAIL: REPL test 454 — expected '<2> -32768 0 ' in output"; \
+		echo "FAIL: REPL test 454 — expected '<2> 0 -32768 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# D- (§8.6.1050): double-cell subtract with 32-bit borrow propagation.
-	@OUTPUT=$$(printf '0 10 0 4 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 6 '; then \
-		echo "PASS: REPL test 455 — '0 10 0 4 D- .S 2DROP' outputs '<2> 0 6 '"; \
+	@OUTPUT=$$(printf '10 0 4 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 6 0 '; then \
+		echo "PASS: REPL test 455 — '10 0 4 0 D- .S 2DROP' outputs '<2> 6 0 '"; \
 	else \
-		echo "FAIL: REPL test 455 — expected '<2> 0 6 ' in output"; \
+		echo "FAIL: REPL test 455 — expected '<2> 6 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 4 0 10 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -6 '; then \
-		echo "PASS: REPL test 456 — '0 4 0 10 D- .S 2DROP' outputs '<2> -1 -6 ' (borrow ripples into high cell)"; \
+	@OUTPUT=$$(printf '4 0 10 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -6 -1 '; then \
+		echo "PASS: REPL test 456 — '4 0 10 0 D- .S 2DROP' outputs '<2> -6 -1 ' (borrow ripples into high cell)"; \
 	else \
-		echo "FAIL: REPL test 456 — expected '<2> -1 -6 ' in output"; \
+		echo "FAIL: REPL test 456 — expected '<2> -6 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 0 1 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 457 — '0 0 0 1 D- .S 2DROP' outputs '<2> -1 -1 ' (0 - 1 = -1 as signed double)"; \
 	else \
@@ -4034,19 +4034,19 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 0 1 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
-		echo 'PASS: REPL test 458 — '\''1 0 0 1 D- .S 2DROP'\'' outputs '\''<2> 0 -1 '\'' ($$10000 - 1)'; \
+	@OUTPUT=$$(printf '0 1 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
+		echo 'PASS: REPL test 458 — '\''1 0 0 1 D- .S 2DROP'\'' outputs '\''<2> -1 0 '\'' ($$10000 - 1)'; \
 	else \
-		echo "FAIL: REPL test 458 — expected '<2> 0 -1 ' in output"; \
+		echo "FAIL: REPL test 458 — expected '<2> -1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 0 1 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -2 '; then \
-		echo "PASS: REPL test 459 — '-1 -1 0 1 D- .S 2DROP' outputs '<2> -1 -2 '"; \
+	@OUTPUT=$$(printf -- '-1 -1 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -2 -1 '; then \
+		echo "PASS: REPL test 459 — '-1 -1 1 0 D- .S 2DROP' outputs '<2> -2 -1 '"; \
 	else \
-		echo "FAIL: REPL test 459 — expected '<2> -1 -2 ' in output"; \
+		echo "FAIL: REPL test 459 — expected '<2> -2 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4059,7 +4059,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 461 — '0 1 DNEGATE .S 2DROP' outputs '<2> -1 -1 ' (=-1 as signed double)"; \
 	else \
@@ -4068,18 +4068,18 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-1 -1 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
-		echo "PASS: REPL test 462 — '-1 -1 DNEGATE .S 2DROP' outputs '<2> 0 1 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
+		echo "PASS: REPL test 462 — '-1 -1 DNEGATE .S 2DROP' outputs '<2> 1 0 '"; \
 	else \
-		echo "FAIL: REPL test 462 — expected '<2> 0 1 ' in output"; \
+		echo "FAIL: REPL test 462 — expected '<2> 1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -32768 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -32768 '; then \
-		echo 'PASS: REPL test 463 — '\''0 -32768 DNEGATE .S 2DROP'\'' outputs '\''<2> -1 -32768 '\'' (0:$$8000 → -(32768) = $$FFFF8000)'; \
+	@OUTPUT=$$(printf -- '-32768 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -32768 -1 '; then \
+		echo 'PASS: REPL test 463 — '\''0 -32768 DNEGATE .S 2DROP'\'' outputs '\''<2> -32768 -1 '\'' (0:$$8000 → -(32768) = $$FFFF8000)'; \
 	else \
-		echo "FAIL: REPL test 463 — expected '<2> -1 -32768 ' in output"; \
+		echo "FAIL: REPL test 463 — expected '<2> -32768 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4092,27 +4092,27 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 5 '; then \
-		echo "PASS: REPL test 465 — '0 5 DABS .S 2DROP' outputs '<2> 0 5 ' (positive unchanged)"; \
+	@OUTPUT=$$(printf '5 0 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
+		echo "PASS: REPL test 465 — '5 0 DABS .S 2DROP' outputs '<2> 5 0 ' (positive unchanged)"; \
 	else \
-		echo "FAIL: REPL test 465 — expected '<2> 0 5 ' in output"; \
+		echo "FAIL: REPL test 465 — expected '<2> 5 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -5 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 5 '; then \
-		echo "PASS: REPL test 466 — '-1 -5 DABS .S 2DROP' outputs '<2> 0 5 ' (negates)"; \
+	@OUTPUT=$$(printf -- '-5 -1 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
+		echo "PASS: REPL test 466 — '-5 -1 DABS .S 2DROP' outputs '<2> 5 0 ' (negates)"; \
 	else \
-		echo "FAIL: REPL test 466 — expected '<2> 0 5 ' in output"; \
+		echo "FAIL: REPL test 466 — expected '<2> 5 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo 'PASS: REPL test 467 — '\''-1 0 DABS .S 2DROP'\'' outputs '\''<2> 1 0 '\'' ($$FFFF0000 → $$00010000)'; \
+	@OUTPUT=$$(printf '0 -1 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo 'PASS: REPL test 467 — '\''-1 0 DABS .S 2DROP'\'' outputs '\''<2> 0 1 '\'' ($$FFFF0000 → $$00010000)'; \
 	else \
-		echo "FAIL: REPL test 467 — expected '<2> 1 0 ' in output"; \
+		echo "FAIL: REPL test 467 — expected '<2> 0 1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4125,7 +4125,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 0 5 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 5 0 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 469 — '0 5 0 5 D= .' outputs '-1 ' (equal non-zero)"; \
 	else \
@@ -4133,7 +4133,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 0 6 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 6 0 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 470 — '0 5 0 6 D= .' outputs '0 ' (low cells differ)"; \
 	else \
@@ -4141,7 +4141,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 5 2 5 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 1 5 2 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 471 — '1 5 2 5 D= .' outputs '0 ' (high cells differ)"; \
 	else \
@@ -4158,7 +4158,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D< (§8.6.1110): signed high / unsigned low double-cell less-than.
-	@OUTPUT=$$(printf '0 0 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 1 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 473 — '0 0 0 1 D< .' outputs '-1 ' (0 < 1)"; \
 	else \
@@ -4166,7 +4166,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 0 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 0 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 474 — '0 1 0 0 D< .' outputs '0 ' (1 < 0 is false)"; \
 	else \
@@ -4190,7 +4190,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 1 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo 'PASS: REPL test 477 — '\''0 -1 1 0 D< .'\'' outputs '\''-1 '\'' ($$FFFF < $$10000, high cells differ)'; \
 	else \
@@ -4198,7 +4198,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 1 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 1 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 478 — '1 0 1 0 D< .' outputs '0 ' (equal, not less-than)"; \
 	else \
@@ -4206,7 +4206,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 -1 1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 -1 1 -1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 479 — '-1 0 -1 1 D< .' outputs '-1 ' (high cells equal; low cells compared unsigned 0 < 1)"; \
 	else \
@@ -4215,11 +4215,11 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# DMAX (§8.6.1210): double-cell max (signed ordering).
-	@OUTPUT=$$(printf '0 5 0 7 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 7 '; then \
-		echo "PASS: REPL test 480 — '0 5 0 7 DMAX .S 2DROP' outputs '<2> 0 7 '"; \
+	@OUTPUT=$$(printf '5 0 7 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 7 0 '; then \
+		echo "PASS: REPL test 480 — '5 0 7 0 DMAX .S 2DROP' outputs '<2> 7 0 '"; \
 	else \
-		echo "FAIL: REPL test 480 — expected '<2> 0 7 ' in output"; \
+		echo "FAIL: REPL test 480 — expected '<2> 7 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4231,28 +4231,28 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 0 5 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 5 '; then \
-		echo "PASS: REPL test 482 — '0 5 0 5 DMAX .S 2DROP' outputs '<2> 0 5 ' (equal → either copy)"; \
+	@OUTPUT=$$(printf '5 0 5 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
+		echo "PASS: REPL test 482 — '5 0 5 0 DMAX .S 2DROP' outputs '<2> 5 0 ' (equal → either copy)"; \
 	else \
-		echo "FAIL: REPL test 482 — expected '<2> 0 5 ' in output"; \
+		echo "FAIL: REPL test 482 — expected '<2> 5 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 1 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo 'PASS: REPL test 483 — '\''0 -1 1 0 DMAX .S 2DROP'\'' outputs '\''<2> 1 0 '\'' ($$10000 > $$FFFF)'; \
+	@OUTPUT=$$(printf -- '-1 0 0 1 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo 'PASS: REPL test 483 — '\''0 -1 1 0 DMAX .S 2DROP'\'' outputs '\''<2> 0 1 '\'' ($$10000 > $$FFFF)'; \
 	else \
-		echo "FAIL: REPL test 483 — expected '<2> 1 0 ' in output"; \
+		echo "FAIL: REPL test 483 — expected '<2> 0 1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# DMIN (§8.6.1220): double-cell min (signed ordering).
-	@OUTPUT=$$(printf '0 5 0 7 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 5 '; then \
-		echo "PASS: REPL test 484 — '0 5 0 7 DMIN .S 2DROP' outputs '<2> 0 5 '"; \
+	@OUTPUT=$$(printf '5 0 7 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
+		echo "PASS: REPL test 484 — '5 0 7 0 DMIN .S 2DROP' outputs '<2> 5 0 '"; \
 	else \
-		echo "FAIL: REPL test 484 — expected '<2> 0 5 ' in output"; \
+		echo "FAIL: REPL test 484 — expected '<2> 5 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4264,28 +4264,28 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 0 5 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 5 '; then \
-		echo "PASS: REPL test 486 — '0 5 0 5 DMIN .S 2DROP' outputs '<2> 0 5 ' (equal)"; \
+	@OUTPUT=$$(printf '5 0 5 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
+		echo "PASS: REPL test 486 — '5 0 5 0 DMIN .S 2DROP' outputs '<2> 5 0 ' (equal)"; \
 	else \
-		echo "FAIL: REPL test 486 — expected '<2> 0 5 ' in output"; \
+		echo "FAIL: REPL test 486 — expected '<2> 5 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 1 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
-		echo 'PASS: REPL test 487 — '\''0 -1 1 0 DMIN .S 2DROP'\'' outputs '\''<2> 0 -1 '\'' ($$FFFF < $$10000)'; \
+	@OUTPUT=$$(printf -- '-1 0 0 1 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
+		echo 'PASS: REPL test 487 — '\''0 -1 1 0 DMIN .S 2DROP'\'' outputs '\''<2> -1 0 '\'' ($$FFFF < $$10000)'; \
 	else \
-		echo "FAIL: REPL test 487 — expected '<2> 0 -1 ' in output"; \
+		echo "FAIL: REPL test 487 — expected '<2> -1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@# M+ (§8.6.1830): mixed single+double add (sign-extended).
 	@OUTPUT=$$(printf '0 0 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
-		echo "PASS: REPL test 488 — '0 0 1 M+ .S 2DROP' outputs '<2> 0 1 ' (0.0 + 1)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
+		echo "PASS: REPL test 488 — '0 0 1 M+ .S 2DROP' outputs '<2> 1 0 ' (0.0 + 1)"; \
 	else \
-		echo "FAIL: REPL test 488 — expected '<2> 0 1 ' in output"; \
+		echo "FAIL: REPL test 488 — expected '<2> 1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4297,27 +4297,27 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo "PASS: REPL test 490 — '0 -1 1 M+ .S 2DROP' outputs '<2> 1 0 ' (low-cell carry ripples)"; \
+	@OUTPUT=$$(printf -- '-1 0 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 490 — '-1 0 1 M+ .S 2DROP' outputs '<2> 0 1 ' (low-cell carry ripples)"; \
 	else \
-		echo "FAIL: REPL test 490 — expected '<2> 1 0 ' in output"; \
+		echo "FAIL: REPL test 490 — expected '<2> 0 1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '0 0 -5 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -5 '; then \
-		echo "PASS: REPL test 491 — '0 0 -5 M+ .S 2DROP' outputs '<2> -1 -5 '"; \
+	if echo "$$OUTPUT" | grep -q '<2> -5 -1 '; then \
+		echo "PASS: REPL test 491 — '0 0 -5 M+ .S 2DROP' outputs '<2> -5 -1 '"; \
 	else \
-		echo "FAIL: REPL test 491 — expected '<2> -1 -5 ' in output"; \
+		echo "FAIL: REPL test 491 — expected '<2> -5 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -5 -1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -6 '; then \
-		echo "PASS: REPL test 492 — '-1 -5 -1 M+ .S 2DROP' outputs '<2> -1 -6 ' (negative + negative stays negative, no low-cell carry)"; \
+	@OUTPUT=$$(printf -- '-5 -1 -1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -6 -1 '; then \
+		echo "PASS: REPL test 492 — '-5 -1 -1 M+ .S 2DROP' outputs '<2> -6 -1 ' (negative + negative stays negative, no low-cell carry)"; \
 	else \
-		echo "FAIL: REPL test 492 — expected '<2> -1 -6 ' in output"; \
+		echo "FAIL: REPL test 492 — expected '<2> -6 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4413,34 +4413,34 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 1 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
-		echo "PASS: REPL test 504 — '1 1 UM* .S 2DROP' outputs '<2> 0 1 ' (trivial product fits in low cell)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
+		echo "PASS: REPL test 504 — '1 1 UM* .S 2DROP' outputs '<2> 1 0 ' (trivial product fits in low cell)"; \
 	else \
-		echo "FAIL: REPL test 504 — expected '<2> 0 1 ' in output"; \
+		echo "FAIL: REPL test 504 — expected '<2> 1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '$$100 $$100 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
-		echo "PASS: REPL test 505 — '\$$100 \$$100 UM* .S 2DROP' outputs '<2> 1 0 ' (256×256=65536; clean carry into high cell)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
+		echo "PASS: REPL test 505 — '\$$100 \$$100 UM* .S 2DROP' outputs '<2> 0 1 ' (256×256=65536; clean carry into high cell)"; \
 	else \
-		echo "FAIL: REPL test 505 — expected '<2> 1 0 ' in output"; \
+		echo "FAIL: REPL test 505 — expected '<2> 0 1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '$$FFFF $$FFFF UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -2 1 '; then \
-		echo "PASS: REPL test 506 — '\$$FFFF \$$FFFF UM* .S 2DROP' outputs '<2> -2 1 ' (\$$FFFE0001; max unsigned squared)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 1 -2 '; then \
+		echo "PASS: REPL test 506 — '\$$FFFF \$$FFFF UM* .S 2DROP' outputs '<2> 1 -2 ' (\$$FFFE0001; max unsigned squared)"; \
 	else \
-		echo "FAIL: REPL test 506 — expected '<2> -2 1 ' in output"; \
+		echo "FAIL: REPL test 506 — expected '<2> 1 -2 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '$$FFFF 2 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 1 -2 '; then \
-		echo "PASS: REPL test 507 — '\$$FFFF 2 UM* .S 2DROP' outputs '<2> 1 -2 ' (\$$1FFFE; low-cell wrap)"; \
+	if echo "$$OUTPUT" | grep -q '<2> -2 1 '; then \
+		echo "PASS: REPL test 507 — '\$$FFFF 2 UM* .S 2DROP' outputs '<2> -2 1 ' (\$$1FFFE; low-cell wrap)"; \
 	else \
-		echo "FAIL: REPL test 507 — expected '<2> 1 -2 ' in output"; \
+		echo "FAIL: REPL test 507 — expected '<2> -2 1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4454,58 +4454,58 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 15 '; then \
-		echo "PASS: REPL test 509 — '5 3 M* .S 2DROP' outputs '<2> 0 15 ' (positive × positive)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 15 0 '; then \
+		echo "PASS: REPL test 509 — '5 3 M* .S 2DROP' outputs '<2> 15 0 ' (positive × positive)"; \
 	else \
-		echo "FAIL: REPL test 509 — expected '<2> 0 15 ' in output"; \
+		echo "FAIL: REPL test 509 — expected '<2> 15 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -15 '; then \
-		echo "PASS: REPL test 510 — '-5 3 M* .S 2DROP' outputs '<2> -1 -15 ' (negative × positive → negative double)"; \
+	if echo "$$OUTPUT" | grep -q '<2> -15 -1 '; then \
+		echo "PASS: REPL test 510 — '-5 3 M* .S 2DROP' outputs '<2> -15 -1 ' (negative × positive → negative double)"; \
 	else \
-		echo "FAIL: REPL test 510 — expected '<2> -1 -15 ' in output"; \
+		echo "FAIL: REPL test 510 — expected '<2> -15 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 -15 '; then \
-		echo "PASS: REPL test 511 — '5 -3 M* .S 2DROP' outputs '<2> -1 -15 ' (positive × negative → negative)"; \
+	if echo "$$OUTPUT" | grep -q '<2> -15 -1 '; then \
+		echo "PASS: REPL test 511 — '5 -3 M* .S 2DROP' outputs '<2> -15 -1 ' (positive × negative → negative)"; \
 	else \
-		echo "FAIL: REPL test 511 — expected '<2> -1 -15 ' in output"; \
+		echo "FAIL: REPL test 511 — expected '<2> -15 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 15 '; then \
-		echo "PASS: REPL test 512 — '-5 -3 M* .S 2DROP' outputs '<2> 0 15 ' (negative × negative → positive)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 15 0 '; then \
+		echo "PASS: REPL test 512 — '-5 -3 M* .S 2DROP' outputs '<2> 15 0 ' (negative × negative → positive)"; \
 	else \
-		echo "FAIL: REPL test 512 — expected '<2> 0 15 ' in output"; \
+		echo "FAIL: REPL test 512 — expected '<2> 15 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-32768 -32768 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 16384 0 '; then \
-		echo "PASS: REPL test 513 — '-32768 -32768 M* .S 2DROP' outputs '<2> 16384 0 ' (\$$40000000; ABS(\$$8000) trap collapses)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 0 16384 '; then \
+		echo "PASS: REPL test 513 — '-32768 -32768 M* .S 2DROP' outputs '<2> 0 16384 ' (\$$40000000; ABS(\$$8000) trap collapses)"; \
 	else \
-		echo "FAIL: REPL test 513 — expected '<2> 16384 0 ' in output"; \
+		echo "FAIL: REPL test 513 — expected '<2> 0 16384 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '32767 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 16383 1 '; then \
-		echo "PASS: REPL test 514 — '32767 32767 M* .S 2DROP' outputs '<2> 16383 1 ' (\$$3FFF0001; max positive squared)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 1 16383 '; then \
+		echo "PASS: REPL test 514 — '32767 32767 M* .S 2DROP' outputs '<2> 1 16383 ' (\$$3FFF0001; max positive squared)"; \
 	else \
-		echo "FAIL: REPL test 514 — expected '<2> 16383 1 ' in output"; \
+		echo "FAIL: REPL test 514 — expected '<2> 1 16383 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-32768 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -16384 -32768 '; then \
-		echo "PASS: REPL test 515 — '-32768 32767 M* .S 2DROP' outputs '<2> -16384 -32768 ' (-\$$3FFF8000; sign and magnitude)"; \
+	if echo "$$OUTPUT" | grep -q '<2> -32768 -16384 '; then \
+		echo "PASS: REPL test 515 — '-32768 32767 M* .S 2DROP' outputs '<2> -32768 -16384 ' (-\$$3FFF8000; sign and magnitude)"; \
 	else \
-		echo "FAIL: REPL test 515 — expected '<2> -16384 -32768 ' in output"; \
+		echo "FAIL: REPL test 515 — expected '<2> -32768 -16384 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4518,31 +4518,31 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 0 3 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 15 '; then \
-		echo "PASS: REPL test 517 — '0 5 0 3 D* .S 2DROP' outputs '<2> 0 15 ' (both fit in single cells)"; \
+	@OUTPUT=$$(printf '5 0 3 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 15 0 '; then \
+		echo "PASS: REPL test 517 — '5 0 3 0 D* .S 2DROP' outputs '<2> 15 0 ' (both fit in single cells)"; \
 	else \
-		echo "FAIL: REPL test 517 — expected '<2> 0 15 ' in output"; \
+		echo "FAIL: REPL test 517 — expected '<2> 15 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 0 1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
-		echo "PASS: REPL test 518 — '0 -1 0 1 D* .S 2DROP' outputs '<2> 0 -1 ' (65535×1=\$$0000FFFF)"; \
+	@OUTPUT=$$(printf -- '-1 0 1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
+		echo "PASS: REPL test 518 — '-1 0 1 0 D* .S 2DROP' outputs '<2> -1 0 ' (65535×1=\$$0000FFFF)"; \
 	else \
-		echo "FAIL: REPL test 518 — expected '<2> 0 -1 ' in output"; \
+		echo "FAIL: REPL test 518 — expected '<2> -1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 0 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -2 1 '; then \
-		echo "PASS: REPL test 519 — '0 -1 0 -1 D* .S 2DROP' outputs '<2> -2 1 ' (65535×65535=\$$FFFE0001)"; \
+	@OUTPUT=$$(printf -- '-1 0 -1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 1 -2 '; then \
+		echo "PASS: REPL test 519 — '-1 0 -1 0 D* .S 2DROP' outputs '<2> 1 -2 ' (65535×65535=\$$FFFE0001)"; \
 	else \
-		echo "FAIL: REPL test 519 — expected '<2> -2 1 ' in output"; \
+		echo "FAIL: REPL test 519 — expected '<2> 1 -2 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 0 1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 520 — '-1 -1 0 1 D* .S 2DROP' outputs '<2> -1 -1 ' (-1 × 1 signed double)"; \
 	else \
@@ -4551,18 +4551,18 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-1 -1 -1 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
-		echo "PASS: REPL test 521 — '-1 -1 -1 -1 D* .S 2DROP' outputs '<2> 0 1 ' (two's-complement -1×-1=1)"; \
+	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
+		echo "PASS: REPL test 521 — '-1 -1 -1 -1 D* .S 2DROP' outputs '<2> 1 0 ' (two's-complement -1×-1=1)"; \
 	else \
-		echo "FAIL: REPL test 521 — expected '<2> 0 1 ' in output"; \
+		echo "FAIL: REPL test 521 — expected '<2> 1 0 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 -1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
-		echo "PASS: REPL test 522 — '0 1 -1 0 D* .S 2DROP' outputs '<2> -1 0 ' (cross-term carry: \$$FFFF0000)"; \
+	@OUTPUT=$$(printf '1 0 0 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
+		echo "PASS: REPL test 522 — '1 0 0 -1 D* .S 2DROP' outputs '<2> 0 -1 ' (cross-term carry: \$$FFFF0000)"; \
 	else \
-		echo "FAIL: REPL test 522 — expected '<2> -1 0 ' in output"; \
+		echo "FAIL: REPL test 522 — expected '<2> 0 -1 ' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -4601,7 +4601,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 527 — '0 1 1 UM/MOD .S 2DROP' outputs '<2> 0 1 ' (unity / unity)"; \
 	else \
@@ -4609,7 +4609,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 10 3 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 3 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
 		echo "PASS: REPL test 528 — '0 10 3 UM/MOD .S 2DROP' outputs '<2> 1 3 ' (10/3 = 3 rem 1)"; \
 	else \
@@ -4617,7 +4617,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0 -1 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
 		echo "PASS: REPL test 529 — '0 -1 1 UM/MOD .S 2DROP' outputs '<2> 0 -1 ' (\$$FFFF / 1 = \$$FFFF rem 0)"; \
 	else \
@@ -4625,7 +4625,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 2 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 1 2 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
 		echo "PASS: REPL test 530 — '1 0 2 UM/MOD .S 2DROP' outputs '<2> 0 -32768 ' (\$$10000 / 2 = \$$8000 rem 0)"; \
 	else \
@@ -4633,7 +4633,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0 -1 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 531 — '0 -1 -1 UM/MOD .S 2DROP' outputs '<2> 0 1 ' (\$$FFFF / \$$FFFF = 1 rem 0)"; \
 	else \
@@ -4641,7 +4641,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-2 -1 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -2 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2 -1 '; then \
 		echo "PASS: REPL test 532 — '-2 -1 -1 UM/MOD .S 2DROP' outputs '<2> -2 -1 ' (\$$FFFEFFFF / \$$FFFF = \$$FFFF rem \$$FFFE — max quot just-fits)"; \
 	else \
@@ -4650,7 +4650,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# SM/REM — symmetric signed mixed divide (§6.1.2214); remainder sign matches dividend.
-	@OUTPUT=$$(printf '0 10 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
 		echo "PASS: REPL test 533 — '0 10 3 SM/REM .S 2DROP' outputs '<2> 1 3 ' (+10 / +3 = +3 rem +1)"; \
 	else \
@@ -4658,7 +4658,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -10 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -3 '; then \
 		echo "PASS: REPL test 534 — '-1 -10 3 SM/REM .S 2DROP' outputs '<2> -1 -3 ' (-10 / +3 = -3 rem -1; rem matches dividend sign)"; \
 	else \
@@ -4666,7 +4666,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0 10 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 -3 '; then \
 		echo "PASS: REPL test 535 — '0 10 -3 SM/REM .S 2DROP' outputs '<2> 1 -3 ' (+10 / -3 = -3 rem +1; rem matches dividend sign)"; \
 	else \
@@ -4674,7 +4674,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -10 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 3 '; then \
 		echo "PASS: REPL test 536 — '-1 -10 -3 SM/REM .S 2DROP' outputs '<2> -1 3 ' (-10 / -3 = +3 rem -1; rem matches dividend sign)"; \
 	else \
@@ -4690,7 +4690,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -5 10 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 -1 10 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -5 0 '; then \
 		echo "PASS: REPL test 538 — '-1 -5 10 SM/REM .S 2DROP' outputs '<2> -5 0 ' (|-5|<10 → quot 0 rem -5)"; \
 	else \
@@ -4698,7 +4698,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -32768 1 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 -1 1 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
 		echo "PASS: REPL test 539 — '-1 -32768 1 SM/REM .S 2DROP' outputs '<2> 0 -32768 ' (\$$FFFF8000 / 1 = -32768 rem 0)"; \
 	else \
@@ -4707,7 +4707,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# FM/MOD — floored signed mixed divide (§6.1.1561); remainder sign matches divisor.
-	@OUTPUT=$$(printf '0 10 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
 		echo "PASS: REPL test 540 — '0 10 3 FM/MOD .S 2DROP' outputs '<2> 1 3 ' (same-sign — matches SM/REM)"; \
 	else \
@@ -4715,7 +4715,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -10 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 2 -4 '; then \
 		echo "PASS: REPL test 541 — '-1 -10 3 FM/MOD .S 2DROP' outputs '<2> 2 -4 ' (-10 floored /3 = -4 rem 2 — discriminates from SM/REM's -1 -3)"; \
 	else \
@@ -4723,7 +4723,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0 10 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2 -4 '; then \
 		echo "PASS: REPL test 542 — '0 10 -3 FM/MOD .S 2DROP' outputs '<2> -2 -4 ' (+10 floored /-3 = -4 rem -2 — discriminates from SM/REM's 1 -3)"; \
 	else \
@@ -4731,7 +4731,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -10 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 3 '; then \
 		echo "PASS: REPL test 543 — '-1 -10 -3 FM/MOD .S 2DROP' outputs '<2> -1 3 ' (same-sign negative — matches SM/REM)"; \
 	else \
@@ -4747,7 +4747,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 9 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '9 0 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 3 '; then \
 		echo "PASS: REPL test 545 — '0 9 3 FM/MOD .S 2DROP' outputs '<2> 0 3 ' (exact — no correction applied)"; \
 	else \
@@ -4755,7 +4755,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -9 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-9 -1 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -3 '; then \
 		echo "PASS: REPL test 546 — '-1 -9 3 FM/MOD .S 2DROP' outputs '<2> 0 -3 ' (exact negative — no correction)"; \
 	else \
@@ -4790,7 +4790,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.7 pictured numeric output (550..571) — DPANS94 §6.1.{0030,0040,0050,0490,1670,2210} + §6.2.1675 ---
 	@# Core primitives: decimal round-trip (<# #S #>, explicit # digit train, zero ud).
-	@OUTPUT=$$(printf '0 123 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '123 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '123 ok'; then \
 		echo "PASS: REPL test 550 — '0 123 <# #S #> TYPE' outputs '123' (decimal round-trip)"; \
 	else \
@@ -4798,7 +4798,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 12345 <# # # # # # #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '12345 0 <# # # # # # #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '12345 ok'; then \
 		echo "PASS: REPL test 551 — '0 12345 <# # # # # # #> TYPE' outputs '12345' (five explicit # digits)"; \
 	else \
@@ -4815,7 +4815,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Base-switching coverage: decimal / HEX / binary / octal / base-36.
-	@OUTPUT=$$(printf 'DECIMAL 0 65535 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 65535 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '65535 ok'; then \
 		echo "PASS: REPL test 553 — base 10: '0 65535 <# #S #> TYPE' outputs '65535'"; \
 	else \
@@ -4824,7 +4824,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Literals are parsed in DECIMAL then printed in the target base.
-	@OUTPUT=$$(printf 'DECIMAL 0 65535 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 65535 0 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FFFF ok'; then \
 		echo "PASS: REPL test 554 — base 16: '0 65535 <# #S #> TYPE' outputs 'FFFF'"; \
 	else \
@@ -4832,7 +4832,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0 255 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 255 0 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '11111111 ok'; then \
 		echo "PASS: REPL test 555 — base 2: '0 255 <# #S #> TYPE' outputs '11111111'"; \
 	else \
@@ -4840,7 +4840,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0 511 8 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 511 0 8 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '777 ok'; then \
 		echo "PASS: REPL test 556 — base 8: '0 511 <# #S #> TYPE' outputs '777'"; \
 	else \
@@ -4848,7 +4848,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0 35 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 35 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'Z ok'; then \
 		echo "PASS: REPL test 557 — base 36: '0 35 <# #S #> TYPE' outputs 'Z' (verifies digit_to_char A-Z branch)"; \
 	else \
@@ -4882,7 +4882,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLD explicit non-digit character: builds "1,23" right-to-left.
-	@OUTPUT=$$(printf '0 123 <# # # 44 HOLD #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '123 0 <# # # 44 HOLD #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1,23 ok'; then \
 		echo "PASS: REPL test 561 — '0 123 <# # # 44 HOLD #S #> TYPE' outputs '1,23' (HOLD inserts non-digit ',' = 44)"; \
 	else \
@@ -4891,7 +4891,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLDS string insertion preserves left-to-right order.
-	@OUTPUT=$$(printf ': PICT-ABC S" abc" HOLDS ;\r\n0 99 <# #S PICT-ABC #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': PICT-ABC S" abc" HOLDS ;\r\n99 0 <# #S PICT-ABC #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'abc99 ok'; then \
 		echo "PASS: REPL test 562 — HOLDS inserts 'abc' before '99' → 'abc99' (left-to-right order preserved)"; \
 	else \
@@ -4996,7 +4996,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLDS u=0: empty-string is a no-op; pictured output unchanged.
-	@OUTPUT=$$(printf '0 99 <# #S HERE 0 HOLDS #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '99 0 <# #S HERE 0 HOLDS #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99 ok'; then \
 		echo "PASS: REPL test 574 — 'HERE 0 HOLDS' (u=0) is a no-op; output unchanged"; \
 	else \
@@ -5005,7 +5005,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLDS u=1: single iteration writes one char then exits.
-	@OUTPUT=$$(printf ': PICT-X S" X" HOLDS ;\r\n0 99 <# #S PICT-X #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': PICT-X S" X" HOLDS ;\r\n99 0 <# #S PICT-X #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'X99 ok'; then \
 		echo "PASS: REPL test 575 — HOLDS (u=1) inserts single char before '99' → 'X99'"; \
 	else \
@@ -5014,7 +5014,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# digit_to_char A-Z mid-range: catches off-by-one in 'ADD A,"A"-10'.
-	@OUTPUT=$$(printf 'DECIMAL 0 10 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 10 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A ok'; then \
 		echo "PASS: REPL test 576 — base 36 digit 10 → 'A' (digit_to_char A-Z lower bound)"; \
 	else \
@@ -5022,7 +5022,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0 19 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 19 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'J ok'; then \
 		echo "PASS: REPL test 577 — base 36 digit 19 → 'J' (digit_to_char A-Z mid-range)"; \
 	else \
@@ -5030,7 +5030,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0 25 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 25 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'P ok'; then \
 		echo "PASS: REPL test 578 — base 36 digit 25 → 'P' (digit_to_char A-Z mid-range)"; \
 	else \
@@ -5175,7 +5175,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# hi=0, lo=-1 → unsigned double = 65535. Catches E10-D1 confusion — hi NOT on TOS.
-	@OUTPUT=$$(printf '0 -1 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^65535  ok'; then \
 		echo "PASS: REPL test 595 — '0 -1 D.' → '65535 ' (hi=0, lo=-1; low-on-TOS sanity)"; \
 	else \
@@ -5183,7 +5183,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 HEX D. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 HEX D. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^FFFF  ok'; then \
 		echo "PASS: REPL test 596 — '0 -1 HEX D. DECIMAL' → 'FFFF '"; \
 	else \
@@ -5192,7 +5192,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# INT_MIN corner (AC #15): double $$80000000 = hi=32768 lo=0; DABS leaves it unchanged, SIGN still fires on hi.
-	@OUTPUT=$$(printf '32768 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 32768 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-2147483648  ok'; then \
 		echo "PASS: REPL test 597 — '32768 0 D.' → '-2147483648 ' (INT_MIN; DABS(\$$80000000) fixed-point)"; \
 	else \
@@ -5321,7 +5321,7 @@ test-repl: $(TARGET)
 	fi
 	@# Review follow-ups: D.R × INT_MIN, D. typical positive, .R negative-width.
 	@# D.R INT_MIN corner (width=15): exercises DABS($$80000000) + SIGN + width-arith together.
-	@OUTPUT=$$(printf '32768 0 15 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 32768 15 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^    -2147483648 ok'; then \
 		echo "PASS: REPL test 612 — '32768 0 15 D.R' → 4 spaces + '-2147483648' (INT_MIN × right-align)"; \
 	else \
@@ -5330,7 +5330,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D. typical positive value — complements the edge-heavy 593..597 block.
-	@OUTPUT=$$(printf '0 12345 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '12345 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^12345  ok'; then \
 		echo "PASS: REPL test 613 — '0 12345 D.' → '12345 ' (typical positive double)"; \
 	else \
@@ -5526,14 +5526,15 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@# MAX-D: stack ( hi lo true ) per E10-D1 (lo on TOS, hi second, true newly on top).
-	@# Probe '. . .' is TOS-first so it prints true, lo, hi → "-1 -1 32767" since
+	@# MAX-D: stack ( lo hi true ) per ANS Forth 1994 §3.1.4.1 (hi on TOS,
+	@# lo second, true newly on top). Story 13.0.1 flipped from low-on-TOS.
+	@# Probe '. . .' is TOS-first so it prints true, hi, lo → "-1 32767 -1" since
 	@# lo=$$FFFF=-1, hi=$$7FFF=32767, flag=$$FFFF=-1.
 	@OUTPUT=$$(printf 'S" MAX-D" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '^-1 -1 32767  ok'; then \
-		echo "PASS: REPL test 635 — 'S\" MAX-D\" ENVIRONMENT?' → ( 32767 -1 -1 ) — E10-D1 lo-on-TOS for double"; \
+	if echo "$$OUTPUT" | grep -qE '^-1 32767 -1  ok'; then \
+		echo "PASS: REPL test 635 — 'S\" MAX-D\" ENVIRONMENT?' → ( -1 32767 -1 ) per §3.1.4.1 hi-on-TOS"; \
 	else \
-		echo "FAIL: REPL test 635 — expected '-1 -1 32767  ok' for MAX-D"; \
+		echo "FAIL: REPL test 635 — expected '-1 32767 -1  ok' for MAX-D"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -7950,11 +7951,14 @@ test-repl: $(TARGET)
 	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
 		echo "PASS: REPL test 898 — Story 13.0: 2DUP via literal-input (T-S130-OP-2DUP)"; \
 	else echo "FAIL: REPL test 898 — expected '2000000  ok' from '1000000. 2DUP D+ D.'"; exit 1; fi
-	@# T-S130-OP-2DROP-2SWAP (899) — 1000000./99. → 2SWAP swaps pairs → 2DROP removes top pair
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 99. 2SWAP 2DROP .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@# T-S130-OP-2DROP-2SWAP (899) — 1000000./99. → 2SWAP swaps pairs → 2DROP removes top pair.
+	@# Story 13.0.1: switched terminal `.` to `D.` so the surviving double's value
+	@# (not just its top cell) is printed; under the new high-on-TOS convention `.`
+	@# would print the high cell (=0 for 99), masking the operation under test.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 99. 2SWAP 2DROP D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99  ok'; then \
 		echo "PASS: REPL test 899 — Story 13.0: 2DROP/2SWAP via literal-input (T-S130-OP-2DROP-2SWAP)"; \
-	else echo "FAIL: REPL test 899 — expected '99  ok' from '1000000. 99. 2SWAP 2DROP .'"; exit 1; fi
+	else echo "FAIL: REPL test 899 — expected '99  ok' from '1000000. 99. 2SWAP 2DROP D.'"; exit 1; fi
 	@# T-S130-OP-2OVER (900) — 2OVER ( d1 d2 -- d1 d2 d1 ); D. consumes top copy of d1
 	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5. 2OVER D. 2DROP 2DROP' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
@@ -7970,6 +7974,28 @@ test-repl: $(TARGET)
 	if echo "$$OUTPUT" | grep -q '    1000 ok'; then \
 		echo "PASS: REPL test 902 — Story 13.0: D.R via literal-input (T-S130-OP-D-DOT-R)"; \
 	else echo "FAIL: REPL test 902 — expected '    1000 ok' from '1000. 8 D.R'"; exit 1; fi
+	@# T-S1301-2STORE-BYTE-LAYOUT (903) — Story 13.0.1 byte-pattern probe per AC #11(e).
+	@# Round-trip 0xDEADBEEF. (= hi=0xDEAD, lo=0xBEEF) through 2! and inspect
+	@# bytes at the storage cell. Per ANS Forth 1994 §3.1.4.1 + §6.1.0350 (post-
+	@# Story-13.0.1 high-at-low-address): bytes should be AD DE EF BE — i.e.,
+	@# high cell ($DEAD) at addr+0..1 (little-endian-within = AD DE), low cell
+	@# ($BEEF) at addr+2..3 (little-endian-within = EF BE). Decimal: 173 222 239 190.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'CREATE STO13X 0 , 0 , 0xDEADBEEF. STO13X 2! STO13X C@ . STO13X 1 + C@ . STO13X 2 + C@ . STO13X 3 + C@ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '173 222 239 190  ok'; then \
+		echo "PASS: REPL test 903 — Story 13.0.1: 2! byte-layout high-at-low-addr (T-S1301-2STORE-BYTE-LAYOUT)"; \
+	else echo "FAIL: REPL test 903 — expected '173 222 239 190  ok' (AD DE EF BE) from 2! of 0xDEADBEEF."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# T-S1301-DLIT-BYTE-LAYOUT (904) — Story 13.0.1 byte-pattern probe per AC #11(f).
+	@# Compile a colon definition with a double literal; inspect the inline 4 bytes
+	@# of (DLIT)'s data area. >BODY adds 5 to the xt: for a colon definition this
+	@# lands past `JP DOCOL` (3 bytes) plus the (DLIT)-xt itself (2 bytes), so
+	@# >BODY points at the first inline-data byte. Per AC #8: high cell at lower
+	@# address. For 0xDEADBEEF: bytes must be AD DE EF BE = 173 222 239 190.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T13X 0xDEADBEEF. ; '\'' T13X >BODY DUP C@ . 1+ DUP C@ . 1+ DUP C@ . 1+ C@ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '173 222 239 190  ok'; then \
+		echo "PASS: REPL test 904 — Story 13.0.1: (DLIT) inline-data layout high-at-low-addr (T-S1301-DLIT-BYTE-LAYOUT)"; \
+	else echo "FAIL: REPL test 904 — expected '173 222 239 190  ok' (AD DE EF BE) from (DLIT) inline data"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

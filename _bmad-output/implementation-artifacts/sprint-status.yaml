@@ -195,6 +195,16 @@ development_status:
   # Trailing-dot, leading-dot, embedded-dot all in scope; plays with Epic
   # 9 prefixes. Compliance-doc one-line correction lands with the story.
   13-0-double-cell-literal-recogniser-ans-3-4-1-3: done
+  # Story 13.0.1 inserted 2026-05-01 as a back-fill ahead of 13.1: ANS Forth
+  # 1994 §3.1.4.1 mandates high-cell on TOS; antforth's E10-D1 committed the
+  # inverse convention and every double-cell word was implemented against it.
+  # Symptom that surfaced the gap: `1024. .S` shows `<2> 0 1024` (low on TOS)
+  # where the standard requires `<2> 1024 0` (high on TOS). Same shape gap as
+  # §3.4.1.3 (Story 13.0): structurally invisible to Epic 10's word-counted
+  # survey. Story 13.1's file-position math (per §11.3.5) sits on top of the
+  # double-cell convention, so 13.0.1 lands and reaches done before 13.1
+  # dev-pass starts.
+  13-0-1-flip-double-cell-stack-order-ans-3-1-4-1: done
   13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: ready-for-dev
   13-2-core-file-access-wordset: backlog
   13-3-file-positioning: backlog
