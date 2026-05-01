@@ -477,32 +477,53 @@ w_NUMBER_Q_cf:
         JR      Z, .numq_fail  ; Bare "-" → fail
 
 .numq_convert:
-        ; HL = string, B = count, DE = accumulator
-        LD      DE, 0
-        CALL    do_number
-        ; DE = result, B = remaining
-
+        ; Story 13.0 — switch to 32-bit dot-aware accumulator (ANS Forth
+        ; 1994 §3.4.1.3). For unprefixed digit strings, base is BASE
+        ; (UserArea). saw_dot=0 → single-cell single (flag=0xFFFF, DPL=-1);
+        ; saw_dot=1 → double-cell (flag=2, DPL=digits-after-dot).
+        CALL    do_double_dot_user
+        JR      C, .numq_fail   ; multi-dot or invalid digit
         LD      A, B
         OR      A
-        JR      NZ, .numq_fail ; Remaining chars → not fully converted → fail
+        JR      NZ, .numq_fail  ; Remaining chars → fail
 
-        ; Success — negate if needed
+        ; Branch on saw_dot for sign-apply + push.
+        LD      A, (dlit_saw_dot)
+        OR      A
+        JR      NZ, .numq_double
+
+.numq_single:
+        ; Single-cell: apply sign if flagged, push value, flag = 0xFFFF
         LD      A, (.numq_negate)
         OR      A
-        JR      Z, .numq_ok
-        ; Negate DE: DE = 0 - DE
-        LD      A, E
-        CPL
-        LD      E, A
-        LD      A, D
-        CPL
-        LD      D, A
-        INC     DE              ; Two's complement
+        CALL    NZ, dlit_negate ; 32-bit negate; high cell remains 0 from
+                                ; init so 16-bit sign result lives in
+                                ; (dlit_acc_lo) low cell as expected
+        ; DPL = -1
+        LD      HL, -1
+        LD      (IY+UserArea.dpl),   L
+        LD      (IY+UserArea.dpl+1), H
+        LD      HL, (dlit_acc_lo)
+        PUSH    HL              ; n as NOS
+        EXX                     ; restore IP to main DE
+        LD      BC, 0xFFFF      ; flag = TRUE (single)
+        NEXT
 
-.numq_ok:
-        PUSH    DE              ; Push n as NOS
-        EXX                     ; Restore IP from shadow (main BC clobbered)
-        LD      BC, 0xFFFF      ; TRUE (new TOS) — no need to stage through A
+.numq_double:
+        ; Double-cell: apply 32-bit sign, write DPL, push high+low, flag=2.
+        LD      A, (.numq_negate)
+        OR      A
+        CALL    NZ, dlit_negate
+        LD      A, (dlit_dpl)
+        LD      (IY+UserArea.dpl),   A
+        XOR     A
+        LD      (IY+UserArea.dpl+1), A
+        LD      HL, (dlit_acc_hi)
+        PUSH    HL              ; second-on-stack (high)
+        LD      HL, (dlit_acc_lo)
+        PUSH    HL              ; would-be-TOS (low)
+        EXX                     ; restore IP to main DE
+        LD      BC, 2           ; flag = 2 (double)
         NEXT
 
 .numq_fail:

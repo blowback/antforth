@@ -47,6 +47,23 @@ w_BASE_cf:
         JP      push_user_var
 
 ; -----------------------------------------------
+; DPL ( -- addr )
+;   Push address of DPL user variable. DPL holds the count of digits to the
+;   right of the dot from the last successful numeric parse, or -1 if no
+;   dot was present (single-cell parse). Updated only on successful parses;
+;   failed parses leave the previous value intact. Initialised to -1 at
+;   cold start.
+; de-facto Forth convention (fig-Forth / F83 / gforth / SwiftForth / pforth)
+; — NOT in ANS Core. Story 13.0 ANS Forth 1994 §3.4.1.3 — dot-marker recogniser
+;   exposes the digits-after-dot count for fixed-point reconstruction.
+; -----------------------------------------------
+w_DPL:
+        DEFCODE "DPL", 0
+w_DPL_cf:
+        LD      A, UserArea.dpl
+        JP      push_user_var
+
+; -----------------------------------------------
 ; >IN ( -- addr )
 ;   Push address of >IN variable
 ; -----------------------------------------------
@@ -202,30 +219,71 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         ; Stack: ( c-addr 0 ) — not found
         DW      w_DROP_cf               ; ( c-addr 0 -- c-addr )
         DW      w_ASM_RECOGNIZE_cf      ; ( c-addr -- value true | c-addr false )
+        ; Story 13.0: success keeps the flag on TOS so .got_value can
+        ; dispatch on flag=2 (double) vs anything-nonzero (single).
+        ; ASM-RECOGNIZE returns 0xFFFF (single) or 0 (fail).
+        DW      w_DUP_cf                ; ( ... flag flag )
         DW      w_QBRANCH_cf
-        DW      .try_prefix_num - $     ; if false, try prefix recogniser
+        DW      .try_pn_drop - $        ; if false, drop and try prefix
         DW      w_BRANCH_cf
-        DW      .got_value - $          ; if true, share number handling
+        DW      .got_value - $          ; if true, keep flag, share handling
+.try_pn_drop:
+        DW      w_DROP_cf               ; drop the duplicated false
 .try_prefix_num:                         ; Epic 9 — NUMBER-PREFIX?
-        DW      w_NUMBER_PREFIX_Q_cf    ; ( c-addr -- n true | c-addr false )
+        ; ( c-addr -- n 0xFFFF | d.hi d.lo 2 | c-addr 0 )
+        ; Story 13.0: 3-shape return: single (flag=0xFFFF), double
+        ; (flag=2), or fail (flag=0). DUP+QBRANCH preserves flag for
+        ; .got_value dispatch.
+        DW      w_NUMBER_PREFIX_Q_cf
+        DW      w_DUP_cf
         DW      w_QBRANCH_cf
-        DW      .try_real_number - $    ; if false, fall through to NUMBER?
+        DW      .try_rn_drop - $
         DW      w_BRANCH_cf
-        DW      .got_value - $          ; if true, share number handling
+        DW      .got_value - $
+.try_rn_drop:
+        DW      w_DROP_cf
 .try_real_number:
-        DW      w_NUMBER_Q_cf           ; ( c-addr -- n true | c-addr false )
-        DW      w_QBRANCH_cf            ; if false, error
-        DW      .not_number - $
+        DW      w_NUMBER_Q_cf           ; ( c-addr -- n 0xFFFF | d.hi d.lo 2 | c-addr 0 )
+        DW      w_DUP_cf
+        DW      w_QBRANCH_cf
+        DW      .not_number_drop - $
+        DW      w_BRANCH_cf
+        DW      .got_value - $
+.not_number_drop:
+        DW      w_DROP_cf               ; drop the duplicated false
+        DW      w_BRANCH_cf
+        DW      .not_number - $         ; jump to error path (not fall through to .got_value)
 .got_value:
-        ; Valid number or recognized tag — check STATE
-        DW      w_STATE_cf              ; ( n -- n state-addr )
-        DW      w_FETCH_cf              ; ( n state-addr -- n state )
-        DW      w_QBRANCH_cf            ; if STATE=0, leave number on stack
-        DW      .interp_loop - $        ; interpreting: n stays on stack, loop
-        ; Compiling: compile LIT n
-        DW      w_LIT_cf, w_LIT_cf      ; ( n -- n lit-xt )
-        DW      w_COMMA_cf              ; ( n lit-xt -- n ) compile LIT address
-        DW      w_COMMA_cf              ; ( n -- ) compile the number value
+        ; Valid number — flag still on TOS. Single: flag = 0xFFFF (or 1);
+        ; Double: flag = 2 (Story 13.0).
+        DW      w_STATE_cf              ; ( ... flag -- ... flag state-addr )
+        DW      w_FETCH_cf              ; ( ... flag state-addr -- ... flag state )
+        DW      w_QBRANCH_cf            ; if STATE=0, drop flag, leave value(s)
+        DW      .got_interp - $
+        ; Compile state — dispatch on flag value (2 = double, else single)
+        DW      w_DUP_cf                ; ( ... flag flag )
+        DW      w_LIT_cf, 2
+        DW      w_EQUALS_cf             ; ( ... flag eq2? )
+        DW      w_QBRANCH_cf
+        DW      .compile_single - $     ; flag != 2 → single
+        ; flag == 2: emit (DLIT) + low + high. Stack: ( d.hi d.lo flag )
+        DW      w_DROP_cf               ; drop flag → ( d.hi d.lo )
+        DW      w_LIT_cf, w_D_LIT_cf    ; ( d.hi d.lo (DLIT)-xt )
+        DW      w_COMMA_cf              ; emit (DLIT) xt
+        DW      w_COMMA_cf              ; emit d.lo
+        DW      w_COMMA_cf              ; emit d.hi
+        DW      w_BRANCH_cf
+        DW      .interp_loop - $
+.compile_single:
+        DW      w_DROP_cf               ; drop flag → ( n )
+        DW      w_LIT_cf, w_LIT_cf      ; ( n LIT-xt )
+        DW      w_COMMA_cf              ; emit LIT xt
+        DW      w_COMMA_cf              ; emit n
+        DW      w_BRANCH_cf
+        DW      .interp_loop - $
+.got_interp:
+        ; Interpret state: drop flag, value(s) stay on stack.
+        DW      w_DROP_cf
         DW      w_BRANCH_cf
         DW      .interp_loop - $
 .not_number:

@@ -261,6 +261,38 @@ w_D_MINUS_cf:
         NEXT
 
 ; -----------------------------------------------
+; (DLIT) ( -- d.hi-2nd d.lo-tos )
+;   Runtime for a compiled double-cell literal. Reads 4 inline bytes
+;   from the thread following its own code-field: low cell first, then
+;   high cell. Pushes the pair so the low cell is on TOS (per E10-D1)
+;   and the high cell is second-on-stack — matching D+ / 2@ / D.
+;   consumption order. Advances IP by 4 bytes.
+;   Inline layout in compiled code: [w_D_LIT_cf addr][d.lo lo,hi][d.hi lo,hi]
+;   so a 2! of the same value at (HERE+2) round-trips byte-for-byte.
+; ANS Forth 1994 §3.4.1.3 — runtime for compile-state double-literal emitted
+;   by NUMBER-PREFIX? / NUMBER? when a dot-bearing digit string is parsed.
+; Story 13.0 — paren-convention internal helper (architecture.md:438).
+; -----------------------------------------------
+w_D_LIT:
+        DEFCODE "(DLIT)", 0
+w_D_LIT_cf:
+        ; Story 11.5.2 -3 THROW guard. Depth grows by 2 cells (high + low);
+        ; the 32-byte safety margin in check_overflow covers both cells.
+        CALL    check_overflow
+        PUSH    BC                      ; spill old TOS (3rd-on-stack)
+        EX      DE, HL                  ; HL = IP (→ low cell)
+        LD      C, (HL)
+        INC     HL
+        LD      B, (HL)                 ; BC = d.lo (new TOS)
+        INC     HL                      ; HL → high cell
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)                 ; DE = d.hi
+        INC     HL                      ; HL = new IP (past 4 inline bytes)
+        PUSH    DE                      ; push d.hi as second-on-stack
+        NEXTHL                          ; HL is already new IP — skip the EX
+
+; -----------------------------------------------
 ; DNEGATE ( d -- -d )
 ;   Double-cell two's-complement negation: -d = 0 - d. The unique
 ;   $80000000 fixed-point case negates to itself (ANS-conformant;

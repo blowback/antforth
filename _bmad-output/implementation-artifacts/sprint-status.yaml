@@ -187,8 +187,15 @@ development_status:
   12-6-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: done
   epic-12-retrospective: done
 
-  epic-13: backlog
-  13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: backlog
+  epic-13: in-progress
+  # Story 13.0 inserted 2026-05-01 as a back-fill ahead of 13.1: ANS Forth
+  # 1994 §3.4.1.3 dot-anywhere double-cell literal recogniser. Gap caught
+  # post-Epic-12 retro 2026-05-01: Epic 10's "100% ANS Core" claim was
+  # word-counted, not §-counted; §3.4.1.3 (parser-level rule) was missed.
+  # Trailing-dot, leading-dot, embedded-dot all in scope; plays with Epic
+  # 9 prefixes. Compliance-doc one-line correction lands with the story.
+  13-0-double-cell-literal-recogniser-ans-3-4-1-3: done
+  13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: ready-for-dev
   13-2-core-file-access-wordset: backlog
   13-3-file-positioning: backlog
   13-4-source-input-nesting-include-top-chain-discipline: backlog

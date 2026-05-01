@@ -112,6 +112,12 @@ cold_start:
         LD      (IY+UserArea.current_wordlist),   L
         LD      (IY+UserArea.current_wordlist+1), H
 
+        ; 8f. DPL init — -1 (0xFFFF) sentinel meaning "no dot seen on last parse".
+        ;     Story 13.0 ANS Forth 1994 §3.4.1.3 dot-marker recogniser; DPL is a
+        ;     de-facto Forth convention (fig-Forth / F83 / gforth) — NOT in ANS Core.
+        LD      (IY+UserArea.dpl),   0xFF
+        LD      (IY+UserArea.dpl+1), 0xFF
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 

@@ -2,9 +2,21 @@
 
 **Date:** 2026-04-24 (Story 10.9 refresh — §6.1 Core gap closed)
 **Last full audit:** 2026-04-13 (Story 5.3)
+**Story 13.0 back-fill:** 2026-05-01 — §3.4.1.3 dot-marker recogniser (parser-level rule, not a word; missed by Epic 10's word-counted survey).
 **System:** antforth (Z80 Forth for CP/M)
-**Reference:** DPANS94 (ANSI X3.215-1994), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
+**Reference:** DPANS94 (ANSI X3.215-1994), §3.4.1.3 (Conversion of digit strings), §6.1 (Core), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
 **Source:** `src/*.asm`
+
+## §3.4.1.3 — Conversion of digit strings (parser-level rule)
+
+| Rule | Status | Stories | Notes |
+|---|---|---|---|
+| Numeric prefix (`#`/`$`/`%`/`0x`) | Implemented | 9.1–9.5 | Forth 2014 §3.4.1.3 prefix forms |
+| Leading sign `-<prefix><digits>` | Implemented | 9.4 | XOR-composes with in-body sign |
+| Character literal `'c'` | Implemented | 9.3 | §3.4.1.3 character-code literal |
+| **Dot-marker → double-cell** | **Implemented** | **9.1–9.5 + 13.0** | Trailing/leading/embedded dot triggers double-cell parse; DPL USER variable exposes digits-after-dot |
+
+Pre-Story-13.0 the dot-marker form was missing from Epic 10's word-counted §6.1 survey ("100% Core" claim was structurally word-counted, not §-counted). Story 13.0 closes the gap; no broader §-level re-audit was in scope per project lead 2026-05-01. A full §-by-§ audit is recorded as a post-2.0 carry-forward opportunity.
 
 ## Summary
 

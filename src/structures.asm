@@ -30,4 +30,7 @@ pic_buf     DS      PIC_BUF_SIZE    ; Pictured-output buffer (fills RTL)
 search_order_depth  DW      0       ; SEARCH-ORDER-DEPTH USER var (E12-D2 — architecture.md:332-336)
 search_order        DS      32      ; 16 × 2-byte wid slots; slot 0 (offset 0) = top-of-search-order
 current_wordlist    DW      0       ; CURRENT-WORDLIST USER var (Story 12.4 — wid for next dictionary insert)
+dpl                 DW      0       ; DPL: digits-after-dot from last successful number parse, -1 if no dot.
+                                    ; de-facto Forth convention (fig-Forth / F83 / gforth / SwiftForth / pforth);
+                                    ; NOT in ANS Core. Story 13.0 ANS Forth 1994 §3.4.1.3 dot-marker recogniser.
     ENDS

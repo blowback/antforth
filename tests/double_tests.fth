@@ -260,3 +260,67 @@ $FFFF 2 UM* .S 2DROP                     \ expect: <2> 1 -2    ($1FFFE; low-cell
 1 2 UM/MOD                               \ expect: error -4: stack underflow  + ok  (UM/MOD needs 3, has 2)
 1 2 SM/REM                               \ expect: error -4: stack underflow  + ok  (SM/REM needs 3, has 2)
 1 2 FM/MOD                               \ expect: error -4: stack underflow  + ok  (FM/MOD needs 3, has 2)
+
+\ === Story 13.0 literal-input regression — ANS Forth 1994 §3.4.1.3 ===
+\ Dot-bearing digit-string parses to a double-cell integer; the dot is
+\ a marker (not a place-holder), ignored for value. Unprefixed and
+\ prefixed forms supported; sign composes with prefix; multi-dot rejects.
+\ DPL is a USER variable carrying digits-after-dot, -1 if no dot
+\ (de-facto Forth convention; not in ANS Core).
+
+\ --- Trailing-dot (the canonical idiom) ---
+1000000.   D.                            \ expect: 1000000   (single line, double-cell)
+0.         D.                            \ expect: 0
+1.         D.                            \ expect: 1
+-1.        D.                            \ expect: -1
+-1000000.  D.                            \ expect: -1000000
+
+\ --- Leading-dot ---
+.5         D.                            \ expect: 5
+.0         D.                            \ expect: 0
+-.5        D.                            \ expect: -5
+-.0        D.                            \ expect: 0
+
+\ --- Embedded-dot ---
+1.000      D.                            \ expect: 1000
+12.34      D.                            \ expect: 1234
+999.999    D.                            \ expect: 999999
+-1.000     D.                            \ expect: -1000
+
+\ --- Prefix combinations (Epic 9 prefix × Story 13.0 dot) ---
+#1000.     D.                            \ expect: 1000      (decimal prefix + dot)
+$FFFF.     D.                            \ expect: 65535
+%1010.     D.                            \ expect: 10
+0xDEAD.    D.                            \ expect: 57005
+-#1000.    D.                            \ expect: -1000
+-$FF.      D.                            \ expect: -255
+
+\ --- BASE-relative unprefixed ---
+HEX FF. D. DECIMAL                       \ expect: FF        (parsed in HEX, displayed in HEX)
+2 BASE ! 1010. D. DECIMAL                \ expect: 1010      (parsed in binary, displayed in binary)
+
+\ --- Multi-dot rejection (parser-level) ---
+\ 1.2.3 → undefined word; dot-alone, sign+dot only, prefix+dot only similar
+\ (Tested through REPL piping in Makefile to capture error -13)
+
+\ --- DPL probe section ---
+1000000. DROP DROP DPL @ .               \ expect: 0         (trailing dot → 0 digits after)
+1.000    DROP DROP DPL @ .               \ expect: 3
+12.34    DROP DROP DPL @ .               \ expect: 2
+999.999  DROP DROP DPL @ .               \ expect: 3
+.5       DROP DROP DPL @ .               \ expect: 1
+.0       DROP DROP DPL @ .               \ expect: 1
+42       DROP DPL @ .                    \ expect: -1        (single-cell parse → DPL = -1)
+
+\ --- Compile-state preservation ---
+: STORY13-T1 1000000. ; STORY13-T1 D.        \ expect: 1000000
+: STORY13-T2 -1000000. ; STORY13-T2 D.       \ expect: -1000000
+: STORY13-T3 $DEADBEEF. ; STORY13-T3 D.      \ expect: -559038737   (bit pattern preserved)
+: STORY13-T4 1.000 DPL @ ; STORY13-T4 .      \ expect: 3            (DPL preserved at execute-time)
+
+\ --- Operator-with-literal-input variants (parallel to Epic 10 hand-stacked tests) ---
+1000000. 2000000. D+ D.                  \ expect: 3000000           (D+ via literal input)
+-1000000. 1. D+ D.                       \ expect: -999999           (signed D+)
+1.000 1.000 D= .                         \ expect: -1                (D= via literal input)
+.0 .0 D= .                               \ expect: -1
+12.34 1234. D= .                         \ expect: -1                (12.34 == 1234 — same value)

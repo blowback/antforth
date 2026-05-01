@@ -228,29 +228,16 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_hash_fail      ; bare "#-" → fail
 
 .pref_hash_convert:
-        LD      DE, 0                   ; accumulator = 0
-        CALL    do_number_base10        ; DE = value, B = remaining count
+        ; Story 13.0 — 32-bit dot-aware accumulator handles both bare
+        ; single-cell parses (saw_dot=0 → returns flag=0xFFFF, DPL=-1)
+        ; and double-cell with one dot (saw_dot=1 → returns flag=2,
+        ; DPL=digits-after-dot). ANS Forth 1994 §3.4.1.3 dot-marker.
+        CALL    do_double_dot_base10
+        JR      C, .pref_hash_fail      ; multi-dot or invalid digit
         LD      A, B
         OR      A
         JR      NZ, .pref_hash_fail     ; unparsed chars → fail
-
-        ; Apply sign if flagged
-        LD      A, (.pref_negate)
-        OR      A
-        JR      Z, .pref_hash_ok
-        LD      A, E
-        CPL
-        LD      E, A
-        LD      A, D
-        CPL
-        LD      D, A
-        INC     DE                      ; two's complement
-
-.pref_hash_ok:
-        PUSH    DE                      ; NOS = n
-        EXX                             ; restore IP to main DE
-        LD      BC, 0xFFFF              ; TOS = TRUE
-        NEXT
+        JP      pref_finish_value       ; shared sign-apply + push + EXX + NEXT
 
 .pref_hash_fail:
         ; Shadow BC' still holds c-addr_orig — EXX brings it back to main BC.
@@ -348,29 +335,13 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_dollar_fail    ; bare "$-" → fail
 
 .pref_dollar_convert:
-        LD      DE, 0                   ; accumulator = 0
-        CALL    do_number_base16        ; DE = value, B = remaining count
+        ; Story 13.0 — dot-aware (see .pref_hash_convert head-comment).
+        CALL    do_double_dot_base16
+        JR      C, .pref_dollar_fail
         LD      A, B
         OR      A
-        JR      NZ, .pref_dollar_fail   ; unparsed chars → fail
-
-        ; Apply sign if flagged
-        LD      A, (.pref_negate)
-        OR      A
-        JR      Z, .pref_dollar_ok
-        LD      A, E
-        CPL
-        LD      E, A
-        LD      A, D
-        CPL
-        LD      D, A
-        INC     DE                      ; two's complement
-
-.pref_dollar_ok:
-        PUSH    DE                      ; NOS = n
-        EXX                             ; restore IP to main DE
-        LD      BC, 0xFFFF              ; TOS = TRUE
-        NEXT
+        JR      NZ, .pref_dollar_fail
+        JP      pref_finish_value
 
 .pref_dollar_fail:
         ; Shadow BC' still holds c-addr_orig — EXX brings it back to main BC.
@@ -421,28 +392,13 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_zero_fail      ; bare "0x-" → fail
 
 .pref_zero_convert:
-        LD      DE, 0
-        CALL    do_number_base16
+        ; Story 13.0 — dot-aware (see .pref_hash_convert head-comment).
+        CALL    do_double_dot_base16
+        JR      C, .pref_zero_fail
         LD      A, B
         OR      A
         JR      NZ, .pref_zero_fail
-
-        LD      A, (.pref_negate)
-        OR      A
-        JR      Z, .pref_zero_ok
-        LD      A, E
-        CPL
-        LD      E, A
-        LD      A, D
-        CPL
-        LD      D, A
-        INC     DE
-
-.pref_zero_ok:
-        PUSH    DE
-        EXX
-        LD      BC, 0xFFFF
-        NEXT
+        JP      pref_finish_value
 
 .pref_zero_fail:
         EXX                             ; restore IP; main BC = c-addr_orig
@@ -474,29 +430,13 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_percent_fail   ; bare "%-" → fail
 
 .pref_percent_convert:
-        LD      DE, 0                   ; accumulator = 0
-        CALL    do_number_base2         ; DE = value, B = remaining count
+        ; Story 13.0 — dot-aware (see .pref_hash_convert head-comment).
+        CALL    do_double_dot_base2
+        JR      C, .pref_percent_fail
         LD      A, B
         OR      A
-        JR      NZ, .pref_percent_fail  ; unparsed chars → fail
-
-        ; Apply sign if flagged
-        LD      A, (.pref_negate)
-        OR      A
-        JR      Z, .pref_percent_ok
-        LD      A, E
-        CPL
-        LD      E, A
-        LD      A, D
-        CPL
-        LD      D, A
-        INC     DE                      ; two's complement
-
-.pref_percent_ok:
-        PUSH    DE                      ; NOS = n
-        EXX                             ; restore IP to main DE
-        LD      BC, 0xFFFF              ; TOS = TRUE
-        NEXT
+        JR      NZ, .pref_percent_fail
+        JP      pref_finish_value
 
 .pref_percent_fail:
         ; Shadow BC' still holds c-addr_orig — EXX brings it back to main BC.
@@ -941,3 +881,311 @@ char_to_digit_base2:
 .ctd2_invalid:
         SCF
         RET
+
+; =====================================================================
+; Story 13.0 — 32-bit dot-aware digit accumulator (ANS Forth 1994 §3.4.1.3)
+; =====================================================================
+; do_double_dot_base<N> / do_double_dot_user — drop-in replacement for
+; do_number_base<N> that ALSO handles a single '.' anywhere in the body.
+;
+; Per ANS Forth 1994 §3.4.1.3 ("Conversion of digit strings"): a digit
+; string containing exactly one '.' is parsed as a double-cell integer;
+; the dot is a marker (not a place-holder), ignored for value, and its
+; presence/absence toggles single-cell vs double-cell interpretation.
+; Two or more dots, or any non-digit character, yield parse failure.
+;
+; Input:  HL = body, B = count
+; Output: (dlit_acc_lo) / (dlit_acc_hi) = 32-bit accumulator value
+;         (dlit_saw_dot)  = 0 if no dot, 1 if exactly one dot seen
+;         (dlit_dpl)      = digits-to-the-right-of-dot count (0..255)
+;         B = 0 on full success; nonzero indicates unparsed chars left
+;         CY clear on success, CY set on multi-dot or invalid-digit fail
+; Clobbers: A, F, BC, DE, HL.
+; EXX-free — safe to CALL from inside a recogniser-handler EXX window.
+;
+; Label scoping: the prefix recogniser already uses local label scoping
+; under w_NUMBER_PREFIX_Q_cf (e.g., .pref_negate at line 295). The new
+; helpers below are top-level globals so their scratch RAM uses GLOBAL
+; (no leading dot) names — `dlit_acc_lo`, `dlit_fn_digit` etc. The
+; pref_negate flag is read via the qualified path
+; w_NUMBER_PREFIX_Q_cf.pref_negate to reach the existing local sign byte.
+; ---------------------------------------------------------------------
+
+; Per-base entry stubs configure (dlit_fn_digit) and (dlit_dn_base),
+; then fall through to the shared common loop below. Each stub preserves
+; HL (= body ptr) and B (= count) for the common routine.
+;
+; Prefix stubs (base10/16/2) also set (dlit_pref_mode)=1 to enable AC #7
+; "dot in prefix region" rejection (`#.100`, `$.FF`, `0x.DEAD`, `%.1010`
+; must fail because the dot sits between the prefix and the first digit).
+; The unprefixed `do_double_dot_user` clears the flag so a leading dot
+; like `.5` remains valid per AC #3.
+do_double_dot_base10:
+        LD      A, 1
+        LD      (dlit_pref_mode), A
+        PUSH    HL
+        LD      A, 10
+        LD      HL, char_to_digit_base10
+        JR      ddd_setup
+do_double_dot_base16:
+        LD      A, 1
+        LD      (dlit_pref_mode), A
+        PUSH    HL
+        LD      A, 16
+        LD      HL, char_to_digit_base16
+        JR      ddd_setup
+do_double_dot_base2:
+        LD      A, 1
+        LD      (dlit_pref_mode), A
+        PUSH    HL
+        LD      A, 2
+        LD      HL, char_to_digit_base2
+        JR      ddd_setup
+do_double_dot_user:
+        ; BASE-aware variant for unprefixed NUMBER? path. char_to_digit
+        ; (strings.asm) reads BASE from UserArea each call.
+        XOR     A
+        LD      (dlit_pref_mode), A             ; leading-dot allowed (`.5`)
+        PUSH    HL
+        LD      A, (IY+UserArea.base)
+        LD      HL, char_to_digit
+        ; fall through
+
+ddd_setup:
+        LD      (dlit_dn_base), A
+        LD      (dlit_fn_digit), HL
+        POP     HL                              ; restore body ptr
+        ; Initialise 32-bit acc + saw-dot + dpl + any-digit-seen scratch.
+        XOR     A
+        LD      (dlit_acc_lo),   A
+        LD      (dlit_acc_lo+1), A
+        LD      (dlit_acc_hi),   A
+        LD      (dlit_acc_hi+1), A
+        LD      (dlit_saw_dot),  A
+        LD      (dlit_dpl),      A
+        LD      (dlit_any_digit), A
+        ; (Empty-body and "all-dots-no-digit" filtering is done by the
+        ; caller — for prefix handlers via the body-count-after-prefix
+        ; check, for NUMBER? via a "must have ≥1 digit" guard.)
+
+ddd_loop:
+        LD      A, B
+        OR      A
+        JR      Z, ddd_ok
+        LD      A, (HL)
+        CP      '.'
+        JR      Z, ddd_got_dot
+        ; Convert digit through indirect (dlit_fn_digit)
+        PUSH    BC                              ; save count
+        PUSH    HL                              ; save string ptr
+        LD      HL, (dlit_fn_digit)
+        ; pseudo-CALL through HL: stash return target, JP (HL)
+        LD      DE, ddd_after_call
+        PUSH    DE
+        JP      (HL)
+ddd_after_call:
+        POP     HL                              ; restore string ptr
+        POP     BC                              ; restore count
+        JR      C, ddd_fail                     ; invalid digit
+        ; A = digit (0..base-1). Mark "any digit seen" (rejects bare-dot
+        ; bodies like "#." per AC #7), then multiply acc by base, add A.
+        ; ddd_mul_add_a clobbers B and C (loop counter / digit stash),
+        ; so guard the count via stack push.
+        PUSH    AF
+        LD      A, 1
+        LD      (dlit_any_digit), A
+        POP     AF
+        PUSH    BC
+        PUSH    HL
+        CALL    ddd_mul_add_a
+        POP     HL
+        POP     BC
+        ; If saw_dot, count this digit toward DPL.
+        LD      A, (dlit_saw_dot)
+        OR      A
+        JR      Z, ddd_advance
+        LD      A, (dlit_dpl)
+        INC     A
+        LD      (dlit_dpl), A
+ddd_advance:
+        INC     HL
+        DEC     B
+        JR      ddd_loop
+
+ddd_got_dot:
+        LD      A, (dlit_saw_dot)
+        OR      A
+        JR      NZ, ddd_fail                    ; multi-dot → reject
+        ; AC #7: in prefix-mode, a dot before any digit (`#.100`, `$.FF`,
+        ; `0x.DEAD`, `%.1010`) is "dot in the prefix region" → reject.
+        ; Unprefixed (`do_double_dot_user`) clears dlit_pref_mode so leading
+        ; dot stays valid (`.5`).
+        LD      A, (dlit_pref_mode)
+        OR      A
+        JR      Z, .ddd_dot_ok
+        LD      A, (dlit_any_digit)
+        OR      A
+        JR      Z, ddd_fail
+.ddd_dot_ok:
+        LD      A, 1
+        LD      (dlit_saw_dot), A
+        INC     HL
+        DEC     B
+        JR      ddd_loop
+
+ddd_ok:
+        ; AC #7: reject bodies that contained only a dot and no digits
+        ; (e.g. `#.`, `$.`, `%.`, `0x.`, `#-.`, `.`, `-.`). The dot-only
+        ; case yields saw_dot=1 + any_digit=0; reject as parse failure.
+        LD      A, (dlit_any_digit)
+        OR      A
+        JR      Z, ddd_fail
+        OR      A                               ; clear CY
+        RET
+ddd_fail:
+        SCF
+        RET
+
+; ---------------------------------------------------------------------
+; ddd_mul_add_a — 32-bit acc = acc * base + A.
+;   Method: save acc; zero acc; for 8 iterations result <<= 1, and if
+;   the high bit of base is 1 add saved (8-iter shift-and-add covers
+;   any 8-bit base). Finally add A (digit) to low cell, ripple to high.
+;   Uses AF' (alternate AF bank) to stash the loop counter without
+;   touching scratch RAM. Caller's BC/HL are saved by the loop driver.
+; ---------------------------------------------------------------------
+ddd_mul_add_a:
+        LD      C, A                            ; save digit
+        ; Save current acc
+        LD      HL, (dlit_acc_lo)
+        LD      (dlit_save_lo), HL
+        LD      HL, (dlit_acc_hi)
+        LD      (dlit_save_hi), HL
+        ; Zero acc
+        LD      HL, 0
+        LD      (dlit_acc_lo), HL
+        LD      (dlit_acc_hi), HL
+        ; 8-iter shift-and-add (base in B, MSB-first)
+        LD      A, (dlit_dn_base)
+        LD      B, A                            ; B = base byte
+        LD      A, 8
+ddd_mul_iter:
+        ; result <<= 1, 32-bit
+        EX      AF, AF'                         ; stash loop counter (A)
+        LD      HL, (dlit_acc_lo)
+        ADD     HL, HL
+        LD      (dlit_acc_lo), HL
+        LD      HL, (dlit_acc_hi)
+        ADC     HL, HL
+        LD      (dlit_acc_hi), HL
+        ; base <<= 1 → CY = MSB
+        SLA     B
+        JR      NC, ddd_mul_skip
+        ; result += saved (32-bit)
+        LD      HL, (dlit_acc_lo)
+        LD      DE, (dlit_save_lo)
+        ADD     HL, DE
+        LD      (dlit_acc_lo), HL
+        LD      HL, (dlit_acc_hi)
+        LD      DE, (dlit_save_hi)
+        ADC     HL, DE
+        LD      (dlit_acc_hi), HL
+ddd_mul_skip:
+        EX      AF, AF'                         ; restore loop counter
+        DEC     A
+        JR      NZ, ddd_mul_iter
+        ; acc *= base done. Now acc += C (digit), 32-bit ripple.
+        LD      A, C
+        LD      HL, (dlit_acc_lo)
+        ADD     A, L
+        LD      L, A
+        LD      A, H
+        ADC     A, 0
+        LD      H, A
+        LD      (dlit_acc_lo), HL
+        RET     NC
+        LD      HL, (dlit_acc_hi)
+        INC     HL
+        LD      (dlit_acc_hi), HL
+        RET
+
+; ---------------------------------------------------------------------
+; dlit_negate — 32-bit two's-complement negation of the scratch
+;   accumulator. Mirrors w_D_NEGATE_cf's algorithm but on (dlit_acc_lo)
+;   / (dlit_acc_hi). Used by both the prefix and bare-NUMBER? sign-
+;   apply paths for double-cell sign composition.
+; Clobbers: A, F, DE, HL.
+; ---------------------------------------------------------------------
+dlit_negate:
+        OR      A                               ; clear CY
+        LD      HL, 0
+        LD      DE, (dlit_acc_lo)
+        SBC     HL, DE                          ; HL = 0 - lo; CY = borrow
+        LD      (dlit_acc_lo), HL
+        LD      HL, 0
+        LD      DE, (dlit_acc_hi)
+        SBC     HL, DE                          ; HL = 0 - hi - borrow
+        LD      (dlit_acc_hi), HL
+        RET
+
+; ---------------------------------------------------------------------
+; pref_finish_value — Shared epilogue for prefix-recogniser handlers
+;   after a successful do_double_dot_base<N> call. Operates inside the
+;   handler's EXX window (BC' = c-addr_orig, DE' = IP). Reads sign from
+;   the existing handler-local .pref_negate (qualified reference), so
+;   no behavioural change for single-cell parses. For double-cell, the
+;   32-bit two's-complement negate is applied to the scratch acc before
+;   push. Writes DPL on success, pushes value(s), exits EXX, and sets
+;   the recogniser flag (TRUE=0xFFFF for single, 2 for double).
+;
+;   IY remains pointing at user_area through EXX (IY is bank-independent
+;   — only AF/BC/DE/HL/SP have shadow copies).
+; ---------------------------------------------------------------------
+pref_finish_value:
+        ; Apply sign?
+        LD      A, (w_NUMBER_PREFIX_Q_cf.pref_negate)
+        OR      A
+        CALL    NZ, dlit_negate
+        ; Branch on saw_dot
+        LD      A, (dlit_saw_dot)
+        OR      A
+        JR      NZ, pfv_double
+pfv_single:
+        ; Single-cell: DPL = -1, push low cell, flag = 0xFFFF
+        LD      HL, -1
+        LD      (IY+UserArea.dpl),   L
+        LD      (IY+UserArea.dpl+1), H
+        LD      HL, (dlit_acc_lo)
+        PUSH    HL                              ; n on stack
+        EXX                                     ; restore IP to main DE
+        LD      BC, 0xFFFF                      ; flag = TRUE (single)
+        NEXT
+pfv_double:
+        ; Double-cell: DPL = (dlit_dpl) zero-extended, push high then
+        ; low (low ends up TOS per E10-D1), flag = 2.
+        LD      A, (dlit_dpl)
+        LD      (IY+UserArea.dpl),   A
+        XOR     A
+        LD      (IY+UserArea.dpl+1), A
+        LD      HL, (dlit_acc_hi)
+        PUSH    HL                              ; second-on-stack (high)
+        LD      HL, (dlit_acc_lo)
+        PUSH    HL                              ; would-be-TOS (low)
+        EXX                                     ; restore IP to main DE
+        LD      BC, 2                           ; flag = 2 (double)
+        NEXT
+
+; Story 13.0 — scratch RAM for the dot-aware accumulator. Single-threaded
+; (the recogniser is non-reentrant), so one shared pool is sufficient.
+; Globals (not local) so the helpers above can reference them across
+; their own scope boundaries.
+dlit_acc_lo:    DW    0
+dlit_acc_hi:    DW    0
+dlit_save_lo:   DW    0
+dlit_save_hi:   DW    0
+dlit_saw_dot:   DB    0
+dlit_dpl:       DB    0
+dlit_any_digit: DB    0
+dlit_pref_mode: DB    0       ; 1 in prefix handlers (reject dot-before-digit), 0 in NUMBER?
+dlit_dn_base:   DB    0
+dlit_fn_digit:  DW    0

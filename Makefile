@@ -7570,6 +7570,406 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# === Story 13.0 — ANS Forth 1994 §3.4.1.3 dot-anywhere double-cell ===
+	@# Dot-bearing digit string parses as double-cell integer; dot is a
+	@# marker (not a place-holder), ignored for value. Tests cover trailing-,
+	@# leading-, embedded-dot positives; sign + dot; prefix + dot; BASE-
+	@# relative; multi-dot/dot-alone/sign-dot/prefix-dot rejection;
+	@# compile-state emission; DPL USER variable; 32-bit modulo wrap.
+	@# T-S130-LIT-TRAIL (853)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 853 — Story 13.0: trailing-dot literal (T-S130-LIT-TRAIL)"; \
+	else \
+		echo "FAIL: REPL test 853 — expected '1000000  ok' from trailing-dot literal '1000000. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-LIT-LEAD (854)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '.5 D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '5  ok'; then \
+		echo "PASS: REPL test 854 — Story 13.0: leading-dot literal (T-S130-LIT-LEAD)"; \
+	else \
+		echo "FAIL: REPL test 854 — expected '5  ok' from '.5 D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-LIT-EMBED (855)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '12.34 D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1234  ok'; then \
+		echo "PASS: REPL test 855 — Story 13.0: embedded-dot literal (T-S130-LIT-EMBED)"; \
+	else \
+		echo "FAIL: REPL test 855 — expected '1234  ok' from '12.34 D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-LIT-NEG-TRAIL (856)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1000000  ok'; then \
+		echo "PASS: REPL test 856 — Story 13.0: sign + trailing-dot literal (T-S130-LIT-NEG-TRAIL)"; \
+	else \
+		echo "FAIL: REPL test 856 — expected '-1000000  ok' from '-1000000. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-LIT-NEG-LEAD (857)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-.5 D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
+		echo "PASS: REPL test 857 — Story 13.0: sign + leading-dot literal (T-S130-LIT-NEG-LEAD)"; \
+	else \
+		echo "FAIL: REPL test 857 — expected '-5  ok' from '-.5 D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-HASH (858)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#1000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000  ok'; then \
+		echo "PASS: REPL test 858 — Story 13.0: '#' prefix + dot (T-S130-PREFIX-HASH)"; \
+	else \
+		echo "FAIL: REPL test 858 — expected '1000  ok' from '#1000. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-DOLLAR (859)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '$$FFFF. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '65535  ok'; then \
+		echo "PASS: REPL test 859 — Story 13.0: '$' prefix + dot (T-S130-PREFIX-DOLLAR)"; \
+	else \
+		echo "FAIL: REPL test 859 — expected '65535  ok' from '\$$FFFF. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-PERCENT (860)
+	@OUTPUT=$$(printf '%%1010. D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '10  ok'; then \
+		echo "PASS: REPL test 860 — Story 13.0: '%%' prefix + dot (T-S130-PREFIX-PERCENT)"; \
+	else \
+		echo "FAIL: REPL test 860 — expected '10  ok' from '%%1010. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-0X (861)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0xDEAD. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '57005  ok'; then \
+		echo "PASS: REPL test 861 — Story 13.0: '0x' prefix + dot (T-S130-PREFIX-0X)"; \
+	else \
+		echo "FAIL: REPL test 861 — expected '57005  ok' from '0xDEAD. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-NEG-HASH (862)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-#1000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1000  ok'; then \
+		echo "PASS: REPL test 862 — Story 13.0: sign + '#' + dot (T-S130-PREFIX-NEG-HASH)"; \
+	else \
+		echo "FAIL: REPL test 862 — expected '-1000  ok' from '-#1000. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-NEG-DOLLAR (863)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-$$FF. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-255  ok'; then \
+		echo "PASS: REPL test 863 — Story 13.0: sign + '$' + dot (T-S130-PREFIX-NEG-DOLLAR)"; \
+	else \
+		echo "FAIL: REPL test 863 — expected '-255  ok' from '-\$$FF. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-BASE-HEX (864)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'HEX FF. D. DECIMAL' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'FF  ok'; then \
+		echo "PASS: REPL test 864 — Story 13.0: BASE=HEX + dot (T-S130-BASE-HEX)"; \
+	else \
+		echo "FAIL: REPL test 864 — expected 'FF  ok' from 'HEX FF. D. DECIMAL'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-BASE-BINARY (865)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '2 BASE ! 1010. D. DECIMAL' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1010  ok'; then \
+		echo "PASS: REPL test 865 — Story 13.0: BASE=2 + dot (T-S130-BASE-BINARY)"; \
+	else \
+		echo "FAIL: REPL test 865 — expected '1010  ok' from '2 BASE ! 1010. D. DECIMAL'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-32BIT-FULL (866)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0xDEADBEEF. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-559038737  ok'; then \
+		echo "PASS: REPL test 866 — Story 13.0: full 32-bit double-cell value (T-S130-32BIT-FULL)"; \
+	else \
+		echo "FAIL: REPL test 866 — expected '-559038737  ok' from '0xDEADBEEF. D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-MULTI-DOT-REJECT (867)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1.2.3' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1.2.3 ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 867 — Story 13.0: multi-dot rejection (T-S130-MULTI-DOT-REJECT)"; \
+	else \
+		echo "FAIL: REPL test 867 — expected '1.2.3 ?' + 'error -13' from multi-dot literal"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-DOUBLE-DOT-TRAIL (868) — '1..' (multi-dot variant) rejection.
+	@# Bare '.' is the FORTH word DOT (FIND-caught), so we use '1..' as the
+	@# unambiguous recogniser-level multi-dot reject probe distinct from 1.2.3.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1..' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF '1.. ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 868 — Story 13.0: '1..' multi-dot rejection (T-S130-DOUBLE-DOT-TRAIL)"; \
+	else \
+		echo "FAIL: REPL test 868 — expected '1.. ?' + 'error -13' from '1..' (multi-dot)"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-NO-DIGITS-HASH (869)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF '#. ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 869 — Story 13.0: '#.' (prefix without digits) rejection (T-S130-PREFIX-NO-DIGITS-HASH)"; \
+	else \
+		echo "FAIL: REPL test 869 — expected '#. ?' + 'error -13' from '#.' (no digits after prefix)"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-DPL-TRAILING (870)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 870 — Story 13.0: DPL = 0 after trailing-dot parse (T-S130-DPL-TRAILING)"; \
+	else \
+		echo "FAIL: REPL test 870 — expected '0  ok' from DPL probe after trailing-dot parse"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-DPL-EMBEDDED (871)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '12.34 DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '2  ok'; then \
+		echo "PASS: REPL test 871 — Story 13.0: DPL = 2 after embedded-dot parse 12.34 (T-S130-DPL-EMBEDDED)"; \
+	else \
+		echo "FAIL: REPL test 871 — expected '2  ok' from DPL probe after '12.34'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-DPL-LEADING (872)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '.5 DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1  ok'; then \
+		echo "PASS: REPL test 872 — Story 13.0: DPL = 1 after leading-dot parse .5 (T-S130-DPL-LEADING)"; \
+	else \
+		echo "FAIL: REPL test 872 — expected '1  ok' from DPL probe after '.5'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-DPL-NO-DOT (873)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '42 DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 873 — Story 13.0: DPL = -1 after single-cell parse (T-S130-DPL-NO-DOT)"; \
+	else \
+		echo "FAIL: REPL test 873 — expected '-1  ok' from DPL probe after single-cell parse '42'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-COMPILE-STATE (874)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130T 1000000. ; S130T D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 874 — Story 13.0: compile-state emits (DLIT) (T-S130-COMPILE-STATE)"; \
+	else \
+		echo "FAIL: REPL test 874 — expected '1000000  ok' from compiled trailing-dot in colon body"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-COMPILE-NEG (875)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130N -1000000. ; S130N D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1000000  ok'; then \
+		echo "PASS: REPL test 875 — Story 13.0: compile-state with sign (T-S130-COMPILE-NEG)"; \
+	else \
+		echo "FAIL: REPL test 875 — expected '-1000000  ok' from compiled negative trailing-dot"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-COMPILE-PREFIX (876)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130P $$DEADBEEF. ; S130P D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-559038737  ok'; then \
+		echo "PASS: REPL test 876 — Story 13.0: compile-state with prefix preserves bit pattern (T-S130-COMPILE-PREFIX)"; \
+	else \
+		echo "FAIL: REPL test 876 — expected '-559038737  ok' from compiled '\$$DEADBEEF.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-OVERFLOW-WRAP (877)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '9999999999. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1410065407  ok'; then \
+		echo "PASS: REPL test 877 — Story 13.0: 32-bit modulo wrap (T-S130-OVERFLOW-WRAP)"; \
+	else \
+		echo "FAIL: REPL test 877 — expected '1410065407  ok' from '9999999999. D.' (modulo 2^32 wrap)"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-BASE-PRESERVED (878)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'BASE @ #1000. D. BASE @ = .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000 -1  ok'; then \
+		echo "PASS: REPL test 878 — Story 13.0: BASE untouched by prefix×dot (T-S130-BASE-PRESERVED)"; \
+	else \
+		echo "FAIL: REPL test 878 — expected '1000 -1  ok' from BASE round-trip across '#1000.' parse"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-DPLUS-LITERAL (879)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. D+ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '3000000  ok'; then \
+		echo "PASS: REPL test 879 — Story 13.0: D+ via literal-input (T-S130-DPLUS-LITERAL)"; \
+	else \
+		echo "FAIL: REPL test 879 — expected '3000000  ok' from '1000000. 2000000. D+ D.'"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-COMPILE-DPL-PRESERVE (880)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130DPL 1.000 DPL @ ; S130DPL .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '3  ok'; then \
+		echo "PASS: REPL test 880 — Story 13.0: compiled DPL preserves parse-time count (T-S130-COMPILE-DPL-PRESERVE)"; \
+	else \
+		echo "FAIL: REPL test 880 — expected '3  ok' from compiled '1.000 DPL @' execution"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# Story 13.0 review fixes — AC #7 "dot in prefix region" reject probes.
+	@# Pre-fix: `#.100`, `$.FF`, `0x.DEAD`, `%.1010` all parsed as valid
+	@# double-cell numbers (HIGH severity). Fix added dlit_pref_mode flag:
+	@# in prefix handlers a dot before any digit fails. AC #7 also lists
+	@# `-.` (sign + dot only, no digits) — verify it rejects.
+	@# T-S130-PREFIX-DOT-HASH-REJECT (881)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#.100' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF '#.100 ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 881 — Story 13.0: '#.100' (dot in prefix region) rejects (T-S130-PREFIX-DOT-HASH-REJECT)"; \
+	else \
+		echo "FAIL: REPL test 881 — expected '#.100 ?' + 'error -13' from prefix-then-dot-then-digits"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-DOT-DOLLAR-REJECT (882)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '$$.FF' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF '$$.FF ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 882 — Story 13.0: '$$.FF' (dot in prefix region) rejects (T-S130-PREFIX-DOT-DOLLAR-REJECT)"; \
+	else \
+		echo "FAIL: REPL test 882 — expected '$$.FF ?' + 'error -13' from prefix-then-dot-then-digits"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-DOT-0X-REJECT (883)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0x.DEAD' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF '0x.DEAD ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 883 — Story 13.0: '0x.DEAD' (dot in prefix region) rejects (T-S130-PREFIX-DOT-0X-REJECT)"; \
+	else \
+		echo "FAIL: REPL test 883 — expected '0x.DEAD ?' + 'error -13' from prefix-then-dot-then-digits"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-PREFIX-DOT-PERCENT-REJECT (884)
+	@OUTPUT=$$(printf '%%.1010\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF '%.1010 ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 884 — Story 13.0: '%%.1010' (dot in prefix region) rejects (T-S130-PREFIX-DOT-PERCENT-REJECT)"; \
+	else \
+		echo "FAIL: REPL test 884 — expected '%%.1010 ?' + 'error -13' from prefix-then-dot-then-digits"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-S130-SIGN-DOT-REJECT (885) — `-.` (sign + dot, no digits) per AC #7.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qF -- '-. ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
+		echo "PASS: REPL test 885 — Story 13.0: '-.' (sign + dot, no digits) rejects (T-S130-SIGN-DOT-REJECT)"; \
+	else \
+		echo "FAIL: REPL test 885 — expected '-. ?' + 'error -13' from '-.' (sign + dot, no digits)"; \
+		echo "  Got: $$(echo -n \"$$OUTPUT\" | xxd)"; \
+		exit 1; \
+	fi
+	@# Story 13.0 review fixes — AC #9 operator-with-literal-input variants.
+	@# AC #9 requires "every existing operator test... gains a parallel
+	@# literal-input variant." Initial dev-pass added only D+/D=; tests
+	@# 886-902 cover the remaining operators using dot-bearing literals
+	@# in their setup.
+	@# T-S130-OP-DMINUS (886)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '3000000. 1000000. D- D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
+		echo "PASS: REPL test 886 — Story 13.0: D- via literal-input (T-S130-OP-DMINUS)"; \
+	else echo "FAIL: REPL test 886 — expected '2000000  ok' from '3000000. 1000000. D- D.'"; exit 1; fi
+	@# T-S130-OP-DSTAR (887)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000. 2000. D* D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
+		echo "PASS: REPL test 887 — Story 13.0: D* via literal-input (T-S130-OP-DSTAR)"; \
+	else echo "FAIL: REPL test 887 — expected '2000000  ok' from '1000. 2000. D* D.'"; exit 1; fi
+	@# T-S130-OP-DNEGATE (888)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. DNEGATE D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1000000  ok'; then \
+		echo "PASS: REPL test 888 — Story 13.0: DNEGATE via literal-input (T-S130-OP-DNEGATE)"; \
+	else echo "FAIL: REPL test 888 — expected '-1000000  ok' from '1000000. DNEGATE D.'"; exit 1; fi
+	@# T-S130-OP-DABS (889)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000000. DABS D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 889 — Story 13.0: DABS via literal-input (T-S130-OP-DABS)"; \
+	else echo "FAIL: REPL test 889 — expected '1000000  ok' from '-1000000. DABS D.'"; exit 1; fi
+	@# T-S130-OP-DLESS (890)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. D< .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 890 — Story 13.0: D< via literal-input (T-S130-OP-DLESS)"; \
+	else echo "FAIL: REPL test 890 — expected '-1  ok' from '1000000. 2000000. D< .'"; exit 1; fi
+	@# T-S130-OP-DMAX (891)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. DMAX D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
+		echo "PASS: REPL test 891 — Story 13.0: DMAX via literal-input (T-S130-OP-DMAX)"; \
+	else echo "FAIL: REPL test 891 — expected '2000000  ok' from '1000000. 2000000. DMAX D.'"; exit 1; fi
+	@# T-S130-OP-DMIN (892)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. DMIN D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 892 — Story 13.0: DMIN via literal-input (T-S130-OP-DMIN)"; \
+	else echo "FAIL: REPL test 892 — expected '1000000  ok' from '1000000. 2000000. DMIN D.'"; exit 1; fi
+	@# T-S130-OP-MPLUS (893) — M+ ( d n -- d ) — single-cell add into double
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5 M+ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000005  ok'; then \
+		echo "PASS: REPL test 893 — Story 13.0: M+ via literal-input (T-S130-OP-MPLUS)"; \
+	else echo "FAIL: REPL test 893 — expected '1000005  ok' from '1000000. 5 M+ D.'"; exit 1; fi
+	@# T-S130-OP-MSTAR (894) — M* ( n n -- d ) — single*single → double
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000 1000 M* D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 894 — Story 13.0: M* operator (T-S130-OP-MSTAR)"; \
+	else echo "FAIL: REPL test 894 — expected '1000000  ok' from '1000 1000 M* D.'"; exit 1; fi
+	@# T-S130-OP-UMSTAR (895) — UM* ( u u -- ud )
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000 1000 UM* D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 895 — Story 13.0: UM* operator (T-S130-OP-UMSTAR)"; \
+	else echo "FAIL: REPL test 895 — expected '1000000  ok' from '1000 1000 UM* D.'"; exit 1; fi
+	@# T-S130-OP-S-TO-D (896)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-42 S>D D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-42  ok'; then \
+		echo "PASS: REPL test 896 — Story 13.0: S>D operator (T-S130-OP-S-TO-D)"; \
+	else echo "FAIL: REPL test 896 — expected '-42  ok' from '-42 S>D D.'"; exit 1; fi
+	@# T-S130-OP-D-TO-S (897)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000. D>S .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1000  ok'; then \
+		echo "PASS: REPL test 897 — Story 13.0: D>S via literal-input (T-S130-OP-D-TO-S)"; \
+	else echo "FAIL: REPL test 897 — expected '-1000  ok' from '-1000. D>S .'"; exit 1; fi
+	@# T-S130-OP-2DUP (898)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2DUP D+ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
+		echo "PASS: REPL test 898 — Story 13.0: 2DUP via literal-input (T-S130-OP-2DUP)"; \
+	else echo "FAIL: REPL test 898 — expected '2000000  ok' from '1000000. 2DUP D+ D.'"; exit 1; fi
+	@# T-S130-OP-2DROP-2SWAP (899) — 1000000./99. → 2SWAP swaps pairs → 2DROP removes top pair
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 99. 2SWAP 2DROP .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99  ok'; then \
+		echo "PASS: REPL test 899 — Story 13.0: 2DROP/2SWAP via literal-input (T-S130-OP-2DROP-2SWAP)"; \
+	else echo "FAIL: REPL test 899 — expected '99  ok' from '1000000. 99. 2SWAP 2DROP .'"; exit 1; fi
+	@# T-S130-OP-2OVER (900) — 2OVER ( d1 d2 -- d1 d2 d1 ); D. consumes top copy of d1
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5. 2OVER D. 2DROP 2DROP' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 900 — Story 13.0: 2OVER via literal-input (T-S130-OP-2OVER)"; \
+	else echo "FAIL: REPL test 900 — expected '1000000  ok' from '1000000. 5. 2OVER D. ...'"; exit 1; fi
+	@# T-S130-OP-2STORE-2FETCH (901) — store literal-input double, fetch back
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'CREATE STO 0 , 0 , 1000000. STO 2! STO 2@ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
+		echo "PASS: REPL test 901 — Story 13.0: 2!/2@ via literal-input (T-S130-OP-2STORE-2FETCH)"; \
+	else echo "FAIL: REPL test 901 — expected '1000000  ok' from 2!/2@ round-trip via literal"; exit 1; fi
+	@# T-S130-OP-D-DOT-R (902) — D.R ( d width -- ) right-justified double print (no trailing space)
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000. 8 D.R' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '    1000 ok'; then \
+		echo "PASS: REPL test 902 — Story 13.0: D.R via literal-input (T-S130-OP-D-DOT-R)"; \
+	else echo "FAIL: REPL test 902 — expected '    1000 ok' from '1000. 8 D.R'"; exit 1; fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

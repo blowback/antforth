@@ -1320,6 +1320,72 @@ So that multi-vocabulary lookup performance, byte-identical CODE assembly, and o
 
 Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Closes with the Phase-2 release gate — full regression of Epics 1–12, BDOS-function-allow-list audit, filesystem-error stress suite, kernel ROM-delta accounting, and MicroBeast hardware validation. Passing the gate tags **antforth 2.0**.
 
+### Story 13.0: Double-cell literal recogniser — ANS §3.4.1.3 dot-anywhere (Epic 10 back-fill)
+
+As a Forth user,
+I want digit strings containing a single `.` (e.g., `1000000.`, `-1.`, `1.000`, `.5`, `$FFFF.`, `#1000.`, `%1010.`) to be parsed as double-cell integer literals per ANS Forth 1994 §3.4.1.3,
+So that I can enter double-precision values directly at the REPL and in source — closing the parser-level gap missed by Epic 10's "100% Core compliance" word-counted survey (caught post-Epic-12 retro 2026-05-01).
+
+**Context (back-fill rationale):** Epic 10's compliance-doc claim of "100% ANS Forth 1994 Core" was assembled from a word-coverage survey (DEFCODE/DEFWORD enumeration). §3.4.1.3 is a *parser rule*, not a word, and was not on the survey list. Every existing double-cell test in `tests/double_tests.fth` hand-stacks two single cells (`0 5 0 7 D+`) — proving the operators work given pre-stacked cells, but **never exercising the literal-input → operator pipeline**. Real users type `1000000.`, not `15 -7616`. This story closes the gap before Epic 13's user-facing file-access words land, and before the v2.0 release tag. Per project lead 2026-05-01: dot-anywhere scope (no corner-cutting); simple one-line correction in `docs/ans-forth-core-compliance.md`.
+
+**Acceptance Criteria:**
+
+**Given** ANS Forth 1994 §3.4.1.3 ("Conversion of digit strings")
+**When** the outer interpreter encounters a digit string containing **exactly one** `.` anywhere in the digit portion (after the optional leading sign and any Epic-9 numeric prefix)
+**Then** the string is parsed as a double-cell integer; the dot is a marker (not a place-holder), ignored for value; present/absent toggles single-cell vs double-cell interpretation.
+
+**Given** the trailing-dot form `1000000.`
+**When** entered at the REPL or compiled in a colon body
+**Then** it pushes (or compiles) the double-cell value `1000000` (low cell `16960` = `0x4240`, high cell `15` = `0x000F`); `D.` displays `1000000`.
+
+**Given** the leading-dot form `.5` and the embedded-dot form `1.000`
+**When** parsed
+**Then** both are valid double-cell integers; `.5` → `5`; `1.000` → `1000` (digit-positions accumulated as one integer, dot ignored).
+
+**Given** an optional leading `-` sign per §3.4.1.3
+**When** combined with any dot position (`-1000000.`, `-1.000`, `-.5`)
+**Then** the result is the negated double-cell value.
+
+**Given** Epic 9's numeric prefixes (`#`, `$`, `%`, `0x`)
+**When** combined with a dot-bearing digit string (`#1000000.`, `$FFFF.`, `%1010.`, `0xDEAD.`)
+**Then** the prefix selects the radix per FR1-FR9 *and* the dot triggers double-cell parsing; `BASE` is unmutated per FR9.
+
+**Given** a digit string with **more than one** `.` (e.g., `1.2.3`) or a dot in the prefix region (e.g., `.#100`)
+**When** parsed
+**Then** the string is not a valid number; control falls through to the undefined-word path raising `-13 THROW`.
+
+**Given** compile-state (inside a colon definition)
+**When** a dot-bearing literal appears
+**Then** it is compiled as `(DLIT)` + 4 bytes of inline data (low cell, then high cell — matching the existing `2!`/`2@` cell ordering); the runtime word `(DLIT)` pushes both cells onto the stack at execution time.
+
+**Given** the unprefixed dot-bearing form parsed against the current `BASE`
+**When** `BASE` ≠ 10 (e.g., `HEX 1000.`)
+**Then** the digits are interpreted in the current `BASE` per FR47 — `HEX 1000.` yields `0x00001000` = 4096 as a double-cell.
+
+**Given** `tests/double_tests.fth`
+**When** it runs after Story 13.0
+**Then** every existing operator test (D+, D-, D*, DNEGATE, DABS, D=, D<, DMAX, DMIN, M+, M*, UM*, UM/MOD, SM/REM, FM/MOD, D., D.R) gains a parallel literal-input variant exercising at least one dot-bearing literal in its setup; **plus** dedicated literal-recogniser tests covering trailing-dot, leading-dot, embedded-dot, signed forms, all four Epic-9 prefix combinations, BASE-relative parsing, multi-dot rejection, and compile-state behaviour. Conservative new test count: **+12 to +20 tests** (numbered 853..872 per Story 12.6's last test 852).
+
+**Given** `docs/ans-forth-core-compliance.md` claimed coverage on §3.4.1.3 prior to this story
+**When** Story 13.0 lands
+**Then** the §3.4.1.3 row is corrected (one-line edit) to reflect the previously-shipped state and the post-13.0 fixed state. No broader re-audit pass is in scope per project lead 2026-05-01 (recorded as a post-2.0 carry-forward opportunity).
+
+**Given** the byte-count delta budget per `architecture.md:158`
+**When** the build closes
+**Then** the post-edit `wc -c build/antforth.com` is recorded against the post-Story-12.6 baseline (**18,230 bytes**); expected envelope is **+60 to +120 bytes** for the recogniser extension, `(DLIT)` runtime, and compile-state path.
+
+**Given** the post-Story-12.6 regression baseline (**852 PASS / 0 FAIL** per `make test-repl`)
+**When** Story 13.0's edits land
+**Then** all 852 existing tests continue to PASS; the post-edit count is `852 + N` where `N` is the new test count above (12-20).
+
+**Given** the adversarial-review discipline
+**When** Story 13.0's review runs
+**Then** at least 1-2 LOW/MEDIUM findings are expected; likely probes: BASE-mutation safety under prefix×dot combinations; sign-handling edge cases (`-.` alone — not a number); empty-digit edge cases (`.` alone — not a number); `(DLIT)` cell ordering correctness; compile-state vs interpret-state path symmetry.
+
+**Given** Story 13.0 is the back-fill predecessor to Story 13.1
+**When** sprint sequencing runs
+**Then** 13.0 lands and goes to `done` *before* 13.1 dev-pass starts; 13.1 stays `ready-for-dev` (already authored) and inherits the new literal recogniser as test infrastructure for any future double-cell file-position math.
+
 ### Story 13.1: File I/O sanity — FCB pool + BDOS wrapper layer (PRD risk mitigation)
 
 As an antforth maintainer,
