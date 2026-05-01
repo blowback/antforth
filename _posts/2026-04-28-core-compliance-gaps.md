@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Core compliance gapes"
+title: "Core compliance gaps"
 date: 2026-04-28
 ---
 
@@ -74,7 +74,7 @@ disk will do me.
 
 ## Bug!
 
-...or is it?
+...or is it?
 
 While preparing the above screenshots, I noticed a "bug". `HEX` and `DECIMAL` are meant 
 to change the value of `BASE`. But when I printed it out it always came back as `10`. 
