@@ -178,13 +178,13 @@ development_status:
   11.5-7-epic-11-5-close-out-gate: done
   epic-11.5-retrospective: done
 
-  epic-12: in-progress
+  epic-12: done
   12-1-wordlist-struct-hash-parameterisation-and-forth-wordlist-bootstrap: done
   12-2-wordlist-and-search-wordlist: done
   12-3-search-order-infrastructure: done
   12-4-compilation-wordlist-control: done
   12-5-only: done
-  12-6-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: backlog
+  12-6-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: done
   epic-12-retrospective: optional
 
   epic-13: backlog

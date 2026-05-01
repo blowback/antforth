@@ -727,10 +727,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v1.1.0'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v1.1.0'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v1.12.0'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v1.12.0'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v1.1.0' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v1.12.0' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \
@@ -7464,6 +7464,109 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 843 — Story 12.5: ONLY preserves TOS (BC) bit-exactly (T-ONLY-TOS-PRESERVES)"; \
 	else \
 		echo "FAIL: REPL test 843 — expected '42  ok' from 42 ONLY ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# === Story 12.6 — Epic-12 closure suite / CCD-4 gate (tests 844-849) ===
+	@# T-CCD4-DEPTH16 (test 844) — SET-ORDER ceiling = 16 (E12-D2). Wraps the
+	@# DO/LOOP body in a colon defn so DO is permitted, then drops the 16
+	@# wids GET-ORDER pushed and resets via ONLY.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T844 16 0 DO FORTH-WORDLIST LOOP 16 SET-ORDER GET-ORDER DUP 16 = . 0 DO DROP LOOP ONLY ;' 'T844' | $(IZCPM) $(TARGET) 2>/dev/null || true; echo BYE) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 844 — Story 12.6: SET-ORDER depth=16 ceiling round-trip (T-CCD4-DEPTH16)"; \
+	else \
+		echo "FAIL: REPL test 844 — expected '-1  ok' from depth=16 SET-ORDER + GET-ORDER round-trip"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-MULTI-DEEP (test 845) — 5-slot search-order walk past 4 empties
+	@# to a deep-slot hit. M845 lives in WLE (slot 4); FORTH-WORDLIST sits at
+	@# slot 0 so '.', SET-ORDER, ONLY still resolve.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLA  WORDLIST CONSTANT WLB  WORDLIST CONSTANT WLC  WORDLIST CONSTANT WLE' 'WLE SET-CURRENT  : M845 845 ;  FORTH-WORDLIST SET-CURRENT' 'WLE WLA WLB WLC FORTH-WORDLIST 5 SET-ORDER  M845 .  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '845  ok'; then \
+		echo "PASS: REPL test 845 — Story 12.6: depth-5 multi-vocab walk hits slot 4 (T-CCD4-MULTI-DEEP)"; \
+	else \
+		echo "FAIL: REPL test 845 — expected '845  ok' from 5-slot search-order walk"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-FR31-CODE (test 846) — CODE assembly post-Epic-12 produces a
+	@# runnable definition; FR31 functional probe.
+	@OUTPUT=$$(printf 'CODE T846 BC PUSH, BC 846 # LD, NEXT, END-CODE  T846 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '846  ok'; then \
+		echo "PASS: REPL test 846 — Story 12.6: CODE assembly post-Epic-12 (T-CCD4-FR31-CODE)"; \
+	else \
+		echo "FAIL: REPL test 846 — expected '846  ok' from CODE T846 BC PUSH, BC 846 # LD, NEXT, END-CODE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-IX-PRESERVE (test 847) — Story 11.4.1 i*x preservation across
+	@# the multi-vocab FIND walk. CATCH ABORT pushes -1; 4×. prints
+	@# '-1 3 2 1 '. Anchor on '3 2 1  ok' (unique to printed output).
+	@OUTPUT=$$(printf "1 2 3 ' ABORT CATCH . . . .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '3 2 1  ok'; then \
+		echo "PASS: REPL test 847 — Story 12.6: i*x preserved across multi-vocab FIND (T-CCD4-IX-PRESERVE)"; \
+	else \
+		echo "FAIL: REPL test 847 — expected '3 2 1  ok' from 1 2 3 ' ABORT CATCH . . . ."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-MARKER-MULTI-VOCAB (test 848) — Epic-12 closure cross-product:
+	@# MARKER + WORDLIST + SET-CURRENT + SET-ORDER + ONLY.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'MARKER M848  WORDLIST CONSTANT WL848  WL848 SET-CURRENT  : XX848 848 ;  FORTH-WORDLIST SET-CURRENT' 'FORTH-WORDLIST WL848 2 SET-ORDER  XX848 .  M848  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '848  ok'; then \
+		echo "PASS: REPL test 848 — Story 12.6: MARKER + WORDLIST + SET-ORDER cross-product (T-CCD4-MARKER-MULTI-VOCAB)"; \
+	else \
+		echo "FAIL: REPL test 848 — expected '848  ok' from MARKER multi-vocab cross-product"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-WL-CHAIN (test 849) — GET-CURRENT + SEARCH-WORDLIST + EXECUTE
+	@# composed. GET-CURRENT FORTH-WORDLIST = . prints '-1'; SEARCH-WORDLIST
+	@# returns xt for M849; EXECUTE pushes 849; '.' prints 849.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL849  WL849 SET-CURRENT  : M849 849 ;  FORTH-WORDLIST SET-CURRENT' 'GET-CURRENT FORTH-WORDLIST = .  S" M849" WL849 SEARCH-WORDLIST DROP EXECUTE .  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1 849  ok'; then \
+		echo "PASS: REPL test 849 — Story 12.6: GET-CURRENT + SEARCH-WORDLIST + EXECUTE chain (T-CCD4-WL-CHAIN)"; \
+	else \
+		echo "FAIL: REPL test 849 — expected '-1 849  ok' from GET-CURRENT + SEARCH-WORDLIST + EXECUTE chain"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# === Story 12.6 review pass — adversarial-review follow-up tests (850-852) ===
+	@# T-CCD4-MULTI-MISS (test 850) — multi-vocab miss-fallthrough probe
+	@# (closes Finding L9 coverage gap). FIND walks a 4-slot search order
+	@# of empty wordlists, returns ( c-addr 0 ) → NIP keeps 0 → '.' prints
+	@# 0. Counted string "NOPE850" built at HERE; colon-defn body
+	@# pre-resolves all tokens before SET-ORDER reconfigures the order.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'HERE  7 C,  78 C, 79 C, 80 C, 69 C, 56 C, 53 C, 48 C,  CONSTANT NAMEBUF' 'WORDLIST CONSTANT WL850A  WORDLIST CONSTANT WL850B  WORDLIST CONSTANT WL850C  WORDLIST CONSTANT WL850D' ': T850 WL850A WL850B WL850C WL850D 4 SET-ORDER  NAMEBUF FIND SWAP DROP .  ONLY ;' 'T850' | $(IZCPM) $(TARGET) 2>/dev/null || true; echo BYE) && \
+	if echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 850 — Story 12.6 review: multi-vocab miss-fallthrough via FIND on 4 empty slots (T-CCD4-MULTI-MISS)"; \
+	else \
+		echo "FAIL: REPL test 850 — expected '0  ok' from FIND multi-vocab miss probe"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-DEPTH16-DISTINCT (test 851) — depth-16 SET-ORDER round-trip
+	@# with 16 DISTINCT anonymous wordlists (closes Finding L10 coverage
+	@# gap). DUP+>R captures wid1 before SET-ORDER consumes it; GET-ORDER
+	@# round-trips and verifies slot-0 == saved.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' ': T851' 'WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST' 'WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST' 'DUP >R 16 SET-ORDER GET-ORDER DROP R> = .  15 0 DO DROP LOOP ONLY ;' 'T851' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
+		echo "PASS: REPL test 851 — Story 12.6 review: depth=16 SET-ORDER round-trip with 16 distinct wids (T-CCD4-DEPTH16-DISTINCT)"; \
+	else \
+		echo "FAIL: REPL test 851 — expected '-1  ok' from depth=16 distinct-wid SET-ORDER round-trip"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+	@# T-CCD4-MARKER-ROLLBACK-EFFECT (test 852) — actually verify home-
+	@# MARKER rollback removes a post-MARKER definition (closes Finding
+	@# L11 coverage gap). Pre-rollback: X852 prints 852; post-rollback:
+	@# SEARCH-WORDLIST returns 0 (X852 gone).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER M852  : X852 852 ;' 'S" X852" FORTH-WORDLIST SEARCH-WORDLIST DROP EXECUTE .' 'M852' 'S" X852" FORTH-WORDLIST SEARCH-WORDLIST .  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '852  ok' && echo "$$OUTPUT" | grep -q '0  ok'; then \
+		echo "PASS: REPL test 852 — Story 12.6 review: home-MARKER rollback removes post-MARKER defn (T-CCD4-MARKER-ROLLBACK-EFFECT)"; \
+	else \
+		echo "FAIL: REPL test 852 — expected both '852  ok' (pre-rollback) and '0  ok' (post-rollback) in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

@@ -350,3 +350,104 @@ WORDLIST CONSTANT WLO   WLO SET-CURRENT   ONLY   GET-CURRENT WLO = .   FORTH-WOR
 \ contains "42 ONLY .") cannot satisfy the pattern; only `.` printing
 \ 42 followed by the REPL prompt produces that substring.
 42 ONLY .                                \ Makefile test 843 asserts: output contains "42  ok"
+
+\ ============================================================
+\ Section 10 — Story 12.6 Epic-12 closure suite (CCD-4 gate)
+\ ============================================================
+\ Tests 844..849 — Epic-12 close-out probes for the CCD-4 gate.
+\ Audit-only story — these tests verify the surface Stories 12.1..12.5
+\ delivered, exercising the worst-case shapes the per-story tests did
+\ not directly hit. All tests reset state with ONLY at the end.
+
+\ T-CCD4-DEPTH16 (test 844) — SET-ORDER ceiling = 16 (E12-D2 §332-336).
+\ Push 16× FORTH-WORDLIST, SET-ORDER 16, GET-ORDER returns depth=16
+\ + 16 wids. DUP 16 = . prints "-1". 16-cell drop + ONLY cleans up.
+\ Wraps in colon defn so DO/LOOP (compile-only) is permitted.
+: T844 16 0 DO FORTH-WORDLIST LOOP 16 SET-ORDER GET-ORDER DUP 16 = . 0 DO DROP LOOP ONLY ;
+T844                                     \ Makefile test 844 asserts: output contains "-1  ok"
+
+\ T-CCD4-MULTI-DEEP (test 845) — 5-slot search-order walk past 4 empties
+\ to a deep-slot hit. M845 lives in WLE (slot 4). FORTH-WORDLIST sits at
+\ slot 0 so the surrounding ., SET-ORDER, ONLY tokens still resolve.
+WORDLIST CONSTANT WLA  WORDLIST CONSTANT WLB  WORDLIST CONSTANT WLC  WORDLIST CONSTANT WLE
+WLE SET-CURRENT  : M845 845 ;  FORTH-WORDLIST SET-CURRENT
+WLE WLA WLB WLC FORTH-WORDLIST 5 SET-ORDER  M845 .  ONLY
+\ Makefile test 845 asserts: output contains "845  ok"
+
+\ T-CCD4-FR31-CODE (test 846) — CODE assembly post-Epic-12 produces a
+\ runnable definition; FR31 functional probe (the byte-identical gate is
+\ verified analytically in Story 12.6 Task 3 against a pre-Epic-12 build).
+CODE T846 BC PUSH, BC 846 # LD, NEXT, END-CODE  T846 .   \ test 846 asserts: "846  ok"
+
+\ T-CCD4-IX-PRESERVE (test 847) — Story 11.4.1 i*x preservation across the
+\ multi-vocab FIND walk. 1 2 3 ' ABORT CATCH . . . . — CATCH executes
+\ ABORT (THROWs -1), restores i*x cells, returns -1 on TOS. Four `.`s
+\ print "-1 3 2 1 ".
+1 2 3 ' ABORT CATCH . . . .              \ Makefile test 847 asserts: output contains "3 2 1  ok"
+
+\ T-CCD4-MARKER-MULTI-VOCAB (test 848) — Epic-12 closure cross-product.
+\ MARKER + WORDLIST + SET-CURRENT + SET-ORDER + ONLY composed in one
+\ flow. M848 marker placed, WL848 wordlist created, XX848 defined inside
+\ WL848, search order set to [WL848, FORTH-WORDLIST]. XX848 . prints 848.
+\ M848 rolls back (per Story 12.4 H1 fix walks per-wordlist hash table
+\ without corrupting FORTH-WORDLIST). ONLY resets order.
+MARKER M848  WORDLIST CONSTANT WL848  WL848 SET-CURRENT  : XX848 848 ;  FORTH-WORDLIST SET-CURRENT
+FORTH-WORDLIST WL848 2 SET-ORDER  XX848 .  M848  ONLY
+\ Makefile test 848 asserts: output contains "848  ok"
+
+\ T-CCD4-WL-CHAIN (test 849) — Compose GET-CURRENT + SEARCH-WORDLIST +
+\ EXECUTE in a single flow. Confirms GET-CURRENT is independent of the
+\ search order, and SEARCH-WORDLIST returns a runnable xt.
+WORDLIST CONSTANT WL849  WL849 SET-CURRENT  : M849 849 ;  FORTH-WORDLIST SET-CURRENT
+GET-CURRENT FORTH-WORDLIST = .  S" M849" WL849 SEARCH-WORDLIST DROP EXECUTE .
+\ Makefile test 849 asserts: output contains "-1 " AND "849 "
+ONLY
+
+\ ============================================================
+\ Section 10b — Adversarial-review follow-up tests (L9 / L10 / L11)
+\ ============================================================
+\ Added by review pass to close coverage gaps:
+\   850 — explicit multi-vocab miss-fallthrough (L9)
+\   851 — depth-16 round-trip with DISTINCT wordlists (L10)
+\   852 — MARKER rollback effect actually verified (L11)
+
+\ T-CCD4-MULTI-MISS (test 850) — Probe FIND walking a 4-slot search order
+\ where every slot is empty. Builds a counted string "NOPE850" at HERE,
+\ sets order to 4 empty wordlists, calls FIND directly. FIND walks all
+\ 4 slots, finds nothing in any bucket array, returns ( c-addr 0 ). NIP
+\ drops c-addr; '.' prints 0. Wrapped in a colon defn so every token
+\ compiles against the default search order — at execution time the
+\ SET-ORDER reconfigure does not break the body's pre-resolved xt's.
+\ Closes Finding L9 (no explicit multi-vocab miss-fallthrough probe).
+HERE  7 C,  78 C, 79 C, 80 C, 69 C, 56 C, 53 C, 48 C,  CONSTANT NAMEBUF
+WORDLIST CONSTANT WL850A  WORDLIST CONSTANT WL850B  WORDLIST CONSTANT WL850C  WORDLIST CONSTANT WL850D
+: T850 WL850A WL850B WL850C WL850D 4 SET-ORDER  NAMEBUF FIND SWAP DROP .  ONLY ;
+T850                                     \ Makefile test 850 asserts: "0  ok"
+
+\ T-CCD4-DEPTH16-DISTINCT (test 851) — 16 DISTINCT wordlists at the
+\ SET-ORDER ceiling, verifying slot-0 wid distinguishability across a
+\ depth=16 round-trip. Uses 16 anonymous WORDLIST allocations inside a
+\ colon defn (DUP+>R captures wid1 = the will-be-slot-0 wid before
+\ SET-ORDER consumes it; GET-ORDER round-trips, drops n, compares the
+\ top-of-stack wid against the saved one). 16 × 130 = 2080 bytes from
+\ HERE (well within ~44 KB free).
+: T851
+  WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST
+  WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST
+  DUP >R 16 SET-ORDER GET-ORDER DROP R> = .
+  15 0 DO DROP LOOP ONLY ;
+T851                                     \ Makefile test 851 asserts: "-1  ok"
+
+\ T-CCD4-MARKER-ROLLBACK-EFFECT (test 852) — Actually verify that home-
+\ MARKER rollback removes a definition created after the MARKER. M852 is
+\ a home marker (CURRENT = FORTH-WORDLIST at MARKER time). Define X852
+\ (lands in FORTH-WORDLIST), exec it pre-rollback (prints 852), fire
+\ M852, then SEARCH-WORDLIST X852 in FORTH-WORDLIST should return 0
+\ (X852's bucket entry rolled back). Closes the L11 coverage gap that
+\ test 848 left open (test 848 asserts on a value printed BEFORE MARKER
+\ fires; this test asserts on the post-rollback FIND result).
+MARKER M852  : X852 852 ;
+S" X852" FORTH-WORDLIST SEARCH-WORDLIST DROP EXECUTE .   \ pre-print "852 "
+M852
+S" X852" FORTH-WORDLIST SEARCH-WORDLIST .                \ Makefile test 852 asserts: "0  ok"
+ONLY
