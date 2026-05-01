@@ -185,7 +185,7 @@ development_status:
   12-4-compilation-wordlist-control: done
   12-5-only: done
   12-6-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: done
-  epic-12-retrospective: optional
+  epic-12-retrospective: done
 
   epic-13: backlog
   13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: backlog
