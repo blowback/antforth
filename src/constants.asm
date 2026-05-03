@@ -13,6 +13,22 @@ C_WRITE         EQU     2               ; BDOS function 2: console output (E = c
 C_STATUS        EQU     11              ; BDOS function 11: console status (non-blocking)
 C_READSTR       EQU     10              ; BDOS function 10: read console buffer
 
+; --- File-access subset (Story 13.1) — NFR13 BDOS allow-list (epics.md:1483) ---
+; Every CALL BDOS_ENTRY site in src/file_access.asm cites the function
+; number either via the `LD C, F_<NAME>` setup or via a comment beside
+; the wrapper helper (CCD-3 / NFR17, architecture.md:472).
+F_OPEN          EQU     15              ; BDOS function 15: open file (DE = FCB ptr)
+F_CLOSE         EQU     16              ; BDOS function 16: close file (DE = FCB ptr)
+F_DELETE        EQU     19              ; BDOS function 19: delete file (DE = FCB ptr)
+F_READ          EQU     20              ; BDOS function 20: read sequential record into DMA
+F_WRITE         EQU     21              ; BDOS function 21: write sequential record from DMA
+F_MAKE          EQU     22              ; BDOS function 22: create file / directory entry
+DRV_GET         EQU     25              ; BDOS function 25: return current default drive
+F_DMAOFF        EQU     26              ; BDOS function 26: set DMA buffer address
+F_READRAND      EQU     33              ; BDOS function 33: random-record read (DE = FCB)
+F_WRITERAND     EQU     34              ; BDOS function 34: random-record write (DE = FCB)
+F_SIZE          EQU     35              ; BDOS function 35: compute file size into r0/r1/r2
+
 ; === Stack Sizes ===
 PS_SIZE         EQU     256             ; Parameter stack: 128 cells (256 bytes)
 RS_SIZE         EQU     256             ; Return stack: 128 cells (256 bytes)

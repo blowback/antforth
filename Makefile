@@ -11,6 +11,14 @@ ASM      = sjasmplus
 ASMFLAGS = --fullpath --nologo
 IZCPM    = iz-cpm
 
+# Story 13.1 — multi-drive iz-cpm wiring (AC #8). disk/a/ is the
+# directory iz-cpm maps as drive A:. Verified against
+# `iz-cpm --help` 2026-05-01: `-a/--disk-a <path>` is supported across
+# 26 drive letters (A:..Z:); CP/M's own FCB drive byte covers A:..P:
+# (16 drives). Existing REPL tests do not depend on drive A: since
+# they exercise no file I/O — the flag is harmless.
+IZCPM_DISKS = --disk-a disk/a
+
 SRCDIR   = src
 BUILDDIR = build
 DISKDIR  = disk
@@ -18,6 +26,10 @@ DISKDIR  = disk
 TARGET   = $(BUILDDIR)/antforth.com
 TESTKEY  = $(BUILDDIR)/test_key.com
 DISKIMG  = $(BUILDDIR)/antforth.img
+# Story 13.1 — file-sanity harness binary built with -DFILE_SANITY.
+# The (FILE-IO-SANITY) word is wrapped in `IFDEF FILE_SANITY` so the
+# production REPL binary stays clean (AC #7 grep verification).
+FILESANITY = $(BUILDDIR)/antforth_filesanity.com
 
 # All .asm files — sjasmplus assembles fast, depend on all of them
 SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
@@ -26,7 +38,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test
+.PHONY: all asm disk test test-repl test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test
 
 all: asm
 
@@ -86,7 +98,7 @@ test: $(SRCS) | $(BUILDDIR)
 
 test-repl: $(TARGET)
 	@echo "Running REPL tests..."
-	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \
 		echo "PASS: REPL test 1 — '65 EMIT' outputs 'A'"; \
 	else \
@@ -94,7 +106,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '72 EMIT 73 EMIT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '72 EMIT 73 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'HI'; then \
 		echo "PASS: REPL test 2 — '72 EMIT 73 EMIT' outputs 'HI'"; \
 	else \
@@ -102,7 +114,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'XYZZY\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'XYZZY\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'XYZZY ?'; then \
 		echo "PASS: REPL test 3 — undefined word shows error and recovery"; \
 	else \
@@ -110,7 +122,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '5 '; then \
 		echo "PASS: REPL test 4 — '2 3 + .' outputs '5 '"; \
 	else \
@@ -118,7 +130,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX FF . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX FF . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FF '; then \
 		echo "PASS: REPL test 5 — 'HEX FF .' outputs 'FF '"; \
 	else \
@@ -126,7 +138,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<3> 1 2 3 '; then \
 		echo "PASS: REPL test 6 — '1 2 3 .S' outputs '<3> 1 2 3 '"; \
 	else \
@@ -134,7 +146,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '.S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '.S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<0> '; then \
 		echo "PASS: REPL test 7 — empty '.S' outputs '<0> '"; \
 	else \
@@ -142,7 +154,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'BYE'; then \
 		echo "PASS: REPL test 8 — BYE exits cleanly"; \
 	else \
@@ -150,7 +162,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'FOO\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'FOO\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FOO ?' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 9 — undefined word 'FOO' shows 'FOO ?' and recovers to ok"; \
 	else \
@@ -158,7 +170,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '+\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '+\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 10 — stack underflow on + shows error and recovers"; \
 	else \
@@ -166,7 +178,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2 3 + BADWORD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2 3 + BADWORD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'BADWORD ?'; then \
 		echo "PASS: REPL test 11 — partial execution: '2 3 + BADWORD' reports error for BADWORD"; \
 	else \
@@ -174,7 +186,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'FOO\r\nBAR\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'FOO\r\nBAR\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FOO ?' && echo "$$OUTPUT" | grep -q 'BAR ?' && echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 12 — multiple consecutive errors recover cleanly, then '42 .' works"; \
 	else \
@@ -182,7 +194,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 13 — stack underflow on DROP shows error and recovers"; \
 	else \
@@ -190,7 +202,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 14 — stack underflow on . shows error and recovers"; \
 	else \
@@ -198,7 +210,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'AND\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'AND\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 15 — stack underflow on AND shows error and recovers"; \
 	else \
@@ -206,7 +218,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 +\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 +\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 16 — stack underflow on '1 +' (only 1 arg for binary op)"; \
 	else \
@@ -214,7 +226,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': SQUARE DUP * ; 7 SQUARE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': SQUARE DUP * ; 7 SQUARE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '49 '; then \
 		echo "PASS: REPL test 17 — colon definition: ': SQUARE DUP * ; 7 SQUARE .' outputs '49'"; \
 	else \
@@ -222,7 +234,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': SQUARE DUP * ; : CUBE DUP SQUARE * ; 3 CUBE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': SQUARE DUP * ; : CUBE DUP SQUARE * ; 3 CUBE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '27 '; then \
 		echo "PASS: REPL test 18 — nested definitions: '3 CUBE .' outputs '27'"; \
 	else \
@@ -230,7 +242,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 NEGATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 NEGATE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-5 '; then \
 		echo "PASS: REPL test 19 — NEGATE: '5 NEGATE .' outputs '-5'"; \
 	else \
@@ -238,7 +250,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-3 NEGATE .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-3 NEGATE .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '3 '; then \
 		echo "PASS: REPL test 19b — NEGATE: '-3 NEGATE .' outputs '3'"; \
 	else \
@@ -246,7 +258,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': BAD XYZZY ;\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': BAD XYZZY ;\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'XYZZY ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 20 — compilation error recovery: XYZZY ? then 2 3 + . outputs 5"; \
 	else \
@@ -254,7 +266,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': ADD5 5 + ; 10 ADD5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': ADD5 5 + ; 10 ADD5 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '15 '; then \
 		echo "PASS: REPL test 21 — LIT compilation: ': ADD5 5 + ; 10 ADD5 .' outputs '15'"; \
 	else \
@@ -262,7 +274,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': MAGIC [ 2 3 + ] LITERAL * ; 10 MAGIC .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': MAGIC [ 2 3 + ] LITERAL * ; 10 MAGIC .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '50 '; then \
 		echo "PASS: REPL test 22 — [ ] LITERAL: ': MAGIC [ 2 3 + ] LITERAL * ; 10 MAGIC .' outputs '50'"; \
 	else \
@@ -270,7 +282,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '-7 ABS .' '7 ABS .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '-7 ABS .' '7 ABS .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 .*7 '; then \
 		echo "PASS: REPL test 23 — ABS: '-7 ABS .' and '7 ABS .' both output '7'"; \
 	else \
@@ -278,7 +290,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '3 5 MIN .\r\n3 5 MAX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '3 5 MIN .\r\n3 5 MAX .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '3 .*5 '; then \
 		echo "PASS: REPL test 24 — MIN/MAX: '3 5 MIN .' outputs '3', '3 5 MAX .' outputs '5'"; \
 	else \
@@ -286,7 +298,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'VARIABLE X  42 X !  X @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'VARIABLE X  42 X !  X @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 		echo "PASS: REPL test 25 — VARIABLE: 'VARIABLE X  42 X !  X @ .' outputs '42'"; \
 	else \
@@ -294,7 +306,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '99 CONSTANT LIMIT  LIMIT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '99 CONSTANT LIMIT  LIMIT .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '99 '; then \
 		echo "PASS: REPL test 26 — CONSTANT: '99 CONSTANT LIMIT  LIMIT .' outputs '99'"; \
 	else \
@@ -302,7 +314,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CREATE BUF 10 ALLOT  42 BUF !  BUF @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CREATE BUF 10 ALLOT  42 BUF !  BUF @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 		echo "PASS: REPL test 27 — CREATE+ALLOT: 'CREATE BUF 10 ALLOT  42 BUF !  BUF @ .' outputs '42'"; \
 	else \
@@ -310,7 +322,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 CELLS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 CELLS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '10 '; then \
 		echo "PASS: REPL test 28 — CELLS: '5 CELLS .' outputs '10'"; \
 	else \
@@ -318,7 +330,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ; 10 ARRAY MD  42 3 MD !  3 MD @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ; 10 ARRAY MD  42 3 MD !  3 MD @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 		echo "PASS: REPL test 29 — CREATE/DOES> ARRAY: '42 3 MD !  3 MD @ .' outputs '42'"; \
 	else \
@@ -326,7 +338,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '99 CONSTANT LIM\r\n: CHKLIM LIM + ; 1 CHKLIM .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '99 CONSTANT LIM\r\n: CHKLIM LIM + ; 1 CHKLIM .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '100 '; then \
 		echo "PASS: REPL test 30 — CONSTANT in colon def: '1 CHKLIM .' outputs '100'"; \
 	else \
@@ -334,7 +346,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'VARIABLE A VARIABLE B  10 A !  20 B !  A @ B @ + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'VARIABLE A VARIABLE B  10 A !  20 B !  A @ B @ + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '30 '; then \
 		echo "PASS: REPL test 31 — multiple VARIABLEs: 'A @ B @ + .' outputs '30'"; \
 	else \
@@ -342,7 +354,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'VARIABLE X\r\n: SETX 42 X ! ; SETX X @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'VARIABLE X\r\n: SETX 42 X ! ; SETX X @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 		echo "PASS: REPL test 32 — VARIABLE in colon def: 'SETX X @ .' outputs '42'"; \
 	else \
@@ -350,7 +362,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ;\r\n5 ARRAY AA 3 ARRAY BB  42 0 AA !  99 0 BB !  0 AA @ .  0 BB @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ;\r\n5 ARRAY AA 3 ARRAY BB  42 0 AA !  99 0 BB !  0 AA @ .  0 BB @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 .*99 '; then \
 		echo "PASS: REPL test 33 — multiple DOES> children: AA and BB independent"; \
 	else \
@@ -358,7 +370,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'VARIABLE X  42 X !  99 X !  X @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'VARIABLE X  42 X !  99 X !  X @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '99 '; then \
 		echo "PASS: REPL test 34 — VARIABLE overwrite: store 42 then 99, read back 99"; \
 	else \
@@ -366,7 +378,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TPOS DUP 0 > IF NEGATE THEN ; 5 TPOS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TPOS DUP 0 > IF NEGATE THEN ; 5 TPOS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-5 '; then \
 		echo "PASS: REPL test 35 — IF/THEN taken: '5 TPOS .' outputs '-5'"; \
 	else \
@@ -374,7 +386,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TPOS DUP 0 > IF NEGATE THEN ;\r\n-3 TPOS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TPOS DUP 0 > IF NEGATE THEN ;\r\n-3 TPOS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-3 '; then \
 		echo "PASS: REPL test 36 — IF/THEN skipped: '-3 TPOS .' outputs '-3'"; \
 	else \
@@ -382,7 +394,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TSIGN 0< IF -1 ELSE 1 THEN ; -5 TSIGN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TSIGN 0< IF -1 ELSE 1 THEN ; -5 TSIGN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-1 '; then \
 		echo "PASS: REPL test 37 — IF/ELSE/THEN true: '-5 TSIGN .' outputs '-1'"; \
 	else \
@@ -390,7 +402,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TSIGN 0< IF -1 ELSE 1 THEN ;\r\n5 TSIGN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TSIGN 0< IF -1 ELSE 1 THEN ;\r\n5 TSIGN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1 '; then \
 		echo "PASS: REPL test 38 — IF/ELSE/THEN false: '5 TSIGN .' outputs '1'"; \
 	else \
@@ -398,7 +410,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TNEST DUP 0 > IF DUP 10 > IF 2 ELSE 1 THEN ELSE 0 THEN ; 15 TNEST . 5 TNEST . -1 TNEST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TNEST DUP 0 > IF DUP 10 > IF 2 ELSE 1 THEN ELSE 0 THEN ; 15 TNEST . 5 TNEST . -1 TNEST .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '2 .*1 .*0 '; then \
 		echo "PASS: REPL test 39 — nested IF: '15 TNEST . 5 TNEST . -1 TNEST .' outputs '2 1 0'"; \
 	else \
@@ -406,7 +418,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TCNT 0 BEGIN 1 + DUP 5 = UNTIL ; TCNT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TCNT 0 BEGIN 1 + DUP 5 = UNTIL ; TCNT .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 40 — BEGIN/UNTIL: 'TCNT .' outputs '5'"; \
 	else \
@@ -414,7 +426,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TSUM 0 5 BEGIN DUP 0 > WHILE SWAP OVER + SWAP 1 - REPEAT DROP ; TSUM .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TSUM 0 5 BEGIN DUP 0 > WHILE SWAP OVER + SWAP 1 - REPEAT DROP ; TSUM .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '15 '; then \
 		echo "PASS: REPL test 41 — BEGIN/WHILE/REPEAT: 'TSUM .' outputs '15'"; \
 	else \
@@ -422,7 +434,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TWH BEGIN DUP 0 > WHILE 1 - REPEAT ; 3 TWH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TWH BEGIN DUP 0 > WHILE 1 - REPEAT ; 3 TWH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
 		echo "PASS: REPL test 42 — WHILE countdown: '3 TWH .' outputs '0'"; \
 	else \
@@ -430,7 +442,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'IF\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'IF\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 43 — compile-only guard: IF in interpret mode shows error and recovers"; \
 	else \
@@ -438,7 +450,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'THEN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'THEN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 44 — compile-only guard: THEN in interpret mode shows error and recovers"; \
 	else \
@@ -446,7 +458,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BEGIN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BEGIN\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 45 — compile-only guard: BEGIN in interpret mode shows error and recovers"; \
 	else \
@@ -454,7 +466,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'ELSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'ELSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 46 — compile-only guard: ELSE in interpret mode shows error and recovers"; \
 	else \
@@ -462,7 +474,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'WHILE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WHILE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 47 — compile-only guard: WHILE in interpret mode shows error and recovers"; \
 	else \
@@ -470,7 +482,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'REPEAT\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'REPEAT\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 48 — compile-only guard: REPEAT in interpret mode shows error and recovers"; \
 	else \
@@ -478,7 +490,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'UNTIL\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'UNTIL\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 49 — compile-only guard: UNTIL in interpret mode shows error and recovers"; \
 	else \
@@ -486,7 +498,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TWH BEGIN DUP 0 > WHILE 1 - REPEAT ; 0 TWH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TWH BEGIN DUP 0 > WHILE 1 - REPEAT ; 0 TWH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
 		echo "PASS: REPL test 50 — WHILE false on entry: '0 TWH .' outputs '0'"; \
 	else \
@@ -494,7 +506,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TENS 10 0 DO I . LOOP ; TENS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TENS 10 0 DO I . LOOP ; TENS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 1 2 3 4 5 6 7 8 9 '; then \
 		echo "PASS: REPL test 51 — DO/LOOP: 'TENS' outputs '0 1 2 3 4 5 6 7 8 9'"; \
 	else \
@@ -502,7 +514,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': EVENS 10 0 DO I . 2 +LOOP ; EVENS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': EVENS 10 0 DO I . 2 +LOOP ; EVENS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 2 4 6 8 '; then \
 		echo "PASS: REPL test 52 — DO/+LOOP: 'EVENS' outputs '0 2 4 6 8'"; \
 	else \
@@ -510,7 +522,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': FIND5 10 0 DO I 5 = IF I . LEAVE THEN LOOP ; FIND5\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': FIND5 10 0 DO I 5 = IF I . LEAVE THEN LOOP ; FIND5\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r' | grep -q '^5  ok$$' && ! echo "$$OUTPUT" | tr -d '\r' | grep -q '^5 6'; then \
 		echo "PASS: REPL test 53 — DO/LOOP/LEAVE: 'FIND5' outputs '5' and exits early"; \
 	else \
@@ -518,7 +530,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': NEST 3 0 DO 3 0 DO J . I . LOOP LOOP ; NEST\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': NEST 3 0 DO 3 0 DO J . I . LOOP LOOP ; NEST\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 0 0 1 0 2 1 0 1 1 1 2 2 0 2 1 2 2 '; then \
 		echo "PASS: REPL test 54 — nested DO/LOOP with I and J: 'NEST' outputs correct sequence"; \
 	else \
@@ -526,7 +538,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': FACT DUP 1 > IF DUP 1 - RECURSE * THEN ; 5 FACT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': FACT DUP 1 > IF DUP 1 - RECURSE * THEN ; 5 FACT .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r' | grep -q '^120  ok$$'; then \
 		echo "PASS: REPL test 55 — RECURSE: '5 FACT .' outputs '120'"; \
 	else \
@@ -534,7 +546,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': FACT7 DUP 1 > IF DUP 1 - RECURSE * THEN ; 7 FACT7 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': FACT7 DUP 1 > IF DUP 1 - RECURSE * THEN ; 7 FACT7 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r' | grep -q '^5040  ok$$'; then \
 		echo "PASS: REPL test 56 — RECURSE: '7 FACT7 .' outputs '5040'"; \
 	else \
@@ -542,7 +554,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DO\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DO\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 57 — compile-only guard: DO in interpret mode shows error and recovers"; \
 	else \
@@ -550,7 +562,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 58 — compile-only guard: LOOP in interpret mode shows error and recovers"; \
 	else \
@@ -558,7 +570,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '+LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '+LOOP\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 59 — compile-only guard: +LOOP in interpret mode shows error and recovers"; \
 	else \
@@ -566,7 +578,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'LEAVE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'LEAVE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 60 — compile-only guard: LEAVE in interpret mode shows error and recovers"; \
 	else \
@@ -574,7 +586,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'RECURSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'RECURSE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 61 — compile-only guard: RECURSE in interpret mode shows error and recovers"; \
 	else \
@@ -582,7 +594,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': ONE 1 0 DO 42 . LOOP ; ONE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': ONE 1 0 DO 42 . LOOP ; ONE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 		echo "PASS: REPL test 62 — single-iteration DO/LOOP: 'ONE' outputs '42'"; \
 	else \
@@ -590,7 +602,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': TWOL 10 0 DO I 3 = IF LEAVE THEN I 7 = IF LEAVE THEN LOOP 99 . ; TWOL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TWOL 10 0 DO I 3 = IF LEAVE THEN I 7 = IF LEAVE THEN LOOP 99 . ; TWOL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '99 '; then \
 		echo "PASS: REPL test 63 — multiple LEAVEs in one loop: 'TWOL' outputs '99'"; \
 	else \
@@ -598,7 +610,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': DN 0 10 DO I . -1 +LOOP ; DN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': DN 0 10 DO I . -1 +LOOP ; DN\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '10 9 8 7 6 5 4 3 2 1 0 '; then \
 		echo "PASS: REPL test 64 — countdown with -1 +LOOP: 'DN' outputs '10 9 8 7 6 5 4 3 2 1 0'"; \
 	else \
@@ -606,7 +618,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': FOO ; IMMEDIATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': FOO ; IMMEDIATE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 65 — IMMEDIATE: define word and mark IMMEDIATE, no crash"; \
 	else \
@@ -614,7 +626,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': COMP-DUP POSTPONE DUP ; IMMEDIATE : DOUBLE COMP-DUP * ; 7 DOUBLE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': COMP-DUP POSTPONE DUP ; IMMEDIATE : DOUBLE COMP-DUP * ; 7 DOUBLE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '49 '; then \
 		echo "PASS: REPL test 66 — POSTPONE non-IMMEDIATE word: 7 DOUBLE outputs 49"; \
 	else \
@@ -622,7 +634,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': COMP-IF POSTPONE IF ; IMMEDIATE : TEST 1 COMP-IF 42 THEN . ; TEST\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': COMP-IF POSTPONE IF ; IMMEDIATE : TEST 1 COMP-IF 42 THEN . ; TEST\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 		echo "PASS: REPL test 67 — POSTPONE IMMEDIATE word: TEST outputs 42"; \
 	else \
@@ -630,7 +642,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': GREET S" Hello" TYPE ; GREET\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GREET S" Hello" TYPE ; GREET\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'Hello'; then \
 		echo "PASS: REPL test 68 — S\" in compile mode: GREET outputs Hello"; \
 	else \
@@ -638,7 +650,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': HI ." Hello World" ; HI\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': HI ." Hello World" ; HI\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'Hello World'; then \
 		echo "PASS: REPL test 69 — .\" in compile mode: HI outputs Hello World"; \
 	else \
@@ -646,7 +658,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" test" TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" test" TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'test'; then \
 		echo "PASS: REPL test 70 — S\" in interpret mode: outputs test"; \
 	else \
@@ -654,7 +666,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': LEN S" abcde" SWAP DROP . ; LEN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': LEN S" abcde" SWAP DROP . ; LEN\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 71 — S\" string length: LEN outputs 5"; \
 	else \
@@ -662,7 +674,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'WORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'DUP' && echo "$$OUTPUT" | grep -q 'DROP' && echo "$$OUTPUT" | grep -q 'SWAP'; then \
 		echo "PASS: REPL test 72 — WORDS lists known words (DUP, DROP, SWAP found)"; \
 	else \
@@ -670,7 +682,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'POSTPONE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'POSTPONE\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -14: interpreting a compile-only word' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 73 — POSTPONE in interpret mode shows compile-only error and recovers"; \
 	else \
@@ -678,7 +690,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '." hello"\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '." hello"\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'hello'; then \
 		echo "PASS: REPL test 74 — .\" in interpret mode: prints hello"; \
 	else \
@@ -686,7 +698,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': GREET2 ." Hi " ." There" ; GREET2\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GREET2 ." Hi " ." There" ; GREET2\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'Hi There'; then \
 		echo "PASS: REPL test 75 — multiple .\" in one definition: GREET2 outputs Hi There"; \
 	else \
@@ -694,7 +706,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': EMPTY S" " SWAP DROP . ; EMPTY\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': EMPTY S" " SWAP DROP . ; EMPTY\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
 		echo "PASS: REPL test 76 — empty S\" string: SWAP DROP . outputs 0"; \
 	else \
@@ -702,7 +714,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': LONG S" ABCDEFGHIJKLMNOPQRSTUVWXYZ" TYPE ; LONG\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': LONG S" ABCDEFGHIJKLMNOPQRSTUVWXYZ" TYPE ; LONG\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; then \
 		echo "PASS: REPL test 77 — long S\" string: outputs full alphabet"; \
 	else \
@@ -710,7 +722,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': BAD POSTPONE XYZZY ;\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': BAD POSTPONE XYZZY ;\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'XYZZY ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 		echo "PASS: REPL test 78 — POSTPONE undefined word: shows error and recovers"; \
 	else \
@@ -718,7 +730,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': COMP-SWAP POSTPONE SWAP ; IMMEDIATE : REV COMP-SWAP . . ; 1 2 REV\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': COMP-SWAP POSTPONE SWAP ; IMMEDIATE : REV COMP-SWAP . . ; 1 2 REV\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1 2 '; then \
 		echo "PASS: REPL test 79 — COMPILE, via POSTPONE non-IMMEDIATE: 1 2 REV outputs 1 2"; \
 	else \
@@ -726,7 +738,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'AntForth v1.12.0'; then \
 		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v1.12.0'"; \
 	else \
@@ -762,7 +774,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MYDUP BC PUSH, NEXT, END-CODE\r\n5 MYDUP . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MYDUP BC PUSH, NEXT, END-CODE\r\n5 MYDUP . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 5 '; then \
 		echo "PASS: REPL test 85 — CODE MYDUP: '5 MYDUP . .' outputs '5 5'"; \
 	else \
@@ -770,7 +782,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE TCA BC PUSH, A XOR, C A LD, NEXT, END-CODE\r\n99 TCA . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE TCA BC PUSH, A XOR, C A LD, NEXT, END-CODE\r\n99 TCA . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 99 '; then \
 		echo "PASS: REPL test 86 — LD, r-r encoding: 'C A LD,' assembles LD C,A, '99 TCA . .' outputs '0 99'"; \
 	else \
@@ -778,7 +790,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE DBL BC PUSH, A XOR, C ADD, C ADD, C A LD, A XOR, B A LD, NEXT, END-CODE\r\n21 DBL . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE DBL BC PUSH, A XOR, C ADD, C ADD, C A LD, A XOR, B A LD, NEXT, END-CODE\r\n21 DBL . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 21 '; then \
 		echo "PASS: REPL test 87 — multi-instruction CODE word DBL: '21 DBL . .' outputs '42 21'"; \
 	else \
@@ -786,7 +798,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE ZORK BC PUSH, NEXT, END-CODE\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE ZORK BC PUSH, NEXT, END-CODE\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'ZORK'; then \
 		echo "PASS: REPL test 88 — WORDS lists newly-defined CODE word ZORK"; \
 	else \
@@ -794,7 +806,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE FOO NONEXISTENT,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE FOO NONEXISTENT,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'NONEXISTENT, ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 89 — error recovery: bad word inside CODE aborts cleanly, next input still works"; \
 	else \
@@ -802,7 +814,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE BL1 LABEL TOP TOP FIX A A LD, TOP JR, NEXT, END-CODE\r\nXT BL1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE BL1 LABEL TOP TOP FIX A A LD, TOP JR, NEXT, END-CODE\r\nXT BL1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 '; then \
 		echo "PASS: REPL test 90 — backward JR encoding: displacement byte = 0xFD = 253"; \
 	else \
@@ -810,7 +822,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE FW1 LABEL SKIP SKIP JR, 255 DB, SKIP FIX NEXT, END-CODE\r\nXT FW1 0 + C@ . XT FW1 1 + C@ . XT FW1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE FW1 LABEL SKIP SKIP JR, 255 DB, SKIP FIX NEXT, END-CODE\r\nXT FW1 0 + C@ . XT FW1 1 + C@ . XT FW1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '24 1 255 '; then \
 		echo "PASS: REPL test 91 — forward JR encoding: opcode 24, disp +1, DB byte 255"; \
 	else \
@@ -818,7 +830,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE DATAW 170 DB, 4660 DW, 3 DS, NEXT, END-CODE\r\nXT DATAW 0 + C@ . XT DATAW 1 + C@ . XT DATAW 2 + C@ . XT DATAW 3 + C@ . XT DATAW 4 + C@ . XT DATAW 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE DATAW 170 DB, 4660 DW, 3 DS, NEXT, END-CODE\r\nXT DATAW 0 + C@ . XT DATAW 1 + C@ . XT DATAW 2 + C@ . XT DATAW 3 + C@ . XT DATAW 4 + C@ . XT DATAW 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '170 52 18 0 0 0 '; then \
 		echo "PASS: REPL test 92 — DB,/DW,/DS, encoding: 170 52 18 0 0 0"; \
 	else \
@@ -826,7 +838,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\n66 EQU PORT-A\r\nPORT-A .\r\nCODE EUSE PORT-A DB, NEXT, END-CODE\r\nXT EUSE C@ .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\n66 EQU PORT-A\r\nPORT-A .\r\nCODE EUSE PORT-A DB, NEXT, END-CODE\r\nXT EUSE C@ .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	N66=$$(echo "$$OUTPUT" | grep -oE '66 ' | wc -l) && \
 	if [ "$$N66" -ge 2 ] && echo "$$OUTPUT" | grep -q 'PORT-A' && echo "$$OUTPUT" | grep -q 'EUSE'; then \
 		echo "PASS: REPL test 93 — EQU end-to-end: PORT-A prints 66, used in CODE, listed in WORDS"; \
@@ -835,7 +847,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE DW1 LABEL TGT TGT DW, TGT FIX NEXT, END-CODE\r\nXT DW1 @ XT DW1 2 + = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE DW1 LABEL TGT TGT DW, TGT FIX NEXT, END-CODE\r\nXT DW1 @ XT DW1 2 + = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-1 '; then \
 		echo "PASS: REPL test 94 — DW, with label: stored value equals xt+2"; \
 	else \
@@ -843,7 +855,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD LABEL X X JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD LABEL X X JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'unresolved label X ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD$$' && \
@@ -854,7 +866,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD2 LABEL Y Y FIX A A LD, Y FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD2 LABEL Y Y FIX A A LD, Y FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'already fixed: Y ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD2$$' && \
@@ -865,7 +877,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD3 A A LD, LABEL ZED NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD3 A A LD, LABEL ZED NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -262: LABEL must precede opcodes' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD3$$' && \
@@ -876,7 +888,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD4 LABEL TGT TGT FIX 130 DS, TGT JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD4 LABEL TGT TGT FIX 130 DS, TGT JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -263: JR out of range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD4$$' && \
@@ -887,7 +899,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD5 LABEL OK PUHS, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD5 LABEL OK PUHS, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'PUHS, ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD5$$' && \
@@ -898,7 +910,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'LABEL FOO\r\n1 2 + .\r\n0 FIX\r\n1 2 + .\r\n66 DB,\r\n1 2 + .\r\n4660 DW,\r\n1 2 + .\r\n1 DS,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'LABEL FOO\r\n1 2 + .\r\n0 FIX\r\n1 2 + .\r\n66 DB,\r\n1 2 + .\r\n4660 DW,\r\n1 2 + .\r\n1 DS,\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	NCOUNT=$$(echo "$$OUTPUT" | grep -c 'error -270: not in CODE') && \
 	NREC=$$(echo "$$OUTPUT" | tr -d '\r\n' | grep -oE '3 ' | wc -l) && \
 	if [ "$$NCOUNT" -ge 5 ] && [ "$$NREC" -ge 5 ]; then \
@@ -908,7 +920,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD6 1 EQU FOO NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD6 1 EQU FOO NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -266: EQU outside CODE only' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BAD6$$' && \
@@ -919,7 +931,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE A1 LABEL LBL LBL FIX A A LD, NEXT, END-CODE\r\nCODE A2 LABEL LBL LBL FIX B B LD, NEXT, END-CODE\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE A1 LABEL LBL LBL FIX A A LD, NEXT, END-CODE\r\nCODE A2 LABEL LBL LBL FIX B B LD, NEXT, END-CODE\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'A1' && echo "$$OUTPUT" | grep -q 'A2' && ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^LBL$$'; then \
 		echo "PASS: REPL test 102 — label scoping across CODE words: A1, A2 in WORDS, LBL not"; \
@@ -928,7 +940,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BIG LABEL L1 LABEL L2 LABEL L3 LABEL L4 LABEL L5 LABEL L6 LABEL L7 LABEL L8 LABEL L9 LABEL L10 LABEL L11 LABEL L12 LABEL L13 LABEL L14 LABEL L15 LABEL L16 LABEL L17 NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BIG LABEL L1 LABEL L2 LABEL L3 LABEL L4 LABEL L5 LABEL L6 LABEL L7 LABEL L8 LABEL L9 LABEL L10 LABEL L11 LABEL L12 LABEL L13 LABEL L14 LABEL L15 LABEL L16 LABEL L17 NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -264: too many labels' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BIG$$' && \
@@ -940,7 +952,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MYDUP BC PUSH, NEXT, END-CODE\r\n5 MYDUP . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MYDUP BC PUSH, NEXT, END-CODE\r\n5 MYDUP . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '5 5 '; then \
 		echo "PASS: REPL test 104 — Story 4.1 regression spot-check: '5 MYDUP . .' outputs '5 5'"; \
 	else \
@@ -949,7 +961,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@JRS=$$(yes 'F JR,' | head -33 | tr '\n' ' '); \
-	OUTPUT=$$(printf 'CODE FXOF LABEL F %sF FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' "$$JRS" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	OUTPUT=$$(printf 'CODE FXOF LABEL F %sF FIX NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' "$$JRS" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -265: too many fixups' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^FXOF$$' && \
@@ -960,7 +972,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE LIT4 HERE 5 + JR, NEXT, END-CODE\r\nXT LIT4 C@ . XT LIT4 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE LIT4 HERE 5 + JR, NEXT, END-CODE\r\nXT LIT4 C@ . XT LIT4 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '24 3 '; then \
 		echo "PASS: REPL test 106 — literal-address JR,: opcode 24, disp +3 (HERE+5 - HERE-2)"; \
 	else \
@@ -968,7 +980,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE I8 B 55 # LD, C 66 # LD, A 77 # LD, NEXT, END-CODE\r\nXT I8 0 + C@ . XT I8 1 + C@ . XT I8 2 + C@ . XT I8 3 + C@ . XT I8 4 + C@ . XT I8 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE I8 B 55 # LD, C 66 # LD, A 77 # LD, NEXT, END-CODE\r\nXT I8 0 + C@ . XT I8 1 + C@ . XT I8 2 + C@ . XT I8 3 + C@ . XT I8 4 + C@ . XT I8 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '6 55 E 66 3E 77 '; then \
 		echo "PASS: REPL test 107 — LD r,n: 06 55 0E 66 3E 77"; \
 	else \
@@ -976,7 +988,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE I16 BC 1234 # LD, DE 5678 # LD, HL ABCD # LD, SP FFFE # LD, NEXT, END-CODE\r\nXT I16 0 + C@ . XT I16 1 + C@ . XT I16 2 + C@ . XT I16 3 + C@ .\r\nXT I16 4 + C@ . XT I16 5 + C@ . XT I16 6 + C@ . XT I16 7 + C@ .\r\nXT I16 8 + C@ . XT I16 9 + C@ . XT I16 0A + C@ . XT I16 0B + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE I16 BC 1234 # LD, DE 5678 # LD, HL ABCD # LD, SP FFFE # LD, NEXT, END-CODE\r\nXT I16 0 + C@ . XT I16 1 + C@ . XT I16 2 + C@ . XT I16 3 + C@ .\r\nXT I16 4 + C@ . XT I16 5 + C@ . XT I16 6 + C@ . XT I16 7 + C@ .\r\nXT I16 8 + C@ . XT I16 9 + C@ . XT I16 0A + C@ . XT I16 0B + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	JOINED=$$(echo "$$OUTPUT" | tr -d '\r\n') && \
 	if echo "$$JOINED" | grep -q '1 34 12 11 ' && echo "$$JOINED" | grep -q '78 56 21 CD ' && echo "$$JOINED" | grep -q 'AB 31 FE FF '; then \
 		echo "PASS: REPL test 108 — LD rr,nn: BC/DE/HL/SP immediate loads"; \
@@ -985,7 +997,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX\r\nCODE BADAF AF 1234 # LD, NEXT, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX\r\nCODE BADAF AF 1234 # LD, NEXT, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADAF$$'; then \
@@ -995,7 +1007,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE LDHL A (HL) LD, B (HL) LD, C (HL) LD, NEXT, END-CODE\r\nXT LDHL 0 + C@ . XT LDHL 1 + C@ . XT LDHL 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE LDHL A (HL) LD, B (HL) LD, C (HL) LD, NEXT, END-CODE\r\nXT LDHL 0 + C@ . XT LDHL 1 + C@ . XT LDHL 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '7E 46 4E '; then \
 		echo "PASS: REPL test 110 — LD r,(HL): 7E 46 4E"; \
 	else \
@@ -1003,7 +1015,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE STHL (HL) A LD, (HL) B LD, (HL) C LD, NEXT, END-CODE\r\nXT STHL 0 + C@ . XT STHL 1 + C@ . XT STHL 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE STHL (HL) A LD, (HL) B LD, (HL) C LD, NEXT, END-CODE\r\nXT STHL 0 + C@ . XT STHL 1 + C@ . XT STHL 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '77 70 71 '; then \
 		echo "PASS: REPL test 111 — LD (HL),r: 77 70 71"; \
 	else \
@@ -1011,7 +1023,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BADHH (HL) (HL) LD, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BADHH (HL) (HL) LD, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADHH$$'; then \
@@ -1021,7 +1033,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE RR B C LD, NEXT, END-CODE\r\nXT RR 0 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE RR B C LD, NEXT, END-CODE\r\nXT RR 0 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '41 '; then \
 		echo "PASS: REPL test 113 — Story 4.1 r-r LD regression: B C LD, → LD B,C = 0x41"; \
 	else \
@@ -1029,7 +1041,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE JP1 1234 JP, END-CODE\r\nXT JP1 0 + C@ . XT JP1 1 + C@ . XT JP1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE JP1 1234 JP, END-CODE\r\nXT JP1 0 + C@ . XT JP1 1 + C@ . XT JP1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'C3 34 12 '; then \
 		echo "PASS: REPL test 114 — unconditional JP, nn: C3 34 12"; \
 	else \
@@ -1037,7 +1049,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE JP2 NZ 1234 JP, Z 5678 JP, NC 9ABC JP, CS DEF0 JP, END-CODE\r\nXT JP2 0 + C@ . XT JP2 3 + C@ . XT JP2 6 + C@ . XT JP2 9 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE JP2 NZ 1234 JP, Z 5678 JP, NC 9ABC JP, CS DEF0 JP, END-CODE\r\nXT JP2 0 + C@ . XT JP2 3 + C@ . XT JP2 6 + C@ . XT JP2 9 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'C2 CA D2 DA '; then \
 		echo "PASS: REPL test 115 — conditional JP cc,nn: C2 CA D2 DA"; \
 	else \
@@ -1045,7 +1057,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE JL LABEL TGT TGT JP, TGT FIX NEXT, END-CODE\r\nXT JL 1 + @ XT JL 3 + = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE JL LABEL TGT TGT JP, TGT FIX NEXT, END-CODE\r\nXT JL 1 + @ XT JL 3 + = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-1 '; then \
 		echo "PASS: REPL test 116 — JP, label tag: forward fixup patches absolute target"; \
 	else \
@@ -1053,7 +1065,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE C1 1234 CALL, END-CODE\r\nXT C1 0 + C@ . XT C1 1 + C@ . XT C1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE C1 1234 CALL, END-CODE\r\nXT C1 0 + C@ . XT C1 1 + C@ . XT C1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'CD 34 12 '; then \
 		echo "PASS: REPL test 117 — unconditional CALL, nn: CD 34 12"; \
 	else \
@@ -1061,7 +1073,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE C2 NZ 1111 CALL, Z 2222 CALL, NC 3333 CALL, CS 4444 CALL, PO 5555 CALL, PE 6666 CALL, P 7777 CALL, M 8888 CALL, END-CODE\r\nXT C2 0 + C@ . XT C2 3 + C@ . XT C2 6 + C@ . XT C2 9 + C@ .\r\nXT C2 0C + C@ . XT C2 0F + C@ . XT C2 12 + C@ . XT C2 15 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE C2 NZ 1111 CALL, Z 2222 CALL, NC 3333 CALL, CS 4444 CALL, PO 5555 CALL, PE 6666 CALL, P 7777 CALL, M 8888 CALL, END-CODE\r\nXT C2 0 + C@ . XT C2 3 + C@ . XT C2 6 + C@ . XT C2 9 + C@ .\r\nXT C2 0C + C@ . XT C2 0F + C@ . XT C2 12 + C@ . XT C2 15 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	JOINED=$$(echo "$$OUTPUT" | tr -d '\r\n') && \
 	if echo "$$JOINED" | grep -q 'C4 CC D4 DC ' && echo "$$JOINED" | grep -q 'E4 EC F4 FC '; then \
 		echo "PASS: REPL test 118 — conditional CALL cc,nn: all 8 conditions"; \
@@ -1070,7 +1082,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE R1 RET, END-CODE\r\nDECIMAL\r\nXT R1 0 + C@ . .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE R1 RET, END-CODE\r\nDECIMAL\r\nXT R1 0 + C@ . .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '201 +<0> '; then \
 		echo "PASS: REPL test 119 — unconditional RET, = 0xC9 (201), no spurious push"; \
 	else \
@@ -1078,7 +1090,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE R2 NZ RET, Z RET, NC RET, CS RET, PO RET, PE RET, P RET, M RET, NEXT, END-CODE\r\nXT R2 0 + C@ . XT R2 1 + C@ . XT R2 2 + C@ . XT R2 3 + C@ . XT R2 4 + C@ . XT R2 5 + C@ . XT R2 6 + C@ . XT R2 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE R2 NZ RET, Z RET, NC RET, CS RET, PO RET, PE RET, P RET, M RET, NEXT, END-CODE\r\nXT R2 0 + C@ . XT R2 1 + C@ . XT R2 2 + C@ . XT R2 3 + C@ . XT R2 4 + C@ . XT R2 5 + C@ . XT R2 6 + C@ . XT R2 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'C0 C8 D0 D8 E0 E8 F0 F8 '; then \
 		echo "PASS: REPL test 120 — conditional RET cc: all 8 conditions"; \
 	else \
@@ -1086,7 +1098,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE JR1 LABEL TOP TOP FIX A OR, NZ TOP JR, NEXT, END-CODE\r\nXT JR1 0 + C@ . XT JR1 1 + C@ . XT JR1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE JR1 LABEL TOP TOP FIX A OR, NZ TOP JR, NEXT, END-CODE\r\nXT JR1 0 + C@ . XT JR1 1 + C@ . XT JR1 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '183 32 253 '; then \
 		echo "PASS: REPL test 121 — conditional JR cc,e: B7 20 FD"; \
 	else \
@@ -1094,7 +1106,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BADJR LABEL T T FIX PO T JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BADJR LABEL T T FIX PO T JR, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADJR$$' && \
@@ -1105,7 +1117,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE AI 0F # AND, F0 # OR, AA # XOR, 10 # ADD, 20 # SUB, 30 # CP, NEXT, END-CODE\r\nXT AI 0 + C@ . XT AI 1 + C@ . XT AI 2 + C@ . XT AI 3 + C@ .\r\nXT AI 4 + C@ . XT AI 5 + C@ . XT AI 6 + C@ . XT AI 7 + C@ .\r\nXT AI 8 + C@ . XT AI 9 + C@ . XT AI 0A + C@ . XT AI 0B + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE AI 0F # AND, F0 # OR, AA # XOR, 10 # ADD, 20 # SUB, 30 # CP, NEXT, END-CODE\r\nXT AI 0 + C@ . XT AI 1 + C@ . XT AI 2 + C@ . XT AI 3 + C@ .\r\nXT AI 4 + C@ . XT AI 5 + C@ . XT AI 6 + C@ . XT AI 7 + C@ .\r\nXT AI 8 + C@ . XT AI 9 + C@ . XT AI 0A + C@ . XT AI 0B + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	JOINED=$$(echo "$$OUTPUT" | tr -d '\r\n') && \
 	if echo "$$JOINED" | grep -q 'E6 F F6 F0 ' && echo "$$JOINED" | grep -q 'EE AA C6 10 ' && echo "$$JOINED" | grep -q 'D6 20 FE 30 '; then \
 		echo "PASS: REPL test 123 — arith immediates: AND/OR/XOR/ADD/SUB/CP"; \
@@ -1114,7 +1126,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE AR B AND, NEXT, END-CODE\r\nXT AR 0 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE AR B AND, NEXT, END-CODE\r\nXT AR 0 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'A0 '; then \
 		echo "PASS: REPL test 124 — arith register-form regression: AND B = A0"; \
 	else \
@@ -1122,7 +1134,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BADJP LABEL X X JP, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BADJP LABEL X X JP, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'unresolved label X ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADJP$$' && \
@@ -1133,7 +1145,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BADCALL LABEL Y Y CALL, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BADCALL LABEL Y Y CALL, NEXT, END-CODE\r\n1 2 + .\r\nWORDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	WORDS_LINE=$$(echo "$$OUTPUT" | tr -d '\r' | grep -E '^@ ' || true) && \
 	if echo "$$OUTPUT" | grep -q 'unresolved label Y ?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 ' && \
 	   ! echo "$$WORDS_LINE" | tr ' ' '\n' | grep -qE '^BADCALL$$' && \
@@ -1144,7 +1156,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '42 #\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '42 #\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'stack underflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 127 — # outside CODE dispatches to pictured-output # (DEPTH=1 → underflow), clean recovery"; \
 	else \
@@ -1152,7 +1164,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '(HL)\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '(HL)\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\(HL\) \?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 128 — (HL) outside CODE rejected (recognizer miss), clean recovery"; \
 	else \
@@ -1160,7 +1172,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'NZ\r\nZ\r\nNC\r\nCS\r\nPO\r\nPE\r\nP\r\nM\r\nHEX\r\nCC .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'NZ\r\nZ\r\nNC\r\nCS\r\nPO\r\nPE\r\nP\r\nM\r\nHEX\r\nCC .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	ERRCOUNT=$$(echo "$$OUTPUT" | grep -cE '^[A-Z]{1,2} \?') && \
 	if [ "$$ERRCOUNT" -ge 8 ] && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'CC '; then \
 		echo "PASS: REPL test 129 — conditions outside CODE rejected (recognizer miss); CC literal still parses in HEX"; \
@@ -1169,7 +1181,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE BL1B LABEL TOP TOP FIX A A LD, TOP JR, NEXT, END-CODE\r\nXT BL1B 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE BL1B LABEL TOP TOP FIX A A LD, TOP JR, NEXT, END-CODE\r\nXT BL1B 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 '; then \
 		echo "PASS: REPL test 130 — Story 4.2 backward JR regression: disp = 253 (-3)"; \
 	else \
@@ -1177,7 +1189,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 131 — cold-start spot-check: '1 2 + .' = '3 '"; \
 	else \
@@ -1185,7 +1197,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD132 A 0 LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD132 A 0 LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 132 — forgot-# in LD, src: bare integer detected, clean recovery"; \
 	else \
@@ -1193,7 +1205,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD133 0 A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD133 0 A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 133 — bare integer in dst: bare integer detected, clean recovery"; \
 	else \
@@ -1201,7 +1213,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK134 A 42 # LD, NEXT, END-CODE\r\nXT OK134 0 + C@ . XT OK134 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK134 A 42 # LD, NEXT, END-CODE\r\nXT OK134 0 + C@ . XT OK134 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '62 42 '; then \
 		echo "PASS: REPL test 134 — A 42 # LD, assembles 3E 2A (62 42)"; \
 	else \
@@ -1209,7 +1221,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK135 BC 1234 # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK135 0 + C@ . XT OK135 1 + C@ . XT OK135 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK135 BC 1234 # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK135 0 + C@ . XT OK135 1 + C@ . XT OK135 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '1 52 18 '; then \
 		echo "PASS: REPL test 135 — BC 1234h # LD, assembles 01 34 12"; \
 	else \
@@ -1217,7 +1229,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD136 A 0 ADD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD136 A 0 ADD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 136 — forgot-# in ADD,: bare integer detected, clean recovery"; \
 	else \
@@ -1225,7 +1237,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK137 42 # ADD, NEXT, END-CODE\r\nXT OK137 0 + C@ . XT OK137 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK137 42 # ADD, NEXT, END-CODE\r\nXT OK137 0 + C@ . XT OK137 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '198 42 '; then \
 		echo "PASS: REPL test 137 — 42 # ADD, assembles C6 2A (198 42)"; \
 	else \
@@ -1233,7 +1245,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD138 0 PUSH, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD138 0 PUSH, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'bare integer.*?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 138 — bare integer in PUSH,: error detected, clean recovery"; \
 	else \
@@ -1241,7 +1253,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK139 B C LD, A B LD, NEXT, END-CODE\r\nXT OK139 0 + C@ . XT OK139 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK139 B C LD, A B LD, NEXT, END-CODE\r\nXT OK139 0 + C@ . XT OK139 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65 120 '; then \
 		echo "PASS: REPL test 139 — existing r-r LD still works: B C LD,=0x41, A B LD,=0x78"; \
 	else \
@@ -1250,7 +1262,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- Story 4.4 tests: Extended Z80 Opcodes ---
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK140 B INC, A DEC, (HL) INC, NEXT, END-CODE\r\nXT OK140 0 + C@ . XT OK140 1 + C@ . XT OK140 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK140 B INC, A DEC, (HL) INC, NEXT, END-CODE\r\nXT OK140 0 + C@ . XT OK140 1 + C@ . XT OK140 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '4 61 52 '; then \
 		echo "PASS: REPL test 140 — B INC,=04, A DEC,=3D, (HL) INC,=34"; \
 	else \
@@ -1258,7 +1270,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK141 BC INC, SP DEC, NEXT, END-CODE\r\nXT OK141 0 + C@ . XT OK141 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK141 BC INC, SP DEC, NEXT, END-CODE\r\nXT OK141 0 + C@ . XT OK141 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 59 '; then \
 		echo "PASS: REPL test 141 — BC INC,=03, SP DEC,=3B"; \
 	else \
@@ -1266,7 +1278,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK142 IX INC, IY DEC, NEXT, END-CODE\r\nXT OK142 0 + C@ . XT OK142 1 + C@ . XT OK142 2 + C@ . XT OK142 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK142 IX INC, IY DEC, NEXT, END-CODE\r\nXT OK142 0 + C@ . XT OK142 1 + C@ . XT OK142 2 + C@ . XT OK142 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 35 253 43 '; then \
 		echo "PASS: REPL test 142 — IX INC,=DD23, IY DEC,=FD2B"; \
 	else \
@@ -1274,7 +1286,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK143 (IX) 5 +D INC, (IY) 3 +D DEC, NEXT, END-CODE\r\nXT OK143 0 + C@ . XT OK143 1 + C@ . XT OK143 2 + C@ . XT OK143 3 + C@ . XT OK143 4 + C@ . XT OK143 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK143 (IX) 5 +D INC, (IY) 3 +D DEC, NEXT, END-CODE\r\nXT OK143 0 + C@ . XT OK143 1 + C@ . XT OK143 2 + C@ . XT OK143 3 + C@ . XT OK143 4 + C@ . XT OK143 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 52 5 253 53 3 '; then \
 		echo "PASS: REPL test 143 — (IX) 5 +D INC,=DD3405, (IY) 3 +D DEC,=FD3503"; \
 	else \
@@ -1282,7 +1294,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK144 A RLC, B RRC, L SRL, NEXT, END-CODE\r\nXT OK144 0 + C@ . XT OK144 1 + C@ . XT OK144 2 + C@ . XT OK144 3 + C@ . XT OK144 4 + C@ . XT OK144 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK144 A RLC, B RRC, L SRL, NEXT, END-CODE\r\nXT OK144 0 + C@ . XT OK144 1 + C@ . XT OK144 2 + C@ . XT OK144 3 + C@ . XT OK144 4 + C@ . XT OK144 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 7 203 8 203 61 '; then \
 		echo "PASS: REPL test 144 — A RLC,=CB07, B RRC,=CB08, L SRL,=CB3D"; \
 	else \
@@ -1290,7 +1302,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK145 (HL) RLC, (HL) SRA, NEXT, END-CODE\r\nXT OK145 0 + C@ . XT OK145 1 + C@ . XT OK145 2 + C@ . XT OK145 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK145 (HL) RLC, (HL) SRA, NEXT, END-CODE\r\nXT OK145 0 + C@ . XT OK145 1 + C@ . XT OK145 2 + C@ . XT OK145 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 6 203 46 '; then \
 		echo "PASS: REPL test 145 — (HL) RLC,=CB06, (HL) SRA,=CB2E"; \
 	else \
@@ -1298,7 +1310,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK146 (IX) 5 +D RLC, NEXT, END-CODE\r\nXT OK146 0 + C@ . XT OK146 1 + C@ . XT OK146 2 + C@ . XT OK146 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK146 (IX) 5 +D RLC, NEXT, END-CODE\r\nXT OK146 0 + C@ . XT OK146 1 + C@ . XT OK146 2 + C@ . XT OK146 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 203 5 6 '; then \
 		echo "PASS: REPL test 146 — (IX) 5 +D RLC,=DDCB0506"; \
 	else \
@@ -1306,7 +1318,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK147 3 # A BIT, 5 # B SET, 7 # C RES, NEXT, END-CODE\r\nXT OK147 0 + C@ . XT OK147 1 + C@ . XT OK147 2 + C@ . XT OK147 3 + C@ . XT OK147 4 + C@ . XT OK147 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK147 3 # A BIT, 5 # B SET, 7 # C RES, NEXT, END-CODE\r\nXT OK147 0 + C@ . XT OK147 1 + C@ . XT OK147 2 + C@ . XT OK147 3 + C@ . XT OK147 4 + C@ . XT OK147 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 95 203 232 203 185 '; then \
 		echo "PASS: REPL test 147 — 3 # A BIT,=CB5F, 5 # B SET,=CBE8, 7 # C RES,=CBB9"; \
 	else \
@@ -1314,7 +1326,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK148 3 # (HL) BIT, NEXT, END-CODE\r\nXT OK148 0 + C@ . XT OK148 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK148 3 # (HL) BIT, NEXT, END-CODE\r\nXT OK148 0 + C@ . XT OK148 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '203 94 '; then \
 		echo "PASS: REPL test 148 — 3 # (HL) BIT,=CB5E"; \
 	else \
@@ -1322,7 +1334,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK149 3 # (IX) 5 +D BIT, NEXT, END-CODE\r\nXT OK149 0 + C@ . XT OK149 1 + C@ . XT OK149 2 + C@ . XT OK149 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK149 3 # (IX) 5 +D BIT, NEXT, END-CODE\r\nXT OK149 0 + C@ . XT OK149 1 + C@ . XT OK149 2 + C@ . XT OK149 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 203 5 94 '; then \
 		echo "PASS: REPL test 149 — 3 # (IX) 5 +D BIT,=DDCB055E"; \
 	else \
@@ -1330,7 +1342,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD150 8 # A BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD150 8 # A BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -272: bit range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 150 — bit 8 raises error -272: bit range, clean recovery (Story 11.5.6)"; \
 	else \
@@ -1338,7 +1350,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK151 (C) A IN, A (C) OUT, NEXT, END-CODE\r\nXT OK151 0 + C@ . XT OK151 1 + C@ . XT OK151 2 + C@ . XT OK151 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK151 (C) A IN, A (C) OUT, NEXT, END-CODE\r\nXT OK151 0 + C@ . XT OK151 1 + C@ . XT OK151 2 + C@ . XT OK151 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 120 237 121 '; then \
 		echo "PASS: REPL test 151 — (C) A IN,=ED78, A (C) OUT,=ED79"; \
 	else \
@@ -1346,7 +1358,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK152 42 # A IN, A 42 # OUT, NEXT, END-CODE\r\nDECIMAL\r\nXT OK152 0 + C@ . XT OK152 1 + C@ . XT OK152 2 + C@ . XT OK152 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK152 42 # A IN, A 42 # OUT, NEXT, END-CODE\r\nDECIMAL\r\nXT OK152 0 + C@ . XT OK152 1 + C@ . XT OK152 2 + C@ . XT OK152 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '219 66 211 66 '; then \
 		echo "PASS: REPL test 152 — 42h # A IN,=DB42, A 42h # OUT,=D342"; \
 	else \
@@ -1354,7 +1366,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK153 (C) B IN, NEXT, END-CODE\r\nXT OK153 0 + C@ . XT OK153 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK153 (C) B IN, NEXT, END-CODE\r\nXT OK153 0 + C@ . XT OK153 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 64 '; then \
 		echo "PASS: REPL test 153 — (C) B IN,=ED40"; \
 	else \
@@ -1362,7 +1374,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX\r\nCODE BAD154 42 # B IN, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX\r\nCODE BAD154 42 # B IN, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 154 — immediate-port IN with B: bad operand, clean recovery"; \
 	else \
@@ -1370,7 +1382,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK155 LDIR, LDDR, CPIR, CPDR, NEXT, END-CODE\r\nXT OK155 0 + C@ . XT OK155 1 + C@ . XT OK155 2 + C@ . XT OK155 3 + C@ .\r\nXT OK155 4 + C@ . XT OK155 5 + C@ . XT OK155 6 + C@ . XT OK155 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK155 LDIR, LDDR, CPIR, CPDR, NEXT, END-CODE\r\nXT OK155 0 + C@ . XT OK155 1 + C@ . XT OK155 2 + C@ . XT OK155 3 + C@ .\r\nXT OK155 4 + C@ . XT OK155 5 + C@ . XT OK155 6 + C@ . XT OK155 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 176 237 184 ' && \
 	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 177 237 185 '; then \
 		echo "PASS: REPL test 155 — LDIR,=EDB0 LDDR,=EDB8 CPIR,=EDB1 CPDR,=EDB9"; \
@@ -1379,7 +1391,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK156 LDI, LDD, CPI, CPD, NEXT, END-CODE\r\nXT OK156 0 + C@ . XT OK156 1 + C@ . XT OK156 2 + C@ . XT OK156 3 + C@ .\r\nXT OK156 4 + C@ . XT OK156 5 + C@ . XT OK156 6 + C@ . XT OK156 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK156 LDI, LDD, CPI, CPD, NEXT, END-CODE\r\nXT OK156 0 + C@ . XT OK156 1 + C@ . XT OK156 2 + C@ . XT OK156 3 + C@ .\r\nXT OK156 4 + C@ . XT OK156 5 + C@ . XT OK156 6 + C@ . XT OK156 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 160 237 168 ' && \
 	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 161 237 169 '; then \
 		echo "PASS: REPL test 156 — LDI,=EDA0 LDD,=EDA8 CPI,=EDA1 CPD,=EDA9"; \
@@ -1388,7 +1400,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK157 INI, INIR, IND, INDR, NEXT, END-CODE\r\nXT OK157 0 + C@ . XT OK157 1 + C@ . XT OK157 2 + C@ . XT OK157 3 + C@ .\r\nXT OK157 4 + C@ . XT OK157 5 + C@ . XT OK157 6 + C@ . XT OK157 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK157 INI, INIR, IND, INDR, NEXT, END-CODE\r\nXT OK157 0 + C@ . XT OK157 1 + C@ . XT OK157 2 + C@ . XT OK157 3 + C@ .\r\nXT OK157 4 + C@ . XT OK157 5 + C@ . XT OK157 6 + C@ . XT OK157 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 162 237 178 ' && \
 	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 170 237 186 '; then \
 		echo "PASS: REPL test 157 — INI,=EDA2 INIR,=EDB2 IND,=EDAA INDR,=EDBA"; \
@@ -1397,7 +1409,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK158 OUTI, OTIR, OUTD, OTDR, NEXT, END-CODE\r\nXT OK158 0 + C@ . XT OK158 1 + C@ . XT OK158 2 + C@ . XT OK158 3 + C@ .\r\nXT OK158 4 + C@ . XT OK158 5 + C@ . XT OK158 6 + C@ . XT OK158 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK158 OUTI, OTIR, OUTD, OTDR, NEXT, END-CODE\r\nXT OK158 0 + C@ . XT OK158 1 + C@ . XT OK158 2 + C@ . XT OK158 3 + C@ .\r\nXT OK158 4 + C@ . XT OK158 5 + C@ . XT OK158 6 + C@ . XT OK158 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 163 237 179 ' && \
 	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 171 237 187 '; then \
 		echo "PASS: REPL test 158 — OUTI,=EDA3 OTIR,=EDB3 OUTD,=EDAB OTDR,=EDBB"; \
@@ -1406,7 +1418,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK159 NEG, RETN, RETI, NEXT, END-CODE\r\nXT OK159 0 + C@ . XT OK159 1 + C@ . XT OK159 2 + C@ . XT OK159 3 + C@ . XT OK159 4 + C@ . XT OK159 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK159 NEG, RETN, RETI, NEXT, END-CODE\r\nXT OK159 0 + C@ . XT OK159 1 + C@ . XT OK159 2 + C@ . XT OK159 3 + C@ . XT OK159 4 + C@ . XT OK159 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 68 237 69 237 77 '; then \
 		echo "PASS: REPL test 159 — NEG,=ED44 RETN,=ED45 RETI,=ED4D"; \
 	else \
@@ -1414,7 +1426,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK160 IM0, IM1, IM2, NEXT, END-CODE\r\nXT OK160 0 + C@ . XT OK160 1 + C@ . XT OK160 2 + C@ . XT OK160 3 + C@ . XT OK160 4 + C@ . XT OK160 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK160 IM0, IM1, IM2, NEXT, END-CODE\r\nXT OK160 0 + C@ . XT OK160 1 + C@ . XT OK160 2 + C@ . XT OK160 3 + C@ . XT OK160 4 + C@ . XT OK160 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 70 237 86 237 94 '; then \
 		echo "PASS: REPL test 160 — IM0,=ED46 IM1,=ED56 IM2,=ED5E"; \
 	else \
@@ -1422,7 +1434,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK161 DE HL EX, EXX, NEXT, END-CODE\r\nXT OK161 0 + C@ . XT OK161 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK161 DE HL EX, EXX, NEXT, END-CODE\r\nXT OK161 0 + C@ . XT OK161 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '235 217 '; then \
 		echo "PASS: REPL test 161 — DE HL EX,=EB, EXX,=D9"; \
 	else \
@@ -1430,7 +1442,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK162 (SP) HL EX, (SP) IX EX, NEXT, END-CODE\r\nXT OK162 0 + C@ . XT OK162 1 + C@ . XT OK162 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK162 (SP) HL EX, (SP) IX EX, NEXT, END-CODE\r\nXT OK162 0 + C@ . XT OK162 1 + C@ . XT OK162 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '227 221 227 '; then \
 		echo "PASS: REPL test 162 — (SP) HL EX,=E3, (SP) IX EX,=DDE3"; \
 	else \
@@ -1438,7 +1450,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ": XT BL WORD FIND DROP ;\r\nCODE OK163 AF AF' EX, NEXT, END-CODE\r\nXT OK163 0 + C@ .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ": XT BL WORD FIND DROP ;\r\nCODE OK163 AF AF' EX, NEXT, END-CODE\r\nXT OK163 0 + C@ .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '8 '; then \
 		echo "PASS: REPL test 163 — AF AF' EX,=08"; \
 	else \
@@ -1446,7 +1458,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK164 (IX) 5 +D A LD, A (IX) 5 +D LD, NEXT, END-CODE\r\nXT OK164 0 + C@ . XT OK164 1 + C@ . XT OK164 2 + C@ . XT OK164 3 + C@ . XT OK164 4 + C@ . XT OK164 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK164 (IX) 5 +D A LD, A (IX) 5 +D LD, NEXT, END-CODE\r\nXT OK164 0 + C@ . XT OK164 1 + C@ . XT OK164 2 + C@ . XT OK164 3 + C@ . XT OK164 4 + C@ . XT OK164 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 126 5 221 119 5 '; then \
 		echo "PASS: REPL test 164 — (IX) 5 +D A LD,=DD7E05, A (IX) 5 +D LD,=DD7705"; \
 	else \
@@ -1454,7 +1466,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK165 IX 1234 # LD, IY 5678 # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK165 0 + C@ . XT OK165 1 + C@ . XT OK165 2 + C@ . XT OK165 3 + C@ .\r\nXT OK165 4 + C@ . XT OK165 5 + C@ . XT OK165 6 + C@ . XT OK165 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK165 IX 1234 # LD, IY 5678 # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK165 0 + C@ . XT OK165 1 + C@ . XT OK165 2 + C@ . XT OK165 3 + C@ .\r\nXT OK165 4 + C@ . XT OK165 5 + C@ . XT OK165 6 + C@ . XT OK165 7 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 33 52 18 ' && \
 	   echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 33 120 86 '; then \
 		echo "PASS: REPL test 165 — IX 1234h # LD,=DD213412, IY 5678h # LD,=FD217856"; \
@@ -1463,7 +1475,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK166 (IX) 5 +D 2A # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK166 0 + C@ . XT OK166 1 + C@ . XT OK166 2 + C@ . XT OK166 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK166 (IX) 5 +D 2A # LD, NEXT, END-CODE\r\nDECIMAL\r\nXT OK166 0 + C@ . XT OK166 1 + C@ . XT OK166 2 + C@ . XT OK166 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 54 5 42 '; then \
 		echo "PASS: REPL test 166 — (IX) 5 +D 2Ah # LD,=DD36052A"; \
 	else \
@@ -1471,7 +1483,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK167 IX PUSH, IY POP, NEXT, END-CODE\r\nXT OK167 0 + C@ . XT OK167 1 + C@ . XT OK167 2 + C@ . XT OK167 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK167 IX PUSH, IY POP, NEXT, END-CODE\r\nXT OK167 0 + C@ . XT OK167 1 + C@ . XT OK167 2 + C@ . XT OK167 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 229 253 225 '; then \
 		echo "PASS: REPL test 167 — IX PUSH,=DDE5, IY POP,=FDE1"; \
 	else \
@@ -1479,7 +1491,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK168 (IX) JP, (IY) JP, NEXT, END-CODE\r\nXT OK168 0 + C@ . XT OK168 1 + C@ . XT OK168 2 + C@ . XT OK168 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK168 (IX) JP, (IY) JP, NEXT, END-CODE\r\nXT OK168 0 + C@ . XT OK168 1 + C@ . XT OK168 2 + C@ . XT OK168 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 233 253 233 '; then \
 		echo "PASS: REPL test 168 — (IX) JP,=DDE9, (IY) JP,=FDE9"; \
 	else \
@@ -1487,7 +1499,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK169 (IX) 5 +D ADD, (IY) 3 +D CP, NEXT, END-CODE\r\nXT OK169 0 + C@ . XT OK169 1 + C@ . XT OK169 2 + C@ . XT OK169 3 + C@ . XT OK169 4 + C@ . XT OK169 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK169 (IX) 5 +D ADD, (IY) 3 +D CP, NEXT, END-CODE\r\nXT OK169 0 + C@ . XT OK169 1 + C@ . XT OK169 2 + C@ . XT OK169 3 + C@ . XT OK169 4 + C@ . XT OK169 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 134 5 253 190 3 '; then \
 		echo "PASS: REPL test 169 — (IX) 5 +D ADD,=DD8605, (IY) 3 +D CP,=FDBE03"; \
 	else \
@@ -1495,7 +1507,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD170 DE 5 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD170 DE 5 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 170 — +D with non-(IX)/(IY): bad operand, clean recovery"; \
 	else \
@@ -1503,7 +1515,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD171 (IX) 200 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD171 (IX) 200 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -271: disp range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 171 — displacement 200 out of range, clean recovery (Story 11.5.6: -271 disp range)"; \
 	else \
@@ -1511,7 +1523,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD172 AF INC, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD172 AF INC, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 172 — AF INC,: bad operand, clean recovery"; \
 	else \
@@ -1519,7 +1531,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK173 B C LD, A B LD, (HL) A LD, NEXT, END-CODE\r\nXT OK173 0 + C@ . XT OK173 1 + C@ . XT OK173 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK173 B C LD, A B LD, (HL) A LD, NEXT, END-CODE\r\nXT OK173 0 + C@ . XT OK173 1 + C@ . XT OK173 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65 120 119 '; then \
 		echo "PASS: REPL test 173 — regression: B C LD,=41, A B LD,=78, (HL) A LD,=77"; \
 	else \
@@ -1527,7 +1539,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK174 (IY) 3 +D SLA, NEXT, END-CODE\r\nXT OK174 0 + C@ . XT OK174 1 + C@ . XT OK174 2 + C@ . XT OK174 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK174 (IY) 3 +D SLA, NEXT, END-CODE\r\nXT OK174 0 + C@ . XT OK174 1 + C@ . XT OK174 2 + C@ . XT OK174 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 203 3 38 '; then \
 		echo "PASS: REPL test 174 — (IY) 3 +D SLA,=FDCB0326 (FDCB shift)"; \
 	else \
@@ -1535,7 +1547,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK175 5 # (IY) 3 +D SET, NEXT, END-CODE\r\nXT OK175 0 + C@ . XT OK175 1 + C@ . XT OK175 2 + C@ . XT OK175 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK175 5 # (IY) 3 +D SET, NEXT, END-CODE\r\nXT OK175 0 + C@ . XT OK175 1 + C@ . XT OK175 2 + C@ . XT OK175 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 203 3 238 '; then \
 		echo "PASS: REPL test 175 — 5 # (IY) 3 +D SET,=FDCB03EE (FDCB bit op)"; \
 	else \
@@ -1543,7 +1555,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK176 (IX) -5 +D A LD, NEXT, END-CODE\r\nXT OK176 0 + C@ . XT OK176 1 + C@ . XT OK176 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK176 (IX) -5 +D A LD, NEXT, END-CODE\r\nXT OK176 0 + C@ . XT OK176 1 + C@ . XT OK176 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 126 251 '; then \
 		echo "PASS: REPL test 176 — (IX) -5 +D A LD,=DD7EFB (negative displacement)"; \
 	else \
@@ -1551,7 +1563,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK177 (IX) -128 +D INC, (IX) 127 +D INC, NEXT, END-CODE\r\nXT OK177 0 + C@ . XT OK177 1 + C@ . XT OK177 2 + C@ . XT OK177 3 + C@ . XT OK177 4 + C@ . XT OK177 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK177 (IX) -128 +D INC, (IX) 127 +D INC, NEXT, END-CODE\r\nXT OK177 0 + C@ . XT OK177 1 + C@ . XT OK177 2 + C@ . XT OK177 3 + C@ . XT OK177 4 + C@ . XT OK177 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 52 128 221 52 127 '; then \
 		echo "PASS: REPL test 177 — boundary displacements: -128=DD3480, +127=DD347F"; \
 	else \
@@ -1559,7 +1571,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK178 42 # ADD, AF PUSH, HL POP, NZ 4660 JP, NEXT, END-CODE\r\nXT OK178 0 + C@ . XT OK178 1 + C@ . XT OK178 2 + C@ . XT OK178 3 + C@ . XT OK178 4 + C@ . XT OK178 5 + C@ . XT OK178 6 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK178 42 # ADD, AF PUSH, HL POP, NZ 4660 JP, NEXT, END-CODE\r\nXT OK178 0 + C@ . XT OK178 1 + C@ . XT OK178 2 + C@ . XT OK178 3 + C@ . XT OK178 4 + C@ . XT OK178 5 + C@ . XT OK178 6 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '198 42 245 225 194 52 18 '; then \
 		echo "PASS: REPL test 178 — regression: #ADD,=C62A, PUSH AF=F5, POP HL=E1, NZ JP,=C23412"; \
 	else \
@@ -1568,7 +1580,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@echo "--- Story 5.0.5 tests ---"
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK179 NOP, HALT, DI, EI, NEXT, END-CODE\r\nXT OK179 0 + C@ . XT OK179 1 + C@ . XT OK179 2 + C@ . XT OK179 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK179 NOP, HALT, DI, EI, NEXT, END-CODE\r\nXT OK179 0 + C@ . XT OK179 1 + C@ . XT OK179 2 + C@ . XT OK179 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 118 243 251 '; then \
 		echo "PASS: REPL test 179 — NOP,=00, HALT,=76, DI,=F3, EI,=FB"; \
 	else \
@@ -1576,7 +1588,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK180 DAA, CPL, SCF, CCF, NEXT, END-CODE\r\nXT OK180 0 + C@ . XT OK180 1 + C@ . XT OK180 2 + C@ . XT OK180 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK180 DAA, CPL, SCF, CCF, NEXT, END-CODE\r\nXT OK180 0 + C@ . XT OK180 1 + C@ . XT OK180 2 + C@ . XT OK180 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '39 47 55 63 '; then \
 		echo "PASS: REPL test 180 — DAA,=27, CPL,=2F, SCF,=37, CCF,=3F"; \
 	else \
@@ -1584,7 +1596,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK181 RLCA, RRCA, RLA, RRA, NEXT, END-CODE\r\nXT OK181 0 + C@ . XT OK181 1 + C@ . XT OK181 2 + C@ . XT OK181 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK181 RLCA, RRCA, RLA, RRA, NEXT, END-CODE\r\nXT OK181 0 + C@ . XT OK181 1 + C@ . XT OK181 2 + C@ . XT OK181 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '7 15 23 31 '; then \
 		echo "PASS: REPL test 181 — RLCA,=07, RRCA,=0F, RLA,=17, RRA,=1F"; \
 	else \
@@ -1592,7 +1604,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK182 B ADC, (HL) ADC, 66 # ADC, NEXT, END-CODE\r\nXT OK182 0 + C@ . XT OK182 1 + C@ . XT OK182 2 + C@ . XT OK182 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK182 B ADC, (HL) ADC, 66 # ADC, NEXT, END-CODE\r\nXT OK182 0 + C@ . XT OK182 1 + C@ . XT OK182 2 + C@ . XT OK182 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '136 142 206 66 '; then \
 		echo "PASS: REPL test 182 — B ADC,=88, (HL) ADC,=8E, 66 # ADC,=CE42"; \
 	else \
@@ -1600,7 +1612,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK183 B SBC, (HL) SBC, 66 # SBC, NEXT, END-CODE\r\nXT OK183 0 + C@ . XT OK183 1 + C@ . XT OK183 2 + C@ . XT OK183 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK183 B SBC, (HL) SBC, 66 # SBC, NEXT, END-CODE\r\nXT OK183 0 + C@ . XT OK183 1 + C@ . XT OK183 2 + C@ . XT OK183 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '152 158 222 66 '; then \
 		echo "PASS: REPL test 183 — B SBC,=98, (HL) SBC,=9E, 66 # SBC,=DE42"; \
 	else \
@@ -1608,7 +1620,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK184 (IX) 5 +D ADC, (IX) 5 +D SBC, NEXT, END-CODE\r\nXT OK184 0 + C@ . XT OK184 1 + C@ . XT OK184 2 + C@ . XT OK184 3 + C@ . XT OK184 4 + C@ . XT OK184 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK184 (IX) 5 +D ADC, (IX) 5 +D SBC, NEXT, END-CODE\r\nXT OK184 0 + C@ . XT OK184 1 + C@ . XT OK184 2 + C@ . XT OK184 3 + C@ . XT OK184 4 + C@ . XT OK184 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 142 5 221 158 5 '; then \
 		echo "PASS: REPL test 184 — (IX) 5 +D ADC,=DD8E05, (IX) 5 +D SBC,=DD9E05"; \
 	else \
@@ -1616,7 +1628,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK185 HL BC ADD, HL DE ADD, HL HL ADD, HL SP ADD, NEXT, END-CODE\r\nXT OK185 0 + C@ . XT OK185 1 + C@ . XT OK185 2 + C@ . XT OK185 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK185 HL BC ADD, HL DE ADD, HL HL ADD, HL SP ADD, NEXT, END-CODE\r\nXT OK185 0 + C@ . XT OK185 1 + C@ . XT OK185 2 + C@ . XT OK185 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '9 25 41 57 '; then \
 		echo "PASS: REPL test 185 — HL BC ADD,=09, HL DE ADD,=19, HL HL ADD,=29, HL SP ADD,=39"; \
 	else \
@@ -1624,7 +1636,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK186 HL BC ADC, HL DE ADC, HL SP ADC, NEXT, END-CODE\r\nXT OK186 0 + C@ . XT OK186 1 + C@ . XT OK186 2 + C@ . XT OK186 3 + C@ . XT OK186 4 + C@ . XT OK186 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK186 HL BC ADC, HL DE ADC, HL SP ADC, NEXT, END-CODE\r\nXT OK186 0 + C@ . XT OK186 1 + C@ . XT OK186 2 + C@ . XT OK186 3 + C@ . XT OK186 4 + C@ . XT OK186 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 74 237 90 237 122 '; then \
 		echo "PASS: REPL test 186 — HL BC ADC,=ED4A, HL DE ADC,=ED5A, HL SP ADC,=ED7A"; \
 	else \
@@ -1632,7 +1644,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK187 HL BC SBC, HL DE SBC, HL SP SBC, NEXT, END-CODE\r\nXT OK187 0 + C@ . XT OK187 1 + C@ . XT OK187 2 + C@ . XT OK187 3 + C@ . XT OK187 4 + C@ . XT OK187 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK187 HL BC SBC, HL DE SBC, HL SP SBC, NEXT, END-CODE\r\nXT OK187 0 + C@ . XT OK187 1 + C@ . XT OK187 2 + C@ . XT OK187 3 + C@ . XT OK187 4 + C@ . XT OK187 5 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 66 237 82 237 114 '; then \
 		echo "PASS: REPL test 187 — HL BC SBC,=ED42, HL DE SBC,=ED52, HL SP SBC,=ED72"; \
 	else \
@@ -1640,7 +1652,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK188 IX BC ADD, IY DE ADD, NEXT, END-CODE\r\nXT OK188 0 + C@ . XT OK188 1 + C@ . XT OK188 2 + C@ . XT OK188 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK188 IX BC ADD, IY DE ADD, NEXT, END-CODE\r\nXT OK188 0 + C@ . XT OK188 1 + C@ . XT OK188 2 + C@ . XT OK188 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 9 253 25 '; then \
 		echo "PASS: REPL test 188 — IX BC ADD,=DD09, IY DE ADD,=FD19"; \
 	else \
@@ -1648,7 +1660,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK189 A (BC) LD, A (DE) LD, NEXT, END-CODE\r\nXT OK189 0 + C@ . XT OK189 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK189 A (BC) LD, A (DE) LD, NEXT, END-CODE\r\nXT OK189 0 + C@ . XT OK189 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 26 '; then \
 		echo "PASS: REPL test 189 — A (BC) LD,=0A, A (DE) LD,=1A"; \
 	else \
@@ -1656,7 +1668,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK190 (BC) A LD, (DE) A LD, NEXT, END-CODE\r\nXT OK190 0 + C@ . XT OK190 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK190 (BC) A LD, (DE) A LD, NEXT, END-CODE\r\nXT OK190 0 + C@ . XT OK190 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '2 18 '; then \
 		echo "PASS: REPL test 190 — (BC) A LD,=02, (DE) A LD,=12"; \
 	else \
@@ -1664,7 +1676,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK191 A 4660 () LD, NEXT, END-CODE\r\nXT OK191 0 + C@ . XT OK191 1 + C@ . XT OK191 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK191 A 4660 () LD, NEXT, END-CODE\r\nXT OK191 0 + C@ . XT OK191 1 + C@ . XT OK191 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '58 52 18 '; then \
 		echo "PASS: REPL test 191 — A 4660 () LD,=3A3412 (LD A,(1234h))"; \
 	else \
@@ -1672,7 +1684,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK192 4660 () A LD, NEXT, END-CODE\r\nXT OK192 0 + C@ . XT OK192 1 + C@ . XT OK192 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK192 4660 () A LD, NEXT, END-CODE\r\nXT OK192 0 + C@ . XT OK192 1 + C@ . XT OK192 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '50 52 18 '; then \
 		echo "PASS: REPL test 192 — 4660 () A LD,=323412 (LD (1234h),A)"; \
 	else \
@@ -1680,7 +1692,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK193 HL 4660 () LD, NEXT, END-CODE\r\nXT OK193 0 + C@ . XT OK193 1 + C@ . XT OK193 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK193 HL 4660 () LD, NEXT, END-CODE\r\nXT OK193 0 + C@ . XT OK193 1 + C@ . XT OK193 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 52 18 '; then \
 		echo "PASS: REPL test 193 — HL 4660 () LD,=2A3412 (LD HL,(1234h))"; \
 	else \
@@ -1688,7 +1700,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK194 4660 () HL LD, NEXT, END-CODE\r\nXT OK194 0 + C@ . XT OK194 1 + C@ . XT OK194 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK194 4660 () HL LD, NEXT, END-CODE\r\nXT OK194 0 + C@ . XT OK194 1 + C@ . XT OK194 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '34 52 18 '; then \
 		echo "PASS: REPL test 194 — 4660 () HL LD,=223412 (LD (1234h),HL)"; \
 	else \
@@ -1696,7 +1708,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK195 BC 4660 () LD, NEXT, END-CODE\r\nXT OK195 0 + C@ . XT OK195 1 + C@ . XT OK195 2 + C@ . XT OK195 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK195 BC 4660 () LD, NEXT, END-CODE\r\nXT OK195 0 + C@ . XT OK195 1 + C@ . XT OK195 2 + C@ . XT OK195 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 75 52 18 '; then \
 		echo "PASS: REPL test 195 — BC 4660 () LD,=ED4B3412 (LD BC,(1234h))"; \
 	else \
@@ -1704,7 +1716,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK196 4660 () BC LD, NEXT, END-CODE\r\nXT OK196 0 + C@ . XT OK196 1 + C@ . XT OK196 2 + C@ . XT OK196 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK196 4660 () BC LD, NEXT, END-CODE\r\nXT OK196 0 + C@ . XT OK196 1 + C@ . XT OK196 2 + C@ . XT OK196 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 67 52 18 '; then \
 		echo "PASS: REPL test 196 — 4660 () BC LD,=ED433412 (LD (1234h),BC)"; \
 	else \
@@ -1712,7 +1724,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK197 DE 4660 () LD, NEXT, END-CODE\r\nXT OK197 0 + C@ . XT OK197 1 + C@ . XT OK197 2 + C@ . XT OK197 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK197 DE 4660 () LD, NEXT, END-CODE\r\nXT OK197 0 + C@ . XT OK197 1 + C@ . XT OK197 2 + C@ . XT OK197 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 91 52 18 '; then \
 		echo "PASS: REPL test 197a — DE 4660 () LD,=ED5B3412"; \
 	else \
@@ -1720,7 +1732,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK197B SP 4660 () LD, NEXT, END-CODE\r\nXT OK197B 0 + C@ . XT OK197B 1 + C@ . XT OK197B 2 + C@ . XT OK197B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK197B SP 4660 () LD, NEXT, END-CODE\r\nXT OK197B 0 + C@ . XT OK197B 1 + C@ . XT OK197B 2 + C@ . XT OK197B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 123 52 18 '; then \
 		echo "PASS: REPL test 197b — SP 4660 () LD,=ED7B3412"; \
 	else \
@@ -1728,7 +1740,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK198 IX 4660 () LD, NEXT, END-CODE\r\nXT OK198 0 + C@ . XT OK198 1 + C@ . XT OK198 2 + C@ . XT OK198 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK198 IX 4660 () LD, NEXT, END-CODE\r\nXT OK198 0 + C@ . XT OK198 1 + C@ . XT OK198 2 + C@ . XT OK198 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 42 52 18 '; then \
 		echo "PASS: REPL test 198a — IX 4660 () LD,=DD2A3412"; \
 	else \
@@ -1736,7 +1748,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK198B IY 4660 () LD, NEXT, END-CODE\r\nXT OK198B 0 + C@ . XT OK198B 1 + C@ . XT OK198B 2 + C@ . XT OK198B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK198B IY 4660 () LD, NEXT, END-CODE\r\nXT OK198B 0 + C@ . XT OK198B 1 + C@ . XT OK198B 2 + C@ . XT OK198B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 42 52 18 '; then \
 		echo "PASS: REPL test 198b — IY 4660 () LD,=FD2A3412"; \
 	else \
@@ -1744,7 +1756,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK199 4660 () IX LD, NEXT, END-CODE\r\nXT OK199 0 + C@ . XT OK199 1 + C@ . XT OK199 2 + C@ . XT OK199 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK199 4660 () IX LD, NEXT, END-CODE\r\nXT OK199 0 + C@ . XT OK199 1 + C@ . XT OK199 2 + C@ . XT OK199 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 34 52 18 '; then \
 		echo "PASS: REPL test 199a — 4660 () IX LD,=DD223412"; \
 	else \
@@ -1752,7 +1764,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK199B 4660 () IY LD, NEXT, END-CODE\r\nXT OK199B 0 + C@ . XT OK199B 1 + C@ . XT OK199B 2 + C@ . XT OK199B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK199B 4660 () IY LD, NEXT, END-CODE\r\nXT OK199B 0 + C@ . XT OK199B 1 + C@ . XT OK199B 2 + C@ . XT OK199B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '253 34 52 18 '; then \
 		echo "PASS: REPL test 199b — 4660 () IY LD,=FD223412"; \
 	else \
@@ -1760,7 +1772,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK200 A IREG LD, A RREG LD, NEXT, END-CODE\r\nXT OK200 0 + C@ . XT OK200 1 + C@ . XT OK200 2 + C@ . XT OK200 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK200 A IREG LD, A RREG LD, NEXT, END-CODE\r\nXT OK200 0 + C@ . XT OK200 1 + C@ . XT OK200 2 + C@ . XT OK200 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 87 237 95 '; then \
 		echo "PASS: REPL test 200a — A IREG LD,=ED57, A RREG LD,=ED5F"; \
 	else \
@@ -1768,7 +1780,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK200B IREG A LD, RREG A LD, NEXT, END-CODE\r\nXT OK200B 0 + C@ . XT OK200B 1 + C@ . XT OK200B 2 + C@ . XT OK200B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK200B IREG A LD, RREG A LD, NEXT, END-CODE\r\nXT OK200B 0 + C@ . XT OK200B 1 + C@ . XT OK200B 2 + C@ . XT OK200B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 71 237 79 '; then \
 		echo "PASS: REPL test 200b — IREG A LD,=ED47, RREG A LD,=ED4F"; \
 	else \
@@ -1776,7 +1788,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK201 0 RST, 8 RST, 16 RST, 24 RST, NEXT, END-CODE\r\nXT OK201 0 + C@ . XT OK201 1 + C@ . XT OK201 2 + C@ . XT OK201 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK201 0 RST, 8 RST, 16 RST, 24 RST, NEXT, END-CODE\r\nXT OK201 0 + C@ . XT OK201 1 + C@ . XT OK201 2 + C@ . XT OK201 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '199 207 215 223 '; then \
 		echo "PASS: REPL test 201a — RST 0=C7, 8=CF, 16=D7, 24=DF"; \
 	else \
@@ -1784,7 +1796,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK201B 32 RST, 40 RST, 48 RST, 56 RST, NEXT, END-CODE\r\nXT OK201B 0 + C@ . XT OK201B 1 + C@ . XT OK201B 2 + C@ . XT OK201B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK201B 32 RST, 40 RST, 48 RST, 56 RST, NEXT, END-CODE\r\nXT OK201B 0 + C@ . XT OK201B 1 + C@ . XT OK201B 2 + C@ . XT OK201B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '231 239 247 255 '; then \
 		echo "PASS: REPL test 201b — RST 32=E7, 40=EF, 48=F7, 56=FF"; \
 	else \
@@ -1792,7 +1804,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD202 3 RST, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD202 3 RST, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 202 — RST, with invalid vector: bad operand, clean recovery"; \
 	else \
@@ -1800,7 +1812,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK203 RLD, RRD, NEXT, END-CODE\r\nXT OK203 0 + C@ . XT OK203 1 + C@ . XT OK203 2 + C@ . XT OK203 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK203 RLD, RRD, NEXT, END-CODE\r\nXT OK203 0 + C@ . XT OK203 1 + C@ . XT OK203 2 + C@ . XT OK203 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 111 237 103 '; then \
 		echo "PASS: REPL test 203 — RLD,=ED6F, RRD,=ED67"; \
 	else \
@@ -1808,7 +1820,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK204 LABEL FWD FWD DJNZ, FWD FIX NOP, NEXT, END-CODE\r\nXT OK204 0 + C@ . XT OK204 1 + C@ . XT OK204 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK204 LABEL FWD FWD DJNZ, FWD FIX NOP, NEXT, END-CODE\r\nXT OK204 0 + C@ . XT OK204 1 + C@ . XT OK204 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '16 0 0 '; then \
 		echo "PASS: REPL test 204 — DJNZ, forward label (disp=0, target=next byte)"; \
 	else \
@@ -1816,7 +1828,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK205 LABEL BK BK FIX NOP, BK DJNZ, NEXT, END-CODE\r\nXT OK205 0 + C@ . XT OK205 1 + C@ . XT OK205 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK205 LABEL BK BK FIX NOP, BK DJNZ, NEXT, END-CODE\r\nXT OK205 0 + C@ . XT OK205 1 + C@ . XT OK205 2 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 16 253 '; then \
 		echo "PASS: REPL test 205 — DJNZ, backward label (disp=FD=-3)"; \
 	else \
@@ -1824,7 +1836,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK206 4660 () DE LD, NEXT, END-CODE\r\nXT OK206 0 + C@ . XT OK206 1 + C@ . XT OK206 2 + C@ . XT OK206 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK206 4660 () DE LD, NEXT, END-CODE\r\nXT OK206 0 + C@ . XT OK206 1 + C@ . XT OK206 2 + C@ . XT OK206 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 83 52 18 '; then \
 		echo "PASS: REPL test 206a — 4660 () DE LD,=ED533412"; \
 	else \
@@ -1832,7 +1844,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK206B 4660 () SP LD, NEXT, END-CODE\r\nXT OK206B 0 + C@ . XT OK206B 1 + C@ . XT OK206B 2 + C@ . XT OK206B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK206B 4660 () SP LD, NEXT, END-CODE\r\nXT OK206B 0 + C@ . XT OK206B 1 + C@ . XT OK206B 2 + C@ . XT OK206B 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 115 52 18 '; then \
 		echo "PASS: REPL test 206b — 4660 () SP LD,=ED733412"; \
 	else \
@@ -1840,7 +1852,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'NOP,\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'NOP,\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -270: not in CODE' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 207 — NOP, outside CODE: error -270: not in CODE, clean recovery (Story 11.6)"; \
 	else \
@@ -1848,7 +1860,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD208 B (BC) LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD208 B (BC) LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 208 — B (BC) LD, rejects non-A: bad operand, clean recovery"; \
 	else \
@@ -1856,7 +1868,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD209 B (DE) LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD209 B (DE) LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 209 — B (DE) LD, rejects non-A: bad operand, clean recovery"; \
 	else \
@@ -1864,7 +1876,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD210 B IREG LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD210 B IREG LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 210 — B IREG LD, rejects non-A: bad operand, clean recovery"; \
 	else \
@@ -1872,7 +1884,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD211 IREG B LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD211 IREG B LD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 211 — IREG B LD, rejects non-A dest: bad operand, clean recovery"; \
 	else \
@@ -1880,7 +1892,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK212 HL HL ADC, HL HL SBC, NEXT, END-CODE\r\nXT OK212 0 + C@ . XT OK212 1 + C@ . XT OK212 2 + C@ . XT OK212 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK212 HL HL ADC, HL HL SBC, NEXT, END-CODE\r\nXT OK212 0 + C@ . XT OK212 1 + C@ . XT OK212 2 + C@ . XT OK212 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 106 237 98 '; then \
 		echo "PASS: REPL test 212 — HL HL ADC,=ED6A, HL HL SBC,=ED62"; \
 	else \
@@ -1888,7 +1900,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK213 IX IX ADD, IY IY ADD, NEXT, END-CODE\r\nXT OK213 0 + C@ . XT OK213 1 + C@ . XT OK213 2 + C@ . XT OK213 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK213 IX IX ADD, IY IY ADD, NEXT, END-CODE\r\nXT OK213 0 + C@ . XT OK213 1 + C@ . XT OK213 2 + C@ . XT OK213 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '221 41 253 41 '; then \
 		echo "PASS: REPL test 213 — IX IX ADD,=DD29, IY IY ADD,=FD29"; \
 	else \
@@ -1896,7 +1908,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD214 IX IY ADD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD214 IX IY ADD, END-CODE\r\n3 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 214 — IX IY ADD, cross-index rejected: bad operand"; \
 	else \
@@ -1904,7 +1916,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\\ this is ignored\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\\ this is ignored\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 215 — backslash line comment ignores rest of line"; \
 	else \
@@ -1912,7 +1924,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\\ \r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\\ \r\n42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 216 — backslash at end of line (nothing after) no error"; \
 	else \
@@ -1920,7 +1932,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': COMMENTED \\ this is ignored\r\n3 + ; 10 COMMENTED .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': COMMENTED \\ this is ignored\r\n3 + ; 10 COMMENTED .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '13 '; then \
 		echo "PASS: REPL test 217 — backslash inside colon definition, compilation continues next line"; \
 	else \
@@ -1928,7 +1940,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE NOP218 \\ comment inside CODE body\r\nNOP, END-CODE\r\n77 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE NOP218 \\ comment inside CODE body\r\nNOP, END-CODE\r\n77 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '77 '; then \
 		echo "PASS: REPL test 218 — backslash inside CODE body, assembly continues next line"; \
 	else \
@@ -1936,7 +1948,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '( hello world ) 42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '( hello world ) 42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 219 — paren comment consumed, code after ) executes"; \
 	else \
@@ -1944,7 +1956,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '( nested parens are not special ) 55 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '( nested parens are not special ) 55 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '55 '; then \
 		echo "PASS: REPL test 220 — literal ) ends paren comment (no nesting)"; \
 	else \
@@ -1952,7 +1964,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': COMMENTED2 5 ( add three ) 3 + ; 10 COMMENTED2 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': COMMENTED2 5 ( add three ) 3 + ; 10 COMMENTED2 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '8 '; then \
 		echo "PASS: REPL test 221 — paren comment inside colon definition, no effect on compiled code"; \
 	else \
@@ -1960,7 +1972,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '( missing paren\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '( missing paren\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -58: unexpected end of input' && echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 222 — missing ) raises error -58 and recovers (Story 11.6)"; \
 	else \
@@ -1968,7 +1980,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '( ) 99 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '( ) 99 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99 '; then \
 		echo "PASS: REPL test 223 — empty paren comment works"; \
 	else \
@@ -1976,7 +1988,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE NOPTEST224 ( comment inside CODE ) NOP, END-CODE\r\n88 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE NOPTEST224 ( comment inside CODE ) NOP, END-CODE\r\n88 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '88 '; then \
 		echo "PASS: REPL test 224 — paren comment inside CODE body, no interference with assembler"; \
 	else \
@@ -1984,7 +1996,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 ( comment ) .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 ( comment ) .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '5 '; then \
 		echo "PASS: REPL test 225 — paren comment preserves TOS (BC register)"; \
 	else \
@@ -1992,7 +2004,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; FOO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; FOO .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 226 — basic MARKER creation and use"; \
 	else \
@@ -2000,7 +2012,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; M1 FOO\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; M1 FOO\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FOO ?'; then \
 		echo "PASS: REPL test 227 — MARKER restore removes definitions"; \
 	else \
@@ -2008,7 +2020,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; M1 : FOO 99 ; FOO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 : FOO 42 ; M1 : FOO 99 ; FOO .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99 '; then \
 		echo "PASS: REPL test 228 — redefine after restore"; \
 	else \
@@ -2016,7 +2028,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 M1 M1\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 M1 M1\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'M1 ?'; then \
 		echo "PASS: REPL test 229 — MARKER removes itself"; \
 	else \
@@ -2024,7 +2036,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 : AA1 1 ; MARKER M2 : BB2 2 ; M2 AA1 .\r\nBB2\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 : AA1 1 ; MARKER M2 : BB2 2 ; M2 AA1 .\r\nBB2\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1 ' && echo "$$OUTPUT" | grep -q 'BB2 ?'; then \
 		echo "PASS: REPL test 230 — nested markers (M2 partial restore, BB2 removed)"; \
 	else \
@@ -2032,7 +2044,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 : AA1 1 ; MARKER M2 : BB2 2 ; M1 AA1\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 : AA1 1 ; MARKER M2 : BB2 2 ; M1 AA1\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'AA1 ?'; then \
 		echo "PASS: REPL test 231 — nested markers (M1 full restore)"; \
 	else \
@@ -2040,7 +2052,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 VARIABLE X 42 X ! X @ .\r\nM1 X\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 VARIABLE X 42 X ! X @ .\r\nM1 X\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 ' && echo "$$OUTPUT" | grep -q 'X ?'; then \
 		echo "PASS: REPL test 232 — VARIABLE removed by MARKER"; \
 	else \
@@ -2048,7 +2060,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 77 CONSTANT K K .\r\nM1 K\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 77 CONSTANT K K .\r\nM1 K\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '77 ' && echo "$$OUTPUT" | grep -q 'K ?'; then \
 		echo "PASS: REPL test 233 — CONSTANT removed by MARKER"; \
 	else \
@@ -2056,7 +2068,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER M1 HEX M1 BASE @ DECIMAL .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER M1 HEX M1 BASE @ DECIMAL .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '16 '; then \
 		echo "PASS: REPL test 234 — BASE not affected by MARKER"; \
 	else \
@@ -2064,7 +2076,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HERE MARKER M1 : FOO ; M1 HERE = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HERE MARKER M1 : FOO ; M1 HERE = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-1 '; then \
 		echo "PASS: REPL test 235 — HERE restored correctly"; \
 	else \
@@ -2072,7 +2084,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '42 MARKER M1 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '42 MARKER M1 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 236 — MARKER preserves TOS (BC register)"; \
 	else \
@@ -2080,7 +2092,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'MARKER\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'MARKER\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 237 — MARKER with no name aborts and recovers"; \
 	else \
@@ -2088,7 +2100,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 1+ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 1+ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '6 '; then \
 			echo "PASS: REPL test 238 — 1+: '5 1+ .' outputs '6'"; \
 		else \
@@ -2096,7 +2108,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '5 1- .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 1- .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '4 '; then \
 			echo "PASS: REPL test 239 — 1-: '5 1- .' outputs '4'"; \
 		else \
@@ -2104,7 +2116,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '0 1- .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 1- .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-1 '; then \
 			echo "PASS: REPL test 240 — 1-: '0 1- .' outputs '-1' (edge case)"; \
 		else \
@@ -2112,7 +2124,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 1+ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 1+ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
 			echo "PASS: REPL test 241 — 1+: '-1 1+ .' outputs '0' (edge case)"; \
 		else \
@@ -2120,7 +2132,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '7 2* .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '7 2* .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '14 '; then \
 			echo "PASS: REPL test 242 — 2*: '7 2* .' outputs '14'"; \
 		else \
@@ -2128,7 +2140,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '14 2/ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '14 2/ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 '; then \
 			echo "PASS: REPL test 243 — 2/: '14 2/ .' outputs '7'"; \
 		else \
@@ -2136,7 +2148,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-6 2/ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-6 2/ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '\-3 '; then \
 			echo "PASS: REPL test 244 — 2/: '-6 2/ .' outputs '-3' (arithmetic shift)"; \
 		else \
@@ -2144,7 +2156,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '5 ?DUP . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 ?DUP . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 5 '; then \
 			echo "PASS: REPL test 245 — ?DUP non-zero: '5 ?DUP . .' outputs '5 5'"; \
 		else \
@@ -2152,7 +2164,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '0 ?DUP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 ?DUP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '0 '; then \
 			echo "PASS: REPL test 246 — ?DUP zero: '0 ?DUP .' outputs '0'"; \
 		else \
@@ -2160,7 +2172,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '1000 CELL+ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1000 CELL+ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1002 '; then \
 			echo "PASS: REPL test 247 — CELL+: '1000 CELL+ .' outputs '1002'"; \
 		else \
@@ -2168,7 +2180,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '1000 CHAR+ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1000 CHAR+ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1001 '; then \
 			echo "PASS: REPL test 248 — CHAR+: '1000 CHAR+ .' outputs '1001'"; \
 		else \
@@ -2176,7 +2188,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf '5 CHARS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 CHARS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 			echo "PASS: REPL test 249 — CHARS: '5 CHARS .' outputs '5' (no-op on Z80)"; \
 		else \
@@ -2184,7 +2196,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf ': TEST-EXIT 1 EXIT 2 ; TEST-EXIT .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TEST-EXIT 1 EXIT 2 ; TEST-EXIT .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '1 '; then \
 			echo "PASS: REPL test 250 — EXIT: ': TEST-EXIT 1 EXIT 2 ; TEST-EXIT .' outputs '1'"; \
 		else \
@@ -2192,7 +2204,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf 'CHAR A .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CHAR A .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '65 '; then \
 			echo "PASS: REPL test 251 — CHAR: 'CHAR A .' outputs '65'"; \
 		else \
@@ -2200,7 +2212,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf 'CHAR Z .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CHAR Z .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '90 '; then \
 			echo "PASS: REPL test 252 — CHAR: 'CHAR Z .' outputs '90'"; \
 		else \
@@ -2208,7 +2220,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" ": USE-TICK ['] DUP ; 7 USE-TICK EXECUTE . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" ": USE-TICK ['] DUP ; 7 USE-TICK EXECUTE . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 7 '; then \
 			echo "PASS: REPL test 253 — bracket-tick: compiles xt of DUP, EXECUTE duplicates 7"; \
 		else \
@@ -2216,7 +2228,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf ': GET-A [CHAR] A ; GET-A .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GET-A [CHAR] A ; GET-A .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '65 '; then \
 			echo "PASS: REPL test 254 — [CHAR]: ': GET-A [CHAR] A ; GET-A .' outputs '65'"; \
 		else \
@@ -2224,7 +2236,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf "CREATE FOO 42 ,\r\n' FOO >BODY @ .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "CREATE FOO 42 ,\r\n' FOO >BODY @ .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '42 '; then \
 			echo "PASS: REPL test 255 — >BODY: \"CREATE FOO 42 , ' FOO >BODY @ .\" outputs '42'"; \
 		else \
@@ -2232,7 +2244,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf "7 ' DUP EXECUTE .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "7 ' DUP EXECUTE .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | tr -d '\r\n' | grep -q '7 '; then \
 			echo "PASS: REPL test 256 — tick: \"7 ' DUP EXECUTE .\" outputs '7'"; \
 		else \
@@ -2240,7 +2252,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf ': CHK ABORT" nonzero" ; 0 CHK\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': CHK ABORT" nonzero" ; 0 CHK\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		if echo "$$OUTPUT" | grep -q 'ok'; then \
 			echo "PASS: REPL test 257 — ABORT\": '0 CHK' does not abort (flag=0)"; \
 		else \
@@ -2248,7 +2260,7 @@ test-repl: $(TARGET)
 			echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 			exit 1; \
 		fi
-	@OUTPUT=$$(printf ': CHK ABORT" nonzero" ; 1 CHK\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': CHK ABORT" nonzero" ; 1 CHK\r\n2 3 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 		NONZERO_COUNT=$$(echo "$$OUTPUT" | grep -c 'nonzero' || true) && \
 		if [ "$$NONZERO_COUNT" -ge 2 ] && echo "$$OUTPUT" | tr -d '\r\n' | grep -q '5 '; then \
 			echo "PASS: REPL test 258 — ABORT\": '1 CHK' aborts with message 'nonzero' and recovers"; \
@@ -2259,7 +2271,7 @@ test-repl: $(TARGET)
 		fi
 	@echo ""
 	@echo "--- Story 6.6: Register word recognizer tests ---"
-	@OUTPUT=$$(printf 'CODE T1 B A LD, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T1 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE T1 B A LD, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T1 C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '71 '; then \
 		echo "PASS: REPL test 259 — recognizer: B A LD, produces correct opcode (0x47 = 71)"; \
 	else \
@@ -2267,7 +2279,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE T2 HL PUSH, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T2 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE T2 HL PUSH, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T2 C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '229 '; then \
 		echo "PASS: REPL test 260 — recognizer: HL PUSH, produces 0xE5 (229)"; \
 	else \
@@ -2275,7 +2287,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE T3 b a LD, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T3 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE T3 b a LD, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T3 C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '71 '; then \
 		echo "PASS: REPL test 261 — recognizer case-insensitive: b a LD, same as B A LD,"; \
 	else \
@@ -2283,7 +2295,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE T4 NZ RET, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T4 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE T4 NZ RET, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T4 C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '192 '; then \
 		echo "PASS: REPL test 262 — recognizer: NZ RET, produces correct opcode (0xC0 = 192)"; \
 	else \
@@ -2291,7 +2303,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BC\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BC\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE 'BC \?' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 263 — register outside CODE: recognizer fast-fails, error, clean recovery"; \
 	else \
@@ -2299,7 +2311,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE T5 (HL) INC, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T5 C@ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE T5 (HL) INC, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T5 C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '52 '; then \
 		echo "PASS: REPL test 264 — recognizer: (HL) INC, produces correct opcode (0x34 = 52)"; \
 	else \
@@ -2307,7 +2319,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "CODE T6 AF AF' EX, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T6 C@ .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "CODE T6 AF AF' EX, NEXT, END-CODE\r\n: XT BL WORD FIND DROP ;\r\nXT T6 C@ .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '8 '; then \
 		echo "PASS: REPL test 265 — recognizer: AF AF' EX, produces correct opcode (0x08 = 8)"; \
 	else \
@@ -2317,7 +2329,7 @@ test-repl: $(TARGET)
 	fi
 	@echo ""
 	@echo "--- Story 9.1: Numeric-literal # (decimal) prefix tests ---"
-	@OUTPUT=$$(printf '#42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 '; then \
 		echo "PASS: REPL test 266 — '#42 .' outputs '42 ' (decimal prefix)"; \
 	else \
@@ -2325,7 +2337,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '#0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 '; then \
 		echo "PASS: REPL test 267 — '#0 .' outputs '0 '"; \
 	else \
@@ -2333,7 +2345,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '#-5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#-5 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-5 '; then \
 		echo "PASS: REPL test 268 — '#-5 .' outputs '-5 ' (sign in body, NUMBER? parity)"; \
 	else \
@@ -2341,7 +2353,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX #42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX #42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '2A '; then \
 		echo "PASS: REPL test 269 — 'HEX #42 .' outputs '2A ' (parse decimal 42, print in hex)"; \
 	else \
@@ -2349,7 +2361,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX #42 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX #42 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 '; then \
 		echo "PASS: REPL test 270 — 'HEX #42 DROP BASE @ .' outputs '10 ' (BASE=16 preserved, printed in hex)"; \
 	else \
@@ -2357,7 +2369,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '#ABC\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#ABC\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '#ABC ?'; then \
 		echo "PASS: REPL test 271 — '#ABC' falls through to undefined-word error"; \
 	else \
@@ -2365,7 +2377,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2 BASE ! #42 . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2 BASE ! #42 . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '101010 '; then \
 		echo "PASS: REPL test 272 — '2 BASE ! #42 .' outputs '101010 ' (decimal 42 printed in binary)"; \
 	else \
@@ -2373,7 +2385,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': T42 #42 ; T42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': T42 #42 ; T42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 '; then \
 		echo "PASS: REPL test 273 — '#42' works inside a colon body (compile-time LIT)"; \
 	else \
@@ -2384,7 +2396,7 @@ test-repl: $(TARGET)
 	@echo ""
 	@echo "--- Story 9.2: Hex \$$ and 0x prefix tests ---"
 	@echo "--- (see tests/number_prefixes_tests.fth for the authoritative source list) ---"
-	@OUTPUT=$$(printf '$$0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 '; then \
 		echo "PASS: REPL test 274 — '\$$0 .' outputs '0 '"; \
 	else \
@@ -2392,7 +2404,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 275 — '\$$FF .' outputs '255 ' (upper-case hex, DECIMAL print)"; \
 	else \
@@ -2400,7 +2412,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$ff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$ff .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 276 — '\$$ff .' outputs '255 ' (lower-case hex, case-fold via OR 0x20)"; \
 	else \
@@ -2408,7 +2420,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$1234 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$1234 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '4660 '; then \
 		echo "PASS: REPL test 277 — '\$$1234 .' outputs '4660 ' (0x1234 in DECIMAL)"; \
 	else \
@@ -2416,7 +2428,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$ffff U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$ffff U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65535 '; then \
 		echo "PASS: REPL test 278 — '\$$ffff U.' outputs '65535 ' (max unsigned 16-bit)"; \
 	else \
@@ -2424,7 +2436,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$aBcD U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$aBcD U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981 '; then \
 		echo "PASS: REPL test 279 — '\$$aBcD U.' outputs '43981 ' (mixed-case hex = 0xABCD)"; \
 	else \
@@ -2432,7 +2444,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0x0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0x0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0 '; then \
 		echo "PASS: REPL test 280 — '0x0 .' outputs '0 '"; \
 	else \
@@ -2440,7 +2452,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0xFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0xFF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 281 — '0xFF .' outputs '255 ' (antforth extension)"; \
 	else \
@@ -2448,7 +2460,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0XFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0XFF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 282 — '0XFF .' outputs '255 ' (upper-case X, case-fold)"; \
 	else \
@@ -2456,7 +2468,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0Xff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0Xff .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 283 — '0Xff .' outputs '255 ' (mixed-case prefix and digits)"; \
 	else \
@@ -2464,7 +2476,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0xFFFF U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0xFFFF U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65535 '; then \
 		echo "PASS: REPL test 284 — '0xFFFF U.' outputs '65535 '"; \
 	else \
@@ -2472,7 +2484,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX $$FF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX $$FF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 '; then \
 		echo "PASS: REPL test 285 — 'HEX \$$FF DROP BASE @ .' outputs '10 ' (BASE=16 preserved, hex print)"; \
 	else \
@@ -2480,7 +2492,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0xFF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 0xFF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 '; then \
 		echo "PASS: REPL test 286 — 'DECIMAL 0xFF DROP BASE @ .' outputs '10 ' (BASE=10 preserved)"; \
 	else \
@@ -2488,7 +2500,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0 ?'; then \
 		echo "PASS: REPL test 287 — bare '0 .' still parses via NUMBER? (0-vs-0x ambiguity: FR52)"; \
@@ -2497,7 +2509,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '00 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '00 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '00 ?'; then \
 		echo "PASS: REPL test 288 — bare '00 .' still parses via NUMBER? (second-byte not x/X)"; \
@@ -2506,7 +2518,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX 0A .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX 0A .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'A  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0A ?'; then \
 		echo "PASS: REPL test 289 — 'HEX 0A .' outputs 'A  ok' (0A parses as 10 via NUMBER?, printed in hex)"; \
@@ -2515,7 +2527,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 0A\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 0A\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0A ?'; then \
 		echo "PASS: REPL test 290 — 'DECIMAL 0A' falls through to undefined-word error '0A ?'"; \
 	else \
@@ -2523,7 +2535,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\$$ ?'; then \
 		echo "PASS: REPL test 291 — bare '\$$' falls through to undefined-word error '\$$ ?'"; \
 	else \
@@ -2531,7 +2543,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0x\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0x\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0x ?'; then \
 		echo "PASS: REPL test 292 — bare '0x' falls through to undefined-word error '0x ?'"; \
 	else \
@@ -2539,7 +2551,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$XYZ\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$XYZ\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\$$XYZ ?'; then \
 		echo "PASS: REPL test 293 — '\$$XYZ' (invalid hex body) falls through to '\$$XYZ ?'"; \
 	else \
@@ -2547,7 +2559,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$-FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$-FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255 '; then \
 		echo "PASS: REPL test 294 — '\$$-FF .' outputs '-255 ' (sign-in-body parity with #-5)"; \
 	else \
@@ -2555,7 +2567,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0x-FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0x-FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255 '; then \
 		echo "PASS: REPL test 295 — '0x-FF .' outputs '-255 ' (sign-in-body on the 0x arm)"; \
 	else \
@@ -2563,7 +2575,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': GETFF $$FF ; GETFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GETFF $$FF ; GETFF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 296 — '\$$FF' works inside a colon body (compile-time LIT)"; \
 	else \
@@ -2571,7 +2583,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': GETHEX 0x1234 ; GETHEX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GETHEX 0x1234 ; GETHEX .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '4660 '; then \
 		echo "PASS: REPL test 297 — '0x1234' works inside a colon body (compile-time LIT)"; \
 	else \
@@ -2579,7 +2591,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0xff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0xff .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 '; then \
 		echo "PASS: REPL test 298 — '0xff .' outputs '255 ' (all-lower-case: x and digits both fold)"; \
 	else \
@@ -2587,7 +2599,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '#42 $$-FF . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#42 $$-FF . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255 42 '; then \
 		echo "PASS: REPL test 299 — '#42 \$$-FF . .' outputs '-255 42 ' (.pref_negate reset across handlers)"; \
 	else \
@@ -2598,7 +2610,7 @@ test-repl: $(TARGET)
 	@echo ""
 	@echo "--- Story 9.3: Binary %% and character 'c' prefix tests ---"
 	@echo "--- (see tests/number_prefixes_tests.fth for the authoritative source list) ---"
-	@OUTPUT=$$(printf '%%0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '0  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%0 ?'; then \
 		echo "PASS: REPL test 300 — '%0 .' outputs '0  ok' (bare '%0' parses as binary 0)"; \
@@ -2607,7 +2619,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%1 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%1 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '1  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%1 ?'; then \
 		echo "PASS: REPL test 301 — '%1 .' outputs '1  ok' (binary 1 = decimal 1)"; \
@@ -2616,7 +2628,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%1010 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%1010 ?'; then \
 		echo "PASS: REPL test 302 — '%1010 .' outputs '10  ok' (binary 1010 = decimal 10)"; \
@@ -2625,7 +2637,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%11111111 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%11111111 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
 		echo "PASS: REPL test 303 — '%11111111 .' outputs '255  ok' (8-bit all-ones in DECIMAL)"; \
@@ -2634,7 +2646,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%1111111111111111 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%1111111111111111 U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65535  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%1111111111111111 ?'; then \
 		echo "PASS: REPL test 304 — '%1111111111111111 U.' outputs '65535  ok' (max unsigned 16-bit)"; \
@@ -2643,7 +2655,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX %%11111111 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX %%11111111 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
 		echo "PASS: REPL test 305 — 'HEX %11111111 DROP BASE @ .' outputs '10  ok' (BASE=16 preserved, printed in hex)"; \
@@ -2652,7 +2664,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL %%1010 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL %%1010 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%1010 ?'; then \
 		echo "PASS: REPL test 306 — 'DECIMAL %1010 DROP BASE @ .' outputs '10  ok' (BASE=10 preserved)"; \
@@ -2661,7 +2673,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%-1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%-1010 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%-1010 ?'; then \
 		echo "PASS: REPL test 307 — '%-1010 .' outputs '-10  ok' (sign-in-body, NUMBER? parity)"; \
@@ -2670,7 +2682,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX %%11111111 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX %%11111111 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE 'FF  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
 		echo "PASS: REPL test 308 — 'HEX %11111111 .' outputs 'FF  ok' (decimal 255 printed in hex)"; \
@@ -2679,7 +2691,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%102\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%102\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '%102 ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 309 — '%102' falls through to '%102 ?' (non-binary digit)"; \
@@ -2688,7 +2700,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '% ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 310 — bare '%' falls through to '% ?' (undefined word)"; \
@@ -2697,7 +2709,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%%-\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%-\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '%- ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 311 — '%-' falls through to '%- ?' (bare sign)"; \
@@ -2706,7 +2718,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047A\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047A\047 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'A' ?"; then \
 		echo "PASS: REPL test 312 — \"'A' .\" outputs '65  ok' (ASCII 'A' = 65)"; \
@@ -2715,7 +2727,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\0470\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\0470\047 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '48  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'0' ?"; then \
 		echo "PASS: REPL test 313 — \"'0' .\" outputs '48  ok' (digit char, ASCII 48)"; \
@@ -2724,7 +2736,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047a\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047a\047 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '97  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'a' ?"; then \
 		echo "PASS: REPL test 314 — \"'a' .\" outputs '97  ok' (lower-case 'a' = 97)"; \
@@ -2733,7 +2745,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\0479\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\0479\047 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '57  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'9' ?"; then \
 		echo "PASS: REPL test 315 — \"'9' .\" outputs '57  ok' (digit '9' = 57)"; \
@@ -2742,7 +2754,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047+\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047+\047 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'+' ?"; then \
 		echo "PASS: REPL test 316 — \"'+' .\" outputs '43  ok' (non-alphanumeric byte)"; \
@@ -2751,7 +2763,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047*\047 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047*\047 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'\*' ?"; then \
 		echo "PASS: REPL test 317 — \"'*' .\" outputs '42  ok' (non-alphanumeric byte)"; \
@@ -2760,7 +2772,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX \047A\047 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX \047A\047 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'A' ?"; then \
 		echo "PASS: REPL test 318 — \"HEX 'A' DROP BASE @ .\" outputs '10  ok' (BASE=16 preserved)"; \
@@ -2769,7 +2781,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047ab\047\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047ab\047\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "'ab' ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 319 — \"'ab'\" falls through to \"'ab' ?\" (too long)"; \
@@ -2778,7 +2790,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047a\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047a\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "'a ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 320 — \"'a\" falls through to \"'a ?\" (no closing quote)"; \
@@ -2787,7 +2799,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047\047\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047\047\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "'' ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 321 — \"''\" falls through to \"'' ?\" (empty middle, count=2)"; \
@@ -2796,7 +2808,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047abc\047\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047abc\047\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "'abc' ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 322 — \"'abc'\" falls through to \"'abc' ?\" (count=5, too long)"; \
@@ -2805,7 +2817,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '\047 DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '\047 DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]+  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'DROP ?'; then \
 		echo "PASS: REPL test 323 — \"' DROP .\" still invokes TICK (xt printed, no undefined-word error)"; \
@@ -2814,7 +2826,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': GETTEN %%1010 ; GETTEN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GETTEN %%1010 ; GETTEN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'GETTEN ?'; then \
 		echo "PASS: REPL test 324 — '%1010' works inside a colon body (compile-time LIT)"; \
@@ -2823,7 +2835,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': GETA \047A\047 ; GETA .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': GETA \047A\047 ; GETA .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'GETA ?'; then \
 		echo "PASS: REPL test 325 — \"'A'\" works inside a colon body (compile-time LIT)"; \
@@ -2832,7 +2844,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '#42 %%-1010 . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#42 %%-1010 . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10 42 '; then \
 		echo "PASS: REPL test 326 — '#42 %-1010 . .' outputs '-10 42 ' (.pref_negate reset across #/% handlers)"; \
 	else \
@@ -2840,7 +2852,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "\047\047\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "\047\047\047 .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '39  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "''' ?"; then \
 		echo "PASS: REPL test 327 — \"''' .\" outputs '39  ok' (apostrophe-as-char-literal, ASCII 39)"; \
@@ -2849,7 +2861,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "\047\047\047\047\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "\047\047\047\047\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "'''' ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 328 — \"''''\" falls through to \"'''' ?\" (count=4, CP 3 fails)"; \
@@ -2858,7 +2870,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-%%1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-%%1010 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%1010 ?'; then \
 		echo "PASS: REPL test 329 — '-%1010 .' outputs '-10  ok' (9.4 sign-before-prefix now captures this; flipped from 9.3's fall-through)"; \
@@ -2870,7 +2882,7 @@ test-repl: $(TARGET)
 	@echo ""
 	@echo "--- Story 9.4: leading '-' sign + case-insensitivity tests ---"
 	@echo "--- (see tests/number_prefixes_tests.fth for the authoritative source list) ---"
-	@OUTPUT=$$(printf -- '-#42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-#42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '#42 ?'; then \
 		echo "PASS: REPL test 330 — '-#42 .' outputs '-42  ok' (outer sign + '#' prefix)"; \
@@ -2879,7 +2891,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-#0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-#0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '^[^?]*\b0  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '#0 ?'; then \
 		echo "PASS: REPL test 331 — '-#0 .' outputs '0  ok' (negative zero collapses)"; \
@@ -2888,7 +2900,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-$$FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-$$FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '\$$FF ?'; then \
 		echo "PASS: REPL test 332 — '-\$$FF .' outputs '-255  ok' (outer sign + '\$$' prefix)"; \
@@ -2897,7 +2909,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-$$ff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-$$ff .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '\$$ff ?'; then \
 		echo "PASS: REPL test 333 — '-\$$ff .' outputs '-255  ok' (sign + lower-case hex digits)"; \
@@ -2906,7 +2918,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-0xFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-0xFF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0xFF ?'; then \
 		echo "PASS: REPL test 334 — '-0xFF .' outputs '-255  ok' (outer sign + '0x' prefix)"; \
@@ -2915,7 +2927,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-0XFF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-0XFF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0XFF ?'; then \
 		echo "PASS: REPL test 335 — '-0XFF .' outputs '-255  ok' (upper-case X, sign applied)"; \
@@ -2924,7 +2936,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-0xff .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-0xff .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0xff ?'; then \
 		echo "PASS: REPL test 336 — '-0xff .' outputs '-255  ok' (sign + all-lower)"; \
@@ -2933,7 +2945,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-%%11111111 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-%%11111111 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%11111111 ?'; then \
 		echo "PASS: REPL test 337 — '-%11111111 .' outputs '-255  ok' (outer sign + '%' prefix)"; \
@@ -2942,7 +2954,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- "-\047A\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- "-\047A\047 .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-65  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'A' ?"; then \
 		echo "PASS: REPL test 338 — \"-'A' .\" outputs '-65  ok' (outer sign + ''c'' char literal)"; \
@@ -2951,7 +2963,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- "-\047a\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- "-\047a\047 .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-97  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'a' ?"; then \
 		echo "PASS: REPL test 339 — \"-'a' .\" outputs '-97  ok' (sign + lower-case char)"; \
@@ -2960,7 +2972,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- "-\0470\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- "-\0470\047 .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-48  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'0' ?"; then \
 		echo "PASS: REPL test 340 — \"-'0' .\" outputs '-48  ok' (sign + digit char)"; \
@@ -2969,7 +2981,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- "-\047+\047 .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- "-\047+\047 .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-43  ok' && \
 	   ! echo "$$OUTPUT" | grep -q "'+' ?"; then \
 		echo "PASS: REPL test 341 — \"-'+' .\" outputs '-43  ok' (sign + non-alphanum char)"; \
@@ -2978,7 +2990,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-#-5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-#-5 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b5  ok' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-5  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '#-5 ?'; then \
@@ -2988,7 +3000,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-$$-FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-$$-FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b255  ok' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '\$$-FF ?'; then \
@@ -2998,7 +3010,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-0x-FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-0x-FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b255  ok' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0x-FF ?'; then \
@@ -3008,7 +3020,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-%%-1010 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-%%-1010 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b10  ok' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '%-1010 ?'; then \
@@ -3018,7 +3030,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'HEX -#42 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'HEX -#42 DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '#42 ?'; then \
 		echo "PASS: REPL test 346 — 'HEX -#42 DROP BASE @ .' outputs '10  ok' (BASE=16 preserved under outer sign)"; \
@@ -3027,7 +3039,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'DECIMAL -$$FF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'DECIMAL -$$FF DROP BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\b10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '\$$FF ?'; then \
 		echo "PASS: REPL test 347 — 'DECIMAL -\$$FF DROP BASE @ .' outputs '10  ok' (BASE=10 preserved)"; \
@@ -3036,7 +3048,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '$$ABCD U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '$$ABCD U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'ABCD ?'; then \
 		echo "PASS: REPL test 348 — '\$$ABCD U.' outputs '43981  ok' (hex digits, all upper-case)"; \
@@ -3045,7 +3057,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '$$abcd U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '$$abcd U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'abcd ?'; then \
 		echo "PASS: REPL test 349 — '\$$abcd U.' outputs '43981  ok' (hex digits, all lower-case)"; \
@@ -3054,7 +3066,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0xABCD U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '0xABCD U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0xABCD ?'; then \
 		echo "PASS: REPL test 350 — '0xABCD U.' outputs '43981  ok' (0x + upper-case hex)"; \
@@ -3063,7 +3075,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0xabcd U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '0xabcd U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0xabcd ?'; then \
 		echo "PASS: REPL test 351 — '0xabcd U.' outputs '43981  ok' (0x + lower-case hex)"; \
@@ -3072,7 +3084,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '0xAbCd U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '0xAbCd U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '43981  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '0xAbCd ?'; then \
 		echo "PASS: REPL test 352 — '0xAbCd U.' outputs '43981  ok' (0x + mixed-case hex)"; \
@@ -3081,7 +3093,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '\-42 ?'; then \
 		echo "PASS: REPL test 353 — '-42 .' (DECIMAL) outputs '-42  ok' (FR47 regression: NUMBER? owns '-42', not the pre-pass)"; \
@@ -3090,7 +3102,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'HEX -2A . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'HEX -2A . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-2A  ok' && \
 	   ! echo "$$OUTPUT" | grep -q '\-2A ?'; then \
 		echo "PASS: REPL test 354 — 'HEX -2A .' outputs '-2A  ok' (FR47 regression: NUMBER? parses hex literal)"; \
@@ -3099,7 +3111,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-foo\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-foo\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-foo ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 355 — '-foo' falls through to '-foo ?' (not a number, not a prefix)"; \
@@ -3108,7 +3120,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-ABC\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-ABC\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-ABC ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 356 — '-ABC' (DECIMAL) falls through to '-ABC ?' (DECIMAL doesn't take A-F)"; \
@@ -3117,7 +3129,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-#\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-#\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-# ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 357 — '-#' falls through to '-# ?' (outer sign + bare prefix)"; \
@@ -3126,7 +3138,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-$$\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-$$\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-\$$ ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 358 — '-\$$' falls through to '-\$$ ?' (outer sign + bare prefix)"; \
@@ -3135,7 +3147,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-%%\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-%%\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-% ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 359 — '-%' falls through to '-% ?' (outer sign + bare prefix)"; \
@@ -3144,7 +3156,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-0x\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-0x\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-0x ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 360 — '-0x' falls through to '-0x ?' (bare 0x after sign)"; \
@@ -3153,7 +3165,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- "-\047\047\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- "-\047\047\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "\-'' ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 361 — \"-''\" falls through to \"-'' ?\" (outer sign + empty char literal, count=3)"; \
@@ -3162,7 +3174,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- "-\047ab\047\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- "-\047ab\047\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q "\-'ab' ?" && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
 		echo "PASS: REPL test 362 — \"-'ab'\" falls through to \"-'ab' ?\" (outer sign + long char literal, count=5)"; \
@@ -3171,7 +3183,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-#42 -$$-FF . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-#42 -$$-FF . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255 \-42 '; then \
 		echo "PASS: REPL test 363 — '-#42 -\$$-FF . .' outputs '255 -42 ' (dispatch-level one-time reset: token 1 sign doesn't leak to token 2)"; \
 	else \
@@ -3182,7 +3194,7 @@ test-repl: $(TARGET)
 	@# --- Story 9.5 colon-body tests (364..378) ---
 	@# Verifies prefix + sign recognition inside ':' definitions via the
 	@# single shared INTERPRET thread (src/outer_interpreter.asm:.try_number).
-	@OUTPUT=$$(printf ': F_CH #42 ; F_CH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': F_CH #42 ; F_CH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CH ?'; then \
 		echo "PASS: REPL test 364 — ': F_CH #42 ; F_CH .' outputs '42  ok' (# prefix in colon body)"; \
@@ -3191,7 +3203,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': F_CHN -#42 ; F_CHN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': F_CHN -#42 ; F_CHN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CHN ?'; then \
 		echo "PASS: REPL test 365 — ': F_CHN -#42 ; F_CHN .' outputs '-42  ok' (outer-sign + # in colon body)"; \
@@ -3200,7 +3212,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': F_CHS $$-FF ; F_CHS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': F_CHS $$-FF ; F_CHS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CHS ?'; then \
 		echo "PASS: REPL test 366 — ': F_CHS \$$-FF ; F_CHS .' outputs '-255  ok' (inner sign on \$$ arm, colon body)"; \
@@ -3209,7 +3221,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- ': F_CDS -$$FF ; F_CDS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- ': F_CDS -$$FF ; F_CDS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CDS ?'; then \
 		echo "PASS: REPL test 367 — ': F_CDS -\$$FF ; F_CDS .' outputs '-255  ok' (outer sign + \$$ in colon body)"; \
@@ -3218,7 +3230,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- ': F_CX -0xFF ; F_CX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- ': F_CX -0xFF ; F_CX .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CX ?'; then \
 		echo "PASS: REPL test 368 — ': F_CX -0xFF ; F_CX .' outputs '-255  ok' (outer sign + 0x in colon body)"; \
@@ -3227,7 +3239,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- ': F_CBN -%%1010 ; F_CBN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- ': F_CBN -%%1010 ; F_CBN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CBN ?'; then \
 		echo "PASS: REPL test 369 — ': F_CBN -%%1010 ; F_CBN .' outputs '-10  ok' (outer sign + %% in colon body)"; \
@@ -3236,7 +3248,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- ': F_CQN -\047A\047 ; F_CQN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- ': F_CQN -\047A\047 ; F_CQN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-65  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_CQN ?'; then \
 		echo "PASS: REPL test 370 — \": F_CQN -'A' ; F_CQN .\" outputs '-65  ok' (outer sign + 'c' in colon body)"; \
@@ -3246,7 +3258,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- Colon body: BASE-cross (prefix parse is BASE-independent) ---
-	@OUTPUT=$$(printf 'HEX : F_DH #100 . ; F_DH DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX : F_DH #100 . ; F_DH DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '64  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_DH ?'; then \
 		echo "PASS: REPL test 371 — 'HEX : F_DH #100 . ; F_DH DECIMAL' prints '64  ok' (100 decimal printed in HEX)"; \
@@ -3255,7 +3267,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL : F_HD $$ff . ; F_HD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL : F_HD $$ff . ; F_HD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_HD ?'; then \
 		echo "PASS: REPL test 372 — 'DECIMAL : F_HD \$$ff . ; F_HD' prints '255  ok' (\$$ff parses hex regardless of DECIMAL)"; \
@@ -3267,7 +3279,7 @@ test-repl: $(TARGET)
 	@# --- Colon body: BASE integrity across define + invoke (4 snapshots) ---
 	@# Snapshot pattern: before-define, after-define, computed-value, after-invoke.
 	@# In DECIMAL, BASE @ prints as '10' (= 10 in decimal).
-	@OUTPUT=$$(printf 'BASE @ . : F_BH #42 ; BASE @ . F_BH . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BASE @ . : F_BH #42 ; BASE @ . F_BH . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 42 10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_BH ?'; then \
 		echo "PASS: REPL test 373 — '# colon-body BASE integrity' 4-snapshot outputs '10 10 42 10  ok'"; \
@@ -3276,7 +3288,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BASE @ . : F_BD $$FF ; BASE @ . F_BD . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BASE @ . : F_BD $$FF ; BASE @ . F_BD . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 255 10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_BD ?'; then \
 		echo "PASS: REPL test 374 — '\$$ colon-body BASE integrity' 4-snapshot outputs '10 10 255 10  ok'"; \
@@ -3285,7 +3297,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BASE @ . : F_BX 0xFF ; BASE @ . F_BX . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BASE @ . : F_BX 0xFF ; BASE @ . F_BX . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 255 10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_BX ?'; then \
 		echo "PASS: REPL test 375 — '0x colon-body BASE integrity' 4-snapshot outputs '10 10 255 10  ok'"; \
@@ -3294,7 +3306,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BASE @ . : F_BB %%1010 ; BASE @ . F_BB . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BASE @ . : F_BB %%1010 ; BASE @ . F_BB . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 10 10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_BB ?'; then \
 		echo "PASS: REPL test 376 — '%% colon-body BASE integrity' 4-snapshot outputs '10 10 10 10  ok'"; \
@@ -3303,7 +3315,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BASE @ . : F_BQ \047A\047 ; BASE @ . F_BQ . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BASE @ . : F_BQ \047A\047 ; BASE @ . F_BQ . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 65 10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F_BQ ?'; then \
 		echo "PASS: REPL test 377 — \"'c' colon-body BASE integrity\" 4-snapshot outputs '10 10 65 10  ok'"; \
@@ -3315,7 +3327,7 @@ test-repl: $(TARGET)
 	@# --- Colon body: compile-error on malformed prefix + no survivor (AC #6) ---
 	@# Two-line REPL: ': F_BAD #ABC ;' triggers COMP_ERROR -> ABORT, unlinks F_BAD.
 	@# Subsequent 'F_BAD .' must ALSO error as undefined word — no survivor.
-	@OUTPUT=$$(printf ': F_BAD #ABC ;\r\nF_BAD .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': F_BAD #ABC ;\r\nF_BAD .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '#ABC ?' && \
 	   echo "$$OUTPUT" | grep -q 'F_BAD ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
@@ -3328,7 +3340,7 @@ test-repl: $(TARGET)
 	@# --- Story 9.5 CODE-block tests (379..393) ---
 	@# Verifies prefix + sign recognition inside CODE..END-CODE blocks.
 	@# Immediate LD, operand order is Zilog dst-first: 'C 0xFF # LD,' = LD C, 0xFF.
-	@OUTPUT=$$(printf 'CODE MK_FF BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_FF .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_FF BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_FF .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_FF ?'; then \
 		echo "PASS: REPL test 379 — CODE MK_FF with 0xFF prefix: MK_FF . outputs '255  ok'"; \
@@ -3337,7 +3349,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_FFu BC PUSH, C 0XFF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_FFu .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_FFu BC PUSH, C 0XFF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_FFu .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_FFu ?'; then \
 		echo "PASS: REPL test 380 — CODE MK_FFu with 0XFF (upper-X): MK_FFu . outputs '255  ok'"; \
@@ -3346,7 +3358,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_D100 BC PUSH, C #100 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_D100 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_D100 BC PUSH, C #100 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_D100 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '100  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_D100 ?'; then \
 		echo "PASS: REPL test 381 — CODE MK_D100 with #100 prefix: MK_D100 . outputs '100  ok'"; \
@@ -3355,7 +3367,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_NEG BC PUSH, C -#5 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_NEG .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_NEG BC PUSH, C -#5 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_NEG .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-5  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_NEG ?'; then \
 		echo "PASS: REPL test 382 — CODE MK_NEG with -#5 prefix (sign-extended): MK_NEG . outputs '-5  ok'"; \
@@ -3364,7 +3376,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_DS BC PUSH, C $$FF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_DS .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_DS BC PUSH, C $$FF # LD, B 0 # LD, NEXT, END-CODE\r\nMK_DS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_DS ?'; then \
 		echo "PASS: REPL test 383 — CODE MK_DS with \$$FF prefix: MK_DS . outputs '255  ok'"; \
@@ -3373,7 +3385,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_DSN BC PUSH, C $$-FF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_DSN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_DSN BC PUSH, C $$-FF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_DSN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_DSN ?'; then \
 		echo "PASS: REPL test 384 — CODE MK_DSN with \$$-FF prefix (inner sign): MK_DSN . outputs '-255  ok'"; \
@@ -3382,7 +3394,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'CODE MK_DSO BC PUSH, C -$$FF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_DSO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'CODE MK_DSO BC PUSH, C -$$FF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_DSO .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_DSO ?'; then \
 		echo "PASS: REPL test 384a — CODE MK_DSO with -\$$FF prefix (outer sign on \$$ arm): MK_DSO . outputs '-255  ok'"; \
@@ -3391,7 +3403,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_X BC PUSH, C -0xFF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_X .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_X BC PUSH, C -0xFF # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_X .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_X ?'; then \
 		echo "PASS: REPL test 385 — CODE MK_X with -0xFF prefix (outer sign + 0x): MK_X . outputs '-255  ok'"; \
@@ -3400,7 +3412,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_B BC PUSH, C %%1010 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_B .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_B BC PUSH, C %%1010 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_B .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_B ?'; then \
 		echo "PASS: REPL test 386 — CODE MK_B with %%1010 prefix: MK_B . outputs '10  ok'"; \
@@ -3409,7 +3421,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'CODE MK_BN BC PUSH, C -%%1010 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_BN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'CODE MK_BN BC PUSH, C -%%1010 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_BN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_BN ?'; then \
 		echo "PASS: REPL test 386a — CODE MK_BN with -%%1010 prefix (outer sign on %% arm): MK_BN . outputs '-10  ok'"; \
@@ -3418,7 +3430,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE MK_Q BC PUSH, C \047A\047 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_Q .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_Q BC PUSH, C \047A\047 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_Q .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '65  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_Q ?'; then \
 		echo "PASS: REPL test 387 — CODE MK_Q with 'A' prefix: MK_Q . outputs '65  ok'"; \
@@ -3427,7 +3439,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'CODE MK_QN BC PUSH, C -\047A\047 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_QN .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'CODE MK_QN BC PUSH, C -\047A\047 # LD, B 0xFF # LD, NEXT, END-CODE\r\nMK_QN .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-65  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_QN ?'; then \
 		echo "PASS: REPL test 388 — CODE MK_QN with -'A' prefix (outer sign + 'c'): MK_QN . outputs '-65  ok'"; \
@@ -3437,7 +3449,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- CODE block: 16-bit BC immediate load with 0x1234 prefix ---
-	@OUTPUT=$$(printf 'CODE MK_1234 BC PUSH, BC 0x1234 # LD, NEXT, END-CODE\r\nMK_1234 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_1234 BC PUSH, BC 0x1234 # LD, NEXT, END-CODE\r\nMK_1234 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '4660  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_1234 ?'; then \
 		echo "PASS: REPL test 389 — CODE MK_1234 with 16-bit 0x1234 prefix: MK_1234 . outputs '4660  ok'"; \
@@ -3447,7 +3459,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- CODE block: BASE-cross tests (prefix parse is BASE-independent) ---
-	@OUTPUT=$$(printf 'HEX CODE MK_CDEC BC PUSH, C #100 # LD, B 0 # LD, NEXT, END-CODE MK_CDEC . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX CODE MK_CDEC BC PUSH, C #100 # LD, B 0 # LD, NEXT, END-CODE MK_CDEC . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '64  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_CDEC ?'; then \
 		echo "PASS: REPL test 390 — CODE MK_CDEC in HEX with #100: MK_CDEC . outputs '64  ok' (100 decimal printed in HEX)"; \
@@ -3456,7 +3468,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL CODE MK_CHEX BC PUSH, C $$ff # LD, B 0 # LD, NEXT, END-CODE MK_CHEX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL CODE MK_CHEX BC PUSH, C $$ff # LD, B 0 # LD, NEXT, END-CODE MK_CHEX .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '255  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_CHEX ?'; then \
 		echo "PASS: REPL test 391 — CODE MK_CHEX in DECIMAL with \$$ff: MK_CHEX . outputs '255  ok'"; \
@@ -3466,7 +3478,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- CODE block: BASE integrity snapshots (before CODE, after END-CODE, after invoke) ---
-	@OUTPUT=$$(printf 'BASE @ . CODE MK_BS BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE BASE @ . MK_BS . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BASE @ . CODE MK_BS BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE BASE @ . MK_BS . BASE @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '10 10 255 10  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_BS ?'; then \
 		echo "PASS: REPL test 392 — CODE-block BASE integrity 4-snapshot outputs '10 10 255 10  ok'"; \
@@ -3476,7 +3488,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- CODE block: ABORT on malformed prefix (asm_cleanup rollback, no survivor) ---
-	@OUTPUT=$$(printf 'CODE C_BAD #ABC BC PUSH, NEXT, END-CODE\r\nC_BAD .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE C_BAD #ABC BC PUSH, NEXT, END-CODE\r\nC_BAD .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '#ABC ?' && \
 	   echo "$$OUTPUT" | grep -q 'C_BAD ?' && \
 	   ! echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '[0-9]  ok'; then \
@@ -3489,7 +3501,7 @@ test-repl: $(TARGET)
 	@# --- Story 9.5 cross-context + FR47 regression guards (394..396) ---
 	@# Mixed-context single session: REPL prefix, colon-body prefix, CODE-block prefix.
 	@# Verifies asm_mode and .pref_negate do not leak across context boundaries.
-	@OUTPUT=$$(printf '#42 . : F_MIX $$FF ; F_MIX . CODE C_MIX BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE C_MIX .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '#42 . : F_MIX $$FF ; F_MIX . CODE C_MIX BC PUSH, C 0xFF # LD, B 0 # LD, NEXT, END-CODE C_MIX .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42 255 255  ok' && \
 	   ! echo "$$OUTPUT" | grep -qE '(F_MIX|C_MIX) \?'; then \
 		echo "PASS: REPL test 394 — mixed-context (REPL + colon + CODE) outputs '42 255 255  ok' (no state leakage)"; \
@@ -3499,7 +3511,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# FR47 regression: bare '-42' in colon body must reach NUMBER?, not the sign pre-pass.
-	@OUTPUT=$$(printf ': F42N -42 ; F42N .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': F42N -42 ; F42N .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '\-42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'F42N ?'; then \
 		echo "PASS: REPL test 395 — FR47 colon-body: ': F42N -42 ; F42N .' outputs '-42  ok' (bare signed literal via NUMBER?)"; \
@@ -3509,7 +3521,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# FR47 regression: bare unprefixed '42' in CODE block via NUMBER? fallthrough.
-	@OUTPUT=$$(printf 'CODE MK_42 BC PUSH, C 42 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE MK_42 BC PUSH, C 42 # LD, B 0 # LD, NEXT, END-CODE\r\nMK_42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '42  ok' && \
 	   ! echo "$$OUTPUT" | grep -q 'MK_42 ?'; then \
 		echo "PASS: REPL test 396 — FR47 CODE-block: unprefixed '42' via NUMBER? fallthrough: MK_42 . outputs '42  ok'"; \
@@ -3520,7 +3532,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.2 double-cell stack foundation (397..421) ---
 	@# 2DUP value/depth checks
-	@OUTPUT=$$(printf '1 2 2DUP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 2DUP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<4> 1 2 1 2 '; then \
 		echo "PASS: REPL test 397 — '1 2 2DUP .S' outputs '<4> 1 2 1 2 '"; \
 	else \
@@ -3528,7 +3540,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 2DUP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 2DUP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<4> 0 0 0 0 '; then \
 		echo "PASS: REPL test 398 — '0 0 2DUP .S' outputs '<4> 0 0 0 0 '"; \
 	else \
@@ -3536,7 +3548,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 -2 2DUP .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 -2 2DUP .S' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<4> -1 -2 -1 -2 '; then \
 		echo "PASS: REPL test 399 — '-1 -2 2DUP .S' outputs '<4> -1 -2 -1 -2 '"; \
 	else \
@@ -3545,7 +3557,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# 2DROP depth/residual checks
-	@OUTPUT=$$(printf '1 2 3 4 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 4 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 2 '; then \
 		echo "PASS: REPL test 400 — '1 2 3 4 2DROP .S' outputs '<2> 1 2 '"; \
 	else \
@@ -3553,7 +3565,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '100 200 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '100 200 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<0> '; then \
 		echo "PASS: REPL test 401 — '100 200 2DROP .S' outputs '<0> '"; \
 	else \
@@ -3562,7 +3574,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# 2SWAP pair-order checks
-	@OUTPUT=$$(printf '1 2 3 4 2SWAP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 4 2SWAP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<4> 3 4 1 2 '; then \
 		echo "PASS: REPL test 402 — '1 2 3 4 2SWAP .S' outputs '<4> 3 4 1 2 '"; \
 	else \
@@ -3570,7 +3582,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '10 20 30 40 2SWAP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 20 30 40 2SWAP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<4> 30 40 10 20 '; then \
 		echo "PASS: REPL test 403 — '10 20 30 40 2SWAP .S' outputs '<4> 30 40 10 20 '"; \
 	else \
@@ -3579,7 +3591,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# 2OVER copy-second-pair checks
-	@OUTPUT=$$(printf '1 2 3 4 2OVER .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 4 2OVER .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<6> 1 2 3 4 1 2 '; then \
 		echo "PASS: REPL test 404 — '1 2 3 4 2OVER .S' outputs '<6> 1 2 3 4 1 2 '"; \
 	else \
@@ -3587,7 +3599,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '10 20 30 40 2OVER .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 20 30 40 2OVER .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<6> 10 20 30 40 10 20 '; then \
 		echo "PASS: REPL test 405 — '10 20 30 40 2OVER .S' outputs '<6> 10 20 30 40 10 20 '"; \
 	else \
@@ -3596,7 +3608,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# 2@ byte-order anchor (E10-D1): low cell on TOS after fetch
-	@OUTPUT=$$(printf 'HEX CREATE D1 BEEF , DEAD , D1 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX CREATE D1 BEEF , DEAD , D1 2@ .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2153 -4111 '; then \
 		echo "PASS: REPL test 406 — '2@' byte-order anchor: low cell (BEEF) on TOS, high (DEAD) below"; \
 	else \
@@ -3605,7 +3617,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# 2! / 2@ round-trip
-	@OUTPUT=$$(printf 'HEX CREATE D2 0 , 0 , BEEF DEAD D2 2! D2 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX CREATE D2 0 , 0 , BEEF DEAD D2 2! D2 2@ .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -4111 -2153 '; then \
 		echo "PASS: REPL test 407 — '2! / 2@' round-trip returns the input pair in order (BEEF x1, DEAD x2)"; \
 	else \
@@ -3614,7 +3626,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# 2! / 2@ boundary values: 0 / FFFF / 8000
-	@OUTPUT=$$(printf 'HEX CREATE D3 0 , 0 , 0 0 D3 2! D3 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX CREATE D3 0 , 0 , 0 0 D3 2! D3 2@ .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 408 — '2! / 2@' round-trip at boundary 0 0"; \
 	else \
@@ -3622,7 +3634,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX CREATE D4 0 , 0 , FFFF FFFF D4 2! D4 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX CREATE D4 0 , 0 , FFFF FFFF D4 2! D4 2@ .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 409 — '2! / 2@' round-trip at boundary FFFF FFFF"; \
 	else \
@@ -3630,7 +3642,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX CREATE D5 0 , 0 , 8000 8000 D5 2! D5 2@ .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX CREATE D5 0 , 0 , 8000 8000 D5 2! D5 2@ .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -8000 -8000 '; then \
 		echo "PASS: REPL test 410 — '2! / 2@' round-trip at boundary 8000 8000 (sign-bit set)"; \
 	else \
@@ -3639,7 +3651,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Stack-underflow recovery on empty stack for each new word
-	@OUTPUT=$$(printf '2@\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2@\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 411 — '2@' on empty stack shows underflow and recovers"; \
 	else \
@@ -3647,7 +3659,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2!\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2!\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 412 — '2!' on empty stack shows underflow and recovers"; \
 	else \
@@ -3655,7 +3667,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2DUP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2DUP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 413 — '2DUP' on empty stack shows underflow and recovers"; \
 	else \
@@ -3663,7 +3675,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 414 — '2DROP' on empty stack shows underflow and recovers"; \
 	else \
@@ -3671,7 +3683,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2SWAP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2SWAP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 415 — '2SWAP' on empty stack shows underflow and recovers"; \
 	else \
@@ -3679,7 +3691,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '2OVER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '2OVER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 416 — '2OVER' on empty stack shows underflow and recovers"; \
 	else \
@@ -3688,7 +3700,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Near-threshold underflow (one cell short of minimum DEPTH)
-	@OUTPUT=$$(printf '1 2DUP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2DUP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 417 — '1 2DUP' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -3696,7 +3708,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 418 — '1 2DROP' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -3704,7 +3716,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 2!\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 2!\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 419 — '1 2 2!' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
@@ -3712,7 +3724,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 2SWAP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 2SWAP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 420 — '1 2 3 2SWAP' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -3720,7 +3732,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 2OVER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 2OVER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 421 — '1 2 3 2OVER' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -3729,7 +3741,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# --- Story 10.2 code-review follow-up: @ now guards DEPTH>=1 (M2 fix) ---
-	@OUTPUT=$$(printf '@\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '@\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 422 — '@' on empty stack shows underflow and recovers"; \
 	else \
@@ -3739,7 +3751,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.3 single<->double conversions (423..445) ---
 	@# S>D value/boundary checks: TOS = low = n; second = high = 0 or -1.
-	@OUTPUT=$$(printf '5 S>D .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 S>D .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
 		echo "PASS: REPL test 423 — '5 S>D .S' outputs '<2> 5 0 '"; \
 	else \
@@ -3747,7 +3759,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 S>D .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 S>D .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 424 — '0 S>D .S' outputs '<2> 0 0 '"; \
 	else \
@@ -3755,7 +3767,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-5 S>D .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-5 S>D .S' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -5 -1 '; then \
 		echo "PASS: REPL test 425 — '-5 S>D .S' outputs '<2> -5 -1 '"; \
 	else \
@@ -3763,7 +3775,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '32767 S>D .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '32767 S>D .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 32767 0 '; then \
 		echo "PASS: REPL test 426 — '32767 S>D .S' outputs '<2> 32767 0 '"; \
 	else \
@@ -3771,7 +3783,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-32768 S>D .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-32768 S>D .S' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -32768 -1 '; then \
 		echo "PASS: REPL test 427 — '-32768 S>D .S' outputs '<2> -32768 -1 '"; \
 	else \
@@ -3779,7 +3791,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 S>D .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 S>D .S' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 428 — '-1 S>D .S' outputs '<2> -1 -1 '"; \
 	else \
@@ -3788,7 +3800,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D>S pure-sign-extended doubles → single cell (round-trip preserving).
-	@OUTPUT=$$(printf '5 0 D>S .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 D>S .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<1> 5 '; then \
 		echo "PASS: REPL test 429 — '5 0 D>S .S' outputs '<1> 5 '"; \
 	else \
@@ -3796,7 +3808,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-5 -1 D>S .S' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-5 -1 D>S .S' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<1> -5 '; then \
 		echo "PASS: REPL test 430 — '-5 -1 D>S .S' outputs '<1> -5 '"; \
 	else \
@@ -3805,7 +3817,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D>S truncation: non-sign-extended double silently drops high cell (AC#2).
-	@OUTPUT=$$(printf '5 1 D>S .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 1 D>S .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<1> 5 '; then \
 		echo "PASS: REPL test 431 — '5 1 D>S .S' (truncates high=1) outputs '<1> 5 '"; \
 	else \
@@ -3814,7 +3826,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# S>D D>S round-trip preserves the value across the signed-16 range.
-	@OUTPUT=$$(printf '0 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^0 '; then \
 		echo "PASS: REPL test 432 — '0 S>D D>S .' outputs '0 '"; \
 	else \
@@ -3822,7 +3834,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^1 '; then \
 		echo "PASS: REPL test 433 — '1 S>D D>S .' outputs '1 '"; \
 	else \
@@ -3830,7 +3842,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 S>D D>S .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1 S>D D>S .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^-1 '; then \
 		echo "PASS: REPL test 434 — '-1 S>D D>S .' outputs '-1 '"; \
 	else \
@@ -3838,7 +3850,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '32767 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '32767 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^32767 '; then \
 		echo "PASS: REPL test 435 — '32767 S>D D>S .' outputs '32767 '"; \
 	else \
@@ -3846,7 +3858,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-32768 S>D D>S .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-32768 S>D D>S .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^-32768 '; then \
 		echo "PASS: REPL test 436 — '-32768 S>D D>S .' outputs '-32768 '"; \
 	else \
@@ -3854,7 +3866,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '100 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '100 S>D D>S .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^100 '; then \
 		echo "PASS: REPL test 437 — '100 S>D D>S .' outputs '100 '"; \
 	else \
@@ -3862,7 +3874,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-100 S>D D>S .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-100 S>D D>S .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '^-100 '; then \
 		echo "PASS: REPL test 438 — '-100 S>D D>S .' outputs '-100 '"; \
 	else \
@@ -3872,7 +3884,7 @@ test-repl: $(TARGET)
 	fi
 	@# >NUMBER single-cell accumulation (baseline, pre-existing semantics).
 	@# Stack after: <4> ud2-high=0 ud2-low=42 c-addr2 u2=0 (TOS). Check ud2-low=42 and u2=0.
-	@OUTPUT=$$(printf '0 0 S" 42" DROP 2 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 S" 42" DROP 2 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 42 0 '; then \
 		echo "PASS: REPL test 439 — '0 0 S\" 42\" DROP 2 >NUMBER 2DROP .S' outputs '<2> 42 0 '"; \
 	else \
@@ -3882,7 +3894,7 @@ test-repl: $(TARGET)
 	fi
 	@# >NUMBER double-cell accumulation across the 16-bit boundary.
 	@# "65536" decimal = high:1 low:0. 2DROP trims c-addr2/u2 so .S surfaces ud2.
-	@OUTPUT=$$(printf '0 0 S" 65536" DROP 5 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 S" 65536" DROP 5 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 440 — '0 0 S\" 65536\" DROP 5 >NUMBER 2DROP .S' outputs '<2> 0 1 ' (ud2 = 65536)"; \
 	else \
@@ -3891,7 +3903,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# >NUMBER well above the 16-bit boundary: 1_000_000 = 15*65536 + 16960.
-	@OUTPUT=$$(printf '0 0 S" 1000000" DROP 7 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 S" 1000000" DROP 7 >NUMBER 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 16960 15 '; then \
 		echo "PASS: REPL test 441 — '0 0 S\" 1000000\" DROP 7 >NUMBER 2DROP .S' outputs '<2> 16960 15 ' (ud2 = 1000000)"; \
 	else \
@@ -3900,7 +3912,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Underflow recovery: S>D needs 1, D>S needs 2, >NUMBER needs 3.
-	@OUTPUT=$$(printf 'S>D\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S>D\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 442 — 'S>D' on empty stack shows underflow and recovers"; \
 	else \
@@ -3908,7 +3920,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'D>S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'D>S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 443 — 'D>S' on empty stack shows underflow and recovers"; \
 	else \
@@ -3916,7 +3928,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 D>S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 D>S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 444 — '1 D>S' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -3924,7 +3936,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '>NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '>NUMBER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 445 — '>NUMBER' on empty stack shows underflow and recovers"; \
 	else \
@@ -3933,7 +3945,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# >NUMBER needs 4 inputs (ud1 c-addr1 u1) — DEPTH=1/2/3 must all underflow.
-	@OUTPUT=$$(printf '1 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 446 — '1 >NUMBER' (DEPTH 1, needs 4) underflows and recovers"; \
 	else \
@@ -3941,7 +3953,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 447 — '1 2 >NUMBER' (DEPTH 2, needs 4) underflows and recovers"; \
 	else \
@@ -3949,7 +3961,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 >NUMBER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 448 — '1 2 3 >NUMBER' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -3959,7 +3971,7 @@ test-repl: $(TARGET)
 	fi
 	@# >NUMBER BASE=2: 17-bit binary string "10000000000000000" parses to 65536 (ud2-high=1, ud2-low=0).
 	@# Numeric literals are decimal on entry; BASE is flipped to 2 only for >NUMBER itself, then restored.
-	@OUTPUT=$$(printf '0 0 S" 10000000000000000" DROP 17 2 BASE ! >NUMBER DECIMAL 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 S" 10000000000000000" DROP 17 2 BASE ! >NUMBER DECIMAL 2DROP .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 449 — BASE=2 '>NUMBER' on 17-bit string outputs '<2> 0 1 ' (ud2 = 65536)"; \
 	else \
@@ -3969,7 +3981,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.4 double-cell arithmetic (450..501) — DPANS94 §8.6 {1040,1050,1110,1120,1160,1210,1220,1230,1830} ---
 	@# D+ (§8.6.1040): double-cell add with 32-bit carry propagation.
-	@OUTPUT=$$(printf '0 0 0 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 0 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 450 — '0 0 0 0 D+ .S 2DROP' outputs '<2> 0 0 ' (zero + zero)"; \
 	else \
@@ -3977,7 +3989,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 7 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 7 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 12 0 '; then \
 		echo "PASS: REPL test 451 — '5 0 7 0 D+ .S 2DROP' outputs '<2> 12 0 ' (5 + 7 = 12)"; \
 	else \
@@ -3985,7 +3997,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 452 — '-1 0 1 0 D+ .S 2DROP' outputs '<2> 0 1 ' (low-cell carry ripples)"; \
 	else \
@@ -3993,7 +4005,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 453 — '-1 -1 0 1 D+ .S 2DROP' outputs '<2> 0 0 ' (full 32-bit wrap)"; \
 	else \
@@ -4001,7 +4013,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 32767 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 32767 1 0 D+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
 		echo "PASS: REPL test 454 — '-1 32767 1 0 D+ .S 2DROP' outputs '<2> 0 -32768 ' (32-bit signed overflow silently wraps)"; \
 	else \
@@ -4010,7 +4022,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D- (§8.6.1050): double-cell subtract with 32-bit borrow propagation.
-	@OUTPUT=$$(printf '10 0 4 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 4 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 6 0 '; then \
 		echo "PASS: REPL test 455 — '10 0 4 0 D- .S 2DROP' outputs '<2> 6 0 '"; \
 	else \
@@ -4018,7 +4030,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '4 0 10 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '4 0 10 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -6 -1 '; then \
 		echo "PASS: REPL test 456 — '4 0 10 0 D- .S 2DROP' outputs '<2> -6 -1 ' (borrow ripples into high cell)"; \
 	else \
@@ -4026,7 +4038,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 457 — '0 0 0 1 D- .S 2DROP' outputs '<2> -1 -1 ' (0 - 1 = -1 as signed double)"; \
 	else \
@@ -4034,7 +4046,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 1 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
 		echo 'PASS: REPL test 458 — '\''1 0 0 1 D- .S 2DROP'\'' outputs '\''<2> -1 0 '\'' ($$10000 - 1)'; \
 	else \
@@ -4042,7 +4054,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 1 0 D- .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2 -1 '; then \
 		echo "PASS: REPL test 459 — '-1 -1 1 0 D- .S 2DROP' outputs '<2> -2 -1 '"; \
 	else \
@@ -4051,7 +4063,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# DNEGATE (§8.6.1230): double-cell two's-complement negate.
-	@OUTPUT=$$(printf '0 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 460 — '0 0 DNEGATE .S 2DROP' outputs '<2> 0 0 '"; \
 	else \
@@ -4059,7 +4071,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 461 — '0 1 DNEGATE .S 2DROP' outputs '<2> -1 -1 ' (=-1 as signed double)"; \
 	else \
@@ -4067,7 +4079,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
 		echo "PASS: REPL test 462 — '-1 -1 DNEGATE .S 2DROP' outputs '<2> 1 0 '"; \
 	else \
@@ -4075,7 +4087,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-32768 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 0 DNEGATE .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -32768 -1 '; then \
 		echo 'PASS: REPL test 463 — '\''0 -32768 DNEGATE .S 2DROP'\'' outputs '\''<2> -32768 -1 '\'' (0:$$8000 → -(32768) = $$FFFF8000)'; \
 	else \
@@ -4084,7 +4096,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# DABS (§8.6.1160): double-cell absolute value.
-	@OUTPUT=$$(printf '0 0 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 464 — '0 0 DABS .S 2DROP' outputs '<2> 0 0 '"; \
 	else \
@@ -4092,7 +4104,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
 		echo "PASS: REPL test 465 — '5 0 DABS .S 2DROP' outputs '<2> 5 0 ' (positive unchanged)"; \
 	else \
@@ -4100,7 +4112,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 -1 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 -1 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
 		echo "PASS: REPL test 466 — '-5 -1 DABS .S 2DROP' outputs '<2> 5 0 ' (negates)"; \
 	else \
@@ -4108,7 +4120,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 -1 DABS .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo 'PASS: REPL test 467 — '\''-1 0 DABS .S 2DROP'\'' outputs '\''<2> 0 1 '\'' ($$FFFF0000 → $$00010000)'; \
 	else \
@@ -4117,7 +4129,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D= (§8.6.1120): double-cell equality → flag.
-	@OUTPUT=$$(printf '0 0 0 0 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 0 0 D= .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 468 — '0 0 0 0 D= .' outputs '-1 ' (equal zeros)"; \
 	else \
@@ -4125,7 +4137,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 5 0 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 5 0 D= .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 469 — '0 5 0 5 D= .' outputs '-1 ' (equal non-zero)"; \
 	else \
@@ -4133,7 +4145,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 6 0 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 6 0 D= .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 470 — '0 5 0 6 D= .' outputs '0 ' (low cells differ)"; \
 	else \
@@ -4141,7 +4153,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 1 5 2 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 1 5 2 D= .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 471 — '1 5 2 5 D= .' outputs '0 ' (high cells differ)"; \
 	else \
@@ -4149,7 +4161,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 -1 -1 D= .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 -1 -1 D= .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 472 — '-1 -1 -1 -1 D= .' outputs '-1 ' (all-bits-set equality)"; \
 	else \
@@ -4158,7 +4170,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D< (§8.6.1110): signed high / unsigned low double-cell less-than.
-	@OUTPUT=$$(printf '0 0 1 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 1 0 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 473 — '0 0 0 1 D< .' outputs '-1 ' (0 < 1)"; \
 	else \
@@ -4166,7 +4178,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 0 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 0 0 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 474 — '0 1 0 0 D< .' outputs '0 ' (1 < 0 is false)"; \
 	else \
@@ -4174,7 +4186,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 0 0 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 0 0 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 475 — '-1 -1 0 0 D< .' outputs '-1 ' (signed -1 < 0 — trap case)"; \
 	else \
@@ -4182,7 +4194,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 -1 -1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 -1 -1 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 476 — '0 0 -1 -1 D< .' outputs '0 ' (0 < -1 is false)"; \
 	else \
@@ -4190,7 +4202,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo 'PASS: REPL test 477 — '\''0 -1 1 0 D< .'\'' outputs '\''-1 '\'' ($$FFFF < $$10000, high cells differ)'; \
 	else \
@@ -4198,7 +4210,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 1 0 1 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 478 — '1 0 1 0 D< .' outputs '0 ' (equal, not less-than)"; \
 	else \
@@ -4206,7 +4218,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 -1 1 -1 D< .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 -1 1 -1 D< .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 479 — '-1 0 -1 1 D< .' outputs '-1 ' (high cells equal; low cells compared unsigned 0 < 1)"; \
 	else \
@@ -4215,7 +4227,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# DMAX (§8.6.1210): double-cell max (signed ordering).
-	@OUTPUT=$$(printf '5 0 7 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 7 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 7 0 '; then \
 		echo "PASS: REPL test 480 — '5 0 7 0 DMAX .S 2DROP' outputs '<2> 7 0 '"; \
 	else \
@@ -4223,7 +4235,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 0 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 0 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 481 — '-1 -1 0 0 DMAX .S 2DROP' outputs '<2> 0 0 ' (0 > -1 signed)"; \
 	else \
@@ -4231,7 +4243,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 5 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 5 0 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
 		echo "PASS: REPL test 482 — '5 0 5 0 DMAX .S 2DROP' outputs '<2> 5 0 ' (equal → either copy)"; \
 	else \
@@ -4239,7 +4251,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 0 1 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 0 1 DMAX .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo 'PASS: REPL test 483 — '\''0 -1 1 0 DMAX .S 2DROP'\'' outputs '\''<2> 0 1 '\'' ($$10000 > $$FFFF)'; \
 	else \
@@ -4248,7 +4260,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# DMIN (§8.6.1220): double-cell min (signed ordering).
-	@OUTPUT=$$(printf '5 0 7 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 7 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
 		echo "PASS: REPL test 484 — '5 0 7 0 DMIN .S 2DROP' outputs '<2> 5 0 '"; \
 	else \
@@ -4256,7 +4268,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 0 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 0 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 485 — '-1 -1 0 0 DMIN .S 2DROP' outputs '<2> -1 -1 ' (-1 < 0 signed)"; \
 	else \
@@ -4264,7 +4276,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 5 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 5 0 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 5 0 '; then \
 		echo "PASS: REPL test 486 — '5 0 5 0 DMIN .S 2DROP' outputs '<2> 5 0 ' (equal)"; \
 	else \
@@ -4272,7 +4284,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 0 1 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 0 1 DMIN .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
 		echo 'PASS: REPL test 487 — '\''0 -1 1 0 DMIN .S 2DROP'\'' outputs '\''<2> -1 0 '\'' ($$FFFF < $$10000)'; \
 	else \
@@ -4281,7 +4293,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# M+ (§8.6.1830): mixed single+double add (sign-extended).
-	@OUTPUT=$$(printf '0 0 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
 		echo "PASS: REPL test 488 — '0 0 1 M+ .S 2DROP' outputs '<2> 1 0 ' (0.0 + 1)"; \
 	else \
@@ -4289,7 +4301,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 -1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 -1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 489 — '0 0 -1 M+ .S 2DROP' outputs '<2> -1 -1 ' (sign-extended negative rolls both cells)"; \
 	else \
@@ -4297,7 +4309,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 490 — '-1 0 1 M+ .S 2DROP' outputs '<2> 0 1 ' (low-cell carry ripples)"; \
 	else \
@@ -4305,7 +4317,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 -5 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 -5 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -5 -1 '; then \
 		echo "PASS: REPL test 491 — '0 0 -5 M+ .S 2DROP' outputs '<2> -5 -1 '"; \
 	else \
@@ -4313,7 +4325,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 -1 -1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 -1 -1 M+ .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -6 -1 '; then \
 		echo "PASS: REPL test 492 — '-5 -1 -1 M+ .S 2DROP' outputs '<2> -6 -1 ' (negative + negative stays negative, no low-cell carry)"; \
 	else \
@@ -4322,7 +4334,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Story 10.4 underflow recovery: one per word at DEPTH = N-1.
-	@OUTPUT=$$(printf '1 2 3 D+\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 D+\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 493 — '1 2 3 D+' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4330,7 +4342,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 D-\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 D-\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 494 — '1 2 3 D-' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4338,7 +4350,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 DNEGATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 DNEGATE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 495 — '1 DNEGATE' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4346,7 +4358,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 DABS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 DABS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 496 — '1 DABS' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4354,7 +4366,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 D=\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 D=\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 497 — '1 2 3 D=' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4362,7 +4374,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 D<\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 D<\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 498 — '1 2 3 D<' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4370,7 +4382,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 DMAX\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 DMAX\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 499 — '1 2 3 DMAX' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4378,7 +4390,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 DMIN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 DMIN\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 500 — '1 2 3 DMIN' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4386,7 +4398,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 M+\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 M+\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 501 — '1 2 M+' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
@@ -4396,7 +4408,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.5 double-cell multiplication (502..525) — DPANS94 §6.1.{1810,2360} + §8.6.1090 ---
 	@# UM* (§6.1.2360): unsigned 16×16 → 32 mixed multiply.
-	@OUTPUT=$$(printf '0 0 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 502 — '0 0 UM* .S 2DROP' outputs '<2> 0 0 ' (zero × zero)"; \
 	else \
@@ -4404,7 +4416,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 5 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 5 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 503 — '0 5 UM* .S 2DROP' outputs '<2> 0 0 ' (zero × nonzero)"; \
 	else \
@@ -4412,7 +4424,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 1 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 1 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
 		echo "PASS: REPL test 504 — '1 1 UM* .S 2DROP' outputs '<2> 1 0 ' (trivial product fits in low cell)"; \
 	else \
@@ -4420,7 +4432,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$100 $$100 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$100 $$100 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 505 — '\$$100 \$$100 UM* .S 2DROP' outputs '<2> 0 1 ' (256×256=65536; clean carry into high cell)"; \
 	else \
@@ -4428,7 +4440,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$FFFF $$FFFF UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$FFFF $$FFFF UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 -2 '; then \
 		echo "PASS: REPL test 506 — '\$$FFFF \$$FFFF UM* .S 2DROP' outputs '<2> 1 -2 ' (\$$FFFE0001; max unsigned squared)"; \
 	else \
@@ -4436,7 +4448,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '$$FFFF 2 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '$$FFFF 2 UM* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2 1 '; then \
 		echo "PASS: REPL test 507 — '\$$FFFF 2 UM* .S 2DROP' outputs '<2> -2 1 ' (\$$1FFFE; low-cell wrap)"; \
 	else \
@@ -4445,7 +4457,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# M* (§6.1.1810): signed 16×16 → 32 mixed multiply (UM* + sign tracking).
-	@OUTPUT=$$(printf '0 0 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 508 — '0 0 M* .S 2DROP' outputs '<2> 0 0 '"; \
 	else \
@@ -4453,7 +4465,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 15 0 '; then \
 		echo "PASS: REPL test 509 — '5 3 M* .S 2DROP' outputs '<2> 15 0 ' (positive × positive)"; \
 	else \
@@ -4461,7 +4473,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -15 -1 '; then \
 		echo "PASS: REPL test 510 — '-5 3 M* .S 2DROP' outputs '<2> -15 -1 ' (negative × positive → negative double)"; \
 	else \
@@ -4469,7 +4481,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -15 -1 '; then \
 		echo "PASS: REPL test 511 — '5 -3 M* .S 2DROP' outputs '<2> -15 -1 ' (positive × negative → negative)"; \
 	else \
@@ -4477,7 +4489,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 -3 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 15 0 '; then \
 		echo "PASS: REPL test 512 — '-5 -3 M* .S 2DROP' outputs '<2> 15 0 ' (negative × negative → positive)"; \
 	else \
@@ -4485,7 +4497,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-32768 -32768 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 -32768 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 16384 '; then \
 		echo "PASS: REPL test 513 — '-32768 -32768 M* .S 2DROP' outputs '<2> 0 16384 ' (\$$40000000; ABS(\$$8000) trap collapses)"; \
 	else \
@@ -4493,7 +4505,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '32767 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '32767 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 16383 '; then \
 		echo "PASS: REPL test 514 — '32767 32767 M* .S 2DROP' outputs '<2> 1 16383 ' (\$$3FFF0001; max positive squared)"; \
 	else \
@@ -4501,7 +4513,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-32768 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 32767 M* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -32768 -16384 '; then \
 		echo "PASS: REPL test 515 — '-32768 32767 M* .S 2DROP' outputs '<2> -32768 -16384 ' (-\$$3FFF8000; sign and magnitude)"; \
 	else \
@@ -4510,7 +4522,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D* (§8.6.1090): truncating double × double (low 32 bits).
-	@OUTPUT=$$(printf '0 0 0 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 0 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 516 — '0 0 0 0 D* .S 2DROP' outputs '<2> 0 0 '"; \
 	else \
@@ -4518,7 +4530,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 0 3 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 0 3 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 15 0 '; then \
 		echo "PASS: REPL test 517 — '5 0 3 0 D* .S 2DROP' outputs '<2> 15 0 ' (both fit in single cells)"; \
 	else \
@@ -4526,7 +4538,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 0 '; then \
 		echo "PASS: REPL test 518 — '-1 0 1 0 D* .S 2DROP' outputs '<2> -1 0 ' (65535×1=\$$0000FFFF)"; \
 	else \
@@ -4534,7 +4546,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 -1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 -1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 -2 '; then \
 		echo "PASS: REPL test 519 — '-1 0 -1 0 D* .S 2DROP' outputs '<2> 1 -2 ' (65535×65535=\$$FFFE0001)"; \
 	else \
@@ -4542,7 +4554,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 1 0 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -1 '; then \
 		echo "PASS: REPL test 520 — '-1 -1 0 1 D* .S 2DROP' outputs '<2> -1 -1 ' (-1 × 1 signed double)"; \
 	else \
@@ -4550,7 +4562,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 -1 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 -1 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 0 '; then \
 		echo "PASS: REPL test 521 — '-1 -1 -1 -1 D* .S 2DROP' outputs '<2> 1 0 ' (two's-complement -1×-1=1)"; \
 	else \
@@ -4558,7 +4570,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 0 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 0 -1 D* .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
 		echo "PASS: REPL test 522 — '1 0 0 -1 D* .S 2DROP' outputs '<2> 0 -1 ' (cross-term carry: \$$FFFF0000)"; \
 	else \
@@ -4567,7 +4579,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Story 10.5 underflow recovery: one per word at DEPTH = N-1.
-	@OUTPUT=$$(printf '1 UM*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 UM*\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 523 — '1 UM*' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4575,7 +4587,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 M*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 M*\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 524 — '1 M*' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4583,7 +4595,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 3 D*\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 D*\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 525 — '1 2 3 D*' (DEPTH 3, needs 4) underflows and recovers"; \
 	else \
@@ -4593,7 +4605,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.6 double/mixed-precision division (526..549) — DPANS94 §6.1.{1561,2214,2370} ---
 	@# UM/MOD — unsigned mixed divide (§6.1.2370)
-	@OUTPUT=$$(printf '0 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 526 — '0 0 1 UM/MOD .S 2DROP' outputs '<2> 0 0 ' (zero dividend)"; \
 	else \
@@ -4601,7 +4613,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 527 — '0 1 1 UM/MOD .S 2DROP' outputs '<2> 0 1 ' (unity / unity)"; \
 	else \
@@ -4609,7 +4621,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '10 0 3 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 3 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
 		echo "PASS: REPL test 528 — '0 10 3 UM/MOD .S 2DROP' outputs '<2> 1 3 ' (10/3 = 3 rem 1)"; \
 	else \
@@ -4617,7 +4629,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -1 '; then \
 		echo "PASS: REPL test 529 — '0 -1 1 UM/MOD .S 2DROP' outputs '<2> 0 -1 ' (\$$FFFF / 1 = \$$FFFF rem 0)"; \
 	else \
@@ -4625,7 +4637,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 1 2 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 1 2 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
 		echo "PASS: REPL test 530 — '1 0 2 UM/MOD .S 2DROP' outputs '<2> 0 -32768 ' (\$$10000 / 2 = \$$8000 rem 0)"; \
 	else \
@@ -4633,7 +4645,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 1 '; then \
 		echo "PASS: REPL test 531 — '0 -1 -1 UM/MOD .S 2DROP' outputs '<2> 0 1 ' (\$$FFFF / \$$FFFF = 1 rem 0)"; \
 	else \
@@ -4641,7 +4653,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -2 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -2 -1 UM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2 -1 '; then \
 		echo "PASS: REPL test 532 — '-2 -1 -1 UM/MOD .S 2DROP' outputs '<2> -2 -1 ' (\$$FFFEFFFF / \$$FFFF = \$$FFFF rem \$$FFFE — max quot just-fits)"; \
 	else \
@@ -4650,7 +4662,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# SM/REM — symmetric signed mixed divide (§6.1.2214); remainder sign matches dividend.
-	@OUTPUT=$$(printf '10 0 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
 		echo "PASS: REPL test 533 — '0 10 3 SM/REM .S 2DROP' outputs '<2> 1 3 ' (+10 / +3 = +3 rem +1)"; \
 	else \
@@ -4658,7 +4670,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-10 -1 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 -3 '; then \
 		echo "PASS: REPL test 534 — '-1 -10 3 SM/REM .S 2DROP' outputs '<2> -1 -3 ' (-10 / +3 = -3 rem -1; rem matches dividend sign)"; \
 	else \
@@ -4666,7 +4678,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '10 0 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 -3 '; then \
 		echo "PASS: REPL test 535 — '0 10 -3 SM/REM .S 2DROP' outputs '<2> 1 -3 ' (+10 / -3 = -3 rem +1; rem matches dividend sign)"; \
 	else \
@@ -4674,7 +4686,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-10 -1 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 -3 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 3 '; then \
 		echo "PASS: REPL test 536 — '-1 -10 -3 SM/REM .S 2DROP' outputs '<2> -1 3 ' (-10 / -3 = +3 rem -1; rem matches dividend sign)"; \
 	else \
@@ -4682,7 +4694,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 7 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 7 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 537 — '0 0 7 SM/REM .S 2DROP' outputs '<2> 0 0 ' (zero dividend)"; \
 	else \
@@ -4690,7 +4702,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 -1 10 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 -1 10 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -5 0 '; then \
 		echo "PASS: REPL test 538 — '-1 -5 10 SM/REM .S 2DROP' outputs '<2> -5 0 ' (|-5|<10 → quot 0 rem -5)"; \
 	else \
@@ -4698,7 +4710,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-32768 -1 1 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 -1 1 SM/REM .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -32768 '; then \
 		echo "PASS: REPL test 539 — '-1 -32768 1 SM/REM .S 2DROP' outputs '<2> 0 -32768 ' (\$$FFFF8000 / 1 = -32768 rem 0)"; \
 	else \
@@ -4707,7 +4719,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# FM/MOD — floored signed mixed divide (§6.1.1561); remainder sign matches divisor.
-	@OUTPUT=$$(printf '10 0 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 1 3 '; then \
 		echo "PASS: REPL test 540 — '0 10 3 FM/MOD .S 2DROP' outputs '<2> 1 3 ' (same-sign — matches SM/REM)"; \
 	else \
@@ -4715,7 +4727,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-10 -1 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 2 -4 '; then \
 		echo "PASS: REPL test 541 — '-1 -10 3 FM/MOD .S 2DROP' outputs '<2> 2 -4 ' (-10 floored /3 = -4 rem 2 — discriminates from SM/REM's -1 -3)"; \
 	else \
@@ -4723,7 +4735,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '10 0 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 0 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -2 -4 '; then \
 		echo "PASS: REPL test 542 — '0 10 -3 FM/MOD .S 2DROP' outputs '<2> -2 -4 ' (+10 floored /-3 = -4 rem -2 — discriminates from SM/REM's 1 -3)"; \
 	else \
@@ -4731,7 +4743,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-10 -1 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 -1 -3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> -1 3 '; then \
 		echo "PASS: REPL test 543 — '-1 -10 -3 FM/MOD .S 2DROP' outputs '<2> -1 3 ' (same-sign negative — matches SM/REM)"; \
 	else \
@@ -4739,7 +4751,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 7 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 7 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 0 '; then \
 		echo "PASS: REPL test 544 — '0 0 7 FM/MOD .S 2DROP' outputs '<2> 0 0 ' (zero dividend)"; \
 	else \
@@ -4747,7 +4759,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '9 0 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '9 0 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 3 '; then \
 		echo "PASS: REPL test 545 — '0 9 3 FM/MOD .S 2DROP' outputs '<2> 0 3 ' (exact — no correction applied)"; \
 	else \
@@ -4755,7 +4767,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-9 -1 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-9 -1 3 FM/MOD .S 2DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '<2> 0 -3 '; then \
 		echo "PASS: REPL test 546 — '-1 -9 3 FM/MOD .S 2DROP' outputs '<2> 0 -3 ' (exact negative — no correction)"; \
 	else \
@@ -4764,7 +4776,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Story 10.6 underflow recovery: one per word at DEPTH = N-1 = 2.
-	@OUTPUT=$$(printf '1 2 UM/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 UM/MOD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 547 — '1 2 UM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
@@ -4772,7 +4784,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 SM/REM\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 SM/REM\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 548 — '1 2 SM/REM' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
@@ -4780,7 +4792,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 FM/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 FM/MOD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 549 — '1 2 FM/MOD' (DEPTH 2, needs 3) underflows and recovers"; \
 	else \
@@ -4790,7 +4802,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.7 pictured numeric output (550..571) — DPANS94 §6.1.{0030,0040,0050,0490,1670,2210} + §6.2.1675 ---
 	@# Core primitives: decimal round-trip (<# #S #>, explicit # digit train, zero ud).
-	@OUTPUT=$$(printf '123 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '123 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '123 ok'; then \
 		echo "PASS: REPL test 550 — '0 123 <# #S #> TYPE' outputs '123' (decimal round-trip)"; \
 	else \
@@ -4798,7 +4810,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '12345 0 <# # # # # # #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '12345 0 <# # # # # # #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '12345 ok'; then \
 		echo "PASS: REPL test 551 — '0 12345 <# # # # # # #> TYPE' outputs '12345' (five explicit # digits)"; \
 	else \
@@ -4806,7 +4818,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 ok'; then \
 		echo "PASS: REPL test 552 — '0 0 <# #S #> TYPE' outputs '0' (AC #4: #S emits >=1 digit for 0. 0.)"; \
 	else \
@@ -4815,7 +4827,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Base-switching coverage: decimal / HEX / binary / octal / base-36.
-	@OUTPUT=$$(printf 'DECIMAL 65535 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 65535 0 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '65535 ok'; then \
 		echo "PASS: REPL test 553 — base 10: '0 65535 <# #S #> TYPE' outputs '65535'"; \
 	else \
@@ -4824,7 +4836,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Literals are parsed in DECIMAL then printed in the target base.
-	@OUTPUT=$$(printf 'DECIMAL 65535 0 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 65535 0 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FFFF ok'; then \
 		echo "PASS: REPL test 554 — base 16: '0 65535 <# #S #> TYPE' outputs 'FFFF'"; \
 	else \
@@ -4832,7 +4844,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 255 0 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 255 0 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '11111111 ok'; then \
 		echo "PASS: REPL test 555 — base 2: '0 255 <# #S #> TYPE' outputs '11111111'"; \
 	else \
@@ -4840,7 +4852,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 511 0 8 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 511 0 8 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '777 ok'; then \
 		echo "PASS: REPL test 556 — base 8: '0 511 <# #S #> TYPE' outputs '777'"; \
 	else \
@@ -4848,7 +4860,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 35 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 35 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'Z ok'; then \
 		echo "PASS: REPL test 557 — base 36: '0 35 <# #S #> TYPE' outputs 'Z' (verifies digit_to_char A-Z branch)"; \
 	else \
@@ -4857,7 +4869,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# SIGN via canonical signed-double recipe: SWAP OVER DABS <# #S ROT SIGN #> TYPE.
-	@OUTPUT=$$(printf -- '-1 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 ok'; then \
 		echo "PASS: REPL test 558 — '-1 S>D ... SIGN #> TYPE' outputs '-1' (SIGN emits '-' for negative)"; \
 	else \
@@ -4865,7 +4877,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '5 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '5 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '5 ok'; then \
 		echo "PASS: REPL test 559 — '5 S>D ... SIGN #> TYPE' outputs '5' (SIGN emits nothing for non-negative)"; \
 	else \
@@ -4873,7 +4885,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-12345 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-12345 S>D SWAP OVER DABS <# #S ROT SIGN #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-12345 ok'; then \
 		echo "PASS: REPL test 560 — '-12345 S>D ... SIGN #> TYPE' outputs '-12345'"; \
 	else \
@@ -4882,7 +4894,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLD explicit non-digit character: builds "1,23" right-to-left.
-	@OUTPUT=$$(printf '123 0 <# # # 44 HOLD #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '123 0 <# # # 44 HOLD #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1,23 ok'; then \
 		echo "PASS: REPL test 561 — '0 123 <# # # 44 HOLD #S #> TYPE' outputs '1,23' (HOLD inserts non-digit ',' = 44)"; \
 	else \
@@ -4891,7 +4903,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLDS string insertion preserves left-to-right order.
-	@OUTPUT=$$(printf ': PICT-ABC S" abc" HOLDS ;\r\n99 0 <# #S PICT-ABC #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': PICT-ABC S" abc" HOLDS ;\r\n99 0 <# #S PICT-ABC #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'abc99 ok'; then \
 		echo "PASS: REPL test 562 — HOLDS inserts 'abc' before '99' → 'abc99' (left-to-right order preserved)"; \
 	else \
@@ -4900,7 +4912,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Worst case: double \$$FFFFFFFF printed in base 10, HEX, binary (32-char output in 40-byte budget).
-	@OUTPUT=$$(printf -- '-1 -1 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 <# #S #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '4294967295 ok'; then \
 		echo "PASS: REPL test 563 — '-1 -1 <# #S #> TYPE' outputs '4294967295' (ud = \$$FFFFFFFF in base 10)"; \
 	else \
@@ -4908,7 +4920,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'DECIMAL -1 -1 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'DECIMAL -1 -1 HEX <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FFFFFFFF ok'; then \
 		echo "PASS: REPL test 564 — HEX '-1 -1 <# #S #> TYPE' outputs 'FFFFFFFF' (8-char worst case)"; \
 	else \
@@ -4916,7 +4928,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- 'DECIMAL -1 -1 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- 'DECIMAL -1 -1 2 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '11111111111111111111111111111111 ok'; then \
 		echo "PASS: REPL test 565 — base 2 '-1 -1 <# #S #> TYPE' outputs 32 '1's (32-char worst case in 40-byte buffer)"; \
 	else \
@@ -4925,7 +4937,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Buffer overflow diagnostic: 41 HOLDs exceed 40-byte buffer, fires -17 THROW (Story 11.6).
-	@OUTPUT=$$(printf ': OV41 0 0 <# 41 0 DO 65 HOLD LOOP #> TYPE ;\r\nOV41\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': OV41 0 0 <# 41 0 DO 65 HOLD LOOP #> TYPE ;\r\nOV41\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -17: pictured numeric output string overflow' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 566 — 41 HOLDs trigger error -17, REPL recovers cleanly (Story 11.6)"; \
 	else \
@@ -4934,7 +4946,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Underflow recovery: one per primitive whose minimum depth > 0.
-	@OUTPUT=$$(printf '1 #\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 #\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 567 — '1 #' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4942,7 +4954,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 #S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 #S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 568 — '1 #S' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4950,7 +4962,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 #>\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 #>\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 569 — '1 #>' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4958,7 +4970,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HOLD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HOLD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 570 — 'HOLD' (DEPTH 0, needs 1) underflows and recovers"; \
 	else \
@@ -4966,7 +4978,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'SIGN\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'SIGN\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 571 — 'SIGN' (DEPTH 0, needs 1) underflows and recovers"; \
 	else \
@@ -4974,7 +4986,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 HOLDS\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 HOLDS\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 572 — '1 HOLDS' (DEPTH 1, needs 2) underflows and recovers"; \
 	else \
@@ -4987,7 +4999,7 @@ test-repl: $(TARGET)
 	@# (Story 10.8 rewrote U./. on pictured foundation, so the startup banner's U. now
 	@#  mutates HLD; the test's original 'cold-start init == <# reset' form no longer
 	@#  holds. The <#-idempotent invariant it was really checking still does.)
-	@OUTPUT=$$(printf '<# HLD @ <# HLD @ = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '<# HLD @ <# HLD @ = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-1[ ]+ok'; then \
 		echo "PASS: REPL test 573 — HLD user-variable readable; <# is idempotent"; \
 	else \
@@ -4996,7 +5008,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLDS u=0: empty-string is a no-op; pictured output unchanged.
-	@OUTPUT=$$(printf '99 0 <# #S HERE 0 HOLDS #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '99 0 <# #S HERE 0 HOLDS #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99 ok'; then \
 		echo "PASS: REPL test 574 — 'HERE 0 HOLDS' (u=0) is a no-op; output unchanged"; \
 	else \
@@ -5005,7 +5017,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# HOLDS u=1: single iteration writes one char then exits.
-	@OUTPUT=$$(printf ': PICT-X S" X" HOLDS ;\r\n99 0 <# #S PICT-X #> TYPE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': PICT-X S" X" HOLDS ;\r\n99 0 <# #S PICT-X #> TYPE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'X99 ok'; then \
 		echo "PASS: REPL test 575 — HOLDS (u=1) inserts single char before '99' → 'X99'"; \
 	else \
@@ -5014,7 +5026,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# digit_to_char A-Z mid-range: catches off-by-one in 'ADD A,"A"-10'.
-	@OUTPUT=$$(printf 'DECIMAL 10 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 10 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A ok'; then \
 		echo "PASS: REPL test 576 — base 36 digit 10 → 'A' (digit_to_char A-Z lower bound)"; \
 	else \
@@ -5022,7 +5034,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 19 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 19 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'J ok'; then \
 		echo "PASS: REPL test 577 — base 36 digit 19 → 'J' (digit_to_char A-Z mid-range)"; \
 	else \
@@ -5030,7 +5042,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'DECIMAL 25 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'DECIMAL 25 0 36 BASE ! <# #S #> TYPE DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'P ok'; then \
 		echo "PASS: REPL test 578 — base 36 digit 25 → 'P' (digit_to_char A-Z mid-range)"; \
 	else \
@@ -5040,7 +5052,7 @@ test-repl: $(TARGET)
 	fi
 	@# --- Story 10.8 number-output on pictured foundation (579..614) ---
 	@# `.` regression block (AC #1, #14a) — byte-for-byte parity with pre-10.8.
-	@OUTPUT=$$(printf '0 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
 		echo "PASS: REPL test 579 — '0 .' → '0 ' (free-field signed, base 10)"; \
 	else \
@@ -5048,7 +5060,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1234 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1234 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^1234  ok'; then \
 		echo "PASS: REPL test 580 — '1234 .' → '1234 ' (free-field signed, base 10)"; \
 	else \
@@ -5056,7 +5068,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-5  ok'; then \
 		echo "PASS: REPL test 581 — '-5 .' → '-5 ' (negative signed)"; \
 	else \
@@ -5064,7 +5076,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '32767 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '32767 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^32767  ok'; then \
 		echo "PASS: REPL test 582 — '32767 .' → '32767 ' (INT16_MAX)"; \
 	else \
@@ -5072,7 +5084,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-32768 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-32768  ok'; then \
 		echo "PASS: REPL test 583 — '-32768 .' → '-32768 ' (INT16_MIN single-cell corner)"; \
 	else \
@@ -5080,7 +5092,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '255 HEX . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '255 HEX . DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^FF  ok'; then \
 		echo "PASS: REPL test 584 — '255 HEX . DECIMAL' → 'FF ' (HEX discipline)"; \
 	else \
@@ -5089,7 +5101,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# `U.` regression block (AC #1, #14b).
-	@OUTPUT=$$(printf '0 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
 		echo "PASS: REPL test 585 — '0 U.' → '0 '"; \
 	else \
@@ -5097,7 +5109,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1234 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1234 U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^1234  ok'; then \
 		echo "PASS: REPL test 586 — '1234 U.' → '1234 '"; \
 	else \
@@ -5106,7 +5118,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# U. with 65535 must print '65535 ' — if E10-D1 SWAP order is wrong it becomes '4294901760 '.
-	@OUTPUT=$$(printf '65535 U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '65535 U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^65535  ok'; then \
 		echo "PASS: REPL test 587 — '65535 U.' → '65535 ' (UINT16_MAX; E10-D1 SWAP order sanity)"; \
 	else \
@@ -5114,7 +5126,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '65535 HEX U. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '65535 HEX U. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^FFFF  ok'; then \
 		echo "PASS: REPL test 588 — '65535 HEX U. DECIMAL' → 'FFFF '"; \
 	else \
@@ -5123,7 +5135,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# `.R` regression block incl. no-truncation (AC #3, #14c).
-	@OUTPUT=$$(printf '42 10 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '42 10 .R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^        42 ok'; then \
 		echo "PASS: REPL test 589 — '42 10 .R' → 8 spaces + '42' (right-aligned)"; \
 	else \
@@ -5131,7 +5143,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-5 10 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-5 10 .R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^        -5 ok'; then \
 		echo "PASS: REPL test 590 — '-5 10 .R' → 8 spaces + '-5'"; \
 	else \
@@ -5140,7 +5152,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# .R no-truncation per §6.2.0210: when u > +n, emit all digits without leading pad.
-	@OUTPUT=$$(printf '1234 3 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1234 3 .R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^1234 ok'; then \
 		echo "PASS: REPL test 591 — '1234 3 .R' → '1234' no-truncation (AC #3, §6.2.0210)"; \
 	else \
@@ -5148,7 +5160,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 .R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0 ok'; then \
 		echo "PASS: REPL test 592 — '0 0 .R' → '0' (zero width, single digit)"; \
 	else \
@@ -5157,7 +5169,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# `D.` block incl. INT_MIN corner (AC #6, #14d, #15).
-	@OUTPUT=$$(printf '0 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
 		echo "PASS: REPL test 593 — '0 0 D.' → '0 '"; \
 	else \
@@ -5166,7 +5178,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Worst-case signed double: -1 -1 represents signed -1 (d = $FFFFFFFF). SIGN must fire on hi.
-	@OUTPUT=$$(printf -- '-1 -1 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1  ok'; then \
 		echo "PASS: REPL test 594 — '-1 -1 D.' → '-1 ' (E10-D1 high-cell-drives-SIGN)"; \
 	else \
@@ -5175,7 +5187,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# hi=0, lo=-1 → unsigned double = 65535. Catches E10-D1 confusion — hi NOT on TOS.
-	@OUTPUT=$$(printf -- '-1 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^65535  ok'; then \
 		echo "PASS: REPL test 595 — '0 -1 D.' → '65535 ' (hi=0, lo=-1; low-on-TOS sanity)"; \
 	else \
@@ -5183,7 +5195,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 0 HEX D. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 0 HEX D. DECIMAL\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^FFFF  ok'; then \
 		echo "PASS: REPL test 596 — '0 -1 HEX D. DECIMAL' → 'FFFF '"; \
 	else \
@@ -5192,7 +5204,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# INT_MIN corner (AC #15): double $$80000000 = hi=32768 lo=0; DABS leaves it unchanged, SIGN still fires on hi.
-	@OUTPUT=$$(printf '0 32768 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 32768 D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-2147483648  ok'; then \
 		echo "PASS: REPL test 597 — '32768 0 D.' → '-2147483648 ' (INT_MIN; DABS(\$$80000000) fixed-point)"; \
 	else \
@@ -5201,7 +5213,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# `U.R` block (AC #14e).
-	@OUTPUT=$$(printf '42 10 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '42 10 U.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^        42 ok'; then \
 		echo "PASS: REPL test 598 — '42 10 U.R' → 8 spaces + '42'"; \
 	else \
@@ -5209,7 +5221,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '65535 10 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '65535 10 U.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^     65535 ok'; then \
 		echo "PASS: REPL test 599 — '65535 10 U.R' → 5 spaces + '65535' (E10-D1 sanity)"; \
 	else \
@@ -5218,7 +5230,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# `D.R` block (AC #14f).
-	@OUTPUT=$$(printf '0 0 10 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 10 D.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^         0 ok'; then \
 		echo "PASS: REPL test 600 — '0 0 10 D.R' → 9 spaces + '0'"; \
 	else \
@@ -5226,7 +5238,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 -1 10 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 10 D.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^        -1 ok'; then \
 		echo "PASS: REPL test 601 — '-1 -1 10 D.R' → 8 spaces + '-1'"; \
 	else \
@@ -5235,7 +5247,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D.R no-truncation edge: +n=0, single-digit string.
-	@OUTPUT=$$(printf -- '-1 -1 0 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 -1 0 D.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 ok'; then \
 		echo "PASS: REPL test 602 — '-1 -1 0 D.R' → '-1' no-truncation"; \
 	else \
@@ -5244,7 +5256,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Pictured-path explicit (AC #14g) — proves `.`'s factoring reaches pictured output.
-	@OUTPUT=$$(printf ': DOT-VIA-PICT S>D OVER >R DABS <# #S R> SIGN #> TYPE SPACE ;\r\n1234 DOT-VIA-PICT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': DOT-VIA-PICT S>D OVER >R DABS <# #S R> SIGN #> TYPE SPACE ;\r\n1234 DOT-VIA-PICT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^1234  ok'; then \
 		echo "PASS: REPL test 603 — DOT-VIA-PICT (user pictured recipe) yields byte-identical '1234 '"; \
 	else \
@@ -5253,7 +5265,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Early-binding HOLD-redefinition (AC #8, #14h).
-	@OUTPUT=$$(printf ': HOLD DROP ;\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': HOLD DROP ;\r\n42 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^42  ok'; then \
 		echo "PASS: REPL test 604 — ': HOLD DROP ; 42 .' → '42 ' (early binding; user HOLD redef ignored)"; \
 	else \
@@ -5262,7 +5274,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# .S preservation smoke (AC #7, #14i) — u_to_str / num_buf / emit_unsigned kept alive.
-	@OUTPUT=$$(printf '1 2 3 .S\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 3 .S\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '<3> 1 2 3  ok'; then \
 		echo "PASS: REPL test 605 — '1 2 3 .S' → '<3> 1 2 3 ' (.S preserved; helpers kept)"; \
 	else \
@@ -5271,7 +5283,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Underflow-parity block (AC #9, #14j) — factor chain guards trip before pictured state mutates.
-	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 606 — '.' (DEPTH 0) underflows and REPL recovers"; \
 	else \
@@ -5279,7 +5291,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'U.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'U.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 607 — 'U.' (DEPTH 0) underflows and REPL recovers"; \
 	else \
@@ -5287,7 +5299,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 608 — 'D.' (DEPTH 0, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5295,7 +5307,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 .R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 609 — '1 .R' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5303,7 +5315,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 U.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 U.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 610 — '1 U.R' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5311,7 +5323,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 1 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 1 D.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 611 — '1 1 D.R' (DEPTH 2, needs 3) underflows and REPL recovers"; \
 	else \
@@ -5321,7 +5333,7 @@ test-repl: $(TARGET)
 	fi
 	@# Review follow-ups: D.R × INT_MIN, D. typical positive, .R negative-width.
 	@# D.R INT_MIN corner (width=15): exercises DABS($$80000000) + SIGN + width-arith together.
-	@OUTPUT=$$(printf '0 32768 15 D.R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 32768 15 D.R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^    -2147483648 ok'; then \
 		echo "PASS: REPL test 612 — '32768 0 15 D.R' → 4 spaces + '-2147483648' (INT_MIN × right-align)"; \
 	else \
@@ -5330,7 +5342,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# D. typical positive value — complements the edge-heavy 593..597 block.
-	@OUTPUT=$$(printf '12345 0 D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '12345 0 D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^12345  ok'; then \
 		echo "PASS: REPL test 613 — '0 12345 D.' → '12345 ' (typical positive double)"; \
 	else \
@@ -5340,7 +5352,7 @@ test-repl: $(TARGET)
 	fi
 	@# .R with negative width: DPANS94 specifies +n; implementation no-ops via SPACES(-n),
 	@# emitting digits with no padding and no truncation. Sanity gate on unspecified input.
-	@OUTPUT=$$(printf -- '42 -5 .R\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '42 -5 .R\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^42 ok'; then \
 		echo "PASS: REPL test 614 — '42 -5 .R' → '42' (negative width: SPACES no-ops, no truncation)"; \
 	else \
@@ -5351,7 +5363,7 @@ test-repl: $(TARGET)
 	@# --- Story 10.9 remaining Core gap words (615..650) — DPANS94 §6.1.{0100,0110,1345,1360} ---
 	@# `*/` block: signed pair, negative input, trunc-toward-zero, and the canonical
 	@# 32767×32767/32767=32767 overflow-trap (would be 0 if implementation used single-cell *).
-	@OUTPUT=$$(printf '10 20 5 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 20 5 */ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^40  ok'; then \
 		echo "PASS: REPL test 615 — '10 20 5 */' → 40 (canonical signed)"; \
 	else \
@@ -5359,7 +5371,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-10 20 5 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-10 20 5 */ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-40  ok'; then \
 		echo "PASS: REPL test 616 — '-10 20 5 */' → -40 (negative input, signed)"; \
 	else \
@@ -5367,7 +5379,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '7 3 2 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '7 3 2 */ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^10  ok'; then \
 		echo "PASS: REPL test 617 — '7 3 2 */' → 10 (21/2 truncated toward zero)"; \
 	else \
@@ -5377,7 +5389,7 @@ test-repl: $(TARGET)
 	fi
 	@# Double-intermediate overflow trap: 32767*32767 = 1073676289 (32-bit), /32767 = 32767.
 	@# Naive single-cell `*` would give 32767*32767 mod 65536 = 1, then 1/32767 = 0.
-	@OUTPUT=$$(printf '32767 32767 32767 */ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '32767 32767 32767 */ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^32767  ok'; then \
 		echo "PASS: REPL test 618 — '32767 32767 32767 */' → 32767 (double-intermediate overflow trap)"; \
 	else \
@@ -5387,7 +5399,7 @@ test-repl: $(TARGET)
 	fi
 	@# `*/MOD` block: ( n1 n2 n3 -- rem quot ) with quot on TOS. Probe with `. .` →
 	@# prints quot then rem (TOS-first).
-	@OUTPUT=$$(printf '10 20 6 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '10 20 6 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^33 2  ok'; then \
 		echo "PASS: REPL test 619 — '10 20 6 */MOD' → ( 2 33 ) — rem 2, quot 33"; \
 	else \
@@ -5395,7 +5407,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '17 3 5 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '17 3 5 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^10 1  ok'; then \
 		echo "PASS: REPL test 620 — '17 3 5 */MOD' → ( 1 10 ) — rem 1, quot 10"; \
 	else \
@@ -5405,7 +5417,7 @@ test-repl: $(TARGET)
 	fi
 	@# Symmetric-remainder sign trap: -17*3/5 = -51/5; symmetric (truncated toward zero)
 	@# gives quot=-10, rem=-1 (rem sign matches dividend). Floored would give 2,-11 — wrong.
-	@OUTPUT=$$(printf -- '-17 3 5 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-17 3 5 */MOD . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-10 -1  ok'; then \
 		echo "PASS: REPL test 621 — '-17 3 5 */MOD' → ( -1 -10 ) — symmetric remainder sign = dividend"; \
 	else \
@@ -5414,7 +5426,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# `EVALUATE` block: simplest, multi-word, TIB restoration, nested via colon, empty string.
-	@OUTPUT=$$(printf 'S" 10 20 +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" 10 20 +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^30  ok'; then \
 		echo "PASS: REPL test 622 — 'S\" 10 20 +\" EVALUATE' → 30"; \
 	else \
@@ -5422,7 +5434,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" 2 3 * 4 +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" 2 3 * 4 +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^10  ok'; then \
 		echo "PASS: REPL test 623 — 'S\" 2 3 * 4 +\" EVALUATE' → 10 (operator precedence inside string)"; \
 	else \
@@ -5432,7 +5444,7 @@ test-repl: $(TARGET)
 	fi
 	@# TIB-restoration smoke: post-EVALUATE, the rest of the line ('7 + .') must parse
 	@# from the original REPL TIB, not from the evaluated string. 99 + 7 = 106.
-	@OUTPUT=$$(printf 'S" 99" EVALUATE 7 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" 99" EVALUATE 7 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^106  ok'; then \
 		echo "PASS: REPL test 624 — 'S\" 99\" EVALUATE 7 + .' → 106 (TIB restored after EVALUATE)"; \
 	else \
@@ -5442,7 +5454,7 @@ test-repl: $(TARGET)
 	fi
 	@# Nested EVALUATE via colon definition (antforth lacks Forth-2014 S\"). Exercises
 	@# rstack save/restore under LIFO discipline.
-	@OUTPUT=$$(printf ': __E910I S" 32" EVALUATE ;\r\nS" 10 __E910I +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': __E910I S" 32" EVALUATE ;\r\nS" 10 __E910I +" EVALUATE .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^42  ok'; then \
 		echo "PASS: REPL test 625 — nested EVALUATE → 42 (10 + 32; rstack LIFO save/restore)"; \
 	else \
@@ -5451,7 +5463,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Empty string: INTERPRET's WORD/C@ loop returns via .interp_done without parse error.
-	@OUTPUT=$$(printf 'S" " EVALUATE 99 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" " EVALUATE 99 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^99  ok'; then \
 		echo "PASS: REPL test 626 — 'S\" \" EVALUATE 99 .' → 99 (empty string completes cleanly)"; \
 	else \
@@ -5462,7 +5474,7 @@ test-repl: $(TARGET)
 	@# `ENVIRONMENT?` block: 14 standard keys per DPANS94 §3.2.6, plus unknown-key
 	@# (returns single-cell false) and case-sensitivity (lowercase 'core' → false).
 	@# Probe `. .` prints TOS-first → "-1 VALUE" (true flag, then value).
-	@OUTPUT=$$(printf 'S" /COUNTED-STRING" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" /COUNTED-STRING" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 255  ok'; then \
 		echo "PASS: REPL test 627 — 'S\" /COUNTED-STRING\" ENVIRONMENT?' → ( 255 -1 )"; \
 	else \
@@ -5470,7 +5482,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" /HOLD" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" /HOLD" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 40  ok'; then \
 		echo "PASS: REPL test 628 — 'S\" /HOLD\" ENVIRONMENT?' → ( 40 -1 ) — PIC_BUF_SIZE"; \
 	else \
@@ -5478,7 +5490,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" /PAD" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" /PAD" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 84  ok'; then \
 		echo "PASS: REPL test 629 — 'S\" /PAD\" ENVIRONMENT?' → ( 84 -1 ) — PAD_OFFSET"; \
 	else \
@@ -5486,7 +5498,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" ADDRESS-UNIT-BITS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" ADDRESS-UNIT-BITS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 8  ok'; then \
 		echo "PASS: REPL test 630 — 'S\" ADDRESS-UNIT-BITS\" ENVIRONMENT?' → ( 8 -1 )"; \
 	else \
@@ -5494,7 +5506,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" CORE" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" CORE" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 -1  ok'; then \
 		echo "PASS: REPL test 631 — 'S\" CORE\" ENVIRONMENT?' → ( true true ) — 133/133 §6.1 Core"; \
 	else \
@@ -5502,7 +5514,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" CORE-EXT" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" CORE-EXT" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 0  ok'; then \
 		echo "PASS: REPL test 632 — 'S\" CORE-EXT\" ENVIRONMENT?' → ( false true ) — partial §6.2"; \
 	else \
@@ -5510,7 +5522,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" FLOORED" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" FLOORED" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 0  ok'; then \
 		echo "PASS: REPL test 633 — 'S\" FLOORED\" ENVIRONMENT?' → ( false true ) — symmetric / not floored"; \
 	else \
@@ -5518,7 +5530,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" MAX-CHAR" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" MAX-CHAR" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 255  ok'; then \
 		echo "PASS: REPL test 634 — 'S\" MAX-CHAR\" ENVIRONMENT?' → ( 255 -1 )"; \
 	else \
@@ -5530,7 +5542,7 @@ test-repl: $(TARGET)
 	@# lo second, true newly on top). Story 13.0.1 flipped from low-on-TOS.
 	@# Probe '. . .' is TOS-first so it prints true, hi, lo → "-1 32767 -1" since
 	@# lo=$$FFFF=-1, hi=$$7FFF=32767, flag=$$FFFF=-1.
-	@OUTPUT=$$(printf 'S" MAX-D" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" MAX-D" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 32767 -1  ok'; then \
 		echo "PASS: REPL test 635 — 'S\" MAX-D\" ENVIRONMENT?' → ( -1 32767 -1 ) per §3.1.4.1 hi-on-TOS"; \
 	else \
@@ -5538,7 +5550,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" MAX-N" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" MAX-N" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 32767  ok'; then \
 		echo "PASS: REPL test 636 — 'S\" MAX-N\" ENVIRONMENT?' → ( 32767 -1 )"; \
 	else \
@@ -5546,7 +5558,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" MAX-U" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" MAX-U" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 -1  ok'; then \
 		echo "PASS: REPL test 637 — 'S\" MAX-U\" ENVIRONMENT?' → ( -1 -1 ) — 65535 unsigned shows as -1 signed"; \
 	else \
@@ -5554,7 +5566,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" MAX-UD" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" MAX-UD" ENVIRONMENT? . . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 -1 -1  ok'; then \
 		echo "PASS: REPL test 638 — 'S\" MAX-UD\" ENVIRONMENT?' → ( -1 -1 -1 ) — double 4294967295"; \
 	else \
@@ -5562,7 +5574,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" RETURN-STACK-CELLS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" RETURN-STACK-CELLS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 128  ok'; then \
 		echo "PASS: REPL test 639 — 'S\" RETURN-STACK-CELLS\" ENVIRONMENT?' → ( 128 -1 ) — RS_SIZE/2"; \
 	else \
@@ -5570,7 +5582,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'S" STACK-CELLS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" STACK-CELLS" ENVIRONMENT? . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^-1 128  ok'; then \
 		echo "PASS: REPL test 640 — 'S\" STACK-CELLS\" ENVIRONMENT?' → ( 128 -1 ) — PS_SIZE/2"; \
 	else \
@@ -5579,7 +5591,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Unknown key returns single-cell false (no i*x). Probe `.` → "0 ".
-	@OUTPUT=$$(printf 'S" XYZZY" ENVIRONMENT? .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" XYZZY" ENVIRONMENT? .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
 		echo "PASS: REPL test 641 — 'S\" XYZZY\" ENVIRONMENT?' → ( 0 ) — unknown key returns single-cell false"; \
 	else \
@@ -5588,7 +5600,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Case-sensitivity per DPANS94 §3.2.6: 'core' ≠ 'CORE'.
-	@OUTPUT=$$(printf 'S" core" ENVIRONMENT? .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" core" ENVIRONMENT? .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
 		echo "PASS: REPL test 642 — 'S\" core\" ENVIRONMENT?' → ( 0 ) — case-sensitive (lowercase not found)"; \
 	else \
@@ -5599,7 +5611,7 @@ test-repl: $(TARGET)
 	@# Underflow recovery (AC #10). All four words guard at entry; ABORT resets stacks
 	@# and REPL re-prompts. For */ and */MOD the chain via M*'s 2DUP guard provides
 	@# the effective 3-cell guard.
-	@OUTPUT=$$(printf '*/\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '*/\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 643 — '*/' (DEPTH 0, needs 3) underflows and REPL recovers"; \
 	else \
@@ -5607,7 +5619,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 */\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 */\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 644 — '1 2 */' (DEPTH 2, needs 3) underflows and REPL recovers"; \
 	else \
@@ -5615,7 +5627,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '*/MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '*/MOD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 645 — '*/MOD' (DEPTH 0, needs 3) underflows and REPL recovers"; \
 	else \
@@ -5623,7 +5635,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 */MOD\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 */MOD\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 646 — '1 2 */MOD' (DEPTH 2, needs 3) underflows and REPL recovers"; \
 	else \
@@ -5631,7 +5643,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'EVALUATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'EVALUATE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 647 — 'EVALUATE' (DEPTH 0, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5639,7 +5651,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 EVALUATE\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 EVALUATE\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 648 — '1 EVALUATE' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5647,7 +5659,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 649 — 'ENVIRONMENT?' (DEPTH 0, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5655,7 +5667,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 ENVIRONMENT?\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -4: stack underflow' && echo "$$OUTPUT" | grep -q 'ok'; then \
 		echo "PASS: REPL test 650 — '1 ENVIRONMENT?' (DEPTH 1, needs 2) underflows and REPL recovers"; \
 	else \
@@ -5668,7 +5680,7 @@ test-repl: $(TARGET)
 	@# UM/MOD raises -10 THROW for any zero divisor. Tests 651 / 652 (originally
 	@# Story 10.9 review follow-ups documenting the silent-garbage baseline) are
 	@# repurposed here to assert the post-migration uncaught-recovery diagnostic.
-	@OUTPUT=$$(printf '1 1 0 */\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 1 0 */\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*0  ok'; then \
 		echo "PASS: REPL test 651 — '1 1 0 */' raises -10 THROW (Story 11.4 UM/MOD guard); REPL recovers, post-recovery DEPTH=0"; \
 	else \
@@ -5676,7 +5688,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 1 0 */MOD\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 1 0 */MOD\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*0  ok'; then \
 		echo "PASS: REPL test 652 — '1 1 0 */MOD' raises -10 THROW (Story 11.4 UM/MOD guard); REPL recovers, post-recovery DEPTH=0"; \
 	else \
@@ -5689,7 +5701,7 @@ test-repl: $(TARGET)
 	@# preservation (AC #17), nested CATCH frames (AC #13), state-integrity
 	@# invariants (AC #15), empty-stack ABORT path (AC #3 / AC #18). THROW-side
 	@# tests land in Story 11.3.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "' NOOP CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "' NOOP CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 653 — \"' NOOP CATCH .\" returns success code 0"; \
 	else \
@@ -5697,7 +5709,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DUP-DROP DUP DROP ;" "5 ' DUP-DROP CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DUP-DROP DUP DROP ;" "5 ' DUP-DROP CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 5  ok'; then \
 		echo "PASS: REPL test 654 — \"5 ' DUP-DROP CATCH . .\" preserves NOS, returns 0"; \
 	else \
@@ -5705,7 +5717,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-42 42 ;" "' MAKE-42 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-42 42 ;" "' MAKE-42 CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 42  ok'; then \
 		echo "PASS: REPL test 655 — \"' MAKE-42 CATCH . .\" producing xt + success code"; \
 	else \
@@ -5713,7 +5725,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-1-2 1 2 ;" "' MAKE-1-2 CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-1-2 1 2 ;" "' MAKE-1-2 CATCH . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 2 1  ok'; then \
 		echo "PASS: REPL test 656 — \"' MAKE-1-2 CATCH . . .\" depth-2 producer + success code"; \
 	else \
@@ -5721,7 +5733,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DROP-IT DROP ;" "5 ' DROP-IT CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DROP-IT DROP ;" "5 ' DROP-IT CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 657 — \"5 ' DROP-IT CATCH .\" consuming xt + success code"; \
 	else \
@@ -5729,7 +5741,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": ADD-IT + ;" "1 2 ' ADD-IT CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": ADD-IT + ;" "1 2 ' ADD-IT CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 3  ok'; then \
 		echo "PASS: REPL test 658 — \"1 2 ' ADD-IT CATCH . .\" 2-cell consumer + 1 producer"; \
 	else \
@@ -5737,7 +5749,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' BL CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' BL CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 32  ok'; then \
 		echo "PASS: REPL test 659 — \"' BL CATCH . .\" DEFCODE xt (BL pushes 32)"; \
 	else \
@@ -5745,7 +5757,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": BL2 ['] BL EXECUTE ;" "' BL2 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": BL2 ['] BL EXECUTE ;" "' BL2 CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 32  ok'; then \
 		echo "PASS: REPL test 660 — \"' BL2 CATCH . .\" xt that internally calls EXECUTE"; \
 	else \
@@ -5753,7 +5765,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": A 1 ; : B A A + ;" "' B CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": A 1 ; : B A A + ;" "' B CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 2  ok'; then \
 		echo "PASS: REPL test 661 — \"' B CATCH . .\" DEFWORD that calls another DEFWORD"; \
 	else \
@@ -5761,7 +5773,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 ' DUP CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 ' DUP CATCH . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 1 1  ok'; then \
 		echo "PASS: REPL test 662 — \"1 ' DUP CATCH . . .\" DEFCODE xt with stack effect"; \
 	else \
@@ -5769,7 +5781,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 663 — 'CATCH-TOP @ .' is 0 at fresh REPL (no enclosing CATCH)"; \
 	else \
@@ -5777,7 +5789,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "' NOOP CATCH . CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "' NOOP CATCH . CATCH-TOP @ ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 0  ok'; then \
 		echo "PASS: REPL test 664 — CATCH-TOP restored to entry-time value (0) after CATCH normal return"; \
 	else \
@@ -5785,7 +5797,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-42 42 ;" "' MAKE-42 CATCH . . CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": MAKE-42 42 ;" "' MAKE-42 CATCH . . CATCH-TOP @ ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 42 0  ok'; then \
 		echo "PASS: REPL test 665 — CATCH-TOP restored to 0 after producing-xt CATCH"; \
 	else \
@@ -5793,7 +5805,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": INNER ['] BL CATCH ;" "' INNER CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": INNER ['] BL CATCH ;" "' INNER CATCH . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 0 32  ok'; then \
 		echo "PASS: REPL test 666 — nested CATCH (both normal-return) works correctly"; \
 	else \
@@ -5801,7 +5813,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": PROBE CATCH-TOP @ ;" "' PROBE CATCH . 0= 0= . CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": PROBE CATCH-TOP @ ;" "' PROBE CATCH . 0= 0= . CATCH-TOP @ ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 -1 0  ok'; then \
 		echo "PASS: REPL test 667 — CATCH-TOP non-zero inside CATCH, restored to 0 after"; \
 	else \
@@ -5809,7 +5821,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HEX ' NOOP CATCH DROP BASE @ DECIMAL ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HEX ' NOOP CATCH DROP BASE @ DECIMAL ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\. 16  ok'; then \
 		echo "PASS: REPL test 668 — BASE preserved across CATCH normal return (AC #15a)"; \
 	else \
@@ -5817,7 +5829,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "STATE @ ' NOOP CATCH DROP STATE @ = ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "STATE @ ' NOOP CATCH DROP STATE @ = ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 669 — STATE preserved across CATCH normal return (AC #15b)"; \
 	else \
@@ -5825,7 +5837,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HERE ' NOOP CATCH DROP HERE = ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HERE ' NOOP CATCH DROP HERE = ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 670 — HERE preserved across CATCH normal return (AC #15c)"; \
 	else \
@@ -5833,7 +5845,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "1 2 3 DEPTH . ' NOOP CATCH DROP DEPTH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "1 2 3 DEPTH . ' NOOP CATCH DROP DEPTH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '3 3  ok'; then \
 		echo "PASS: REPL test 671 — DEPTH invariant across CATCH normal return (AC #15d)"; \
 	else \
@@ -5841,7 +5853,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CATCH\r\nCATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CATCH\r\nCATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.* ok.*CATCH-TOP @ \. 0  ok'; then \
 		echo "PASS: REPL test 672 — empty-stack 'CATCH' aborts and CATCH-TOP is reset to 0 on recovery (AC #3 / AC #17 / AC #18)"; \
 	else \
@@ -5849,7 +5861,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": L1 ['] BL CATCH ;" ": L2 ['] L1 CATCH ;" "' L2 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": L1 ['] BL CATCH ;" ": L2 ['] L1 CATCH ;" "' L2 CATCH . . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 0 0 32  ok'; then \
 		echo "PASS: REPL test 673 — 3-level nested CATCH exercises non-zero prev-of-prev chain link (AC #13)"; \
 	else \
@@ -5857,7 +5869,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '1 2 0 THROW . .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 0 THROW . .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '2 1  ok'; then \
 		echo "PASS: REPL test 674 — Story 11.3: THROW 0 is a no-op, only consumes the zero (AC #3)"; \
 	else \
@@ -5865,7 +5877,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '0 0 THROW .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '0 0 THROW .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '0 0 THROW \. 0  ok'; then \
 		echo "PASS: REPL test 675 — Story 11.3: THROW 0 with BC=0 from below is a no-op (AC #3)"; \
 	else \
@@ -5873,7 +5885,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "' T1 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "' T1 CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42  ok'; then \
 		echo "PASS: REPL test 676 — Story 11.3: caught THROW round-trip with user code 42 (AC #1, AC #2)"; \
 	else \
@@ -5881,7 +5893,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T2 -13 THROW ;" "' T2 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T2 -13 THROW ;" "' T2 CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-13  ok'; then \
 		echo "PASS: REPL test 677 — Story 11.3: caught THROW round-trip with std code -13 (AC #1)"; \
 	else \
@@ -5889,7 +5901,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "1 2 3 ' T1 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "1 2 3 ' T1 CATCH . . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 3 2 1  ok'; then \
 		echo "PASS: REPL test 678 — Story 11.3: i*x preservation across caught THROW (AC #2)"; \
 	else \
@@ -5897,7 +5909,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "1 2 3 4 ' T1 CATCH DEPTH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T1 42 THROW ;" "1 2 3 4 ' T1 CATCH DEPTH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '5  ok'; then \
 		echo "PASS: REPL test 679 — Story 11.3: post-THROW DEPTH = pre-CATCH-DEPTH + 1 (AC #8)"; \
 	else \
@@ -5905,7 +5917,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T3 -5 THROW ;" ": N3 ['] T3 CATCH ;" "' N3 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T3 -5 THROW ;" ": N3 ['] T3 CATCH ;" "' N3 CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '0 -5  ok'; then \
 		echo "PASS: REPL test 680 — Story 11.3: nested CATCH, inner catches; outer normal-return (AC #1)"; \
 	else \
@@ -5913,7 +5925,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T4 -5 THROW ;" ": N4 T4 ;" "' N4 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T4 -5 THROW ;" ": N4 T4 ;" "' N4 CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
 		echo "PASS: REPL test 681 — Story 11.3: nested CATCH, outer catches when inner has no CATCH (AC #1)"; \
 	else \
@@ -5921,7 +5933,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T5 -5 THROW ;" ": M5 T5 ;" ": N5 M5 ;" "' N5 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T5 -5 THROW ;" ": M5 T5 ;" ": N5 M5 ;" "' N5 CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
 		echo "PASS: REPL test 682 — Story 11.3: 3-deep nesting, only outermost CATCH catches (AC #1)"; \
 	else \
@@ -5929,7 +5941,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T6 -5 THROW ;" ": M6 ['] T6 CATCH DROP -7 THROW ;" "' M6 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T6 -5 THROW ;" ": M6 ['] T6 CATCH DROP -7 THROW ;" "' M6 CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-7  ok'; then \
 		echo "PASS: REPL test 683 — Story 11.3: inner catches and re-THROWs a different code (AC #1)"; \
 	else \
@@ -5937,7 +5949,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T7 -5 THROW ;" ": M7 ['] T7 CATCH ;" ": N7 M7 ;" "' N7 CATCH . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T7 -5 THROW ;" ": M7 ['] T7 CATCH ;" ": N7 M7 ;" "' N7 CATCH . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '0 -5  ok'; then \
 		echo "PASS: REPL test 684 — Story 11.3: 3-deep nesting, middle CATCH catches; outer normal-return (AC #1)"; \
 	else \
@@ -5945,7 +5957,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '42 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '42 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error 42  '; then \
 		echo "PASS: REPL test 685 — Story 11.3: uncaught THROW with user code prints 'error <N>' (no description) (AC #4, AC #5)"; \
 	else \
@@ -5953,7 +5965,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-13 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-13 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word'; then \
 		echo "PASS: REPL test 686 — Story 11.3: uncaught THROW with std code -13 prints diagnostic + description (AC #4, AC #5)"; \
 	else \
@@ -5961,7 +5973,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-1 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-1 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT'; then \
 		echo "PASS: REPL test 687 — Story 11.3: uncaught -1 THROW prints 'error -1: ABORT' (Story 11.7 retargeted ABORT itself to -1 THROW) (AC #5)"; \
 	else \
@@ -5969,7 +5981,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": HELLO 99 ;" "-13 THROW" "HELLO ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": HELLO 99 ;" "-13 THROW" "HELLO ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 688 — Story 11.3: dictionary intact across uncaught THROW + REPL recovery (AC #4)"; \
 	else \
@@ -5977,7 +5989,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "HEX -1 THROW" "BASE @ DECIMAL ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "HEX -1 THROW" "BASE @ DECIMAL ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT.*16  ok'; then \
 		echo "PASS: REPL test 689 — Story 11.3: BASE preserved across uncaught THROW; diagnostic prints in decimal (AC #4, AC #13)"; \
 	else \
@@ -5985,7 +5997,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n" "CODE BAD" "-13 THROW" "CODE GOOD" "NEXT, END-CODE" "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n" "CODE BAD" "-13 THROW" "CODE GOOD" "NEXT, END-CODE" "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.* ok.* ok.* ok'; then \
 		echo "PASS: REPL test 690 — Story 11.3: asm_mode cleaned by uncaught THROW; subsequent CODE..END-CODE compiles (AC #4)"; \
 	else \
@@ -5993,7 +6005,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "-13 THROW" "CATCH-TOP @ ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "-13 THROW" "CATCH-TOP @ ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*CATCH-TOP @ \. 0  ok'; then \
 		echo "PASS: REPL test 691 — Story 11.3: CATCH-TOP zeroed by QUIT after uncaught THROW (CCD-1 chain reset)"; \
 	else \
@@ -6001,7 +6013,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T8 -32768 THROW ;" "' T8 CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T8 -32768 THROW ;" "' T8 CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-32768  ok'; then \
 		echo "PASS: REPL test 692 — Story 11.3 (review F2): caught -32768 (most-negative 16-bit) round-trips correctly"; \
 	else \
@@ -6009,7 +6021,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf -- '-32768 THROW\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf -- '-32768 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -32768  '; then \
 		echo "PASS: REPL test 693 — Story 11.3 (review F2): uncaught -32768 prints 'error -32768' via unsigned-aware print (no description suffix — code is not in throw_desc_table)"; \
 	else \
@@ -6017,7 +6029,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DT 10 0 DO -5 THROW LOOP ;" "' DT CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": DT 10 0 DO -5 THROW LOOP ;" "' DT CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
 		echo "PASS: REPL test 694 — Story 11.3 (review F3): THROW from inside DO-LOOP body; snap-back skips DO frame (E11-D2)"; \
 	else \
@@ -6025,7 +6037,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T9 -5 THROW ;" "' T9 ['] EXECUTE CATCH ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T9 -5 THROW ;" "' T9 ['] EXECUTE CATCH ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
 		echo "PASS: REPL test 695 — Story 11.3 (review F3): THROW mid-EXECUTE; snap-back skips EXECUTE return-addr frame"; \
 	else \
@@ -6038,7 +6050,7 @@ test-repl: $(TARGET)
 	@# → w_THROW_cf.kernel_entry). Section 2: divisor zero caught (-10
 	@# THROW via udivmod / UM/MOD entry guards). Source spec:
 	@# tests/throw_migration_tests.fth.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DROP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DROP CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 696 — Story 11.4: caught DROP underflow returns -4 (AC #1, AC #9)"; \
 	else \
@@ -6046,7 +6058,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' + CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' + CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 697 — Story 11.4: caught + underflow (depth-2 guard) returns -4 (AC #1, AC #9)"; \
 	else \
@@ -6054,7 +6066,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' @ CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' @ CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 698 — Story 11.4: caught @ underflow (memory primitive) returns -4 (AC #1, AC #9)"; \
 	else \
@@ -6062,7 +6074,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ! CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ! CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 699 — Story 11.4: caught ! underflow (depth-2 guard) returns -4 (AC #1, AC #9)"; \
 	else \
@@ -6070,7 +6082,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ROT CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ROT CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 700 — Story 11.4: caught ROT underflow (depth-3 guard) returns -4 (AC #1, AC #9)"; \
 	else \
@@ -6078,7 +6090,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' 2SWAP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' 2SWAP CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 701 — Story 11.4: caught 2SWAP underflow (depth-4 guard) returns -4 (AC #1, AC #9)"; \
 	else \
@@ -6086,7 +6098,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "5 ' DROP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "5 ' DROP CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0  ok'; then \
 		echo "PASS: REPL test 702 — Story 11.4: positive control — DROP at depth-1 succeeds; CATCH returns 0 (AC #9)"; \
 	else \
@@ -6094,7 +6106,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DROP CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DROP CATCH DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^1  ok'; then \
 		echo "PASS: REPL test 703 — Story 11.4: post-caught-underflow DEPTH = 1 (THROW code is the lone TOS)"; \
 	else \
@@ -6102,7 +6114,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TDOL 2 0 DO DROP LOOP ;' "1 ' TDOL CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TDOL 2 0 DO DROP LOOP ;' "1 ' TDOL CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-4  ok'; then \
 		echo "PASS: REPL test 704 — Story 11.4 (review F3 analog): underflow inside DO-LOOP body caught; DO frame snap-back works (AC #18)"; \
 	else \
@@ -6110,7 +6122,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T1 1 0 / ;' "' T1 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T1 1 0 / ;' "' T1 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 705 — Story 11.4: caught '/' divisor-zero returns -10 (AC #4, AC #9)"; \
 	else \
@@ -6118,7 +6130,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T2 1 0 MOD ;' "' T2 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T2 1 0 MOD ;' "' T2 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 706 — Story 11.4: caught MOD divisor-zero returns -10 (AC #4, AC #9)"; \
 	else \
@@ -6126,7 +6138,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T3 1 0 /MOD ;' "' T3 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T3 1 0 /MOD ;' "' T3 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 707 — Story 11.4: caught /MOD divisor-zero returns -10 (AC #4, AC #9)"; \
 	else \
@@ -6134,7 +6146,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T4 1 1 0 */ ;' "' T4 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T4 1 1 0 */ ;' "' T4 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 708 — Story 11.4: caught '*/' divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
 	else \
@@ -6142,7 +6154,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T5 1 1 0 */MOD ;' "' T5 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T5 1 1 0 */MOD ;' "' T5 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 709 — Story 11.4: caught '*/MOD' divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
 	else \
@@ -6150,7 +6162,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': P1 100 5 / ;' "' P1 CATCH . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': P1 100 5 / ;' "' P1 CATCH . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0 20  ok'; then \
 		echo "PASS: REPL test 710 — Story 11.4: positive control — '100 5 /' inside CATCH returns success + correct quotient (AC #9)"; \
 	else \
@@ -6158,7 +6170,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T6 1 0 0 UM/MOD ;' "' T6 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T6 1 0 0 UM/MOD ;' "' T6 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 711 — Story 11.4: caught UM/MOD divisor-zero returns -10 (AC #5, AC #9)"; \
 	else \
@@ -6166,7 +6178,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T7 1 0 0 SM/REM ;' "' T7 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T7 1 0 0 SM/REM ;' "' T7 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 712 — Story 11.4: caught SM/REM divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
 	else \
@@ -6174,7 +6186,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T8 1 0 0 FM/MOD ;' "' T8 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T8 1 0 0 FM/MOD ;' "' T8 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-10  ok'; then \
 		echo "PASS: REPL test 713 — Story 11.4: caught FM/MOD divisor-zero (UM/MOD funnel) returns -10 (AC #5, AC #9)"; \
 	else \
@@ -6182,7 +6194,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TD 1 0 / ;' "' TD CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TD 1 0 / ;' "' TD CATCH DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^1  ok'; then \
 		echo "PASS: REPL test 714 — Story 11.4: post-caught-divisor-zero DEPTH = 1 (THROW code is the lone TOS)"; \
 	else \
@@ -6190,7 +6202,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': PMN 1 -32768 / ;' "' PMN CATCH . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': PMN 1 -32768 / ;' "' PMN CATCH . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '^0 0  ok'; then \
 		echo "PASS: REPL test 715 — Story 11.4 (review F2 watch): most-negative divisor 0x8000 does NOT false-trip the divisor-zero guard"; \
 	else \
@@ -6198,7 +6210,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DROP' '42 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DROP' '42 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*42  ok'; then \
 		echo "PASS: REPL test 716 — Story 11.4: uncaught DROP underflow prints diagnostic + REPL recovers cleanly (AC #9, AC #20)"; \
 	else \
@@ -6206,7 +6218,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '1 0 /' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '1 0 /' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*99  ok'; then \
 		echo "PASS: REPL test 717 — Story 11.4: uncaught '1 0 /' divisor-zero prints diagnostic + REPL recovers cleanly (AC #9, AC #20)"; \
 	else \
@@ -6214,7 +6226,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 ' + CATCH . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 ' + CATCH . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-4 1  ok'; then \
 		echo "PASS: REPL test 718 — Story 11.4.1: smallest reproducer (1 ' + CATCH . .) restores i*x's TOS-cell (AC #1)"; \
 	else \
@@ -6222,7 +6234,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' 2OVER CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' 2OVER CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-4 3 2 1  ok'; then \
 		echo "PASS: REPL test 719 — Story 11.4.1: 3 i*x cells preserved underneath caught -4 THROW (AC #2 corrected; uses 2OVER instead of DROP)"; \
 	else \
@@ -6230,7 +6242,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' 2OVER CATCH . DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' 2OVER CATCH . DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-4 3  ok'; then \
 		echo "PASS: REPL test 720 — Story 11.4.1: DEPTH=3 after popping THROW code -4 (AC #3 corrected; review F6 — combined value+depth assertion)"; \
 	else \
@@ -6238,7 +6250,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 ' 2OVER CATCH . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 ' 2OVER CATCH . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-4 2 1  ok'; then \
 		echo "PASS: REPL test 721 — Story 11.4.1: 2 i*x cells preserved underneath caught -4 THROW (2OVER needs 4 cells; depth=2 underflows via check_underflow_4)"; \
 	else \
@@ -6246,7 +6258,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T241 1 0 / ;' "5 6 7 ' T241 CATCH . DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T241 1 0 / ;' "5 6 7 ' T241 CATCH . DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-10 3  ok'; then \
 		echo "PASS: REPL test 722 — Story 11.4.1: DEPTH=3 after popping THROW code -10 (AC #4; review F6 — combined value+depth assertion)"; \
 	else \
@@ -6254,7 +6266,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T241 1 0 / ;' "5 6 7 ' T241 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T241 1 0 / ;' "5 6 7 ' T241 CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-10 7 6 5  ok'; then \
 		echo "PASS: REPL test 723 — Story 11.4.1: 3 i*x cells preserved underneath caught -10 THROW (divisor zero, AC #4)"; \
 	else \
@@ -6262,7 +6274,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T84 -5 THROW ;" ": N84 ['] T84 CATCH ;" "1 2 ' N84 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": T84 -5 THROW ;" ": N84 ['] T84 CATCH ;" "1 2 ' N84 CATCH . . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '0 -5 2 1  ok'; then \
 		echo "PASS: REPL test 724 — Story 11.4.1: nested CATCH preserves outer i*x = (1,2) when inner catches -5 (AC #12)"; \
 	else \
@@ -6270,7 +6282,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": TI3 -5 THROW ;" ": MI3 ['] TI3 CATCH DROP -7 THROW ;" "11 22 ' MI3 CATCH . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": TI3 -5 THROW ;" ": MI3 ['] TI3 CATCH DROP -7 THROW ;" "11 22 ' MI3 CATCH . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-7 22 11  ok'; then \
 		echo "PASS: REPL test 725 — Story 11.4.1 (review F4): 3-level nested CATCH with inner-rethrow preserves outer i*x = (11,22)"; \
 	else \
@@ -6278,7 +6290,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": TDOL3 5 0 DO 2OVER LOOP ;" "1 2 3 ' TDOL3 CATCH . . . ." "BYE" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": TDOL3 5 0 DO 2OVER LOOP ;" "1 2 3 ' TDOL3 CATCH . . . ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-4 3 2 1  ok'; then \
 		echo "PASS: REPL test 726 — Story 11.4.1 (review F2): DO-LOOP-frame snap-back + i*x preservation across underflow inside DO body"; \
 	else \
@@ -6286,7 +6298,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ; CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ; CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
 		echo "PASS: REPL test 727 — Story 11.5: ' ; CATCH . returns -14 (compile-only guard caught from kernel-internal entry; AC #6, #15)"; \
 	else \
@@ -6294,7 +6306,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DOES> CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DOES> CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
 		echo "PASS: REPL test 728 — Story 11.5: ' DOES> CATCH . returns -14 (compile-only guard caught; AC #6, #15)"; \
 	else \
@@ -6302,7 +6314,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ?COMP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ?COMP CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
 		echo "PASS: REPL test 729 — Story 11.5: ' ?COMP CATCH . returns -14 (compile-only guard caught; AC #6, #15)"; \
 	else \
@@ -6310,7 +6322,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' ; CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' ; CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-14 3 2 1  ok'; then \
 		echo "PASS: REPL test 730 — Story 11.5: i*x preservation across kernel-internal -14 raise (1 2 3 ' ; CATCH; AC #15)"; \
 	else \
@@ -6318,7 +6330,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T3DOL 2 0 DO ?COMP LOOP ;" "' T3DOL CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": T3DOL 2 0 DO ?COMP LOOP ;" "' T3DOL CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '\-14  ok'; then \
 		echo "PASS: REPL test 731 — Story 11.5: ?COMP from inside DO-LOOP body raises -14, snap-back skips DO frame on IX (review F3 analog; AC #20d)"; \
 	else \
@@ -6326,7 +6338,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DUP CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DUP CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '0  ok'; then \
 		echo "PASS: REPL test 732 — Story 11.5 positive control: ' DUP CATCH . returns 0 (CATCH framework still works; AC #15)"; \
 	else \
@@ -6334,7 +6346,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "5 CONSTANT BAR BAR ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "5 CONSTANT BAR BAR ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '5  ok'; then \
 		echo "PASS: REPL test 733 — Story 11.5 positive control: CONSTANT with real name defines callable word (success path of the migrated CONSTANT site; AC #15)"; \
 	else \
@@ -6342,7 +6354,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ; CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ; CATCH DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qE '1  ok'; then \
 		echo "PASS: REPL test 734 — Story 11.5: DEPTH=1 after popping THROW code -14 from caught compile-only (review F6 analog)"; \
 	else \
@@ -6350,7 +6362,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "' UNDEFINED" '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "' UNDEFINED" '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 735 — Story 11.5: uncaught ' UNDEFINED prints error -13 + REPL recovers cleanly (TICK at REPL; AC #19)"; \
 	else \
@@ -6358,7 +6370,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'UNDEFINED' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'UNDEFINED' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 736 — Story 11.5: uncaught UNDEFINED token at top level prints error -13 + REPL recovers (INTERPRET; AC #19)"; \
 	else \
@@ -6366,7 +6378,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ';' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ';' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
 		echo "PASS: REPL test 737 — Story 11.5: uncaught ; outside compile mode prints error -14 + REPL recovers (AC #19)"; \
 	else \
@@ -6374,7 +6386,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DOES>' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DOES>' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
 		echo "PASS: REPL test 738 — Story 11.5: uncaught DOES> outside compile mode prints error -14 + REPL recovers (AC #19)"; \
 	else \
@@ -6382,7 +6394,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 739 — Story 11.5: uncaught ':' (no name) prints error -16 + REPL recovers (AC #19)"; \
 	else \
@@ -6390,7 +6402,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CREATE ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CREATE ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 740 — Story 11.5: uncaught CREATE (no name) prints error -16 + REPL recovers (AC #19)"; \
 	else \
@@ -6398,7 +6410,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '5 CONSTANT ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '5 CONSTANT ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 741 — Story 11.5: uncaught 5 CONSTANT (no name) prints error -16 + REPL recovers (AC #19; CONSTANT POP-BC consumes value before THROW)"; \
 	else \
@@ -6406,7 +6418,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'MARKER ' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'MARKER ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 742 — Story 11.5: uncaught MARKER (no name) prints error -16 + REPL recovers (AC #19)"; \
 	else \
@@ -6414,7 +6426,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" 'CODE' 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" 'CODE' 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -260: CODE needs name.*99  ok'; then \
 		echo "PASS: REPL test 743 — Story 11.5: uncaught CODE (no name) prints error -260 + REPL recovers (asm error via inline raise; AC #19)"; \
 	else \
@@ -6422,7 +6434,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -261: END-CODE without CODE.*99  ok'; then \
 		echo "PASS: REPL test 744 — Story 11.5: uncaught standalone END-CODE prints error -261 + REPL recovers (asm error via inline raise; AC #19)"; \
 	else \
@@ -6435,7 +6447,7 @@ test-repl: $(TARGET)
 	@# 40-byte buffer; the 41st triggers .hc_overflow → -17 THROW; CATCH
 	@# returns the code. Verifies the kernel-internal raise from
 	@# do_pic_overflow_error.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "' T17 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "' T17 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-17  ok'; then \
 		echo "PASS: REPL test 745 — Story 11.6: ' T17 CATCH . returns -17 (pictured overflow caught)"; \
 	else \
@@ -6444,7 +6456,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 4.1: i*x preservation across kernel-internal -17 raise.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "1 2 3 ' T17 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "1 2 3 ' T17 CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-17 3 2 1  ok'; then \
 		echo "PASS: REPL test 746 — Story 11.6: i*x preserved across caught -17 (3 cells under)"; \
 	else \
@@ -6453,7 +6465,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 4.1: DEPTH = 1 after caught -17 (just the THROW code on top).
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "' T17 CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': T17 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' "' T17 CATCH DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1  ok'; then \
 		echo "PASS: REPL test 747 — Story 11.6: DEPTH = 1 after caught -17"; \
 	else \
@@ -6462,7 +6474,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 4.2: positive control — successful pictured-output round-trip.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TPIC 1234 0 <# # # # # #> 2DROP ;' "' TPIC CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TPIC 1234 0 <# # # # # #> 2DROP ;' "' TPIC CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 748 — Story 11.6: ' TPIC CATCH . returns 0 (success path)"; \
 	else \
@@ -6471,7 +6483,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 4.2: positive control — properly-closed `(` returns 0.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOK 5 ( inline ok ) ;' "' TOK CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOK 5 ( inline ok ) ;' "' TOK CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 749 — Story 11.6: no-throw colon body containing compile-time paren-comment returns 0"; \
 	else \
@@ -6482,7 +6494,7 @@ test-repl: $(TARGET)
 	@# Section 4.3: uncaught -17 pictured overflow + REPL recovery.
 	@# DO/LOOP are compile-only — wrap in a colon body to fire from
 	@# execute time.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ': T17X 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' 'T17X' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ': T17X 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' 'T17X' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -17: pictured numeric output string overflow.*99  ok'; then \
 		echo "PASS: REPL test 750 — Story 11.6: uncaught -17 pictured overflow prints error + REPL recovers"; \
 	else \
@@ -6491,7 +6503,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 4.3: uncaught -58 `(` missing `)` + REPL recovery.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '( unterminated' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '( unterminated' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -58: unexpected end of input.*99  ok'; then \
 		echo "PASS: REPL test 751 — Story 11.6: uncaught open-paren missing close-paren prints error -58 + REPL recovers"; \
 	else \
@@ -6500,7 +6512,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 4.3: uncaught -270 (NOP, outside CODE) + REPL recovery.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'NOP,' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'NOP,' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -270: not in CODE.*99  ok'; then \
 		echo "PASS: REPL test 752 — Story 11.6: uncaught NOP, outside CODE prints error -270 + REPL recovers"; \
 	else \
@@ -6511,7 +6523,7 @@ test-repl: $(TARGET)
 	@# Section 4.3: uncaught -272 (BIT 8 — bit number out of 0..7 range)
 	@# + REPL recovery. Triggers asm_bit_range_err via .bop_reg8's range
 	@# check. (Was -271 pre-Story-11.5.6; split into -272 bit range.)
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRG272 8 # B BIT, END-CODE' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRG272 8 # B BIT, END-CODE' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -272: bit range.*99  ok'; then \
 		echo "PASS: REPL test 753 — Story 11.5.6: uncaught BIT 8 prints error -272: bit range + REPL recovers"; \
 	else \
@@ -6527,7 +6539,7 @@ test-repl: $(TARGET)
 	@# / asm_cleanup / JP w_QUIT_cf chain moves into the uncaught-THROW
 	@# handler at exception.asm:.throw_uncaught.
 	@# Section 5.1: caught ABORT direct.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ABORT CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ABORT CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-1  ok'; then \
 		echo "PASS: REPL test 754 — Story 11.7: ' ABORT CATCH . returns -1 (caught ABORT direct, AC #7)"; \
 	else \
@@ -6536,7 +6548,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 5.1: caught ABORT via colon-body wrapper.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ABORTING ABORT ;' "' ABORTING CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ABORTING ABORT ;' "' ABORTING CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-1  ok'; then \
 		echo "PASS: REPL test 755 — Story 11.7: ' ABORTING CATCH . returns -1 (caught ABORT through colon wrapper, AC #7)"; \
 	else \
@@ -6545,7 +6557,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 5.1: i*x preservation across caught -1 (Story 11.4.1 contract).
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' ABORT CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "1 2 3 ' ABORT CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '\-1 3 2 1  ok'; then \
 		echo "PASS: REPL test 756 — Story 11.7: i*x preserved across caught -1 (3 cells under) (AC #7)"; \
 	else \
@@ -6554,7 +6566,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 5.1: DEPTH = 1 after caught ABORT.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ABORT CATCH DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' ABORT CATCH DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1  ok'; then \
 		echo "PASS: REPL test 757 — Story 11.7: DEPTH = 1 after caught ABORT (AC #7)"; \
 	else \
@@ -6566,7 +6578,7 @@ test-repl: $(TARGET)
 	@# runtime prints the inline message then raises -2 THROW. Per AC #8
 	@# (verified at dev-pass), (ABORT") emits NO trailing CR/LF after the
 	@# message — observed output is `message-2  ok` with no break.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB1 1 ABORT" message" ;' "' TAB1 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB1 1 ABORT" message" ;' "' TAB1 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'message\-2  ok'; then \
 		echo "PASS: REPL test 758 — Story 11.7: ' TAB1 CATCH . returns -2 with message print (caught ABORT\", AC #8)"; \
 	else \
@@ -6578,7 +6590,7 @@ test-repl: $(TARGET)
 	@# CATCH returns 0 (per ANS §6.1.0680). Distinctive message marker
 	@# `abz0msg` so absence of `abz0msg-` (which only appears when (ABORT")
 	@# fires + prints + raises -2) is the smoking gun.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB0 0 ABORT" abz0msg" ;' "' TAB0 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB0 0 ABORT" abz0msg" ;' "' TAB0 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok' && ! echo "$$OUTPUT" | grep -q 'abz0msg-'; then \
 		echo "PASS: REPL test 759 — Story 11.7: ABORT\" flag-zero is no-op; CATCH returns 0 (AC #6)"; \
 	else \
@@ -6587,7 +6599,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 5.2: i*x preservation across caught -2 from ABORT".
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB1 1 ABORT" message" ;' "1 2 3 ' TAB1 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TAB1 1 ABORT" message" ;' "1 2 3 ' TAB1 CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'message\-2 3 2 1  ok'; then \
 		echo "PASS: REPL test 760 — Story 11.7: i*x preserved across caught -2 (3 cells under) (AC #8)"; \
 	else \
@@ -6596,7 +6608,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 5.3: positive control — no-abort colon body returns 0.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TNOAB 5 ;' "' TNOAB CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TNOAB 5 ;' "' TNOAB CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 761 — Story 11.7: ' TNOAB CATCH . returns 0 (success path, no ABORT)"; \
 	else \
@@ -6608,7 +6620,7 @@ test-repl: $(TARGET)
 	@# user-issued ABORT (now -1 THROW) flows through the uncaught-handler;
 	@# Story 11.3 test 687 covered raw -1 THROW; this covers the ABORT
 	@# word as the user-facing entry point.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'ABORT' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'ABORT' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT.*99  ok'; then \
 		echo "PASS: REPL test 762 — Story 11.7: uncaught ABORT prints error -1: ABORT + REPL recovers (AC #17)"; \
 	else \
@@ -6619,7 +6631,7 @@ test-repl: $(TARGET)
 	@# Section 5.4: uncaught ABORT" + REPL recovery. The (ABORT") runtime
 	@# prints the inline message before raising -2 THROW; the uncaught
 	@# handler prints `error -2: ABORT"` then runs the recovery chain.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': TUA1 1 ABORT" boom" ;' 'TUA1' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': TUA1 1 ABORT" boom" ;' 'TUA1' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
 		echo "PASS: REPL test 763 — Story 11.7: uncaught ABORT\" prints message + error -2 + REPL recovers (AC #17)"; \
 	else \
@@ -6633,7 +6645,7 @@ test-repl: $(TARGET)
 	@# `TRYX117` appears once in stdin echo; if asm_cleanup unlinked it,
 	@# it does NOT appear in the post-recovery WORDS output (one occurrence
 	@# total). If asm_cleanup failed, WORDS lists it (two occurrences).
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRYX117 UNDEFOPX117 END-CODE' 'WORDS' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRYX117 UNDEFOPX117 END-CODE' 'WORDS' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13.*ok' && \
 	   [ "$$(echo "$$OUTPUT" | grep -c 'TRYX117')" = "1" ]; then \
 		echo "PASS: REPL test 764 — Story 11.7: asm_cleanup integrity — in-CODE -13 + recovery; TRYX117 unlinked (AC #18a, capstone)"; \
@@ -6644,7 +6656,7 @@ test-repl: $(TARGET)
 	fi
 	@# Section 5.3 second positive control — i*x preservation through
 	@# success path: cells underneath survive the CATCH frame round-trip.
-	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TNOAB 5 ;' "1 2 3 ' TNOAB CATCH . . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': TNOAB 5 ;' "1 2 3 ' TNOAB CATCH . . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 5 3 2 1  ok'; then \
 		echo "PASS: REPL test 765 — Story 11.7: i*x cells preserved through success path CATCH (positive control)"; \
 	else \
@@ -6659,7 +6671,7 @@ test-repl: $(TARGET)
 	@# 11.5.2 wired the guard at LIT/DOCON/DOVAR/DODOES/push_user_var/NUMBER?-family
 	@# and added test 779 below as the NFR6 (b) corollary closure.
 	@# Section 10.1: stack-underflow stress recovery (NFR6 (a)).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*99  ok'; then \
 		echo "PASS: REPL test 766 — Story 11.8: stack underflow uncaught + REPL recovery (NFR6 a)"; \
 	else \
@@ -6668,7 +6680,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.1: division-by-zero stress recovery (NFR6 (c)).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '1 0 /' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '1 0 /' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*99  ok'; then \
 		echo "PASS: REPL test 767 — Story 11.8: division by zero uncaught + REPL recovery (NFR6 c)"; \
 	else \
@@ -6677,7 +6689,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.1: undefined-word stress recovery (NFR6 (d)).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'THIS-DOES-NOT-EXIST' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'THIS-DOES-NOT-EXIST' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 768 — Story 11.8: undefined word uncaught + REPL recovery (NFR6 d)"; \
 	else \
@@ -6689,7 +6701,7 @@ test-repl: $(TARGET)
 	@# Verified at write time: kernel emits -14 ("interpreting a compile-only word"),
 	@# not -22 as the story spec drafted; the story's spec said "verify exact code at
 	@# write time" — adjusted regex to -14.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ';' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ';' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
 		echo "PASS: REPL test 769 — Story 11.8: orphan-; compile-state mismatch uncaught + REPL recovery (NFR6 e)"; \
 	else \
@@ -6700,7 +6712,7 @@ test-repl: $(TARGET)
 	@# Section 10.1: ABORT" truthy uncaught (NFR6 (f)). Re-frames Story 11.7 test 763
 	@# as the closure-suite "every category in one place" entry; same scenario, fresh
 	@# numbering so a future maintainer can grep test 770 for "Epic 11 closure suite".
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T118F 1 ABORT" boom" ;' 'T118F' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T118F 1 ABORT" boom" ;' 'T118F' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
 		echo "PASS: REPL test 770 — Story 11.8: ABORT\" truthy uncaught + REPL recovery (NFR6 f)"; \
 	else \
@@ -6711,7 +6723,7 @@ test-repl: $(TARGET)
 	@# AC #4 state-integrity invariants (NFR7): post-error internal data structures
 	@# remain consistent. Eight invariants — each gets one Makefile test.
 	@# Section 10.2: invariant (i) input buffer reset — post-error line parses cleanly.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '1 2 + .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*3  ok'; then \
 		echo "PASS: REPL test 771 — Story 11.8: invariant (i) input buffer reset post-error (NFR7)"; \
 	else \
@@ -6722,7 +6734,7 @@ test-repl: $(TARGET)
 	@# Section 10.2: invariant (ii) HERE rolled back after mid-: error.
 	@# H1 is a VARIABLE holding pre-: HERE; after the mid-: error, asm_cleanup unlinks
 	@# the partial NEW and rolls HERE back. H1 @ HERE = . prints "-1  ok" (true).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'VARIABLE H1' 'HERE H1 !' ': NEW THIS-DOES-NOT-EXIST ;' 'H1 @ HERE = .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'VARIABLE H1' 'HERE H1 !' ': NEW THIS-DOES-NOT-EXIST ;' 'H1 @ HERE = .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*-1  ok'; then \
 		echo "PASS: REPL test 772 — Story 11.8: invariant (ii) HERE rolled back after mid-: error (NFR7)"; \
 	else \
@@ -6731,7 +6743,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.2: invariant (iii) parameter-stack DEPTH = 0 after recovery.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'DEPTH .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'DEPTH .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
 		echo "PASS: REPL test 773 — Story 11.8: invariant (iii) parameter-stack DEPTH = 0 post-recovery (NFR7)"; \
 	else \
@@ -6741,7 +6753,7 @@ test-repl: $(TARGET)
 	fi
 	@# Section 10.2: invariant (iv) return stack reset — define + call colon post-error.
 	@# A fresh : TT 1 ; TT . runs cleanly only if w_QUIT_cf re-init reset IX rstack.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' ': TT 1 ; TT .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' ': TT 1 ; TT .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*1  ok'; then \
 		echo "PASS: REPL test 774 — Story 11.8: invariant (iv) return stack reset post-recovery (NFR7)"; \
 	else \
@@ -6750,7 +6762,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.2: invariant (v) CATCH-TOP @ . returns 0 after recovery.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'CATCH-TOP @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'CATCH-TOP @ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
 		echo "PASS: REPL test 775 — Story 11.8: invariant (v) CATCH-TOP = 0 post-recovery (NFR7)"; \
 	else \
@@ -6768,7 +6780,7 @@ test-repl: $(TARGET)
 	@# `BASE @ .` printed "10" in BOTH cases — HEX 16 and DECIMAL 10 both
 	@# render to the string "10" in their respective bases — a HEX/DECIMAL
 	@# coincidence false-PASS; Story 11.8 review M2.)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'HEX FE THIS-DOES-NOT-EXIST' 'BASE @ DECIMAL .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'HEX FE THIS-DOES-NOT-EXIST' 'BASE @ DECIMAL .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*16  ok'; then \
 		echo "PASS: REPL test 776 — Story 11.8: invariant (vi) BASE preserved across error (NFR7)"; \
 	else \
@@ -6779,7 +6791,7 @@ test-repl: $(TARGET)
 	@# Section 10.2: invariant (vii) MARKER-saved state recoverable post-error.
 	@# MARKER MK1 + : T 99 ; + DROP (errors) + MK1 (rolls back T) + T → "T ?" + -13.
 	@# Confirms (a) MARKER survived recovery and (b) post-MK1 dictionary is at the marked state.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER MK1' ': T 99 ;' 'DROP' 'MK1' 'T' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER MK1' ': T 99 ;' 'DROP' 'MK1' 'T' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*T \?.*error -13: undefined word'; then \
 		echo "PASS: REPL test 777 — Story 11.8: invariant (vii) MARKER-saved state recoverable (NFR7)"; \
 	else \
@@ -6788,7 +6800,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.2: invariant (viii) user dictionary preserved (FR22).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': USER-WORD 42 ;' 'THIS-DOES-NOT-EXIST' 'USER-WORD .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': USER-WORD 42 ;' 'THIS-DOES-NOT-EXIST' 'USER-WORD .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*42  ok'; then \
 		echo "PASS: REPL test 778 — Story 11.8: invariant (viii) user dictionary preserved across error (FR22)"; \
 	else \
@@ -6808,7 +6820,7 @@ test-repl: $(TARGET)
 	@# regs; firmware fix verified clean 2026-04-28): the inner BEGIN 1 0 UNTIL
 	@# loop never enters BDOS until the THROW path's diagnostic emission, by
 	@# which time SP has been reset wholesale.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T779 BEGIN 1 0 UNTIL ;' 'T779' '99 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T779 BEGIN 1 0 UNTIL ;' 'T779' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -3: stack overflow.*99  ok'; then \
 		echo "PASS: REPL test 779 — Story 11.5.2: stack overflow uncaught + REPL recovery (NFR6 b — gap closed)"; \
 	else \
@@ -6817,7 +6829,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.1: caught -3 stack overflow (Section 6.1 of throw_migration_tests.fth).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "' TOV CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "' TOV CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-3  ok'; then \
 		echo "PASS: REPL test 780 — Story 11.5.2: caught -3 stack overflow (Section 6.1)"; \
 	else \
@@ -6826,7 +6838,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.1: i*x preservation under caught -3 (Section 6.2 — Story 11.4.1 invariant).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "1 2 3 ' TOV CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "1 2 3 ' TOV CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-3 3 2 1  ok'; then \
 		echo "PASS: REPL test 781 — Story 11.5.2: i*x preservation under caught -3 (Section 6.2)"; \
 	else \
@@ -6835,7 +6847,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 10.1: DEPTH-invariant after caught -3 (Section 6.3 — Story 11.4.1 invariant).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "1 2 3 ' TOV CATCH . DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': TOV BEGIN 1 0 UNTIL ;' "1 2 3 ' TOV CATCH . DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-3 3  ok'; then \
 		echo "PASS: REPL test 782 — Story 11.5.2: DEPTH-invariant after caught -3 (Section 6.3)"; \
 	else \
@@ -6846,7 +6858,7 @@ test-repl: $(TARGET)
 	@# --- Story 11.5.3 — `(` / EVALUATE source-frame fix (-58 caught form + asm-error coverage) ---
 	@# Section 11.0: caught -58 via EVALUATE harness — closes Story 11.6 F8 / Review Follow-up #1.
 	@# Source spec: tests/throw_migration_tests.fth Section 4.0.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-58  ok'; then \
 		echo "PASS: REPL test 783 — Story 11.5.3: caught -58 via EVALUATE harness (closes 11.6 F8)"; \
 	else \
@@ -6855,7 +6867,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 11.0: depth-invariant after caught -58 (the AC #1 / AC #4 reproducer in test form).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH . CR DEPTH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH . CR DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\-58\s+0\s+ok'; then \
 		echo "PASS: REPL test 784 — Story 11.5.3: depth-invariant after caught -58 (AC #1 / AC #4 reproducer)"; \
 	else \
@@ -6864,7 +6876,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# Section 11.0: i*x preservation across kernel-internal -58 raise (AC #10).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "1 2 3 ' T58 CATCH . . . ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "1 2 3 ' T58 CATCH . . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-58 3 2 1  ok'; then \
 		echo "PASS: REPL test 785 — Story 11.5.3: i*x preservation under caught -58 (AC #10)"; \
 	else \
@@ -6874,7 +6886,7 @@ test-repl: $(TARGET)
 	fi
 	@# Section 11.3: asm-error caught forms via EVALUATE harness (closes Story 11.6 -270/-271 deferral; extends to 11 of 14 codes).
 	@# Source spec: tests/throw_migration_tests.fth Section 4.3.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T258 S" CODE BAD8 B (BC) LD, END-CODE " EVALUATE ;' "' T258 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T258 S" CODE BAD8 B (BC) LD, END-CODE " EVALUATE ;' "' T258 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-258  ok'; then \
 		echo "PASS: REPL test 786 — Story 11.5.3: caught -258 (bad operand) via EVALUATE"; \
 	else \
@@ -6882,7 +6894,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T259 S" CODE A CODE B " EVALUATE ;' "' T259 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T259 S" CODE A CODE B " EVALUATE ;' "' T259 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-259  ok'; then \
 		echo "PASS: REPL test 787 — Story 11.5.3: caught -259 (nested CODE) via EVALUATE"; \
 	else \
@@ -6890,7 +6902,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T260 S" CODE " EVALUATE ;' "' T260 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T260 S" CODE " EVALUATE ;' "' T260 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-260  ok'; then \
 		echo "PASS: REPL test 788 — Story 11.5.3: caught -260 (CODE needs name) via EVALUATE"; \
 	else \
@@ -6898,7 +6910,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T261 S" END-CODE " EVALUATE ;' "' T261 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T261 S" END-CODE " EVALUATE ;' "' T261 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-261  ok'; then \
 		echo "PASS: REPL test 789 — Story 11.5.3: caught -261 (END-CODE without CODE) via EVALUATE"; \
 	else \
@@ -6906,7 +6918,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T262 S" CODE BAD2 NEXT, LABEL X END-CODE " EVALUATE ;' "' T262 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T262 S" CODE BAD2 NEXT, LABEL X END-CODE " EVALUATE ;' "' T262 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-262  ok'; then \
 		echo "PASS: REPL test 790 — Story 11.5.3: caught -262 (LABEL must precede opcodes) via EVALUATE"; \
 	else \
@@ -6914,7 +6926,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T266 S" CODE BAD6 1 EQU FOO NEXT, END-CODE " EVALUATE ;' "' T266 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T266 S" CODE BAD6 1 EQU FOO NEXT, END-CODE " EVALUATE ;' "' T266 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-266  ok'; then \
 		echo "PASS: REPL test 791 — Story 11.5.3: caught -266 (EQU outside CODE only) via EVALUATE"; \
 	else \
@@ -6922,7 +6934,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T267 S" CODE BADI 5 BIT, NEXT, END-CODE " EVALUATE ;' "' T267 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T267 S" CODE BADI 5 BIT, NEXT, END-CODE " EVALUATE ;' "' T267 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-267  ok'; then \
 		echo "PASS: REPL test 792 — Story 11.5.3: caught -267 (bare integer) via EVALUATE"; \
 	else \
@@ -6930,7 +6942,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T268 S" CODE BAD8 LABEL X X JR, NEXT, END-CODE " EVALUATE ;' "' T268 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T268 S" CODE BAD8 LABEL X X JR, NEXT, END-CODE " EVALUATE ;' "' T268 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-268  ok'; then \
 		echo "PASS: REPL test 793 — Story 11.5.3: caught -268 (unresolved label) via EVALUATE"; \
 	else \
@@ -6938,7 +6950,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T269 S" CODE BAD9 LABEL Y Y FIX Y FIX NEXT, END-CODE " EVALUATE ;' "' T269 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T269 S" CODE BAD9 LABEL Y Y FIX Y FIX NEXT, END-CODE " EVALUATE ;' "' T269 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-269  ok'; then \
 		echo "PASS: REPL test 794 — Story 11.5.3: caught -269 (already fixed) via EVALUATE"; \
 	else \
@@ -6946,7 +6958,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T270 S" NOP, " EVALUATE ;' "' T270 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T270 S" NOP, " EVALUATE ;' "' T270 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-270  ok'; then \
 		echo "PASS: REPL test 795 — Story 11.5.3: caught -270 (not in CODE) via EVALUATE"; \
 	else \
@@ -6954,7 +6966,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T271 S" CODE BAD7 (IX) 200 +D A LD, END-CODE " EVALUATE ;' "' T271 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T271 S" CODE BAD7 (IX) 200 +D A LD, END-CODE " EVALUATE ;' "' T271 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-271  ok'; then \
 		echo "PASS: REPL test 796 — Story 11.5.6: caught -271 (disp range) via EVALUATE"; \
 	else \
@@ -6966,7 +6978,7 @@ test-repl: $(TARGET)
 	@# by tests 150 / 753 / 796 (those exercise .bop_reg8 only). Tests
 	@# 797 / 798 exercise .bop_ihl (assembler.asm:3132 → asm_bit_range_err)
 	@# and .bop_ixiyd (assembler.asm:3164 → asm_bit_range_err).
-	@OUTPUT=$$(printf 'CODE BAD797 8 # (HL) BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD797 8 # (HL) BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -272: bit range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 797 — Story 11.5.6: bit 8 with (HL) raises error -272: bit range, clean recovery (.bop_ihl)"; \
 	else \
@@ -6974,7 +6986,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD798 8 # (IX) 0 +D BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD798 8 # (IX) 0 +D BIT, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -272: bit range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 798 — Story 11.5.6: bit 8 with (IX+0) raises error -272: bit range, clean recovery (.bop_ixiyd)"; \
 	else \
@@ -6987,7 +6999,7 @@ test-repl: $(TARGET)
 	@# guard at :1149). Test 799 uses -129 to hit :1144 (B=0xFF and
 	@# C bit-7 clear); test 800 uses 32768 to hit :1141 (B neither 0x00
 	@# nor 0xFF). Both raise -271 disp range.
-	@OUTPUT=$$(printf 'CODE BAD799 (IX) -129 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD799 (IX) -129 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -271: disp range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 799 — Story 11.5.6: +D -129 raises error -271: disp range, clean recovery (.pd_neg :1144)"; \
 	else \
@@ -6995,7 +7007,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'CODE BAD800 (IX) 32768 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE BAD800 (IX) 32768 +D A LD, END-CODE\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -271: disp range' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 800 — Story 11.5.6: +D 32768 raises error -271: disp range, clean recovery (.pd_neg :1141)"; \
 	else \
@@ -7003,7 +7015,7 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T272 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;' "' T272 CATCH ." 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T272 S" CODE BAD8 8 # A BIT, END-CODE " EVALUATE ;' "' T272 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-272  ok'; then \
 		echo "PASS: REPL test 801 — Story 11.5.6: caught -272 (bit range) via EVALUATE"; \
 	else \
@@ -7018,7 +7030,7 @@ test-repl: $(TARGET)
 	@# AC #7, FORTH-WORDLIST is not yet a Forth word in Story 12.1
 	@# (lands in Story 12.3) — coverage is by-construction (only one
 	@# wordlist exists). Source spec: tests/wordlist_tests.fth.
-	@OUTPUT=$$(printf ': TWFOO 42 ; TWFOO .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': TWFOO 42 ; TWFOO .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42 '; then \
 		echo "PASS: REPL test 802 — Story 12.1: define + lookup + execute via FORTH-WORDLIST (T1)"; \
 	else \
@@ -7033,7 +7045,7 @@ test-repl: $(TARGET)
 	@# undefined word"; both are evidence that MARKER unlinked TWBAR
 	@# from FORTH-WORDLIST's bucket array. Recovery is verified by the
 	@# follow-on `1 2 + .` printing "3 ".
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER TWMK : TWBAR 99 ; TWBAR . TWMK' 'TWBAR' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER TWMK : TWBAR 99 ; TWBAR . TWMK' 'TWBAR' '1 2 + .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99 ' && echo "$$OUTPUT" | grep -q 'TWBAR ?' && echo "$$OUTPUT" | grep -q 'error -13: undefined word' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 803 — Story 12.1: MARKER round-trip via FORTH-WORDLIST (T2)"; \
 	else \
@@ -7044,7 +7056,7 @@ test-repl: $(TARGET)
 	@# T3 — WORDS smoke. Walks all 64 buckets of FORTH-WORDLIST without
 	@# crashing; output must include the kernel primitive DUP and the
 	@# REPL must keep running afterwards (verified by `1 2 + .` after).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDS' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDS' '1 2 + .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'DUP' && echo "$$OUTPUT" | grep -q '3 '; then \
 		echo "PASS: REPL test 804 — Story 12.1: WORDS walks FORTH-WORDLIST without crash (T3)"; \
 	else \
@@ -7055,7 +7067,7 @@ test-repl: $(TARGET)
 	@# T4 — pre-Epic-12 regression sentinel. Exercises FIND / compile /
 	@# execute end-to-end through the FORTH-WORDLIST bucket array; `=`
 	@# returns -1 (true) on equality.
-	@OUTPUT=$$(printf '1 2 + 3 = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 + 3 = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 805 — Story 12.1: pre-Epic-12 regression sentinel via FORTH-WORDLIST (T4)"; \
 	else \
@@ -7067,7 +7079,7 @@ test-repl: $(TARGET)
 	@# (non-IMMEDIATE). BL WORD MARKER parses "MARKER" as a counted
 	@# string at HERE; FIND walks FORTH-WORDLIST's bucket array; flag
 	@# = -1 because MARKER lacks the IMMEDIATE bit.
-	@OUTPUT=$$(printf 'BL WORD MARKER FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BL WORD MARKER FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 806 — Story 12.1: FIND MARKER via FORTH-WORDLIST returns -1 flag (T5)"; \
 	else \
@@ -7084,7 +7096,7 @@ test-repl: $(TARGET)
 	@# T-WL1 — WORDLIST advances HERE by exactly 130. (The story-spec
 	@# sketch `HERE WORDLIST OVER OVER SWAP - .` prints 0 because wid =
 	@# pre-WORDLIST HERE per E12-D3; using post-WORDLIST HERE gives 130.)
-	@OUTPUT=$$(printf 'HERE WORDLIST DROP HERE SWAP - .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HERE WORDLIST DROP HERE SWAP - .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '130 '; then \
 		echo "PASS: REPL test 807 — Story 12.2: WORDLIST advances HERE by exactly 130 (T-WL1)"; \
 	else \
@@ -7093,7 +7105,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-WL2 — fresh wid's next-link cell and first bucket are zero.
-	@OUTPUT=$$(printf 'WORDLIST DUP @ . DUP 2 + @ . DROP\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST DUP @ . DUP 2 + @ . DROP\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 0 '; then \
 		echo "PASS: REPL test 808 — Story 12.2: fresh WORDLIST is zero-initialised (T-WL2)"; \
 	else \
@@ -7103,7 +7115,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-SW1 — SEARCH-WORDLIST on empty wid returns single 0; DEPTH = 0.
 	@# Proves the depth-3 -> depth-1 stack-shrink on miss (AC #11(a)).
-	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   S" DUP" WL1 SEARCH-WORDLIST .   DEPTH .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   S" DUP" WL1 SEARCH-WORDLIST .   DEPTH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0 0 '; then \
 		echo "PASS: REPL test 809 — Story 12.2: SEARCH-WORDLIST miss returns single 0; DEPTH=0 (T-SW1)"; \
 	else \
@@ -7113,7 +7125,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-SW2 — length > F_LENMASK (33 chars). Per AC #11(b) pick (ii)
 	@# length is passed unchanged; chain compare rejects → pure miss.
-	@OUTPUT=$$(printf 'WORDLIST   S" XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" ROT SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST   S" XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" ROT SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 810 — Story 12.2: SEARCH-WORDLIST u>31 returns 0 cleanly (T-SW2)"; \
 	else \
@@ -7122,7 +7134,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SW3 — zero-length name. hash_name -> bucket 0; empty bucket -> miss.
-	@OUTPUT=$$(printf 'WORDLIST   S" " ROT SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST   S" " ROT SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 811 — Story 12.2: SEARCH-WORDLIST u=0 returns 0 cleanly (T-SW3)"; \
 	else \
@@ -7133,7 +7145,7 @@ test-repl: $(TARGET)
 	@# T-SW4 — FIND helper-extract regression sentinel. After Story 12.2
 	@# refactors FIND to use the shared `search_wid_for_name` helper
 	@# (AC #5 pick (a)), FIND DUP must still return ( xt -1 ).
-	@OUTPUT=$$(printf 'BL WORD DUP FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BL WORD DUP FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 '; then \
 		echo "PASS: REPL test 812 — Story 12.2: FIND helper-extract regression sentinel (T-SW4)"; \
 	else \
@@ -7143,7 +7155,7 @@ test-repl: $(TARGET)
 	fi
 	@# === Story 12.3 — search-order infrastructure (tests 813-822) ===
 	@# T-GO1 (test 813) — initial GET-ORDER state: depth=1, slot 0 = FORTH-WORDLIST.
-	@OUTPUT=$$(printf 'GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 813 — Story 12.3: initial GET-ORDER state (T-GO1)"; \
 	else \
@@ -7152,7 +7164,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-FW1 (test 814) — FORTH-WORDLIST self-consistency.
-	@OUTPUT=$$(printf 'FORTH-WORDLIST FORTH-WORDLIST = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'FORTH-WORDLIST FORTH-WORDLIST = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 814 — Story 12.3: FORTH-WORDLIST self-consistency (T-FW1)"; \
 	else \
@@ -7162,7 +7174,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-FW2 (test 815) — SEARCH-WORDLIST hit on canonical FORTH-WORDLIST
 	@# (CR-L3 carryover from Story 12.2 review).
-	@OUTPUT=$$(printf 'S" DUP" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" DUP" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 815 — Story 12.3: SEARCH-WORDLIST hit via FORTH-WORDLIST (T-FW2 / CR-L3)"; \
 	else \
@@ -7172,7 +7184,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-FW3a (test 816) — FIND IMMEDIATE-flag probe
 	@# (CR-L4 carryover from Story 12.2 review): IF is IMMEDIATE → flag = 1.
-	@OUTPUT=$$(printf 'BL WORD IF FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BL WORD IF FIND SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1  ok'; then \
 		echo "PASS: REPL test 816 — Story 12.3: FIND IMMEDIATE-flag probe (T-FW3a / CR-L4)"; \
 	else \
@@ -7182,7 +7194,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-FW3b (test 817) — SEARCH-WORDLIST IMMEDIATE-flag probe
 	@# (CR-L4 carryover from Story 12.2 review): IF via SEARCH-WORDLIST → flag = 1.
-	@OUTPUT=$$(printf 'S" IF" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'S" IF" FORTH-WORDLIST SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1  ok'; then \
 		echo "PASS: REPL test 817 — Story 12.3: SEARCH-WORDLIST IMMEDIATE-flag probe (T-FW3b / CR-L4)"; \
 	else \
@@ -7191,7 +7203,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SO1 (test 818) — SET-ORDER round-trip preserves state.
-	@OUTPUT=$$(printf 'GET-ORDER SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'GET-ORDER SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 818 — Story 12.3: GET-ORDER → SET-ORDER round-trip (T-SO1)"; \
 	else \
@@ -7200,7 +7212,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SO2 (test 819) — SET-ORDER -1 minimum reset after depth=2 install.
-	@OUTPUT=$$(printf 'WORDLIST FORTH-WORDLIST 2 SET-ORDER -1 SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST FORTH-WORDLIST 2 SET-ORDER -1 SET-ORDER GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 819 — Story 12.3: SET-ORDER -1 minimum reset (T-SO2)"; \
 	else \
@@ -7211,7 +7223,7 @@ test-repl: $(TARGET)
 	@# T-SO3 (test 820) — SET-ORDER depth-overflow raises -49 (search-order overflow).
 	@# 17 dummy wids on stack + 17 SET-ORDER → depth bound check fails → -49 THROW.
 	@# Follow-up `1 2 + .` confirms REPL recovery.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 SET-ORDER' '1 2 + .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 SET-ORDER' '1 2 + .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -49: search-order overflow' && echo "$$OUTPUT" | grep -q '3  ok'; then \
 		echo "PASS: REPL test 820 — Story 12.3: SET-ORDER depth-overflow raises -49 (T-SO3)"; \
 	else \
@@ -7227,7 +7239,7 @@ test-repl: $(TARGET)
 	@# truth (Story 12.4 SET-CURRENT not yet wired); FIND walks slot 0
 	@# (custom, empty — miss) → slot 1 (FORTH-WORDLIST — hits TWFOO).
 	@# -1 SET-ORDER restores minimum order at the end.
-	@OUTPUT=$$(printf 'FORTH-WORDLIST WORDLIST 2 SET-ORDER : TWFOO 99 ; TWFOO . -1 SET-ORDER\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'FORTH-WORDLIST WORDLIST 2 SET-ORDER : TWFOO 99 ; TWFOO . -1 SET-ORDER\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99 '; then \
 		echo "PASS: REPL test 821 — Story 12.3: depth-2 search-order walk hits FORTH-WORDLIST entry (T-SO5)"; \
 	else \
@@ -7238,7 +7250,7 @@ test-repl: $(TARGET)
 	@# T-FIND-REGRESSION (test 822) — pre-Story-12.3 sentinel via the new
 	@# search-order walk: arithmetic + colon define + execute all driven
 	@# through FIND's depth-1 walk over FORTH-WORDLIST.
-	@OUTPUT=$$(printf '1 2 + . : TWBAZ 7 ; TWBAZ .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '1 2 + . : TWBAZ 7 ; TWBAZ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '3 ' && echo "$$OUTPUT" | grep -q '7 '; then \
 		echo "PASS: REPL test 822 — Story 12.3: pre-Story-12.3 FIND sentinel via search-order walk (T-FIND-REGRESSION)"; \
 	else \
@@ -7248,7 +7260,7 @@ test-repl: $(TARGET)
 	fi
 	@# === Story 12.4 — compilation wordlist control (tests 823-836) ===
 	@# T-GC1 (test 823) — initial GET-CURRENT state: current = FORTH-WORDLIST.
-	@OUTPUT=$$(printf 'GET-CURRENT FORTH-WORDLIST = .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'GET-CURRENT FORTH-WORDLIST = .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 823 — Story 12.4: GET-CURRENT initial = FORTH-WORDLIST (T-GC1)"; \
 	else \
@@ -7257,7 +7269,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SC1 (test 824) — SET-CURRENT round-trip via WORDLIST DUP SET-CURRENT.
-	@OUTPUT=$$(printf 'WORDLIST DUP SET-CURRENT GET-CURRENT = .   FORTH-WORDLIST SET-CURRENT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST DUP SET-CURRENT GET-CURRENT = .   FORTH-WORDLIST SET-CURRENT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 824 — Story 12.4: SET-CURRENT round-trip (T-SC1)"; \
 	else \
@@ -7266,7 +7278,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SC2a (test 825) — `:` lands in current wordlist; NOT in FORTH-WORDLIST.
-	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT   S" SC2FOO" FORTH-WORDLIST SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT   S" SC2FOO" FORTH-WORDLIST SEARCH-WORDLIST .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 825 — Story 12.4: SC2FOO not in FORTH-WORDLIST after WL1 SET-CURRENT (T-SC2a)"; \
 	else \
@@ -7275,7 +7287,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SC2b (test 826) — `:` lands in current wordlist; IS in WL1.
-	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT   S" SC2FOO" WL1 SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WL1   WL1 SET-CURRENT   : SC2FOO 77 ;   FORTH-WORDLIST SET-CURRENT   S" SC2FOO" WL1 SEARCH-WORDLIST SWAP DROP .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 826 — Story 12.4: SC2FOO IS in WL1 (T-SC2b)"; \
 	else \
@@ -7285,7 +7297,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-SC3a (test 827) — SET-CURRENT does not change search order: SC3BAR
 	@# is in WL2 but search order only has FORTH-WORDLIST → -13 THROW at parse.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'SC3BAR' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'SC3BAR' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'SC3BAR ?' && echo "$$OUTPUT" | grep -q 'error -13: undefined word'; then \
 		echo "PASS: REPL test 827 — Story 12.4: SET-CURRENT does NOT change search order (T-SC3a)"; \
 	else \
@@ -7294,7 +7306,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-SC3b (test 828) — adding WL2 to the search order makes SC3BAR findable.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'WL2 1 SET-ORDER   SC3BAR .   -1 SET-ORDER' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'WL2 1 SET-ORDER   SC3BAR .   -1 SET-ORDER' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '33 '; then \
 		echo "PASS: REPL test 828 — Story 12.4: WL2 in search order makes SC3BAR findable (T-SC3b)"; \
 	else \
@@ -7305,7 +7317,7 @@ test-repl: $(TARGET)
 	@# T-DEF1 (test 829) — DEFINITIONS sets current to slot 0. Use depth-2
 	@# search order [WL3, FORTH-WORDLIST] so kernel words remain findable
 	@# while WL3 occupies slot 0 (the DEFINITIONS target).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL3   FORTH-WORDLIST WL3 2 SET-ORDER   DEFINITIONS   GET-CURRENT WL3 = .' '-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL3   FORTH-WORDLIST WL3 2 SET-ORDER   DEFINITIONS   GET-CURRENT WL3 = .' '-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 829 — Story 12.4: DEFINITIONS sets current to slot 0 (T-DEF1)"; \
 	else \
@@ -7315,7 +7327,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-DEF2 (test 830) — DEFINITIONS-driven partition with depth=2 search order.
 	@# DEF2BAZ lands in WL4 (slot 0 of search order) via DEFINITIONS, NOT in FORTH-WORDLIST.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL4   FORTH-WORDLIST WL4 2 SET-ORDER   DEFINITIONS   : DEF2BAZ 88 ;   -1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'S" DEF2BAZ" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL4   FORTH-WORDLIST WL4 2 SET-ORDER   DEFINITIONS   : DEF2BAZ 88 ;   -1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'S" DEF2BAZ" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 830 — Story 12.4: DEFINITIONS partitions definitions by search-order top (T-DEF2)"; \
 	else \
@@ -7324,7 +7336,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-CCV-CREATE (test 831) — CREATE in custom wordlist (negative).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5C   WL5C SET-CURRENT   CREATE CR5A   FORTH-WORDLIST SET-CURRENT   S" CR5A" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5C   WL5C SET-CURRENT   CREATE CR5A   FORTH-WORDLIST SET-CURRENT   S" CR5A" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 831 — Story 12.4: CREATE honours SET-CURRENT (T-CCV-CREATE)"; \
 	else \
@@ -7333,7 +7345,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-CCV-CONSTANT (test 832) — CONSTANT in custom wordlist (negative).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5K   WL5K SET-CURRENT   42 CONSTANT CO5B   FORTH-WORDLIST SET-CURRENT' 'S" CO5B" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5K   WL5K SET-CURRENT   42 CONSTANT CO5B   FORTH-WORDLIST SET-CURRENT' 'S" CO5B" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 832 — Story 12.4: CONSTANT honours SET-CURRENT (T-CCV-CONSTANT)"; \
 	else \
@@ -7342,7 +7354,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-CCV-VARIABLE (test 833) — VARIABLE in custom wordlist (negative).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5V   WL5V SET-CURRENT   VARIABLE VA5C   FORTH-WORDLIST SET-CURRENT' 'S" VA5C" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5V   WL5V SET-CURRENT   VARIABLE VA5C   FORTH-WORDLIST SET-CURRENT' 'S" VA5C" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 833 — Story 12.4: VARIABLE honours SET-CURRENT (T-CCV-VARIABLE)"; \
 	else \
@@ -7351,7 +7363,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-CCV-MARKER (test 834) — MARKER header lands in custom wordlist (negative).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5M   WL5M SET-CURRENT   MARKER MK5D   FORTH-WORDLIST SET-CURRENT' 'S" MK5D" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL5M   WL5M SET-CURRENT   MARKER MK5D   FORTH-WORDLIST SET-CURRENT' 'S" MK5D" FORTH-WORDLIST SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 834 — Story 12.4: MARKER header honours SET-CURRENT (T-CCV-MARKER)"; \
 	else \
@@ -7363,7 +7375,7 @@ test-repl: $(TARGET)
 	@# FORTH-WORDLIST. WL6 SET-CURRENT then `: CE6FOO BOGUSWORD ;` raises -13;
 	@# the partial CE6FOO header must be rolled back from WL6 (= 0  ok via
 	@# WL6 SEARCH-WORDLIST). REPL recovers via 1 2 + . = 3.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL6   WL6 SET-CURRENT   : CE6FOO BOGUSWORD ;' 'FORTH-WORDLIST SET-CURRENT   1 2 + .' 'S" CE6FOO" WL6 SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL6   WL6 SET-CURRENT   : CE6FOO BOGUSWORD ;' 'FORTH-WORDLIST SET-CURRENT   1 2 + .' 'S" CE6FOO" WL6 SEARCH-WORDLIST .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'BOGUSWORD ?' && echo "$$OUTPUT" | grep -q 'error -13: undefined word' && echo "$$OUTPUT" | grep -q '3  ok' && echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 835 — Story 12.4: COMP-ERROR rollback targets saved wid (T-COMP-ERROR)"; \
 	else \
@@ -7379,7 +7391,7 @@ test-repl: $(TARGET)
 	@# the depth-0 dance in a colon definition so its compiled body can
 	@# reach DEFINITIONS / GET-CURRENT / SET-ORDER / SET-CURRENT before
 	@# parsing returns to the REPL with an empty search order.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T836 0 SET-ORDER DEFINITIONS GET-CURRENT FORTH-WORDLIST 1 SET-ORDER FORTH-WORDLIST SET-CURRENT ;' 'T836 FORTH-WORDLIST = .   : TWREC 9 ; TWREC .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T836 0 SET-ORDER DEFINITIONS GET-CURRENT FORTH-WORDLIST 1 SET-ORDER FORTH-WORDLIST SET-CURRENT ;' 'T836 FORTH-WORDLIST = .   : TWREC 9 ; TWREC .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 9  ok'; then \
 		echo "PASS: REPL test 836 — Story 12.4: DEFINITIONS with depth=0 reads slot 0 unconditionally (T-DEF-DEPTH0)"; \
 	else \
@@ -7396,7 +7408,7 @@ test-repl: $(TARGET)
 	@# review fix, foreign-wid markers skip the fixup → bucket 5 is
 	@# preserved bit-exactly (-1). Without the fix, snapshot[5] would be
 	@# zeroed and DOMARKER would corrupt FORTH-WORDLIST (= 0).
-	@OUTPUT=$$(printf '%s\r\n' 'FORTH-WORDLIST 12 + @' 'WORDLIST CONSTANT XLM   XLM SET-CURRENT   MARKER MX' 'FORTH-WORDLIST XLM 2 SET-ORDER' 'MX' '-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'FORTH-WORDLIST 12 + @ = .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n' 'FORTH-WORDLIST 12 + @' 'WORDLIST CONSTANT XLM   XLM SET-CURRENT   MARKER MX' 'FORTH-WORDLIST XLM 2 SET-ORDER' 'MX' '-1 SET-ORDER   FORTH-WORDLIST SET-CURRENT' 'FORTH-WORDLIST 12 + @ = .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 837 — Story 12.4: foreign-wid MARKER exec preserves FORTH-WORDLIST buckets (T-MARKER-XWID-EXEC)"; \
 	else \
@@ -7406,7 +7418,7 @@ test-repl: $(TARGET)
 	fi
 	@# === Story 12.5 — ONLY (Search-Order Extension) (tests 838-843) ===
 	@# T-ONLY-FROM-DEFAULT (test 838) — ONLY from boot state (minimum already).
-	@OUTPUT=$$(printf 'ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 838 — Story 12.5: ONLY from boot state yields minimum search order (T-ONLY-FROM-DEFAULT)"; \
 	else \
@@ -7418,7 +7430,7 @@ test-repl: $(TARGET)
 	@# FORTH-WORDLIST WLD WLC WLB WLA 5 SET-ORDER puts WLA at slot 0
 	@# (SET-ORDER pops first → slot 0 per src/wordlists.asm:226-238). After
 	@# ONLY, slot 0 = FORTH-WORDLIST.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLA   WORDLIST CONSTANT WLB   WORDLIST CONSTANT WLC   WORDLIST CONSTANT WLD' 'FORTH-WORDLIST WLD WLC WLB WLA 5 SET-ORDER' 'ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLA   WORDLIST CONSTANT WLB   WORDLIST CONSTANT WLC   WORDLIST CONSTANT WLD' 'FORTH-WORDLIST WLD WLC WLB WLA 5 SET-ORDER' 'ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 839 — Story 12.5: ONLY shrinks 5-wordlist order to minimum (T-ONLY-FROM-5)"; \
 	else \
@@ -7431,7 +7443,7 @@ test-repl: $(TARGET)
 	@# T-DEF-DEPTH0 pattern): depth-0 search order is unparseable at the
 	@# REPL because ONLY itself becomes unfindable. Compiling the body
 	@# pre-resolves ONLY's xt into the thread.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T840 0 SET-ORDER ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND ;' 'T840 .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T840 0 SET-ORDER ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND ;' 'T840 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 840 — Story 12.5: ONLY recovers from depth-0 empty search order (T-ONLY-FROM-0)"; \
 	else \
@@ -7441,7 +7453,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-ONLY-IDEMPOTENT (test 841) — ONLY ONLY = ONLY. Self-contained: defines
 	@# its own WLI for order-independence from test 839.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLI   FORTH-WORDLIST WLI 2 SET-ORDER' 'ONLY ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLI   FORTH-WORDLIST WLI 2 SET-ORDER' 'ONLY ONLY GET-ORDER 1 = SWAP FORTH-WORDLIST = AND .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 841 — Story 12.5: ONLY ONLY back-to-back is idempotent (T-ONLY-IDEMPOTENT)"; \
 	else \
@@ -7451,7 +7463,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-ONLY-PRESERVES-CURRENT (test 842) — ONLY does NOT touch current_wordlist.
 	@# Resets compilation wordlist to FORTH-WORDLIST for downstream tests.
-	@OUTPUT=$$(printf 'WORDLIST CONSTANT WLO   WLO SET-CURRENT   ONLY   GET-CURRENT WLO = .   FORTH-WORDLIST SET-CURRENT\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'WORDLIST CONSTANT WLO   WLO SET-CURRENT   ONLY   GET-CURRENT WLO = .   FORTH-WORDLIST SET-CURRENT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 842 — Story 12.5: ONLY preserves current_wordlist (T-ONLY-PRESERVES-CURRENT)"; \
 	else \
@@ -7460,7 +7472,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-ONLY-TOS-PRESERVES (test 843) — ONLY's ( -- ) preserves BC bit-exactly.
-	@OUTPUT=$$(printf '42 ONLY .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '42 ONLY .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '42  ok'; then \
 		echo "PASS: REPL test 843 — Story 12.5: ONLY preserves TOS (BC) bit-exactly (T-ONLY-TOS-PRESERVES)"; \
 	else \
@@ -7472,7 +7484,7 @@ test-repl: $(TARGET)
 	@# T-CCD4-DEPTH16 (test 844) — SET-ORDER ceiling = 16 (E12-D2). Wraps the
 	@# DO/LOOP body in a colon defn so DO is permitted, then drops the 16
 	@# wids GET-ORDER pushed and resets via ONLY.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T844 16 0 DO FORTH-WORDLIST LOOP 16 SET-ORDER GET-ORDER DUP 16 = . 0 DO DROP LOOP ONLY ;' 'T844' | $(IZCPM) $(TARGET) 2>/dev/null || true; echo BYE) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T844 16 0 DO FORTH-WORDLIST LOOP 16 SET-ORDER GET-ORDER DUP 16 = . 0 DO DROP LOOP ONLY ;' 'T844' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true; echo BYE) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 844 — Story 12.6: SET-ORDER depth=16 ceiling round-trip (T-CCD4-DEPTH16)"; \
 	else \
@@ -7483,7 +7495,7 @@ test-repl: $(TARGET)
 	@# T-CCD4-MULTI-DEEP (test 845) — 5-slot search-order walk past 4 empties
 	@# to a deep-slot hit. M845 lives in WLE (slot 4); FORTH-WORDLIST sits at
 	@# slot 0 so '.', SET-ORDER, ONLY still resolve.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLA  WORDLIST CONSTANT WLB  WORDLIST CONSTANT WLC  WORDLIST CONSTANT WLE' 'WLE SET-CURRENT  : M845 845 ;  FORTH-WORDLIST SET-CURRENT' 'WLE WLA WLB WLC FORTH-WORDLIST 5 SET-ORDER  M845 .  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WLA  WORDLIST CONSTANT WLB  WORDLIST CONSTANT WLC  WORDLIST CONSTANT WLE' 'WLE SET-CURRENT  : M845 845 ;  FORTH-WORDLIST SET-CURRENT' 'WLE WLA WLB WLC FORTH-WORDLIST 5 SET-ORDER  M845 .  ONLY' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '845  ok'; then \
 		echo "PASS: REPL test 845 — Story 12.6: depth-5 multi-vocab walk hits slot 4 (T-CCD4-MULTI-DEEP)"; \
 	else \
@@ -7493,7 +7505,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-CCD4-FR31-CODE (test 846) — CODE assembly post-Epic-12 produces a
 	@# runnable definition; FR31 functional probe.
-	@OUTPUT=$$(printf 'CODE T846 BC PUSH, BC 846 # LD, NEXT, END-CODE  T846 .\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'CODE T846 BC PUSH, BC 846 # LD, NEXT, END-CODE  T846 .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '846  ok'; then \
 		echo "PASS: REPL test 846 — Story 12.6: CODE assembly post-Epic-12 (T-CCD4-FR31-CODE)"; \
 	else \
@@ -7504,7 +7516,7 @@ test-repl: $(TARGET)
 	@# T-CCD4-IX-PRESERVE (test 847) — Story 11.4.1 i*x preservation across
 	@# the multi-vocab FIND walk. CATCH ABORT pushes -1; 4×. prints
 	@# '-1 3 2 1 '. Anchor on '3 2 1  ok' (unique to printed output).
-	@OUTPUT=$$(printf "1 2 3 ' ABORT CATCH . . . .\r\nBYE\r\n" | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf "1 2 3 ' ABORT CATCH . . . .\r\nBYE\r\n" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '3 2 1  ok'; then \
 		echo "PASS: REPL test 847 — Story 12.6: i*x preserved across multi-vocab FIND (T-CCD4-IX-PRESERVE)"; \
 	else \
@@ -7514,7 +7526,7 @@ test-repl: $(TARGET)
 	fi
 	@# T-CCD4-MARKER-MULTI-VOCAB (test 848) — Epic-12 closure cross-product:
 	@# MARKER + WORDLIST + SET-CURRENT + SET-ORDER + ONLY.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'MARKER M848  WORDLIST CONSTANT WL848  WL848 SET-CURRENT  : XX848 848 ;  FORTH-WORDLIST SET-CURRENT' 'FORTH-WORDLIST WL848 2 SET-ORDER  XX848 .  M848  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'MARKER M848  WORDLIST CONSTANT WL848  WL848 SET-CURRENT  : XX848 848 ;  FORTH-WORDLIST SET-CURRENT' 'FORTH-WORDLIST WL848 2 SET-ORDER  XX848 .  M848  ONLY' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '848  ok'; then \
 		echo "PASS: REPL test 848 — Story 12.6: MARKER + WORDLIST + SET-ORDER cross-product (T-CCD4-MARKER-MULTI-VOCAB)"; \
 	else \
@@ -7525,7 +7537,7 @@ test-repl: $(TARGET)
 	@# T-CCD4-WL-CHAIN (test 849) — GET-CURRENT + SEARCH-WORDLIST + EXECUTE
 	@# composed. GET-CURRENT FORTH-WORDLIST = . prints '-1'; SEARCH-WORDLIST
 	@# returns xt for M849; EXECUTE pushes 849; '.' prints 849.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL849  WL849 SET-CURRENT  : M849 849 ;  FORTH-WORDLIST SET-CURRENT' 'GET-CURRENT FORTH-WORDLIST = .  S" M849" WL849 SEARCH-WORDLIST DROP EXECUTE .  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL849  WL849 SET-CURRENT  : M849 849 ;  FORTH-WORDLIST SET-CURRENT' 'GET-CURRENT FORTH-WORDLIST = .  S" M849" WL849 SEARCH-WORDLIST DROP EXECUTE .  ONLY' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1 849  ok'; then \
 		echo "PASS: REPL test 849 — Story 12.6: GET-CURRENT + SEARCH-WORDLIST + EXECUTE chain (T-CCD4-WL-CHAIN)"; \
 	else \
@@ -7539,7 +7551,7 @@ test-repl: $(TARGET)
 	@# of empty wordlists, returns ( c-addr 0 ) → NIP keeps 0 → '.' prints
 	@# 0. Counted string "NOPE850" built at HERE; colon-defn body
 	@# pre-resolves all tokens before SET-ORDER reconfigures the order.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'HERE  7 C,  78 C, 79 C, 80 C, 69 C, 56 C, 53 C, 48 C,  CONSTANT NAMEBUF' 'WORDLIST CONSTANT WL850A  WORDLIST CONSTANT WL850B  WORDLIST CONSTANT WL850C  WORDLIST CONSTANT WL850D' ': T850 WL850A WL850B WL850C WL850D 4 SET-ORDER  NAMEBUF FIND SWAP DROP .  ONLY ;' 'T850' | $(IZCPM) $(TARGET) 2>/dev/null || true; echo BYE) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'HERE  7 C,  78 C, 79 C, 80 C, 69 C, 56 C, 53 C, 48 C,  CONSTANT NAMEBUF' 'WORDLIST CONSTANT WL850A  WORDLIST CONSTANT WL850B  WORDLIST CONSTANT WL850C  WORDLIST CONSTANT WL850D' ': T850 WL850A WL850B WL850C WL850D 4 SET-ORDER  NAMEBUF FIND SWAP DROP .  ONLY ;' 'T850' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true; echo BYE) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 850 — Story 12.6 review: multi-vocab miss-fallthrough via FIND on 4 empty slots (T-CCD4-MULTI-MISS)"; \
 	else \
@@ -7551,7 +7563,7 @@ test-repl: $(TARGET)
 	@# with 16 DISTINCT anonymous wordlists (closes Finding L10 coverage
 	@# gap). DUP+>R captures wid1 before SET-ORDER consumes it; GET-ORDER
 	@# round-trips and verifies slot-0 == saved.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' ': T851' 'WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST' 'WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST' 'DUP >R 16 SET-ORDER GET-ORDER DROP R> = .  15 0 DO DROP LOOP ONLY ;' 'T851' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' ': T851' 'WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST' 'WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST WORDLIST' 'DUP >R 16 SET-ORDER GET-ORDER DROP R> = .  15 0 DO DROP LOOP ONLY ;' 'T851' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 851 — Story 12.6 review: depth=16 SET-ORDER round-trip with 16 distinct wids (T-CCD4-DEPTH16-DISTINCT)"; \
 	else \
@@ -7563,7 +7575,7 @@ test-repl: $(TARGET)
 	@# MARKER rollback removes a post-MARKER definition (closes Finding
 	@# L11 coverage gap). Pre-rollback: X852 prints 852; post-rollback:
 	@# SEARCH-WORDLIST returns 0 (X852 gone).
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER M852  : X852 852 ;' 'S" X852" FORTH-WORDLIST SEARCH-WORDLIST DROP EXECUTE .' 'M852' 'S" X852" FORTH-WORDLIST SEARCH-WORDLIST .  ONLY' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER M852  : X852 852 ;' 'S" X852" FORTH-WORDLIST SEARCH-WORDLIST DROP EXECUTE .' 'M852' 'S" X852" FORTH-WORDLIST SEARCH-WORDLIST .  ONLY' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '852  ok' && echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 852 — Story 12.6 review: home-MARKER rollback removes post-MARKER defn (T-CCD4-MARKER-ROLLBACK-EFFECT)"; \
 	else \
@@ -7578,7 +7590,7 @@ test-repl: $(TARGET)
 	@# relative; multi-dot/dot-alone/sign-dot/prefix-dot rejection;
 	@# compile-state emission; DPL USER variable; 32-bit modulo wrap.
 	@# T-S130-LIT-TRAIL (853)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 853 — Story 13.0: trailing-dot literal (T-S130-LIT-TRAIL)"; \
 	else \
@@ -7587,7 +7599,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-LIT-LEAD (854)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '.5 D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '.5 D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '5  ok'; then \
 		echo "PASS: REPL test 854 — Story 13.0: leading-dot literal (T-S130-LIT-LEAD)"; \
 	else \
@@ -7596,7 +7608,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-LIT-EMBED (855)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '12.34 D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '12.34 D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1234  ok'; then \
 		echo "PASS: REPL test 855 — Story 13.0: embedded-dot literal (T-S130-LIT-EMBED)"; \
 	else \
@@ -7605,7 +7617,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-LIT-NEG-TRAIL (856)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000000. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1000000  ok'; then \
 		echo "PASS: REPL test 856 — Story 13.0: sign + trailing-dot literal (T-S130-LIT-NEG-TRAIL)"; \
 	else \
@@ -7614,7 +7626,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-LIT-NEG-LEAD (857)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-.5 D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-.5 D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-5  ok'; then \
 		echo "PASS: REPL test 857 — Story 13.0: sign + leading-dot literal (T-S130-LIT-NEG-LEAD)"; \
 	else \
@@ -7623,7 +7635,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-HASH (858)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#1000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#1000. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000  ok'; then \
 		echo "PASS: REPL test 858 — Story 13.0: '#' prefix + dot (T-S130-PREFIX-HASH)"; \
 	else \
@@ -7632,7 +7644,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-DOLLAR (859)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '$$FFFF. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '$$FFFF. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '65535  ok'; then \
 		echo "PASS: REPL test 859 — Story 13.0: '$' prefix + dot (T-S130-PREFIX-DOLLAR)"; \
 	else \
@@ -7641,7 +7653,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-PERCENT (860)
-	@OUTPUT=$$(printf '%%1010. D.\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%1010. D.\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '10  ok'; then \
 		echo "PASS: REPL test 860 — Story 13.0: '%%' prefix + dot (T-S130-PREFIX-PERCENT)"; \
 	else \
@@ -7650,7 +7662,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-0X (861)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0xDEAD. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0xDEAD. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '57005  ok'; then \
 		echo "PASS: REPL test 861 — Story 13.0: '0x' prefix + dot (T-S130-PREFIX-0X)"; \
 	else \
@@ -7659,7 +7671,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-NEG-HASH (862)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-#1000. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-#1000. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1000  ok'; then \
 		echo "PASS: REPL test 862 — Story 13.0: sign + '#' + dot (T-S130-PREFIX-NEG-HASH)"; \
 	else \
@@ -7668,7 +7680,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-NEG-DOLLAR (863)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-$$FF. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-$$FF. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-255  ok'; then \
 		echo "PASS: REPL test 863 — Story 13.0: sign + '$' + dot (T-S130-PREFIX-NEG-DOLLAR)"; \
 	else \
@@ -7677,7 +7689,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-BASE-HEX (864)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'HEX FF. D. DECIMAL' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'HEX FF. D. DECIMAL' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'FF  ok'; then \
 		echo "PASS: REPL test 864 — Story 13.0: BASE=HEX + dot (T-S130-BASE-HEX)"; \
 	else \
@@ -7686,7 +7698,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-BASE-BINARY (865)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '2 BASE ! 1010. D. DECIMAL' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '2 BASE ! 1010. D. DECIMAL' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1010  ok'; then \
 		echo "PASS: REPL test 865 — Story 13.0: BASE=2 + dot (T-S130-BASE-BINARY)"; \
 	else \
@@ -7695,7 +7707,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-32BIT-FULL (866)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0xDEADBEEF. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0xDEADBEEF. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-559038737  ok'; then \
 		echo "PASS: REPL test 866 — Story 13.0: full 32-bit double-cell value (T-S130-32BIT-FULL)"; \
 	else \
@@ -7704,7 +7716,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-MULTI-DOT-REJECT (867)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1.2.3' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1.2.3' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1.2.3 ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 867 — Story 13.0: multi-dot rejection (T-S130-MULTI-DOT-REJECT)"; \
 	else \
@@ -7715,7 +7727,7 @@ test-repl: $(TARGET)
 	@# T-S130-DOUBLE-DOT-TRAIL (868) — '1..' (multi-dot variant) rejection.
 	@# Bare '.' is the FORTH word DOT (FIND-caught), so we use '1..' as the
 	@# unambiguous recogniser-level multi-dot reject probe distinct from 1.2.3.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1..' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1..' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF '1.. ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 868 — Story 13.0: '1..' multi-dot rejection (T-S130-DOUBLE-DOT-TRAIL)"; \
 	else \
@@ -7724,7 +7736,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-NO-DIGITS-HASH (869)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF '#. ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 869 — Story 13.0: '#.' (prefix without digits) rejection (T-S130-PREFIX-NO-DIGITS-HASH)"; \
 	else \
@@ -7733,7 +7745,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-DPL-TRAILING (870)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 870 — Story 13.0: DPL = 0 after trailing-dot parse (T-S130-DPL-TRAILING)"; \
 	else \
@@ -7742,7 +7754,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-DPL-EMBEDDED (871)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '12.34 DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '12.34 DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '2  ok'; then \
 		echo "PASS: REPL test 871 — Story 13.0: DPL = 2 after embedded-dot parse 12.34 (T-S130-DPL-EMBEDDED)"; \
 	else \
@@ -7751,7 +7763,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-DPL-LEADING (872)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '.5 DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '.5 DROP DROP DPL @ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1  ok'; then \
 		echo "PASS: REPL test 872 — Story 13.0: DPL = 1 after leading-dot parse .5 (T-S130-DPL-LEADING)"; \
 	else \
@@ -7760,7 +7772,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-DPL-NO-DOT (873)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '42 DROP DPL @ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '42 DROP DPL @ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 873 — Story 13.0: DPL = -1 after single-cell parse (T-S130-DPL-NO-DOT)"; \
 	else \
@@ -7769,7 +7781,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-COMPILE-STATE (874)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130T 1000000. ; S130T D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130T 1000000. ; S130T D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 874 — Story 13.0: compile-state emits (DLIT) (T-S130-COMPILE-STATE)"; \
 	else \
@@ -7778,7 +7790,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-COMPILE-NEG (875)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130N -1000000. ; S130N D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130N -1000000. ; S130N D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1000000  ok'; then \
 		echo "PASS: REPL test 875 — Story 13.0: compile-state with sign (T-S130-COMPILE-NEG)"; \
 	else \
@@ -7787,7 +7799,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-COMPILE-PREFIX (876)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130P $$DEADBEEF. ; S130P D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130P $$DEADBEEF. ; S130P D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-559038737  ok'; then \
 		echo "PASS: REPL test 876 — Story 13.0: compile-state with prefix preserves bit pattern (T-S130-COMPILE-PREFIX)"; \
 	else \
@@ -7796,7 +7808,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-OVERFLOW-WRAP (877)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '9999999999. D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '9999999999. D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1410065407  ok'; then \
 		echo "PASS: REPL test 877 — Story 13.0: 32-bit modulo wrap (T-S130-OVERFLOW-WRAP)"; \
 	else \
@@ -7805,7 +7817,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-BASE-PRESERVED (878)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'BASE @ #1000. D. BASE @ = .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'BASE @ #1000. D. BASE @ = .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000 -1  ok'; then \
 		echo "PASS: REPL test 878 — Story 13.0: BASE untouched by prefix×dot (T-S130-BASE-PRESERVED)"; \
 	else \
@@ -7814,7 +7826,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-DPLUS-LITERAL (879)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. D+ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. D+ D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '3000000  ok'; then \
 		echo "PASS: REPL test 879 — Story 13.0: D+ via literal-input (T-S130-DPLUS-LITERAL)"; \
 	else \
@@ -7823,7 +7835,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-COMPILE-DPL-PRESERVE (880)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130DPL 1.000 DPL @ ; S130DPL .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': S130DPL 1.000 DPL @ ; S130DPL .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '3  ok'; then \
 		echo "PASS: REPL test 880 — Story 13.0: compiled DPL preserves parse-time count (T-S130-COMPILE-DPL-PRESERVE)"; \
 	else \
@@ -7837,7 +7849,7 @@ test-repl: $(TARGET)
 	@# in prefix handlers a dot before any digit fails. AC #7 also lists
 	@# `-.` (sign + dot only, no digits) — verify it rejects.
 	@# T-S130-PREFIX-DOT-HASH-REJECT (881)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#.100' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '#.100' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF '#.100 ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 881 — Story 13.0: '#.100' (dot in prefix region) rejects (T-S130-PREFIX-DOT-HASH-REJECT)"; \
 	else \
@@ -7846,7 +7858,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-DOT-DOLLAR-REJECT (882)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '$$.FF' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '$$.FF' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF '$$.FF ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 882 — Story 13.0: '$$.FF' (dot in prefix region) rejects (T-S130-PREFIX-DOT-DOLLAR-REJECT)"; \
 	else \
@@ -7855,7 +7867,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-DOT-0X-REJECT (883)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0x.DEAD' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '0x.DEAD' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF '0x.DEAD ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 883 — Story 13.0: '0x.DEAD' (dot in prefix region) rejects (T-S130-PREFIX-DOT-0X-REJECT)"; \
 	else \
@@ -7864,7 +7876,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-PREFIX-DOT-PERCENT-REJECT (884)
-	@OUTPUT=$$(printf '%%.1010\r\nBYE\r\n' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%%.1010\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF '%.1010 ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 884 — Story 13.0: '%%.1010' (dot in prefix region) rejects (T-S130-PREFIX-DOT-PERCENT-REJECT)"; \
 	else \
@@ -7873,7 +7885,7 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@# T-S130-SIGN-DOT-REJECT (885) — `-.` (sign + dot, no digits) per AC #7.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -qF -- '-. ?' && echo "$$OUTPUT" | grep -q 'error -13'; then \
 		echo "PASS: REPL test 885 — Story 13.0: '-.' (sign + dot, no digits) rejects (T-S130-SIGN-DOT-REJECT)"; \
 	else \
@@ -7887,67 +7899,67 @@ test-repl: $(TARGET)
 	@# 886-902 cover the remaining operators using dot-bearing literals
 	@# in their setup.
 	@# T-S130-OP-DMINUS (886)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '3000000. 1000000. D- D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '3000000. 1000000. D- D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
 		echo "PASS: REPL test 886 — Story 13.0: D- via literal-input (T-S130-OP-DMINUS)"; \
 	else echo "FAIL: REPL test 886 — expected '2000000  ok' from '3000000. 1000000. D- D.'"; exit 1; fi
 	@# T-S130-OP-DSTAR (887)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000. 2000. D* D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000. 2000. D* D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
 		echo "PASS: REPL test 887 — Story 13.0: D* via literal-input (T-S130-OP-DSTAR)"; \
 	else echo "FAIL: REPL test 887 — expected '2000000  ok' from '1000. 2000. D* D.'"; exit 1; fi
 	@# T-S130-OP-DNEGATE (888)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. DNEGATE D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. DNEGATE D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1000000  ok'; then \
 		echo "PASS: REPL test 888 — Story 13.0: DNEGATE via literal-input (T-S130-OP-DNEGATE)"; \
 	else echo "FAIL: REPL test 888 — expected '-1000000  ok' from '1000000. DNEGATE D.'"; exit 1; fi
 	@# T-S130-OP-DABS (889)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000000. DABS D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000000. DABS D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 889 — Story 13.0: DABS via literal-input (T-S130-OP-DABS)"; \
 	else echo "FAIL: REPL test 889 — expected '1000000  ok' from '-1000000. DABS D.'"; exit 1; fi
 	@# T-S130-OP-DLESS (890)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. D< .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. D< .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 890 — Story 13.0: D< via literal-input (T-S130-OP-DLESS)"; \
 	else echo "FAIL: REPL test 890 — expected '-1  ok' from '1000000. 2000000. D< .'"; exit 1; fi
 	@# T-S130-OP-DMAX (891)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. DMAX D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. DMAX D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
 		echo "PASS: REPL test 891 — Story 13.0: DMAX via literal-input (T-S130-OP-DMAX)"; \
 	else echo "FAIL: REPL test 891 — expected '2000000  ok' from '1000000. 2000000. DMAX D.'"; exit 1; fi
 	@# T-S130-OP-DMIN (892)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. DMIN D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2000000. DMIN D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 892 — Story 13.0: DMIN via literal-input (T-S130-OP-DMIN)"; \
 	else echo "FAIL: REPL test 892 — expected '1000000  ok' from '1000000. 2000000. DMIN D.'"; exit 1; fi
 	@# T-S130-OP-MPLUS (893) — M+ ( d n -- d ) — single-cell add into double
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5 M+ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5 M+ D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000005  ok'; then \
 		echo "PASS: REPL test 893 — Story 13.0: M+ via literal-input (T-S130-OP-MPLUS)"; \
 	else echo "FAIL: REPL test 893 — expected '1000005  ok' from '1000000. 5 M+ D.'"; exit 1; fi
 	@# T-S130-OP-MSTAR (894) — M* ( n n -- d ) — single*single → double
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000 1000 M* D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000 1000 M* D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 894 — Story 13.0: M* operator (T-S130-OP-MSTAR)"; \
 	else echo "FAIL: REPL test 894 — expected '1000000  ok' from '1000 1000 M* D.'"; exit 1; fi
 	@# T-S130-OP-UMSTAR (895) — UM* ( u u -- ud )
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000 1000 UM* D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000 1000 UM* D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 895 — Story 13.0: UM* operator (T-S130-OP-UMSTAR)"; \
 	else echo "FAIL: REPL test 895 — expected '1000000  ok' from '1000 1000 UM* D.'"; exit 1; fi
 	@# T-S130-OP-S-TO-D (896)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-42 S>D D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-42 S>D D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-42  ok'; then \
 		echo "PASS: REPL test 896 — Story 13.0: S>D operator (T-S130-OP-S-TO-D)"; \
 	else echo "FAIL: REPL test 896 — expected '-42  ok' from '-42 S>D D.'"; exit 1; fi
 	@# T-S130-OP-D-TO-S (897)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000. D>S .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '-1000. D>S .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1000  ok'; then \
 		echo "PASS: REPL test 897 — Story 13.0: D>S via literal-input (T-S130-OP-D-TO-S)"; \
 	else echo "FAIL: REPL test 897 — expected '-1000  ok' from '-1000. D>S .'"; exit 1; fi
 	@# T-S130-OP-2DUP (898)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2DUP D+ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 2DUP D+ D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '2000000  ok'; then \
 		echo "PASS: REPL test 898 — Story 13.0: 2DUP via literal-input (T-S130-OP-2DUP)"; \
 	else echo "FAIL: REPL test 898 — expected '2000000  ok' from '1000000. 2DUP D+ D.'"; exit 1; fi
@@ -7955,22 +7967,22 @@ test-repl: $(TARGET)
 	@# Story 13.0.1: switched terminal `.` to `D.` so the surviving double's value
 	@# (not just its top cell) is printed; under the new high-on-TOS convention `.`
 	@# would print the high cell (=0 for 99), masking the operation under test.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 99. 2SWAP 2DROP D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 99. 2SWAP 2DROP D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '99  ok'; then \
 		echo "PASS: REPL test 899 — Story 13.0: 2DROP/2SWAP via literal-input (T-S130-OP-2DROP-2SWAP)"; \
 	else echo "FAIL: REPL test 899 — expected '99  ok' from '1000000. 99. 2SWAP 2DROP D.'"; exit 1; fi
 	@# T-S130-OP-2OVER (900) — 2OVER ( d1 d2 -- d1 d2 d1 ); D. consumes top copy of d1
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5. 2OVER D. 2DROP 2DROP' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000000. 5. 2OVER D. 2DROP 2DROP' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 900 — Story 13.0: 2OVER via literal-input (T-S130-OP-2OVER)"; \
 	else echo "FAIL: REPL test 900 — expected '1000000  ok' from '1000000. 5. 2OVER D. ...'"; exit 1; fi
 	@# T-S130-OP-2STORE-2FETCH (901) — store literal-input double, fetch back
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'CREATE STO 0 , 0 , 1000000. STO 2! STO 2@ D.' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'CREATE STO 0 , 0 , 1000000. STO 2! STO 2@ D.' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '1000000  ok'; then \
 		echo "PASS: REPL test 901 — Story 13.0: 2!/2@ via literal-input (T-S130-OP-2STORE-2FETCH)"; \
 	else echo "FAIL: REPL test 901 — expected '1000000  ok' from 2!/2@ round-trip via literal"; exit 1; fi
 	@# T-S130-OP-D-DOT-R (902) — D.R ( d width -- ) right-justified double print (no trailing space)
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000. 8 D.R' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1000. 8 D.R' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '    1000 ok'; then \
 		echo "PASS: REPL test 902 — Story 13.0: D.R via literal-input (T-S130-OP-D-DOT-R)"; \
 	else echo "FAIL: REPL test 902 — expected '    1000 ok' from '1000. 8 D.R'"; exit 1; fi
@@ -7980,7 +7992,7 @@ test-repl: $(TARGET)
 	@# Story-13.0.1 high-at-low-address): bytes should be AD DE EF BE — i.e.,
 	@# high cell ($DEAD) at addr+0..1 (little-endian-within = AD DE), low cell
 	@# ($BEEF) at addr+2..3 (little-endian-within = EF BE). Decimal: 173 222 239 190.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'CREATE STO13X 0 , 0 , 0xDEADBEEF. STO13X 2! STO13X C@ . STO13X 1 + C@ . STO13X 2 + C@ . STO13X 3 + C@ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' 'CREATE STO13X 0 , 0 , 0xDEADBEEF. STO13X 2! STO13X C@ . STO13X 1 + C@ . STO13X 2 + C@ . STO13X 3 + C@ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '173 222 239 190  ok'; then \
 		echo "PASS: REPL test 903 — Story 13.0.1: 2! byte-layout high-at-low-addr (T-S1301-2STORE-BYTE-LAYOUT)"; \
 	else echo "FAIL: REPL test 903 — expected '173 222 239 190  ok' (AD DE EF BE) from 2! of 0xDEADBEEF."; \
@@ -7991,11 +8003,40 @@ test-repl: $(TARGET)
 	@# lands past `JP DOCOL` (3 bytes) plus the (DLIT)-xt itself (2 bytes), so
 	@# >BODY points at the first inline-data byte. Per AC #8: high cell at lower
 	@# address. For 0xDEADBEEF: bytes must be AD DE EF BE = 173 222 239 190.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T13X 0xDEADBEEF. ; '\'' T13X >BODY DUP C@ . 1+ DUP C@ . 1+ DUP C@ . 1+ C@ .' 'BYE' | $(IZCPM) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T13X 0xDEADBEEF. ; '\'' T13X >BODY DUP C@ . 1+ DUP C@ . 1+ DUP C@ . 1+ C@ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '173 222 239 190  ok'; then \
 		echo "PASS: REPL test 904 — Story 13.0.1: (DLIT) inline-data layout high-at-low-addr (T-S1301-DLIT-BYTE-LAYOUT)"; \
 	else echo "FAIL: REPL test 904 — expected '173 222 239 190  ok' (AD DE EF BE) from (DLIT) inline data"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+
+# === Story 13.1 — file-sanity harness build + invocation ===
+# The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm
+# so the production REPL binary stays clean (AC #7). This rule builds
+# a separate binary $(FILESANITY) that has the (FILE-IO-SANITY) word
+# present and a regular REPL — usable both under iz-cpm CI here and on
+# real MicroBeast hardware (AC #17).
+$(FILESANITY): $(SRCS) | $(BUILDDIR)
+	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) -DFILE_SANITY antforth.asm --raw=../$(FILESANITY)
+
+# `make test-file-sanity` — runs the harness end-to-end under iz-cpm
+# with --disk-a disk/a so HELLO.TXT lives in disk/a/. Extracts the
+# Sanity:..Done block from the REPL output (CR-stripped) and compares
+# it byte-for-byte against the inline EXPECTED fixture — this enforces
+# AC #13(f) properly: presence + order + no extraneous lines slipping
+# through (Review F-B; the previous 11-grep substring loop was loose).
+test-file-sanity: $(FILESANITY)
+	@echo "Running Story 13.1 file-sanity harness..."
+	@OUTPUT=$$(printf '(FILE-IO-SANITY)\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(FILESANITY) 2>/dev/null || true) && \
+	EXPECTED=$$(printf 'Sanity: HELLO.TXT\ncreate ok\nwrite200 ok bytes=200\nclose-w ok\nopen ok\nread200 ok bytes=200 first=A last=y\nseek0 ok\nreadEOF ok bytes=0\nclose ok\ndelete ok\nDone') && \
+	ACTUAL=$$(printf '%s' "$$OUTPUT" | tr -d '\r' | sed -n '/^Sanity: HELLO\.TXT$$/,/^Done$$/p') && \
+	if [ "$$ACTUAL" = "$$EXPECTED" ]; then \
+		echo "PASS: file-sanity test — 11 expected lines match exactly"; \
+	else \
+		echo "FAIL: file-sanity test — harness output does not match expected fixture"; \
+		echo "  Expected:"; printf '%s\n' "$$EXPECTED" | sed 's/^/    /'; \
+		echo "  Actual:";   printf '%s\n' "$$ACTUAL"   | sed 's/^/    /'; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf $(BUILDDIR)/*

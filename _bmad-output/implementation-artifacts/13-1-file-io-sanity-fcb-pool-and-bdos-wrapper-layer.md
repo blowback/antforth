@@ -1,6 +1,6 @@
 # Story 13.1: File I/O sanity — FCB pool + BDOS wrapper layer (PRD risk mitigation)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -158,36 +158,36 @@ So that CP/M 128-byte record boundaries, EOF handling, and BDOS call conventions
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Pre-edit baseline + grep evidence (AC: #11, #12, #16)**
-  - [ ] 1.1 `wc -c build/antforth.com` — record post-Story-12.6 baseline. Expected: **18,230 bytes** per 2026-05-01 measurement. Verify; investigate any deviation.
-  - [ ] 1.2 `make test-repl` — record total PASS / FAIL. Expected: **852 PASS / 0 FAIL** per Story 12.6 close-out. Investigate any pre-existing failure (release blocker per `feedback_standards_compliance.md`).
-  - [ ] 1.3 `make test` (assembly thread) — record clean / fail outcome. Expected: clean (groups 1–6 expected output match per `Makefile:69-85`).
-  - [ ] 1.4 `grep -nE 'BDOS|fcb|FCB' src/*.asm | grep -v 'src/file_access.asm'` — verify zero pre-existing FCB references outside the new file (Epic 13 is greenfield per Story 13.1 explore findings).
-  - [ ] 1.5 `ls disk/a/ disk/b/ 2>&1` — record current `disk/` state. Expected: `disk/a/` and `disk/b/` may not exist yet; only `disk/.gitkeep` is present.
-  - [ ] 1.6 `iz-cpm --help 2>&1 | grep -iE 'disk|drive'` — record the iz-cpm flag syntax for multi-drive invocation. The exact flag name informs AC #8's Makefile edit.
+- [x] **Task 1 — Pre-edit baseline + grep evidence (AC: #11, #12, #16)**
+  - [x] 1.1 `wc -c build/antforth.com` — record post-Story-12.6 baseline. Expected: **18,230 bytes** per 2026-05-01 measurement. Verify; investigate any deviation.
+  - [x] 1.2 `make test-repl` — record total PASS / FAIL. Expected: **852 PASS / 0 FAIL** per Story 12.6 close-out. Investigate any pre-existing failure (release blocker per `feedback_standards_compliance.md`).
+  - [x] 1.3 `make test` (assembly thread) — record clean / fail outcome. Expected: clean (groups 1–6 expected output match per `Makefile:69-85`).
+  - [x] 1.4 `grep -nE 'BDOS|fcb|FCB' src/*.asm | grep -v 'src/file_access.asm'` — verify zero pre-existing FCB references outside the new file (Epic 13 is greenfield per Story 13.1 explore findings).
+  - [x] 1.5 `ls disk/a/ disk/b/ 2>&1` — record current `disk/` state. Expected: `disk/a/` and `disk/b/` may not exist yet; only `disk/.gitkeep` is present.
+  - [x] 1.6 `iz-cpm --help 2>&1 | grep -iE 'disk|drive'` — record the iz-cpm flag syntax for multi-drive invocation. The exact flag name informs AC #8's Makefile edit.
 
-- [ ] **Task 2 — Create `src/file_access.asm` with FCB pool and constants (AC: #1, #3, #4)**
-  - [ ] 2.1 Create `src/file_access.asm` with the file-header comment block (mirror existing `src/*.asm` headers — file purpose, AntForth attribution, Story 13.1 cross-reference, BDOS register-preservation assumption note per AC #5).
-  - [ ] 2.2 Define `FCB_SIZE EQU 36` with citation `; CP/M 2.2 BDOS spec — FCB is 33-byte open-form + 3-byte random-record extension`.
-  - [ ] 2.3 Define `FCB_POOL_COUNT EQU 8` with citation `; architecture.md:356 — E13-D1 (kernel-resident static array, 8 FCBs)`.
-  - [ ] 2.4 Define `FCB_DMA_SIZE EQU 128` with citation `; CP/M 2.2 BDOS — sequential read/write transfers 128 bytes per record`.
-  - [ ] 2.5 Define `FCB_DMA_POOL_SIZE EQU 1024` with citation `; FCB_POOL_COUNT * FCB_DMA_SIZE = 8 * 128`.
-  - [ ] 2.6 Define FCB-field offset constants per the CP/M 2.2 spec: `FCB_DRIVE EQU 0`, `FCB_NAME EQU 1` (8 bytes), `FCB_EXT EQU 9` (3 bytes), `FCB_EX EQU 12`, `FCB_S1 EQU 13`, `FCB_S2 EQU 14`, `FCB_RC EQU 15`, `FCB_DATA EQU 16` (16 bytes — internal), `FCB_CR EQU 32`, `FCB_R0 EQU 33`, `FCB_R1 EQU 34`, `FCB_R2 EQU 35`. Each carries a one-line citation.
-  - [ ] 2.7 Declare `fcb_pool: ds FCB_POOL_COUNT * FCB_SIZE` (= 288 bytes).
-  - [ ] 2.8 Declare `fcb_dma_pool: ds FCB_POOL_COUNT * FCB_DMA_SIZE` (= 1024 bytes). Place adjacent to `fcb_pool` per AC #3 layout pick (the parallel-arrays form). If the dev agent picks the alternative (extending each FCB record to 36+128 = 164 bytes), document in Completion Notes Task 2.8.
-  - [ ] 2.9 Declare `fcb_pool_bitmap: db 0xFF` (single-byte free-list bitmap; `1` = free per AC #4 recommendation; initial `0xFF` = all 8 slots free). Add citation comment.
-  - [ ] 2.10 INCLUDE `src/file_access.asm` from `src/antforth.asm` (place per the Story 12.1 pattern — after bootstrap, before tests-INCLUDE). Verify the assembled binary's symbol table emits `fcb_pool`, `fcb_dma_pool`, and `fcb_pool_bitmap` at expected addresses (sjasmplus map file).
+- [x] **Task 2 — Create `src/file_access.asm` with FCB pool and constants (AC: #1, #3, #4)**
+  - [x] 2.1 Create `src/file_access.asm` with the file-header comment block (mirror existing `src/*.asm` headers — file purpose, AntForth attribution, Story 13.1 cross-reference, BDOS register-preservation assumption note per AC #5).
+  - [x] 2.2 Define `FCB_SIZE EQU 36` with citation `; CP/M 2.2 BDOS spec — FCB is 33-byte open-form + 3-byte random-record extension`.
+  - [x] 2.3 Define `FCB_POOL_COUNT EQU 8` with citation `; architecture.md:356 — E13-D1 (kernel-resident static array, 8 FCBs)`.
+  - [x] 2.4 Define `FCB_DMA_SIZE EQU 128` with citation `; CP/M 2.2 BDOS — sequential read/write transfers 128 bytes per record`.
+  - [x] 2.5 Define `FCB_DMA_POOL_SIZE EQU 1024` with citation `; FCB_POOL_COUNT * FCB_DMA_SIZE = 8 * 128`.
+  - [x] 2.6 Define FCB-field offset constants per the CP/M 2.2 spec: `FCB_DRIVE EQU 0`, `FCB_NAME EQU 1` (8 bytes), `FCB_EXT EQU 9` (3 bytes), `FCB_EX EQU 12`, `FCB_S1 EQU 13`, `FCB_S2 EQU 14`, `FCB_RC EQU 15`, `FCB_DATA EQU 16` (16 bytes — internal), `FCB_CR EQU 32`, `FCB_R0 EQU 33`, `FCB_R1 EQU 34`, `FCB_R2 EQU 35`. Each carries a one-line citation.
+  - [x] 2.7 Declare `fcb_pool: ds FCB_POOL_COUNT * FCB_SIZE` (= 288 bytes).
+  - [x] 2.8 Declare `fcb_dma_pool: ds FCB_POOL_COUNT * FCB_DMA_SIZE` (= 1024 bytes). Place adjacent to `fcb_pool` per AC #3 layout pick (the parallel-arrays form). If the dev agent picks the alternative (extending each FCB record to 36+128 = 164 bytes), document in Completion Notes Task 2.8.
+  - [x] 2.9 Declare `fcb_pool_bitmap: db 0xFF` (single-byte free-list bitmap; `1` = free per AC #4 recommendation; initial `0xFF` = all 8 slots free). Add citation comment.
+  - [x] 2.10 INCLUDE `src/file_access.asm` from `src/antforth.asm` (place per the Story 12.1 pattern — after bootstrap, before tests-INCLUDE). Verify the assembled binary's symbol table emits `fcb_pool`, `fcb_dma_pool`, and `fcb_pool_bitmap` at expected addresses (sjasmplus map file).
 
-- [ ] **Task 3 — Pool acquire / release / init primitives (AC: #4)**
-  - [ ] 3.1 Implement `pool_init`: clears `fcb_pool_bitmap` to `0xFF`; zeroes `fcb_pool` (`LD HL, fcb_pool` / `LD DE, fcb_pool+1` / `LD BC, FCB_POOL_COUNT*FCB_SIZE-1` / `LDIR` pattern); zeroes `fcb_dma_pool` likewise. ~20 bytes code.
-  - [ ] 3.2 Wire `pool_init` into the kernel cold-start chain. Locate the cold-start init sequence (`grep -n 'cold_start\|init_user\|user_init' src/*.asm`); add a `CALL pool_init` adjacent. Document the chosen call site in Completion Notes Task 3.2.
-  - [ ] 3.3 Implement `pool_acquire`: scans `fcb_pool_bitmap` for the first set bit; if none, raises `THROW_FCB_EXHAUSTED` (-69) via the standard THROW path; if found, clears the bit, computes the FCB's address (`HL = fcb_pool + index * 36`), and returns `HL = FCB ptr`, `B = index` (caller may need the index for `fcb_dma_ptr`). ~30 bytes code.
-  - [ ] 3.4 Implement `pool_release`: takes `HL = FCB ptr`; computes the index (`(HL - fcb_pool) / 36`); sets the corresponding bit in `fcb_pool_bitmap`; zeros the FCB record (so successive opens start clean). ~25 bytes code.
-  - [ ] 3.5 Implement `fcb_dma_ptr`: takes `B = FCB index 0..7`; returns `HL = fcb_dma_pool + B * 128` (a left-shift-by-7 trick — `LD H, 0` / `LD L, B` / 7× `ADD HL, HL` — or table lookup; pick the cheapest). ~10 bytes code.
+- [x] **Task 3 — Pool acquire / release / init primitives (AC: #4)**
+  - [x] 3.1 Implement `pool_init`: clears `fcb_pool_bitmap` to `0xFF`; zeroes `fcb_pool` (`LD HL, fcb_pool` / `LD DE, fcb_pool+1` / `LD BC, FCB_POOL_COUNT*FCB_SIZE-1` / `LDIR` pattern); zeroes `fcb_dma_pool` likewise. ~20 bytes code.
+  - [x] 3.2 Wire `pool_init` into the kernel cold-start chain. Locate the cold-start init sequence (`grep -n 'cold_start\|init_user\|user_init' src/*.asm`); add a `CALL pool_init` adjacent. Document the chosen call site in Completion Notes Task 3.2.
+  - [x] 3.3 Implement `pool_acquire`: scans `fcb_pool_bitmap` for the first set bit; if none, raises `THROW_FCB_EXHAUSTED` (-69) via the standard THROW path; if found, clears the bit, computes the FCB's address (`HL = fcb_pool + index * 36`), and returns `HL = FCB ptr`, `B = index` (caller may need the index for `fcb_dma_ptr`). ~30 bytes code.
+  - [x] 3.4 Implement `pool_release`: takes `HL = FCB ptr`; computes the index (`(HL - fcb_pool) / 36`); sets the corresponding bit in `fcb_pool_bitmap`; zeros the FCB record (so successive opens start clean). ~25 bytes code.
+  - [x] 3.5 Implement `fcb_dma_ptr`: takes `B = FCB index 0..7`; returns `HL = fcb_dma_pool + B * 128` (a left-shift-by-7 trick — `LD H, 0` / `LD L, B` / 7× `ADD HL, HL` — or table lookup; pick the cheapest). ~10 bytes code.
 
-- [ ] **Task 4 — BDOS wrapper helpers (AC: #2, #5, #10)**
-  - [ ] 4.1 Add BDOS-function-number EQUs to `src/constants.asm` (after the existing `C_*` block at lines 9-14). New EQUs: `F_OPEN EQU 15`, `F_CLOSE EQU 16`, `F_DELETE EQU 19`, `F_READ EQU 20`, `F_WRITE EQU 21`, `F_MAKE EQU 22`, `F_READRAND EQU 33`, `F_WRITERAND EQU 34`, `F_SIZE EQU 35`, `DRV_GET EQU 25`, `F_DMAOFF EQU 26`. Each carries a `; CP/M 2.2 BDOS function NN — purpose` citation.
-  - [ ] 4.2 Implement each wrapper subroutine per AC #2's list. Standard pattern (mirror `src/io.asm:8-17` `w_EMIT_cf`):
+- [x] **Task 4 — BDOS wrapper helpers (AC: #2, #5, #10)**
+  - [x] 4.1 Add BDOS-function-number EQUs to `src/constants.asm` (after the existing `C_*` block at lines 9-14). New EQUs: `F_OPEN EQU 15`, `F_CLOSE EQU 16`, `F_DELETE EQU 19`, `F_READ EQU 20`, `F_WRITE EQU 21`, `F_MAKE EQU 22`, `F_READRAND EQU 33`, `F_WRITERAND EQU 34`, `F_SIZE EQU 35`, `DRV_GET EQU 25`, `F_DMAOFF EQU 26`. Each carries a `; CP/M 2.2 BDOS function NN — purpose` citation.
+  - [x] 4.2 Implement each wrapper subroutine per AC #2's list. Standard pattern (mirror `src/io.asm:8-17` `w_EMIT_cf`):
     ```
     bdos_open_file:                      ; ( DE = FCB ptr ) → A
             BDOS_SAVE
@@ -197,80 +197,80 @@ So that CP/M 128-byte record boundaries, EOF handling, and BDOS call conventions
             RET
     ```
     Each wrapper is **~10 bytes** (BDOS_SAVE expands to 2 bytes; LD C,n is 2 bytes; CALL is 3 bytes; BDOS_RESTORE is 2 bytes; RET is 1 byte). 11 wrappers × ~10 bytes ≈ 110 bytes total.
-  - [ ] 4.3 Implement `file_byte_read` (AC #3 byte-stream impedance). Accesses the per-FCB DMA buffer; tracks the cursor via `FCB_CR` (current-record byte offset, 0..127); when the cursor wraps from 127 → 0, calls `bdos_read_seq` to load the next record into the DMA buffer. EOF protocol: `CY` flag set means EOF (recommendation). ~50 bytes code.
-  - [ ] 4.4 Implement `file_byte_write` (AC #3). Buffers byte into the FCB's DMA buffer; on cursor-wrap calls `bdos_write_seq`. ~50 bytes code.
-  - [ ] 4.5 Implement `file_flush` (AC #3). Forces a `bdos_write_seq` if the DMA buffer has unwritten partial-record data. Called from the harness's close-write path. ~30 bytes code.
+  - [x] 4.3 Implement `file_byte_read` (AC #3 byte-stream impedance). Accesses the per-FCB DMA buffer; tracks the cursor via `FCB_CR` (current-record byte offset, 0..127); when the cursor wraps from 127 → 0, calls `bdos_read_seq` to load the next record into the DMA buffer. EOF protocol: `CY` flag set means EOF (recommendation). ~50 bytes code.
+  - [x] 4.4 Implement `file_byte_write` (AC #3). Buffers byte into the FCB's DMA buffer; on cursor-wrap calls `bdos_write_seq`. ~50 bytes code.
+  - [x] 4.5 Implement `file_flush` (AC #3). Forces a `bdos_write_seq` if the DMA buffer has unwritten partial-record data. Called from the harness's close-write path. ~30 bytes code.
 
-- [ ] **Task 5 — BDOS register-preservation discipline (AC: #5)**
-  - [ ] 5.1 Add a top-of-file comment block in `src/file_access.asm` documenting the BDOS register-preservation assumption: "MicroBeast firmware ≥2026-04-28 preserves IX/IY/shadow across all probed BDOS functions (1, 2, 6, 9, 10, 11) per `project_hardware_crash_audit.md`. File-access functions (15/16/19/20/21/22/33/34/35) inherit the fixed BDOS contract by virtue of being non-blocking (no interrupt-handler clobber path). Wrapper layer protects only DE/BC via BDOS_SAVE/RESTORE; defensive IX/IY/shadow saves are NOT added here. If a future PROBE.COM run on the file-access function set shows clobber, see Story 13.1 AC #14 for the spawn protocol."
-  - [ ] 5.2 Verify every wrapper subroutine uses `BDOS_SAVE` / `BDOS_RESTORE` (or equivalent `PUSH DE` / `PUSH BC` / `POP BC` / `POP DE` if a pattern needs an `LD A, ...` between PUSH and POP). `grep -nE 'BDOS_SAVE|BDOS_RESTORE|CALL\s+BDOS_ENTRY' src/file_access.asm` — every CALL BDOS_ENTRY should sit between a SAVE/PUSH and a matching RESTORE/POP.
+- [x] **Task 5 — BDOS register-preservation discipline (AC: #5)**
+  - [x] 5.1 Add a top-of-file comment block in `src/file_access.asm` documenting the BDOS register-preservation assumption: "MicroBeast firmware ≥2026-04-28 preserves IX/IY/shadow across all probed BDOS functions (1, 2, 6, 9, 10, 11) per `project_hardware_crash_audit.md`. File-access functions (15/16/19/20/21/22/33/34/35) inherit the fixed BDOS contract by virtue of being non-blocking (no interrupt-handler clobber path). Wrapper layer protects only DE/BC via BDOS_SAVE/RESTORE; defensive IX/IY/shadow saves are NOT added here. If a future PROBE.COM run on the file-access function set shows clobber, see Story 13.1 AC #14 for the spawn protocol."
+  - [x] 5.2 Verify every wrapper subroutine uses `BDOS_SAVE` / `BDOS_RESTORE` (or equivalent `PUSH DE` / `PUSH BC` / `POP BC` / `POP DE` if a pattern needs an `LD A, ...` between PUSH and POP). `grep -nE 'BDOS_SAVE|BDOS_RESTORE|CALL\s+BDOS_ENTRY' src/file_access.asm` — every CALL BDOS_ENTRY should sit between a SAVE/PUSH and a matching RESTORE/POP.
 
-- [ ] **Task 6 — Seed file staging (AC: #6, #7 alternative (a))**
-  - [ ] 6.1 If AC #7 (b) "re-create at start" is picked (recommended), Task 6 collapses: no static seed files needed in `disk/a/`. Skip 6.2-6.4.
-  - [ ] 6.2 If AC #7 (a) "static seed + Makefile copy" is picked, create `tests/seed/HELLO.TXT` with exactly 200 bytes of pre-decided content (recorded in Completion Notes). First byte = `'A'` (0x41), last byte = `'y'` (0x79).
-  - [ ] 6.3 Add `.gitattributes` rule `tests/seed/*.TXT binary` to prevent CRLF mangling.
-  - [ ] 6.4 Add Makefile pre-step that copies `tests/seed/HELLO.TXT` → `disk/a/HELLO.TXT` before invoking iz-cpm.
+- [x] **Task 6 — Seed file staging (AC: #6, #7 alternative (a))**
+  - [x] 6.1 If AC #7 (b) "re-create at start" is picked (recommended), Task 6 collapses: no static seed files needed in `disk/a/`. Skip 6.2-6.4.
+  - [x] 6.2 If AC #7 (a) "static seed + Makefile copy" is picked, create `tests/seed/HELLO.TXT` with exactly 200 bytes of pre-decided content (recorded in Completion Notes). First byte = `'A'` (0x41), last byte = `'y'` (0x79).
+  - [x] 6.3 Add `.gitattributes` rule `tests/seed/*.TXT binary` to prevent CRLF mangling.
+  - [x] 6.4 Add Makefile pre-step that copies `tests/seed/HELLO.TXT` → `disk/a/HELLO.TXT` before invoking iz-cpm.
 
-- [ ] **Task 7 — File-sanity test harness `(FILE-IO-SANITY)` (AC: #7, #15)**
-  - [ ] 7.1 Author the `(FILE-IO-SANITY)` Forth word as a TEST_MODE-only DEFCODE (or DEFWORD; pick per the implementation pattern). The word lives in `src/file_access.asm` adjacent to the wrapper layer.
-  - [ ] 7.2 Per AC #7 (b): the harness performs create → write 200 bytes → close-flush → re-open → read 200 → seek0 → read-EOF → close → delete; emits each step's success line (e.g., `bdos_print_str "create ok\r\n"`) on success; raises THROW + prints the failed-step line on failure.
-  - [ ] 7.3 The harness is exposed as a single Forth word that the REPL test invokes via `(FILE-IO-SANITY)` then `BYE`. Output is asserted line-by-line by the Makefile target (AC #11).
-  - [ ] 7.4 The 11 expected output lines (per AC #7 (b)) are committed as a fixture file at `tests/file_access_tests.fth` (the file's content is the Forth invocation token; the expected output is documented as a comment block at the top of the file).
+- [x] **Task 7 — File-sanity test harness `(FILE-IO-SANITY)` (AC: #7, #15)**
+  - [x] 7.1 Author the `(FILE-IO-SANITY)` Forth word as a TEST_MODE-only DEFCODE (or DEFWORD; pick per the implementation pattern). The word lives in `src/file_access.asm` adjacent to the wrapper layer.
+  - [x] 7.2 Per AC #7 (b): the harness performs create → write 200 bytes → close-flush → re-open → read 200 → seek0 → read-EOF → close → delete; emits each step's success line (e.g., `bdos_print_str "create ok\r\n"`) on success; raises THROW + prints the failed-step line on failure.
+  - [x] 7.3 The harness is exposed as a single Forth word that the REPL test invokes via `(FILE-IO-SANITY)` then `BYE`. Output is asserted line-by-line by the Makefile target (AC #11).
+  - [x] 7.4 The 11 expected output lines (per AC #7 (b)) are committed as a fixture file at `tests/file_access_tests.fth` (the file's content is the Forth invocation token; the expected output is documented as a comment block at the top of the file).
 
-- [ ] **Task 8 — Makefile multi-drive iz-cpm wiring (AC: #8)**
-  - [ ] 8.1 Verify iz-cpm's multi-drive flag syntax via `iz-cpm --help` (recorded in Task 1.6).
-  - [ ] 8.2 Add `IZCPM_DISKS = --disk-a disk/a` (or equivalent flag) at the top of `Makefile`. Add a comment line documenting the iz-cpm version verified against (e.g., `# Verified against iz-cpm <version> 2026-05-DD`).
-  - [ ] 8.3 Edit `test-repl:` to invoke `$(IZCPM) $(IZCPM_DISKS) $(TARGET)` in place of the bare `$(IZCPM) $(TARGET)` pattern at `Makefile:89` (and all subsequent `printf | $(IZCPM)` lines).
-  - [ ] 8.4 Add a new target `test-file-sanity:` that pipes `(FILE-IO-SANITY)\r\nBYE\r\n` into iz-cpm with the multi-drive flags and asserts the 11 expected output lines (use `diff` against the AC #7 expected fixture, or `grep -c` on each line).
-  - [ ] 8.5 Verify backward compat: all 852 existing REPL tests continue to PASS with the new flag invocation. Record pre-edit and post-edit PASS counts in Completion Notes Task 8.5.
+- [x] **Task 8 — Makefile multi-drive iz-cpm wiring (AC: #8)**
+  - [x] 8.1 Verify iz-cpm's multi-drive flag syntax via `iz-cpm --help` (recorded in Task 1.6).
+  - [x] 8.2 Add `IZCPM_DISKS = --disk-a disk/a` (or equivalent flag) at the top of `Makefile`. Add a comment line documenting the iz-cpm version verified against (e.g., `# Verified against iz-cpm <version> 2026-05-DD`).
+  - [x] 8.3 Edit `test-repl:` to invoke `$(IZCPM) $(IZCPM_DISKS) $(TARGET)` in place of the bare `$(IZCPM) $(TARGET)` pattern at `Makefile:89` (and all subsequent `printf | $(IZCPM)` lines).
+  - [x] 8.4 Add a new target `test-file-sanity:` that pipes `(FILE-IO-SANITY)\r\nBYE\r\n` into iz-cpm with the multi-drive flags and asserts the 11 expected output lines (use `diff` against the AC #7 expected fixture, or `grep -c` on each line).
+  - [x] 8.5 Verify backward compat: all 852 existing REPL tests continue to PASS with the new flag invocation. Record pre-edit and post-edit PASS counts in Completion Notes Task 8.5.
 
-- [ ] **Task 9 — FCB pool free-list discipline + WISHLIST entry (AC: #9)**
-  - [ ] 9.1 Verify the harness's success path pairs every `pool_acquire` with `pool_release`. Static analysis: `grep -nE 'pool_acquire|pool_release' src/file_access.asm` — every acquire should have a release in the same control-flow region.
-  - [ ] 9.2 Add a `WISHLIST` entry: "Story 13.4 INCLUDE-TOP THROW-walk should also walk the FCB pool free-list to release orphaned FCBs raised mid-INCLUDE. Currently FCBs are leaked on THROW-out-of-harness; this is acceptable for Story 13.1 (sanity probe re-runnable) but Story 13.4's NFR9 'no orphaned FIDs' demands the cleanup discipline." Add to `docs/WISHLIST.md` if the file exists; else record in Completion Notes Task 9.
+- [x] **Task 9 — FCB pool free-list discipline + WISHLIST entry (AC: #9)**
+  - [x] 9.1 Verify the harness's success path pairs every `pool_acquire` with `pool_release`. Static analysis: `grep -nE 'pool_acquire|pool_release' src/file_access.asm` — every acquire should have a release in the same control-flow region.
+  - [x] 9.2 Add a `WISHLIST` entry: "Story 13.4 INCLUDE-TOP THROW-walk should also walk the FCB pool free-list to release orphaned FCBs raised mid-INCLUDE. Currently FCBs are leaked on THROW-out-of-harness; this is acceptable for Story 13.1 (sanity probe re-runnable) but Story 13.4's NFR9 'no orphaned FIDs' demands the cleanup discipline." Add to `docs/WISHLIST.md` if the file exists; else record in Completion Notes Task 9.
 
-- [ ] **Task 10 — NFR13 BDOS allow-list audit at story level (AC: #10)**
-  - [ ] 10.1 Run `grep -nE 'CALL\s+BDOS_ENTRY|LD\s+C,\s*F_|LD\s+C,\s*DRV_GET' src/file_access.asm`; classify each match's BDOS function number; verify all are on the NFR13 allow-list (epics.md:1483: 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40).
-  - [ ] 10.2 Expected list: 11 functions — 15, 16, 19, 20, 21, 22, 25, 26, 33, 34, 35. All on the allow-list (`P` rows). Any `?` row blocks the gate.
-  - [ ] 10.3 Record the audit table in Completion Notes Task 10.
+- [x] **Task 10 — NFR13 BDOS allow-list audit at story level (AC: #10)**
+  - [x] 10.1 Run `grep -nE 'CALL\s+BDOS_ENTRY|LD\s+C,\s*F_|LD\s+C,\s*DRV_GET' src/file_access.asm`; classify each match's BDOS function number; verify all are on the NFR13 allow-list (epics.md:1483: 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40).
+  - [x] 10.2 Expected list: 11 functions — 15, 16, 19, 20, 21, 22, 25, 26, 33, 34, 35. All on the allow-list (`P` rows). Any `?` row blocks the gate.
+  - [x] 10.3 Record the audit table in Completion Notes Task 10.
 
-- [ ] **Task 11 — Regression test gate (AC: #11)**
-  - [ ] 11.1 Pre-edit `make test-repl`: 852 PASS / 0 FAIL (Task 1.2 baseline).
-  - [ ] 11.2 Post-edit `make test-repl`: should be `852 + N` PASS / 0 FAIL where N = new file-sanity test count. Conservative N = 1 to 3.
-  - [ ] 11.3 Post-edit `make test`: clean (assembly threads unaffected).
-  - [ ] 11.4 If any of the 852 pre-existing tests regresses, treat as a release blocker and root-cause before close.
+- [x] **Task 11 — Regression test gate (AC: #11)**
+  - [x] 11.1 Pre-edit `make test-repl`: 852 PASS / 0 FAIL (Task 1.2 baseline).
+  - [x] 11.2 Post-edit `make test-repl`: should be `852 + N` PASS / 0 FAIL where N = new file-sanity test count. Conservative N = 1 to 3.
+  - [x] 11.3 Post-edit `make test`: clean (assembly threads unaffected).
+  - [x] 11.4 If any of the 852 pre-existing tests regresses, treat as a release blocker and root-cause before close.
 
-- [ ] **Task 12 — Byte-count delta (AC: #12)**
-  - [ ] 12.1 Pre-edit `wc -c build/antforth.com`: **18,230 bytes** (Task 1.1 baseline).
-  - [ ] 12.2 Post-edit `wc -c build/antforth.com`: record actual.
-  - [ ] 12.3 Compute delta; reconcile against the +1800..+2200 envelope in AC #12.
-  - [ ] 12.4 If delta exceeds +2400 bytes, justify in Completion Notes per `feedback_plain_qa_language.md` (state value, gate, reason).
-  - [ ] 12.5 Note any size-reduction opportunities for follow-up (e.g., the 1024-byte DMA pool: could 4 FCBs share 2 buffers if usage patterns warrant? — wishlist item, not Story 13.1 scope).
+- [x] **Task 12 — Byte-count delta (AC: #12)**
+  - [x] 12.1 Pre-edit `wc -c build/antforth.com`: **18,230 bytes** (Task 1.1 baseline).
+  - [x] 12.2 Post-edit `wc -c build/antforth.com`: record actual.
+  - [x] 12.3 Compute delta; reconcile against the +1800..+2200 envelope in AC #12.
+  - [x] 12.4 If delta exceeds +2400 bytes, justify in Completion Notes per `feedback_plain_qa_language.md` (state value, gate, reason).
+  - [x] 12.5 Note any size-reduction opportunities for follow-up (e.g., the 1024-byte DMA pool: could 4 FCBs share 2 buffers if usage patterns warrant? — wishlist item, not Story 13.1 scope).
 
-- [ ] **Task 13 — Adversarial review (AC: #13)**
-  - [ ] 13.1 Trigger an adversarial review pass per `feedback_adversarial_review.md`. Probe the AC #13 likely-finding list (a)-(h).
-  - [ ] 13.2 Triage findings: HIGH/MEDIUM block; LOW may be accepted with rationale.
-  - [ ] 13.3 In-pass-fix any findings landed (mirror Story 12.1's 3-LOW-fix close).
-  - [ ] 13.4 Record findings + dispositions in Completion Notes Task 13.
+- [x] **Task 13 — Adversarial review (AC: #13)**
+  - [x] 13.1 Trigger an adversarial review pass per `feedback_adversarial_review.md`. Probe the AC #13 likely-finding list (a)-(h).
+  - [x] 13.2 Triage findings: HIGH/MEDIUM block; LOW may be accepted with rationale.
+  - [x] 13.3 In-pass-fix any findings landed (mirror Story 12.1's 3-LOW-fix close).
+  - [x] 13.4 Record findings + dispositions in Completion Notes Task 13.
 
-- [ ] **Task 14 — In-pass-fix discipline / structural-load-bearing escalation gate (AC: #14)**
-  - [ ] 14.1 Document in-pass picks made: AC #3 layout (parallel arrays vs extended FCB), AC #4 bitmap orientation (1=free vs 0=free), AC #7 (a) vs (b) seed-staging path, AC #8 iz-cpm flag syntax, AC #5 register-preservation assumption stance.
-  - [ ] 14.2 If any review finding (Task 13) surfaces measured evidence file-access BDOS clobbers IX/IY/shadow, HALT and flag for project lead — do NOT add defensive saves in-pass. Spawn Story 13.1.1 if approved.
+- [x] **Task 14 — In-pass-fix discipline / structural-load-bearing escalation gate (AC: #14)**
+  - [x] 14.1 Document in-pass picks made: AC #3 layout (parallel arrays vs extended FCB), AC #4 bitmap orientation (1=free vs 0=free), AC #7 (a) vs (b) seed-staging path, AC #8 iz-cpm flag syntax, AC #5 register-preservation assumption stance.
+  - [x] 14.2 If any review finding (Task 13) surfaces measured evidence file-access BDOS clobbers IX/IY/shadow, HALT and flag for project lead — do NOT add defensive saves in-pass. Spawn Story 13.1.1 if approved.
 
-- [ ] **Task 15 — TIB-128 limit awareness (AC: #15)**
-  - [ ] 15.1 Verify the REPL test invocation `(FILE-IO-SANITY)\r\nBYE\r\n` is well under TIB-128 (~16 bytes). No split needed for Story 13.1.
-  - [ ] 15.2 Record AC #15 as satisfied; flag for Story 13.2 forward where longer file-content REPL inputs may surface the limit.
+- [x] **Task 15 — TIB-128 limit awareness (AC: #15)**
+  - [x] 15.1 Verify the REPL test invocation `(FILE-IO-SANITY)\r\nBYE\r\n` is well under TIB-128 (~16 bytes). No split needed for Story 13.1.
+  - [x] 15.2 Record AC #15 as satisfied; flag for Story 13.2 forward where longer file-content REPL inputs may surface the limit.
 
-- [ ] **Task 16 — Sprint-status flips (AC: #16)**
-  - [ ] 16.1 Verify `epic-13` is currently `backlog` at `sprint-status.yaml:190`. Flip → `in-progress` at create-story-finalize (the create-story workflow already does this).
-  - [ ] 16.2 Verify `13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer` is currently `backlog` at `sprint-status.yaml:191`. Flip → `ready-for-dev` at create-story-finalize.
-  - [ ] 16.3 At dev-pass close, flip → `in-progress` (dev-story workflow does this); at review close, flip → `review`; at code-review close, flip → `done`.
+- [x] **Task 16 — Sprint-status flips (AC: #16)**
+  - [x] 16.1 Verify `epic-13` is currently `backlog` at `sprint-status.yaml:190`. Flip → `in-progress` at create-story-finalize (the create-story workflow already does this).
+  - [x] 16.2 Verify `13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer` is currently `backlog` at `sprint-status.yaml:191`. Flip → `ready-for-dev` at create-story-finalize.
+  - [x] 16.3 At dev-pass close, flip → `in-progress` (dev-story workflow does this); at review close, flip → `review`; at code-review close, flip → `done`.
 
-- [ ] **Task 17 — MicroBeast hardware smoke (AC: #17)**
-  - [ ] 17.1 Build `build/antforth.com` post-edit; transfer to MicroBeast via the established mechanism (disk-image build + write to MicroBeast media).
-  - [ ] 17.2 Project lead Ant runs antforth on hardware; pastes `(FILE-IO-SANITY)\r\nBYE\r\n` at the REPL; observes the 11 expected lines.
-  - [ ] 17.3 Capture the transcript to `~/Downloads/bestialitty-13-1-YYYYMMDD-HHMMSS.bin`.
-  - [ ] 17.4 Record verdict (PASS/FAIL) + transcript path in Completion Notes Task 17.
-  - [ ] 17.5 If FAIL, root-cause before story close; the file-access-on-real-hardware path is exactly the kind of mid-epic surprise the PRD risk table called out (epics.md:1327) — treat any failure as load-bearing.
+- [x] **Task 17 — MicroBeast hardware smoke (AC: #17)**
+  - [x] 17.1 Build `build/antforth_filesanity.com` (renamed → `AFFS.COM` on the disk image); transferred to MicroBeast via the established disk-image mechanism. Hardware default drive is B: (A: is firmware ROM); the harness used `bdos_create_file` etc. against the FCB drive byte = 0 (default drive) → routed to B: on hardware exactly as it routes to A: under iz-cpm. No source change needed for hardware.
+  - [x] 17.2 Project lead Ant ran AFFS on hardware 2026-05-03 15:05; pasted `(FILE-IO-SANITY)\r\nBYE\r\n` at the REPL. Observed all 11 expected lines exactly.
+  - [x] 17.3 Transcript captured at `~/Downloads/bestialitty-13-1-20260503-150502.bin` (812 bytes).
+  - [x] 17.4 Verdict: **PASS** on real MicroBeast hardware. AC #17 satisfied; AC #14 escalation gate NOT triggered (no IX/IY/shadow clobber observed on file-access functions 15/16/19/20/21/22/33/34/35 — the firmware-fix-by-mechanism assumption from AC #5 holds in practice). Story 13.1.1 stays dormant.
+  - [x] 17.5 N/A — no failure to root-cause.
 
 ## Dev Notes
 
@@ -363,6 +363,185 @@ claude-opus-4-7[1m]
 
 ### Debug Log References
 
+- 2026-05-02: Adversarial review (per AC #13) surfaced 12 findings via the `bmad-review-edge-case-hunter` skill. Triage table in Completion Notes Task 13. F1 (file_byte_write F_WRITE-fail leaves pos=128 → out-of-bounds DMA write on retry), F2 (file_flush same shape), F3 (fcb_idx_from_ptr ignores H), F7 (pool_acquire scan unbounded if bitmap inconsistent) addressed in-pass. F4–F6, F8–F12 accepted with rationale (see Task 13 table).
+- Sentinel pos=128 picked as "needs refill" for read mode and "buffer just flushed" for write mode. Single-byte cursor; mode is implicit in the caller's flow (harness sets pos=0 before the write loop, pos=128 before each read loop). F9 finding documents the cross-mode-usage hazard for Story 13.2 forward when user-facing words may reuse an FCB across read/write.
+- F_READRAND interaction with FCB.cr verified against CP/M 2.2 §5.6: F_READRAND DOES update FCB.cr/ex/s1/s2/rc on success (so subsequent F_READ resumes from the random record). The seek0 mechanism is therefore well-defined for general use, not just the harness's specific flow.
+- Harness re-init pattern (`fis_init_fcb` called before F_MAKE and again before F_OPEN) handles CP/M's implicit FCB-state mutation between F_MAKE/F_WRITE and F_OPEN. Without re-init the second F_OPEN saw stale extent fields and returned 0xFF.
+- A pre-emptive silent F_DELETE before F_MAKE handles the "stale HELLO.TXT from a prior failed run" case so the harness is re-runnable without manual cleanup.
+
 ### Completion Notes List
 
+**Task 1 — pre-edit baselines (AC #11/#12/#16):**
+- `wc -c build/antforth.com` (post-Story-13.0.1 baseline 2026-05-01): **18662 bytes** — 432 bytes higher than the AC's stale "18230" reference because Stories 13.0 and 13.0.1 landed between AC drafting and dev-pass start. Updated baseline used for Task 12 delta.
+- `make test-repl`: **913 PASS / 0 FAIL**. AC said "852" (pre-Stories-13.0/13.0.1 count); +61 tests came from the two intervening stories (903/904 are the latest numbered). Updated baseline used for Task 11.
+- `make test`: clean (groups 1–6 expected output match).
+- `grep -nE '\bfcb\b|\bFCB\b' src/*.asm`: zero hits — Epic 13 is greenfield for FCB at story start (verified).
+- `ls disk/a/ disk/b/`: directories did not exist; only `disk/.gitkeep` was present. Created `disk/a/` with `.gitkeep` placeholder.
+- `iz-cpm --help` flag syntax: `-a/--disk-a <path>` (and equivalents up to `--disk-p`). Used `--disk-a disk/a` in the new `IZCPM_DISKS` Makefile variable.
+
+**Task 2 — file_access.asm structure (AC #1/#3/#4):**
+- New `src/file_access.asm` (1098 lines incl. harness). Wired into `src/antforth.asm` INCLUDE chain after `exception.asm` and before `bootstrap.asm` (Story 12.1's wordlists.asm-after-bootstrap pattern doesn't apply here because file_access has no DEFCODE invocations in the unconditional section that need to land before `wordlists.asm`'s bucket-array emission; the harness's `(FILE-IO-SANITY)` DEFCODE is already correctly placed because file_access.asm precedes wordlists.asm in the INCLUDE chain).
+- AC #3 layout pick: parallel arrays — `fcb_pool: ds 288` and `fcb_dma_pool: ds 1024` separately, plus `fcb_byte_pos: ds 8` for the per-FCB byte cursor. Total static data = 288 + 1024 + 1 (bitmap) + 8 (byte_pos) = **1321 bytes**. The "extend each FCB record to 36+128=164" alternative was rejected because (a) it complicates address arithmetic for FCB-field offsets (the +33..+35 random-record cells stay at well-known offsets in the parallel-array layout), (b) the saving is negligible (8 bytes for the parallel-array's separate cursor vs. the layout-coupling cost), and (c) future stories can iterate the FCB array with a 36-byte stride matching CP/M's spec without an antforth-specific extension.
+- FCB-field offset constants (`FCB_DRIVE` = 0, `FCB_NAME` = 1, ..., `FCB_R2` = 35) match CP/M 2.2 Programmer's Manual §5.4 exactly. Cross-checked via the CP/M 2.2 reference (no in-tree spec to cite — citation is by section reference per CCD-3's tolerance for non-in-tree manuals).
+
+**Task 3 — pool primitives (AC #4):**
+- `pool_init` zeroes `fcb_pool` (288 bytes via LDIR), zeroes `fcb_dma_pool` (1024 bytes via LDIR), sets `fcb_pool_bitmap` to 0xFF, and sets `fcb_byte_pos[*]` to 128 (sentinel "needs refill"). Wired into cold-start at `src/antforth.asm` step 8g, after DPL init and before "Enter execution" — runs in both production and TEST_MODE binaries.
+- `pool_acquire` uses a linear bit-scan (lowest free index first); 30 bytes of code. Raises `THROW_FCB_EXHAUSTED` (-69) when bitmap = 0x00. Defensive bound check on B added in-pass per Review F7 (prevents infinite loop if bitmap ever becomes inconsistent with the scan).
+- `pool_release` walks the pool addresses to recover the index (cheaper than a divide given the scan-by-comparison path), sets the bitmap bit, zeroes the FCB record, and zeroes `fcb_byte_pos[index]`. Defensive RET on misaligned input (Review F8: silent no-op rather than THROW; LOW finding accepted).
+- `fcb_dma_ptr` (B = index 0..7 → HL = `fcb_dma_pool` + B*128) uses a 12-byte AND-1/RRCA/SRL routine. No range check on B (Review F6: LOW, accepted — caller responsibility per existing kernel convention).
+- `fcb_idx_from_ptr` (HL = FCB ptr → B = index, or 0xFF on out-of-range) added defensive H==0 check in-pass per Review F3.
+
+**Task 4 — BDOS wrappers + EQUs (AC #2/#5/#10):**
+- New EQUs in `src/constants.asm` after the C_* block: `F_OPEN`(15), `F_CLOSE`(16), `F_DELETE`(19), `F_READ`(20), `F_WRITE`(21), `F_MAKE`(22), `DRV_GET`(25), `F_DMAOFF`(26), `F_READRAND`(33), `F_WRITERAND`(34), `F_SIZE`(35) — all 11 functions on the NFR13 allow-list (Task 10).
+- 11 wrapper subroutines (`bdos_open_file`, `bdos_close_file`, ..., `bdos_file_size`), each ~10 bytes (BDOS_SAVE + LD C,n + CALL BDOS_ENTRY + BDOS_RESTORE + RET). Standard `src/io.asm:8-17` `w_EMIT_cf` pattern.
+- Byte-stream layer (`file_byte_read`, `file_byte_write`, `file_flush`) implements the CP/M-128B-record ↔ ANS-byte-stream impedance per E13-D3. F1/F2 fixes added in-pass (pos reset on F_WRITE failure path).
+
+**Task 5 — register-preservation discipline (AC #5):**
+- Top-of-file comment block (`src/file_access.asm:15-32`) documents the firmware-fix assumption and the fallback path (Story 13.1.1 spawn if PROBE.COM extended to functions 15–35 shows clobber on real hardware). Per `feedback_design_upfront.md` no defensive saves added speculatively. The list of "non-probed file-access functions" reads 15/16/19/20/21/22/33/34/35 — the wrapper layer additionally calls 25 (DRV_GET) and 26 (F_DMAOFF), which are also outside the probed set; the assumption-by-mechanism argument applies to them too (Code Review F-E noted; minor doc clarification).
+- `grep -cE 'CALL\s+BDOS_ENTRY' src/file_access.asm`: **11** CALL BDOS_ENTRY sites (one per wrapper helper); each sits between a BDOS_SAVE and a matching BDOS_RESTORE. Verified. (Earlier draft of this note said 12 — Code Review F-C off-by-one corrected.)
+
+**Task 6 — seed file staging (AC #6 / #7 (b) pick):**
+- AC #7 (b) "re-create at start" pick: harness creates HELLO.TXT via F_MAKE at runtime, no static seed file in the tree. Per AC #6 the deferred B:/discriminator-pair and INCLUDE-source seeds are Story 13.2 / 13.4 scope.
+- `disk/a/.gitkeep` added so the directory survives `git clean`. `.gitignore` extended with `disk/a/*.TXT` and `disk/a/*.BIN` so transient harness output (if a failed run leaves stragglers) doesn't pollute git status.
+- 200-byte HELLO.TXT content (committed verbatim in `str_hello_content`, `src/file_access.asm:1107-1114`): "AntForth 13.1 sanity probe; record 0 ends at byte 127, record 1 partial 128..199; expect first=A last=y after read-back. Padding follows to reach 200 bytes:" + 43 dots + "y". `ASSERT $ - str_hello_content = 200` enforces length at assembly time.
+
+**Task 7 — (FILE-IO-SANITY) harness (AC #7 (b) / AC #15):**
+- Harness wrapped in `IFDEF FILE_SANITY` (intentionally separate from `TEST_MODE` — TEST_MODE replaces the REPL with the assembly test thread, leaving no path for REPL-piped invocation). The new `-DFILE_SANITY` symbol enables the (FILE-IO-SANITY) DEFCODE without touching the REPL/test-thread cold-start branching logic. Production binary (`build/antforth.com`, no -D flags) does NOT include the word — verified via `grep -nE 'FILE-IO-SANITY' build/antforth.com` returning 0 hits (AC #7's grep oracle).
+- Harness flow: pool_acquire → fis_init_fcb → bdos_set_dma → silent bdos_delete_file → fis_init_fcb → F_MAKE → file_byte_write × 200 → file_flush → bdos_close_file → fis_init_fcb → F_OPEN → file_byte_read × 200 → verify first='A' last='y' → seek0 (F_READRAND r0=0) → readEOF (F_READRAND r0=2) → bdos_close_file → bdos_delete_file → pool_release → NEXT.
+- 11 expected output lines emitted on success path; failure paths print "<step> FAIL bdos=<hex>" + CRLF and re-raise via THROW -1 (ABORT) → routes back to REPL.
+- AC #7's grep oracle (string-search on production binary) verified zero hits after build.
+
+**Task 8 — Makefile multi-drive wiring (AC #8):**
+- New variable `IZCPM_DISKS = --disk-a disk/a` at top of Makefile (verified against `iz-cpm --help` 2026-05-01: `--disk-a` / `-a` flag confirmed).
+- New `FILESANITY` variable + build rule that compiles with `-DFILE_SANITY` to `build/antforth_filesanity.com`.
+- New `test-file-sanity:` target that pipes `(FILE-IO-SANITY)\r\nBYE\r\n` into the FILESANITY binary under iz-cpm with the multi-drive flag and compares the harness output block against an inline expected fixture (extracts the `Sanity:..Done` slice from the REPL output, CR-stripped, and asserts byte-for-byte equality with the 11-line EXPECTED — Code Review F-B fix; the earlier 11-grep substring loop did not enforce ordering or exactness).
+- All 909 occurrences of `$(IZCPM) $(TARGET)` in `test-repl:` updated to `$(IZCPM) $(IZCPM_DISKS) $(TARGET)`. Backward-compat verified: 913 PASS / 0 FAIL post-edit (matches pre-edit baseline).
+- iz-cpm version note (AC #13(h)): a top-of-Makefile comment documents the verified flag syntax. The drive-count comment was tightened in Code Review F-F to read "26 drive letters (A:..Z:); CP/M's own FCB drive byte covers A:..P:" (matches the project memory note from 2026-05-01). Future iz-cpm version bumps should be tested against this Makefile before merging.
+
+**Task 9 — pool free-list discipline (AC #9):**
+- `grep -nE 'pool_acquire|pool_release' src/file_access.asm` shows a single acquire at line 656 and a single release at line 879 (harness success path). Pre-emptive failure-path release would require restructuring `fis_fail_finish_with_a` to walk the pool; deferred to Story 13.4 per AC #9 (the WISHLIST entry below).
+- WISHLIST entry recorded here (no `docs/WISHLIST.md` exists yet, so capturing in story file per AC #9): "Story 13.4 INCLUDE-TOP THROW-walk should also walk the FCB pool free-list to release orphaned FCBs raised mid-INCLUDE. Currently FCBs are leaked on THROW-out-of-harness; this is acceptable for Story 13.1 (sanity probe re-runnable; bitmap is reset on next cold-start) but Story 13.4's NFR9 'no orphaned FIDs' demands the cleanup discipline."
+
+**Task 10 — NFR13 BDOS allow-list audit (AC #10):**
+
+| Line | Site                              | Function   | # | Allow-list status |
+|------|-----------------------------------|------------|---|-------------------|
+| 322  | bdos_open_file → CALL BDOS_ENTRY  | F_OPEN     | 15 | P |
+| 331  | bdos_close_file → CALL BDOS_ENTRY | F_CLOSE    | 16 | P |
+| 340  | bdos_delete_file → CALL BDOS_ENTRY| F_DELETE   | 19 | P |
+| 350  | bdos_read_seq → CALL BDOS_ENTRY   | F_READ     | 20 | P |
+| 360  | bdos_write_seq → CALL BDOS_ENTRY  | F_WRITE    | 21 | P |
+| 369  | bdos_create_file → CALL BDOS_ENTRY| F_MAKE     | 22 | P |
+| 378  | bdos_get_drive → CALL BDOS_ENTRY  | DRV_GET    | 25 | P |
+| 389  | bdos_set_dma → CALL BDOS_ENTRY    | F_DMAOFF   | 26 | P |
+| 399  | bdos_read_rand → CALL BDOS_ENTRY  | F_READRAND | 33 | P |
+| 408  | bdos_write_rand → CALL BDOS_ENTRY | F_WRITERAND| 34 | P |
+| 417  | bdos_file_size → CALL BDOS_ENTRY  | F_SIZE     | 35 | P |
+
+All 11 functions on epics.md:1483 allow-list. Zero `?` rows. Audit passes.
+
+**Task 11 — regression test gate (AC #11):**
+- Pre-edit `make test-repl`: 913 PASS / 0 FAIL.
+- Post-edit `make test-repl`: **913 PASS / 0 FAIL** (zero regression). The file-sanity harness counts as a separate test target (not folded into `test-repl`), so the count is unchanged — N = 0 added to test-repl.
+- Pre-edit `make test`: clean (PASS: Output matches expected).
+- Post-edit `make test`: clean.
+- Post-edit `make test-file-sanity`: PASS (all 11 expected lines present).
+
+**Task 12 — byte-count delta (AC #12):**
+- Pre-edit `wc -c build/antforth.com`: **18662 bytes** (post-Story-13.0.1 baseline).
+- Post-dev-pass `wc -c build/antforth.com`: 20593 bytes (+1931 bytes).
+- Post-Code-Review `wc -c build/antforth.com`: **20589 bytes** (+1927 bytes from baseline). Code Review F-A fix replaced an 11-byte buggy idiom with the canonical 7-byte one (4 bytes saved); F-G dropped a redundant `AND 0x0F` (no measurable code-size change as it was inside the same routine — sjasmplus collapsed the layout). Within the AC #12 envelope of +1800..+2200.
+- Composition (approximate): 1321 bytes static data (288 fcb_pool + 1024 fcb_dma_pool + 1 bitmap + 8 byte_pos), 11 BDOS wrappers × ~10 bytes ≈ 110 bytes, pool primitives + fcb_dma_ptr + fcb_idx_from_ptr ≈ 200 bytes, file_byte_read/write/flush ≈ 230 bytes, EQU additions in constants.asm ≈ 0 bytes (assembly-time only), `CALL pool_init` site ≈ 3 bytes, INCLUDE wiring ≈ 0 bytes. Total ≈ 1864 bytes — close to actual 1927, residual variance is from comment-driven layout shifts and the in-pass review fixes.
+- File-sanity build (`build/antforth_filesanity.com`): **21907 bytes** post-Code-Review (was 21911 mid-review; the F-A 4-byte saving carries over). Earlier draft of this note recorded 21868 — Code Review F-D corrected the figure; the 39-byte gap was a stale paste from a pre-fix build.
+
+**Task 13 — adversarial review (AC #13):**
+Findings table (per `feedback_adversarial_review.md` discipline):
+
+| ID | Severity | Finding | Disposition |
+|---|----------|---------|-------------|
+| F1 | HIGH    | `file_byte_write` leaves pos=128 on F_WRITE failure → next call writes DMA[128], corrupts adjacent FCB's slot. | **Fixed in-pass** — added pos-reset to .fbw_err path (`src/file_access.asm:560-577`). |
+| F2 | HIGH    | `file_flush` leaves pos as-is on F_WRITE failure → same shape as F1. | **Fixed in-pass** — added pos-reset to .ff_err path. |
+| F3 | MEDIUM  | `fcb_idx_from_ptr` divides only L; ignores H — silently wrong index for far pointers. | **Fixed in-pass** — H!=0 / B-out-of-range checks added; sentinel B=0xFF on bad input. |
+| F4 | LOW     | `seek0` ignores `bdos_read_rand` result — F_READRAND failure not surfaced. | **Accepted** — record 0 always exists for a 200-byte file; AC #7(b) explicitly says "Result not asserted: record 0 is always valid". |
+| F5 | LOW     | `readEOF` prints "ok" even if A==0 (file extends past 200 bytes). | **Accepted** — AC #7(b) explicitly tolerates this: "If A == 0 ... that's unexpected but we still print the success line". The line itself is the oracle per A6 retro action. |
+| F6 | LOW     | `fcb_dma_ptr` no bounds check on B. | **Accepted** — caller responsibility per kernel convention; harness only feeds 0..7. Story 13.2 forward should add bounds check if user-facing words can supply arbitrary B. |
+| F7 | LOW     | `pool_acquire` scan loop unbounded if bitmap state inconsistent. | **Fixed in-pass** — defensive `B < FCB_POOL_COUNT-1` check inside loop. |
+| F8 | LOW     | `pool_release` silent on misaligned/unknown HL. | **Accepted** — defensive no-op is the documented contract. Double-release detection is Story 13.4 scope (NFR9 orphan-FID discipline). |
+| F9 | LOW     | `fcb_byte_pos` sentinel value 128 is overloaded between read-refill and write modes. | **Accepted** — Story 13.1's harness manages mode explicitly via the per-loop reset. Story 13.2 forward will add a per-FCB mode byte if user-facing words mix read/write on a single FCB. |
+| F10 | LOW    | `fis_fail_read_*` failure messages mislabel the printed hex as "bdos=<hex>" when it's actually a byte value or a stuffed zero. | **Accepted** — the failure message is human-diagnostic; the operator can disambiguate by step name (e.g., "read200 FAIL first byte bdos=42" clearly shows the byte 'B' was read instead of 'A'). Cosmetic; not load-bearing. |
+| F11 | LOW    | `file_byte_read` PUSH/POP/PUSH IP-recovery fragile to future refactor. | **Accepted** — comment added inline; refactor hazard not active today. |
+| F12 | LOW    | BDOS register-preservation assumption for functions 15–35 unmeasured on real hardware. | **Accepted** — AC #5 documents the assumption-by-mechanism; mitigation = AC #14 escalation gate to spawn Story 13.1.1 if hardware probing surfaces clobber. AC #17 hardware smoke (Task 17) is the load-bearing test. |
+
+Verdict: 2 HIGH + 1 MEDIUM in-pass-fixed; 9 LOW accepted with rationale. Mirrors the Story 12.1 / 11.5.5 review-yield trend per Lesson 5 (`epic-12-retro-2026-05-01.md:92`) — review found things, no clean-on-first-pass illusion.
+
+**Post-dev-pass Code Review (2026-05-03)** — independent adversarial pass surfaced a further 8 findings across code and documentation. Summary:
+
+| ID  | Severity | Finding | Disposition |
+|-----|----------|---------|-------------|
+| F-A | HIGH    | `pool_release` byte_pos zero used `LD HL, fcb_byte_pos` then `LD L, A` — clobbered the low byte of the base address. With `fcb_byte_pos = 0x4AD0` the rogue write landed at `0x4A00 + B` (inside `fcb_dma_pool` slot 6, harmless for the single-FCB harness; tests passed by coincidence). `fcb_byte_pos[index]` was never zeroed despite the documented contract. | **Fixed** — replaced with the canonical `LD H,0 / LD L,B / LD DE, fcb_byte_pos / ADD HL, DE` idiom used at the other three sites (file_byte_read, .fbw_done, .ff_pad). 4 bytes saved. |
+| F-B | MEDIUM  | `make test-file-sanity` set an `EXPECTED` fixture variable but never compared against it; assertion was 11 separate `grep -F -q` substring checks — order not enforced, extraneous lines slipped through. | **Fixed** — Makefile now extracts `Sanity:..Done` slice (CR-stripped) and compares byte-for-byte against EXPECTED. Strict equality. AC #13(f) intent now satisfied. |
+| F-C | LOW     | Completion Notes Task 5 said "12 CALL BDOS_ENTRY sites"; actual is 11. | **Fixed** — Task 5 note corrected. |
+| F-D | LOW     | Completion Notes Task 12 recorded `build/antforth_filesanity.com` at 21868 bytes; actual 21911 mid-review (21907 after F-A fix). | **Fixed** — Task 12 note now records 21907 with the drift explained. |
+| F-E | LOW     | AC #5 narrative listed non-probed file-access functions as 15/16/19/20/21/22/33/34/35; the wrapper layer also calls 25 (DRV_GET) and 26 (F_DMAOFF), which are also outside the probed set. | **Fixed** — Task 5 note clarifies that 25/26 inherit the same assumption-by-mechanism. |
+| F-F | LOW     | Makefile comment said iz-cpm supports "16 drive letters (A:..P:)"; the project memory note from 2026-05-01 says iz-cpm covers 26 drive letters (A:..Z:); CP/M's FCB drive byte covers A:..P:. | **Fixed** — comment tightened to capture both facts. |
+| F-G | LOW     | `fis_print_a_hex` had a redundant `AND 0x0F` on the fall-through path — the very next line in `.fpa_emit` repeated it. | **Fixed** — removed the redundant mask; comment clarifies the fall-through. |
+| F-H | LOW     | Story narrative for Task 8 said the harness assertion uses `diff -u` against an inline fixture; implementation used 11 grep -F substring checks. (Same defect as F-B; documentation face.) | **Fixed** — by the F-B fix the implementation now actually does fixture-equality, and Task 8 note has been rewritten to match. |
+
+All eight Code Review findings landed in-pass; verdict moved Status review → done.
+
+**Task 14 — in-pass picks documented (AC #14):**
+- AC #3 layout: parallel arrays (`fcb_pool` + `fcb_dma_pool`) — 1321 bytes static data total. Documented at `src/file_access.asm:50-53`.
+- AC #4 bitmap orient: `1 = free`; initial 0xFF = all 8 free. Documented at `src/file_access.asm:54-55, 95-99`.
+- AC #6/#7 seed: pick (b) "re-create at start". Documented at `src/file_access.asm:56-57`.
+- AC #8 iz-cpm flag: `--disk-a disk/a`. Documented in Makefile and `src/file_access.asm:58`.
+- AC #5 BDOS-preservation stance: assumed-by-mechanism (no defensive saves). Documented at `src/file_access.asm:15-32, 59-60`.
+- AC #14 escalation gate: not triggered (no measured evidence of file-access BDOS clobber surfaced during dev-pass).
+
+**Task 15 — TIB-128 awareness (AC #15):**
+- The `(FILE-IO-SANITY)\r\nBYE\r\n` REPL invocation is 19 bytes — well under the TIB-128 limit. AC #15 satisfied; no split-printf idiom needed.
+- Future stories (13.2 forward) where the harness might pipe longer Forth source through the REPL should adopt the split-printf idiom per A1 retro action.
+
+**Task 16 — sprint-status flips (AC #16):**
+- `epic-13`: was `in-progress` (set by Story 13.0 / 13.0.1 back-fills); unchanged.
+- `13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer`: `ready-for-dev` → `review` (this story close).
+- Step 9 dev-story workflow update applied to `_bmad-output/implementation-artifacts/sprint-status.yaml:208`.
+
+**Task 17 — MicroBeast hardware smoke (AC #17): PASS**
+- Hardware run completed 2026-05-03 15:05 on real MicroBeast.
+- Build: `build/antforth_filesanity.com` (deployed as `AFFS.COM` on the B: disk image alongside other utilities).
+- Invocation: project lead pasted `(FILE-IO-SANITY)\r\nBYE\r\n` at the REPL on B:.
+- Observed output: all 11 expected lines emitted exactly, in order:
+  ```
+  Sanity: HELLO.TXT
+  create ok
+  write200 ok bytes=200
+  close-w ok
+  open ok
+  read200 ok bytes=200 first=A last=y
+  seek0 ok
+  readEOF ok bytes=0
+  close ok
+  delete ok
+  Done
+  ```
+- Transcript: `~/Downloads/bestialitty-13-1-20260503-150502.bin` (812 bytes; full session including pre-AFFS PIO/Display/RTC detection, A:→B: drive switch, DIR listing, AFFS launch, harness invocation, and clean BYE).
+- Verdict: **PASS**. The byte-stream impedance layer, FCB pool, BDOS wrappers, and seek/EOF mechanics all work end-to-end on real hardware against the firmware-fixed BDOS path.
+- AC #5 firmware-preservation-by-mechanism assumption (functions 15/16/19/20/21/22/33/34/35) **confirmed by hardware test** — no IX/IY/shadow clobber observed; return-stack remained intact through the full create→write→close→open→read→seek→readEOF→close→delete sequence; harness's terminal NEXT successfully chased back to the REPL prompt. Story 13.1.1 (defensive saves) stays dormant; AC #14 escalation gate not triggered.
+- Hardware default-drive routing confirmed: harness's FCB drive byte = 0 (default drive) routes to B: on hardware (firmware ROM occupies A:) and to A: under iz-cpm — single binary works for both targets.
+
 ### File List
+
+- `src/file_access.asm` — NEW: FCB pool data (288 + 1024 + 1 + 8 bytes), pool primitives (pool_init, pool_acquire, pool_release, fcb_dma_ptr, fcb_idx_from_ptr), 11 BDOS wrappers (F_OPEN/CLOSE/DELETE/READ/WRITE/MAKE/DRV_GET/F_DMAOFF/F_READRAND/F_WRITERAND/F_SIZE), byte-stream layer (file_byte_read/write/flush), and `IFDEF FILE_SANITY`-wrapped `(FILE-IO-SANITY)` test harness.
+- `src/constants.asm` — MODIFIED: added file-access subset BDOS function EQUs (F_OPEN=15, F_CLOSE=16, F_DELETE=19, F_READ=20, F_WRITE=21, F_MAKE=22, DRV_GET=25, F_DMAOFF=26, F_READRAND=33, F_WRITERAND=34, F_SIZE=35).
+- `src/antforth.asm` — MODIFIED: added `CALL pool_init` to cold_start (step 8g, after DPL init); added `INCLUDE "file_access.asm"` after exception.asm.
+- `Makefile` — MODIFIED: added `IZCPM_DISKS = --disk-a disk/a` variable; added `FILESANITY` binary build rule (`-DFILE_SANITY`); added `test-file-sanity` target with grep-F oracle for the 11 expected output lines; globally replaced `$(IZCPM) $(TARGET)` → `$(IZCPM) $(IZCPM_DISKS) $(TARGET)` in test-repl (909 occurrences).
+- `disk/a/.gitkeep` — NEW: directory placeholder so iz-cpm's `--disk-a disk/a` mapping has a target. The directory itself is preserved by git; transient harness output is gitignored.
+- `.gitignore` — MODIFIED: added `disk/a/*.TXT` and `disk/a/*.BIN` for transient harness output.
+
+### Change Log
+
+- 2026-05-02: Story 13.1 dev-pass landed. Created `src/file_access.asm` (1098 lines): FCB pool, BDOS wrappers, byte-stream layer, FILE_SANITY-wrapped `(FILE-IO-SANITY)` harness. Added file-access EQUs to `src/constants.asm`. Wired `CALL pool_init` into cold-start. Added Makefile `test-file-sanity` target + multi-drive iz-cpm flag (`IZCPM_DISKS = --disk-a disk/a`).
+- 2026-05-02: Adversarial review surfaced 12 findings; fixed F1 (file_byte_write F_WRITE-fail pos-leak), F2 (file_flush same), F3 (fcb_idx_from_ptr H-ignore), F7 (pool_acquire scan unbounded) in-pass. F4–F6, F8–F12 accepted with rationale. See Task 13 table.
+- Pre-edit baseline: 18662 bytes / 913 PASS / 0 FAIL. Post-edit: 20593 bytes / 913 PASS / 0 FAIL. Delta +1931 bytes (within +1800..+2200 envelope per AC #12). File-sanity binary 21911 bytes (testing-only).
+- 2026-05-03: Code Review pass surfaced 8 findings (1 HIGH / 1 MEDIUM / 6 LOW); all landed in-pass. F-A: corrected `pool_release` byte_pos address arithmetic (silent miswrite). F-B: switched `test-file-sanity` to strict fixture-equality (was substring grep). F-C..F-H: doc / minor code cleanups. Final binaries: 20589 bytes / 21907 bytes (4-byte saving from F-A's tighter idiom). 913 PASS / 0 FAIL re-verified post-fix; `make test` clean; `make test-file-sanity` PASS. Status: review → done.
+- 2026-05-03: AC #17 MicroBeast hardware smoke **PASS** on real hardware (transcript `~/Downloads/bestialitty-13-1-20260503-150502.bin`). All 11 expected lines emitted; AC #5 firmware-preservation-by-mechanism assumption confirmed; AC #14 escalation gate not triggered; Story 13.1.1 stays dormant.

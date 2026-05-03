@@ -205,7 +205,7 @@ development_status:
   # double-cell convention, so 13.0.1 lands and reaches done before 13.1
   # dev-pass starts.
   13-0-1-flip-double-cell-stack-order-ans-3-1-4-1: done
-  13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: ready-for-dev
+  13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: done
   13-2-core-file-access-wordset: backlog
   13-3-file-positioning: backlog
   13-4-source-input-nesting-include-top-chain-discipline: backlog

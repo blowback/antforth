@@ -118,6 +118,12 @@ cold_start:
         LD      (IY+UserArea.dpl),   0xFF
         LD      (IY+UserArea.dpl+1), 0xFF
 
+        ; 8g. FCB pool init — Story 13.1 file-access foundation (E13-D1,
+        ;     architecture.md:354-358). Resets fcb_pool_bitmap, zeros
+        ;     fcb_pool + fcb_dma_pool, and seeds fcb_byte_pos[] = 128
+        ;     (sentinel: refill on first read).
+        CALL    pool_init
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 
@@ -188,6 +194,7 @@ cold_thread:
         INCLUDE "assembler.asm"
         INCLUDE "system.asm"
         INCLUDE "exception.asm"
+        INCLUDE "file_access.asm"
 
 ; === Forth bootstrap definitions (depend on everything above) ===
         INCLUDE "bootstrap.asm"

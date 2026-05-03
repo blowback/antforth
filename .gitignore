@@ -2,3 +2,9 @@
 _bmad
 blog/
 build/
+# Story 13.1 — the file-sanity harness writes transient files into
+# disk/a/ during `make test-file-sanity`; a clean run deletes them at
+# the end, but failed runs may leave stragglers. .gitkeep preserves
+# the directory itself for iz-cpm's --disk-a mapping (AC #8).
+disk/a/*.TXT
+disk/a/*.BIN
