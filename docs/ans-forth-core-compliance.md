@@ -413,13 +413,34 @@ file-positioning words; Story 13.4 wires source-input nesting.
 | `DELETE-FILE` | 11.6.1.1190 | `file_access.asm` (Story 13.2) | `( c-addr u -- ior )` — F_DELETE via transient FCB |
 | `READ-FILE` | 11.6.1.2080 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- u2 ior )` |
 | `WRITE-FILE` | 11.6.1.2480 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- ior )` — R/O guard via fcb_fam |
+| `FILE-POSITION` | 11.6.1.1520 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — high cell on TOS per §3.1.4.1 |
+| `REPOSITION-FILE` | 11.6.1.2142 | `file_access.asm` (Story 13.3) | `( ud fileid -- ior )` — discard discipline (no auto-flush); ior=5 if ≥ 16 MB |
+| `FILE-SIZE` | 11.6.1.1522 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — record-rounded (see Story 13.3 caveat below) |
 
-**Story 13.2 ior/THROW split:**
+**Story 13.2 + 13.3 ior/THROW split:**
 - ior (recoverable): file not found, malformed filename, R/O write
-  attempt, disk-full, EOF mid-read.
+  attempt, disk-full, EOF mid-read, REPOSITION-FILE 24-bit overflow.
 - THROW (unrecoverable): `-69 THROW_FCB_EXHAUSTED` (FCB pool full),
   `-70 THROW_FILE_INVALID_FID` (closed/stale FID — antforth re-purpose
   of Forth 2014 §9.3.5 `-70 FREE`; see `docs/throw-codes.md` §b.1).
+
+**Story 13.3 caveats:**
+- `FILE-SIZE` reports size rounded UP to the nearest 128-byte CP/M
+  record boundary (CP/M 2.2 tracks file size in records, not bytes;
+  partial-record files are padded with `0x1A` on close). A 100-byte
+  file reports as 128. ANS §11.6.1.1522 says "the size, in characters,
+  of the file"; on CP/M 2.2 this is the record-rounded equivalent.
+- `REPOSITION-FILE` does NOT auto-flush. Pending partial-record writes
+  are silently discarded. Users wanting durability across REPOSITION
+  must `CLOSE-FILE` and re-`OPEN-FILE` the file. (Auto-flush was
+  rejected during Story 13.3 dev-pass after a R/W mixed-mode buffer-
+  corruption hazard surfaced; safe auto-flush requires per-FCB dirty-
+  flag infrastructure deferred to Story 13.5.)
+- `FILE-POSITION` on R/W FIDs is correct after WRITE sequences and
+  after REPOSITION but reports +128 too high after a READ on R/W FIDs
+  (the formula uses W/O-shape "no decrement" for fam_masked != 0;
+  R/O FIDs are correct in all states). Mid-read R/W FILE-POSITION
+  accuracy is deferred to Story 13.5 alongside the dirty-flag work.
 
 ### Non-standard words (not in Core or Core Extension)
 

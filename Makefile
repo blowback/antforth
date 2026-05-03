@@ -8177,6 +8177,133 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 913 — Story 13.2 (t9) OPEN W/O → WRITE-FILE round-trip [Code Review H1] (T-S132-T9-OPENWO-WRITE)"; \
 	else echo "FAIL: REPL test 913 — expected 'T9=Hello' (H1 regression: OPEN W/O → WRITE byte loss)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.3 — File-positioning probes (914..919) — see tests/file_access_tests.fth ===
+	@# (t10) FILE-POSITION on fresh OPEN R/O — AC #2(a) anchor: pos=128
+	@#       refill sentinel collapses to logical position 0. Expect
+	@#       "T10=0 0 0 " (printed TOS-first: ior=0, ud-high=0, ud-low=0).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" T10.TXT" R/W CREATE-FILE DROP FA !  FA @ CLOSE-FILE DROP' \
+		'S" T10.TXT" R/O OPEN-FILE DROP FA !' \
+		'." T10=" FA @ FILE-POSITION . . . CR FA @ CLOSE-FILE DROP S" T10.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T10=0 0 0 '; then \
+		echo "PASS: REPL test 914 — Story 13.3 (t10) FILE-POSITION on fresh OPEN R/O (T-S133-T10-FRESHPOS)"; \
+	else echo "FAIL: REPL test 914 — expected 'T10=0 0 0 ' (fresh OPEN R/O FILE-POSITION → 0 0 0)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t11) FILE-POSITION mid-read — AC #2(b) anchor: after reading 200
+	@#       bytes of a 256-byte file, FILE-POSITION returns ud-low=200.
+	@#       Synthesis formula for R/O with pos<128 subtracts 1 from
+	@#       record_count (file_byte_read F_READ_SEQ has auto-advanced CR).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 256 ALLOT' \
+		': P256 256 0 DO BFA I + I 26 MOD 65 + SWAP C! LOOP ;' \
+		'P256' \
+		'S" T11.TXT" R/W CREATE-FILE DROP FA !' \
+		'BFA 256 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" T11.TXT" R/O OPEN-FILE DROP FA !' \
+		'BFA 200 FA @ READ-FILE DROP DROP ." T11=" FA @ FILE-POSITION . . . CR FA @ CLOSE-FILE DROP S" T11.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T11=0 0 200 '; then \
+		echo "PASS: REPL test 915 — Story 13.3 (t11) FILE-POSITION mid-read (T-S133-T11-MIDREAD)"; \
+	else echo "FAIL: REPL test 915 — expected 'T11=0 0 200 ' (after 200-byte read of 256-byte file)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t12) Closed-FID detection on three new words — AC #5: fid_validate
+	@#       raises -70 THROW for stale FID. Three sub-cases under one test.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" T12.TXT" R/W CREATE-FILE DROP FA !  FA @ CLOSE-FILE DROP' \
+		'." T12FP=" FA @ '\'' FILE-POSITION CATCH . CR' \
+		'." T12RF=" 0 0 FA @ '\'' REPOSITION-FILE CATCH . CR' \
+		'." T12FS=" FA @ '\'' FILE-SIZE CATCH . CR S" T12.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T12FP=-70 ' && \
+	   echo "$$OUTPUT" | grep -q 'T12RF=-70 ' && \
+	   echo "$$OUTPUT" | grep -q 'T12FS=-70 '; then \
+		echo "PASS: REPL test 916 — Story 13.3 (t12) closed-FID -70 on three new words (T-S133-T12-STALE-FID)"; \
+	else echo "FAIL: REPL test 916 — expected 'T12FP/RF/FS=-70 ' on each stale-FID call"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t13) REPOSITION-FILE round-trip — AC #9: REPOSITION + READ at byte
+	@#       targets 0/100/200/127/128/129/256 (boundary positions per AC
+	@#       #15(a) record-edge crossing audit). Byte values follow (t2)'s
+	@#       P256 pattern: byte[I] = 'A' + (I mod 26). AC #9 'C' for byte
+	@#       200 is a math typo — actual is 'S' (200 mod 26 = 18, 'A'+18=83).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 256 ALLOT' \
+		': P256 256 0 DO BFA I + I 26 MOD 65 + SWAP C! LOOP ;' \
+		'P256' \
+		'S" T13.TXT" R/W CREATE-FILE DROP FA !' \
+		'BFA 256 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" T13.TXT" R/W OPEN-FILE DROP FA !' \
+		'." T13B0="   0 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE DROP DROP BFA C@ . CR' \
+		'." T13B100=" 100 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE DROP DROP BFA C@ . CR' \
+		'." T13B200=" 200 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE DROP DROP BFA C@ . CR' \
+		'." T13B127=" 127 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE DROP DROP BFA C@ . CR' \
+		'." T13B128=" 128 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE DROP DROP BFA C@ . CR' \
+		'." T13B129=" 129 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE DROP DROP BFA C@ . CR' \
+		'." T13EOF=" 256 0 FA @ REPOSITION-FILE DROP BFA 1 FA @ READ-FILE . . CR FA @ CLOSE-FILE DROP S" T13.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T13B0=65 '   && \
+	   echo "$$OUTPUT" | grep -q 'T13B100=87 ' && \
+	   echo "$$OUTPUT" | grep -q 'T13B200=83 ' && \
+	   echo "$$OUTPUT" | grep -q 'T13B127=88 ' && \
+	   echo "$$OUTPUT" | grep -q 'T13B128=89 ' && \
+	   echo "$$OUTPUT" | grep -q 'T13B129=90 ' && \
+	   echo "$$OUTPUT" | grep -q 'T13EOF=0 0 '; then \
+		echo "PASS: REPL test 917 — Story 13.3 (t13) REPOSITION-FILE round-trip + record-edge boundaries (T-S133-T13-REPOS)"; \
+	else echo "FAIL: REPL test 917 — expected T13B0=65, T13B100=87, T13B200=83, T13B127=88, T13B128=89, T13B129=90, T13EOF=0 0"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t14) FILE-SIZE on empty / partial-record / full-record files —
+	@#       AC #4 caveat: CP/M tracks size in 128-byte records, so a
+	@#       64-byte file reports 128.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 256 ALLOT' \
+		': P64 64 0 DO BFA I + I 26 MOD 65 + SWAP C! LOOP ;' \
+		': P256 256 0 DO BFA I + I 26 MOD 65 + SWAP C! LOOP ;' \
+		'S" T14E.TXT" R/W CREATE-FILE DROP FA !  FA @ CLOSE-FILE DROP' \
+		'S" T14E.TXT" R/O OPEN-FILE DROP FA !' \
+		'." T14E=" FA @ FILE-SIZE . . . CR FA @ CLOSE-FILE DROP S" T14E.TXT" DELETE-FILE DROP' \
+		'P64 S" T14P.TXT" R/W CREATE-FILE DROP FA !' \
+		'BFA 64 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" T14P.TXT" R/O OPEN-FILE DROP FA !' \
+		'." T14P=" FA @ FILE-SIZE . . . CR FA @ CLOSE-FILE DROP S" T14P.TXT" DELETE-FILE DROP' \
+		'P256 S" T14F.TXT" R/W CREATE-FILE DROP FA !' \
+		'BFA 256 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP S" T14F.TXT" R/O OPEN-FILE DROP FA !' \
+		'." T14F=" FA @ FILE-SIZE . . . CR FA @ CLOSE-FILE DROP S" T14F.TXT" DELETE-FILE DROP BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T14E=0 0 0 '   && \
+	   echo "$$OUTPUT" | grep -q 'T14P=0 0 128 ' && \
+	   echo "$$OUTPUT" | grep -q 'T14F=0 0 256 '; then \
+		echo "PASS: REPL test 918 — Story 13.3 (t14) FILE-SIZE on 0/64/256-byte files (T-S133-T14-FILESIZE)"; \
+	else echo "FAIL: REPL test 918 — expected T14E=0 0 0, T14P=0 0 128 (record-rounded), T14F=0 0 256"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t15) REPOSITION-FILE 24-bit overflow → ior=5 — AC #15(e) audit.
+	@#       Target ≥ 16 MB returns ior=5 without FCB mutation.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" T15.TXT" R/W CREATE-FILE DROP FA !' \
+		'." T15=" 0 256 FA @ REPOSITION-FILE . CR FA @ CLOSE-FILE DROP S" T15.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T15=5 '; then \
+		echo "PASS: REPL test 919 — Story 13.3 (t15) REPOSITION-FILE 24-bit overflow → ior=5 (T-S133-T15-OVERFLOW)"; \
+	else echo "FAIL: REPL test 919 — expected 'T15=5 ' (ud-high upper byte=1 → ior=5 overflow)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t16) REPOSITION-FILE → FILE-POSITION round-trip across the
+	@#       N1 ≥ 16 boundary (target byte ≥ 524288). Earlier draft of
+	@#       the CR/EX/S2 mirror clobbered N1 in register E with FCB_EX
+	@#       (= 12) and computed S2 from 12 instead of N1, so a target
+	@#       at 524288 round-tripped to FILE-POSITION = 0. Probe pins
+	@#       the fix: REPOSITION-FILE to byte 524288 (= ud-high 8) →
+	@#       FILE-POSITION returns ud-low=0, ud-high=8, ior=0.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" T16.TXT" R/W CREATE-FILE DROP FA !' \
+		'0 8 FA @ REPOSITION-FILE DROP' \
+		'." T16=" FA @ FILE-POSITION . . . CR FA @ CLOSE-FILE DROP S" T16.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T16=0 8 0 '; then \
+		echo "PASS: REPL test 920 — Story 13.3 (t16) REPOSITION → FILE-POSITION round-trip ≥ 512 KB (T-S133-T16-S2-MIRROR)"; \
+	else echo "FAIL: REPL test 920 — expected 'T16=0 8 0 ' (REPOSITION 524288 → FILE-POSITION = 524288)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm

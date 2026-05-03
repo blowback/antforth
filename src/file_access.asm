@@ -499,13 +499,23 @@ file_byte_read:
         CALL    bdos_read_seq
         OR      A
         JR      NZ, .fbr_eof            ; A non-zero → EOF / error
-        ; Refill OK; pos := 0
+        ; Refill OK; pos := old_pos - 128.
+        ;   Story 13.2 baseline behaviour: old_pos was always 128 (the
+        ;   refill sentinel) so post-refill pos = 0.
+        ;   Story 13.3 extends this — REPOSITION-FILE encodes a target
+        ;   in-buffer offset B as pos = 128 + B. After F_READ_SEQ refills
+        ;   the DMA buffer with the record CR points at, pos := B (skip
+        ;   to the requested byte within the freshly-loaded record).
+        ;   For the legacy pos==128 sentinel case, B = 0 → pos := 0
+        ;   (identical to pre-Story-13.3 behaviour).
         LD      A, (.fbr_idx)
         LD      H, 0
         LD      L, A
         LD      DE, fcb_byte_pos
         ADD     HL, DE
-        LD      (HL), 0
+        LD      A, (HL)                 ; A = old pos (128..255 since refill branch)
+        SUB     128
+        LD      (HL), A                 ; pos := A (in 0..127)
 .fbr_have_buf:
         ; HL = &fcb_byte_pos[index]; (HL) = pos in 0..127.
         ; Read DMA[pos], increment pos, return A=byte CY=0.
@@ -561,7 +571,19 @@ file_byte_write:
         LD      L, A
         LD      DE, fcb_byte_pos
         ADD     HL, DE
-        ; HL = &pos; (HL) = pos (0..127 for write mode)
+        ; HL = &pos. Story 13.2 baseline: pos in 0..127 in write mode.
+        ; Story 13.3 extension: REPOSITION-FILE may set pos = 128+B (see
+        ;   file_byte_read .fbr_refill_ok comment); for write-mode FIDs
+        ;   with B>0 REPOSITION-FILE pre-loads DMA via bdos_read_rand so
+        ;   bytes 0..B-1 of the target record are preserved across the
+        ;   write. Here we just normalise pos by stripping the encoded
+        ;   sentinel bit so the per-byte write loop sees pos in 0..127.
+        LD      A, (HL)
+        CP      128
+        JR      C, .fbw_pos_ok
+        SUB     128
+        LD      (HL), A                 ; pos := pos - 128 (0..127)
+.fbw_pos_ok:
         LD      A, (.fbw_idx)
         LD      B, A
         PUSH    HL                      ; save &pos
@@ -642,6 +664,13 @@ file_flush:
         LD      A, (HL)                 ; A = pos
         OR      A
         JR      Z, .ff_empty            ; pos = 0 → nothing to flush
+        CP      128
+        JR      NC, .ff_empty           ; pos >= 128 → no pending writes
+                                        ;   (Story 13.2 R/O refill sentinel
+                                        ;    or Story 13.3 REPOSITION-FILE
+                                        ;    encoded sentinel; either way
+                                        ;    nothing to flush, leave pos
+                                        ;    intact for subsequent ops).
         ; Pad DMA[pos..127] with 0x1A
         LD      C, A                    ; C = pos
         LD      A, (.ff_idx)
@@ -1043,6 +1072,13 @@ fac_done:       DW 0                    ; READ-FILE u2 accumulator
 fac_ip:         DW 0                    ; saved Forth IP across helper calls
                                         ;   (pool_acquire / pool_release /
                                         ;    fcb_parse_filename clobber DE).
+
+; Story 13.3 additions — see FILE-POSITION / REPOSITION-FILE / FILE-SIZE.
+fac_r0r1r2:     DS 3                    ; FILE-SIZE cursor save (FCB[33..35])
+fac_bp:         DS 4                    ; FILE-POSITION / FILE-SIZE 32-bit
+                                        ;   byte-position scratch (little-
+                                        ;   endian: bp[0..1] = low cell,
+                                        ;   bp[2..3] = high cell).
 
 ; ===============================================
 ; STORY 13.2 — User-facing DEFCODE words
@@ -1586,6 +1622,492 @@ w_WRITE_FILE_cf:
         POP     HL                      ; discard u1
         POP     HL                      ; discard c-addr
         LD      BC, 1                   ; ior = 1 (R/O guard)
+        LD      DE, (fac_ip)
+        NEXT
+
+; ===============================================
+; STORY 13.3 — File positioning (FILE-POSITION / REPOSITION-FILE / FILE-SIZE)
+; ===============================================
+; Three user-facing DEFCODE words that expose the byte-cursor as an
+; ANS double-cell unsigned value, allow random-access seeks, and report
+; file size in bytes. All ride atop the Story 13.1 BDOS wrappers
+; (bdos_file_size / bdos_read_rand / bdos_write_rand) and the Story 13.2
+; user-facing infrastructure (fid_validate, fcb_fam, fcb_byte_pos). No
+; new BDOS function numbers introduced (AC #7).
+;
+; Sync-strategy pick (Task 1.8): mirror + encoded pos. REPOSITION sets
+; FCB[R0..R2] AND mirrors CR/EX/S2 to the same 24-bit record number;
+; sets fcb_byte_pos[index] = 128 + B (encoded "refill then skip B"
+; sentinel). file_byte_read interprets pos>=128 as "refill via
+; F_READ_SEQ at CR; post-refill pos := old_pos - 128" (1-line tweak at
+; .fbr_refill_ok). file_byte_write strips the encoded sentinel at top
+; (4-line addition at .fbw_pos_ok). file_flush treats pos>=128 as
+; "no pending writes" (defence in depth). For W/O / R/W with B>0,
+; REPOSITION pre-loads the DMA buffer via bdos_read_rand so bytes
+; 0..B-1 of the target record are preserved across the next write.
+;
+; ior-vs-THROW routing (Task 9):
+;   THROW (-70):  stale FID (fid_validate, all three words).
+;   ior=5:        REPOSITION-FILE target ≥ 16 MB (24-bit overflow).
+;   ior=0:        success (only outcome for FILE-POSITION / FILE-SIZE
+;                 once fid_validate returns — both are infallible
+;                 against well-formed FCBs; CP/M 2.2 spec says F_SIZE
+;                 never returns an error and FILE-POSITION is pure
+;                 arithmetic on FCB fields).
+
+; -----------------------------------------------
+; FILE-POSITION ( fileid -- ud ior )            ANS Forth 1994 §11.6.1.1520
+;   Return the current byte cursor position as an ANS double-cell
+;   unsigned value (high cell on TOS per §3.1.4.1, post-Story-13.0.1)
+;   plus an ior. ior is always 0 on the success path; a stale FID
+;   raises -70 THROW via fid_validate.
+;
+;   Cursor synthesis:
+;     record_count_seq = (S2 << 12) | (EX << 7) | CR    ; sequential cursor
+;     pos              = fcb_byte_pos[index]            ; byte-stream cursor
+;     fam_masked       = fcb_fam[index] & 3             ; R/O = 0
+;     bp = (record_count_seq * 128) + (pos & 0x7F),
+;       record_count_seq -= 1 if pos < 128 AND fam_masked == 0
+;       (R/O buffer-loaded — file_byte_read's F_READ_SEQ has auto-
+;        advanced CR by 1 past the loaded record).
+;
+;   AC #2 anchors:
+;     (a) fresh OPEN-FILE (any fam) → 0 0 0
+;     (b) after reading 200 bytes of a 256-byte file → 200 0 0
+;
+;   Note on R/W mode: Story 13.3 first cut uses the R/O formula path
+;   only when fam_masked == 0; for R/W (fam_masked == 1), the W/O-shape
+;   formula is used (no decrement). This is correct after a WRITE-FILE
+;   sequence and after REPOSITION-FILE; it returns +128 too high after
+;   a READ-FILE on an R/W FID. Mixed read/write FILE-POSITION accuracy
+;   on R/W FIDs is deferred to Story 13.5 per AC #11.
+; -----------------------------------------------
+w_FILE_POSITION:
+        DEFCODE "FILE-POSITION", 0
+w_FILE_POSITION_cf:
+        CALL    check_underflow
+        LD      (fac_ip), DE            ; preserve Forth IP
+        LD      H, B
+        LD      L, C                    ; HL = fileid
+        CALL    fid_validate            ; -70 THROW on stale FID
+        LD      (fac_fcb), HL
+        ; --- Read FCB fields into scratch (pos, fam, CR, EX, S2) ---
+        CALL    fcb_idx_from_ptr        ; B = index (0..7)
+        LD      A, B
+        LD      (fac_u), A              ; stash index
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_byte_pos
+        ADD     HL, DE
+        LD      A, (HL)
+        LD      (fac_bp), A             ; bp+0 = pos
+        LD      A, (fac_u)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_fam
+        ADD     HL, DE
+        LD      A, (HL)
+        AND     3
+        LD      (fac_bp + 1), A         ; bp+1 = fam_masked
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_CR
+        ADD     HL, DE
+        LD      A, (HL)
+        LD      (fac_bp + 2), A         ; bp+2 = CR
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_EX
+        ADD     HL, DE
+        LD      A, (HL)
+        LD      (fac_bp + 3), A         ; bp+3 = EX
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_S2
+        ADD     HL, DE
+        LD      A, (HL)
+        LD      (fac_count), A          ; fac_count[0] = S2 (scratch reuse)
+        ; --- Build record_count_seq into L=byte0, H=byte1, B=byte2 ---
+        LD      A, (fac_bp + 2)         ; A = CR (0..127, bit 7 = 0)
+        LD      L, A                    ; L = byte 0
+        LD      A, (fac_bp + 3)         ; A = EX (0..31)
+        SRL     A                       ; A = EX>>1; CY = EX & 1
+        JR      NC, .fp_no_ex_lsb
+        SET     7, L                    ; byte 0 bit 7 := EX & 1
+.fp_no_ex_lsb:
+        LD      H, A                    ; H = EX>>1 (low nibble of byte 1)
+        LD      A, (fac_count)          ; A = S2 (0..63)
+        LD      C, A                    ; C = S2 (preserve)
+        AND     0x0F
+        RLCA
+        RLCA
+        RLCA
+        RLCA                            ; A = (S2 & 0xF) << 4
+        OR      H
+        LD      H, A                    ; H = byte 1
+        LD      A, C                    ; A = S2
+        SRL     A
+        SRL     A
+        SRL     A
+        SRL     A                       ; A = S2 >> 4 (0..3)
+        LD      B, A                    ; B = byte 2
+        ; --- Adjust: if pos<128 AND fam_masked==0, decrement (L,H,B) by 1 ---
+        LD      A, (fac_bp)             ; A = pos
+        CP      128
+        JR      NC, .fp_no_dec
+        LD      A, (fac_bp + 1)         ; A = fam_masked
+        OR      A
+        JR      NZ, .fp_no_dec
+        LD      A, L
+        SUB     1
+        LD      L, A
+        JR      NC, .fp_no_dec
+        LD      A, H
+        SUB     1
+        LD      H, A
+        JR      NC, .fp_no_dec
+        DEC     B
+.fp_no_dec:
+        ; --- byte_position = (L,H,B) << 7 — accumulate into (L,H,B,bp+3) ---
+        XOR     A
+        LD      (fac_bp + 3), A         ; bp+3 = 0 (high byte of 32-bit result)
+        LD      C, 7
+.fp_shift:
+        SLA     L
+        RL      H
+        RL      B
+        LD      A, (fac_bp + 3)
+        RLA
+        LD      (fac_bp + 3), A
+        DEC     C
+        JR      NZ, .fp_shift
+        ; --- OR offset = pos & 0x7F into byte 0 (low 7 bits of L are 0) ---
+        LD      A, (fac_bp)
+        AND     0x7F
+        OR      L
+        LD      (fac_bp + 0), A
+        LD      A, H
+        LD      (fac_bp + 1), A
+        LD      A, B
+        LD      (fac_bp + 2), A
+        ; bp+3 already in memory
+        ; --- Push ud-low, ud-high, ior=0 (high cell on TOS per ANS §3.1.4.1) ---
+        LD      HL, (fac_bp)            ; ud-low (bp[0..1])
+        PUSH    HL
+        LD      HL, (fac_bp + 2)        ; ud-high (bp[2..3])
+        PUSH    HL
+        LD      BC, 0                   ; ior = 0 (TOS)
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; REPOSITION-FILE ( ud fileid -- ior )          ANS Forth 1994 §11.6.1.2142
+;   Set the byte cursor of an open FID to ud (0-origin byte position
+;   within the file). ud is consumed from the stack with high cell on
+;   TOS per §3.1.4.1.
+;
+;   Implementation:
+;     - 24-bit overflow check: ud-high upper byte != 0 → ior = 5
+;       (CP/M 2.2 random-record byte address space is 24 bits = 16 MB).
+;     - Discard discipline (Task 1.9 pick (ii) per AC #3): pending
+;       partial-record writes are silently discarded. We DO NOT
+;       auto-flush; this matches CP/M's low-level random-access model
+;       (user manages flush via CLOSE-FILE) and avoids the R/W mixed-
+;       mode corruption hazard where a post-read REPOSITION would
+;       trigger file_flush on a buffer-of-read-data, sending stale
+;       read bytes back to disk. Pick (i) auto-flush was rejected
+;       during dev-pass after the (t13) probe surfaced this corruption
+;       on R/W FIDs (no per-FCB dirty-bit infrastructure to safely
+;       distinguish read-loaded from write-loaded buffer state in
+;       Story 13.1's helper layer; adding it is escalation-gated per
+;       AC #19, deferred to Story 13.5 follow-up). Users wanting
+;       guaranteed write durability across a REPOSITION must CLOSE-
+;       FILE and re-OPEN-FILE between the write and the reposition.
+;     - Compute N = ud >> 7 (24-bit record number); B = ud & 0x7F.
+;     - Set FCB[R0..R2] = N (low 24 bits, little-endian) AND mirror
+;       CR = N & 0x7F, EX = (N>>7) & 0x1F, S2 = (N>>12) & 0x3F so
+;       sequential and random BDOS calls both observe the same cursor.
+;     - For W/O or R/W modes (fam_masked != 0) AND B != 0: pre-load
+;       the DMA buffer via bdos_read_rand so bytes 0..B-1 of record N
+;       are preserved across the next WRITE-FILE. F_READ_RAND failure
+;       (e.g., past EOF on growing file) is silently ignored — DMA
+;       bytes 0..B-1 may be junk in that path.
+;     - Set fcb_byte_pos[index] = 128 + B (encoded sentinel; consumed
+;       by file_byte_read / file_byte_write modifications).
+;
+;   Returns ior = 0 on success.
+;
+;   Note on mixed mode (AC #11): mid-record write after REPOSITION on
+;   an R/W FID followed by a write at a different mid-record byte may
+;   stale-read DMA across the second reposition. Story 13.3 supports
+;   the canonical R/W case "write whole file → CLOSE → re-open R/W →
+;   REPOSITION → READ" (the (t13) round-trip). Pathological mixed-mode
+;   sequencing is the Story 13.5 follow-up.
+; -----------------------------------------------
+w_REPOSITION_FILE:
+        DEFCODE "REPOSITION-FILE", 0
+w_REPOSITION_FILE_cf:
+        CALL    check_underflow_3
+        LD      (fac_ip), DE
+        ; BC = TOS = fileid; (SP) = ud-high; (SP+2) = ud-low
+        LD      H, B
+        LD      L, C
+        CALL    fid_validate            ; -70 THROW on stale FID
+        LD      (fac_fcb), HL
+        POP     HL                      ; HL = ud-high (on top of stack after fileid pop)
+        LD      (fac_buf), HL           ; fac_buf = ud-high (scratch)
+        POP     HL                      ; HL = ud-low
+        LD      (fac_count), HL         ; fac_count = ud-low (scratch)
+        ; --- 24-bit overflow check: ud-high upper byte must be 0 ---
+        LD      A, (fac_buf + 1)        ; A = ud-high upper byte (bits 24..31)
+        OR      A
+        JP      NZ, .rf_overflow
+        ; --- Discard discipline (Task 1.9 pick (ii)): no auto-flush ---
+        ;   See header comment. Pending writes are silently discarded.
+        ; --- Compute N = (ud >> 7) into FCB[R0..R2] ---
+        ; ud (24-bit, low byte = fac_count[0], mid = fac_count[1], hi = fac_buf[0])
+        ; N = ud >> 7 → 17-bit value in N0/N1/N2:
+        ;   N0 = (ud_lo >> 7) | ((ud_mid & 0x7F) << 1)
+        ;   N1 = (ud_mid >> 7) | ((ud_hi  & 0x7F) << 1)
+        ;   N2 = (ud_hi  >> 7)
+        ; B = ud & 0x7F = (ud_lo & 0x7F)
+        LD      A, (fac_count)          ; A = ud_lo
+        AND     0x7F
+        LD      (fac_u), A              ; fac_u = B (in 0..127)
+        ; Now compute N (24-bit). Use HL+B (B as high byte).
+        ; Approach: load (ud_lo, ud_mid, ud_hi) into (E, D, B), then shift right 7 = shift left 1 then take high bytes.
+        LD      A, (fac_count)
+        LD      E, A                    ; E = ud_lo
+        LD      A, (fac_count + 1)
+        LD      D, A                    ; D = ud_mid
+        LD      A, (fac_buf)
+        LD      C, A                    ; C = ud_hi (low byte)
+        ; Shift (C, D, E) left 1 — easier: shift right 7 = (shift right 8) then (shift left 1).
+        ; Shift right 8: drop low byte, shift result down by 8 bits.
+        ;   N tentative = (C, D, E) >> 8 = (0, C, D), then >> -1 (i.e., shift LEFT 1):
+        ;   N0 = (D << 1) | (E >> 7)
+        ;   N1 = (C << 1) | (D >> 7)
+        ;   N2 = (C >> 7)
+        SLA     E                       ; CY = E bit 7 (= bit 7 of ud_lo)
+        LD      A, D
+        RLA                             ; A = (D << 1) | CY = (D << 1) | (E_bit7)
+        LD      L, A                    ; L = N0
+        LD      A, C
+        RLA                             ; A = (C << 1) | (D_bit7)
+        LD      H, A                    ; H = N1
+        LD      A, 0
+        RLA                             ; A = CY (= C bit 7); N2 = 0 + CY
+        LD      B, A                    ; B = N2
+        ; Now (L, H, B) = N (24-bit, little-endian)
+        ; --- Write FCB[R0..R2] = N ---
+        LD      DE, (fac_fcb)
+        ; FCB+33 = R0, +34 = R1, +35 = R2.
+        PUSH    HL                      ; preserve N
+        EX      DE, HL                  ; HL = FCB ptr
+        LD      DE, FCB_R0
+        ADD     HL, DE                  ; HL = FCB+33
+        POP     DE                      ; DE = N's low 16 bits (E=N0, D=N1)
+        LD      (HL), E                 ; FCB+33 = N0
+        INC     HL
+        LD      (HL), D                 ; FCB+34 = N1
+        INC     HL
+        LD      (HL), B                 ; FCB+35 = N2
+        ; --- Mirror CR / EX / S2 ---
+        ;   CR = N & 0x7F     = N0 & 0x7F
+        ;   EX = (N>>7) & 0x1F
+        ;     bits 7..11 of N: bit 7 of N0, bits 0..3 of N1
+        ;     EX = (N0 >> 7) | ((N1 & 0x0F) << 1)
+        ;   S2 = (N>>12) & 0x3F
+        ;     bits 12..17 of N: bits 4..7 of N1, bits 0..1 of N2
+        ;     S2 = (N1 >> 4) | ((N2 & 0x03) << 4)
+        ;
+        ; Stash N0/N1/N2 to scratch FIRST so subsequent FCB-offset loads
+        ; (LD DE, FCB_xx — which reset E to the offset's low byte) can't
+        ; clobber the values mid-computation. Earlier draft kept N1 in E
+        ; across an LD DE, FCB_EX which silently overwrote it with 12 →
+        ; S2 mirror collapsed for any N1 ≥ 16 (target byte ≥ 512 KB),
+        ; producing silent wrong-record I/O on subsequent sequential ops.
+        LD      DE, (fac_fcb)
+        LD      HL, FCB_R0
+        ADD     HL, DE
+        LD      A, (HL)                 ; A = N0
+        LD      (fac_r0r1r2 + 0), A
+        INC     HL
+        LD      A, (HL)                 ; A = N1
+        LD      (fac_r0r1r2 + 1), A
+        INC     HL
+        LD      A, (HL)                 ; A = N2
+        LD      (fac_r0r1r2 + 2), A
+        ; CR = N0 & 0x7F
+        LD      A, (fac_r0r1r2 + 0)
+        AND     0x7F
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_CR
+        ADD     HL, DE
+        LD      (HL), A                 ; FCB[CR] = N0 & 0x7F
+        ; EX = (N0 >> 7) | ((N1 & 0x0F) << 1)
+        LD      A, (fac_r0r1r2 + 0)     ; A = N0
+        RLCA                            ; bit 0 of A := N0 bit 7
+        AND     1
+        LD      C, A                    ; C = N0 >> 7
+        LD      A, (fac_r0r1r2 + 1)     ; A = N1
+        AND     0x0F
+        SLA     A                       ; A = (N1 & 0x0F) << 1
+        OR      C                       ; A = EX
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_EX
+        ADD     HL, DE
+        LD      (HL), A                 ; FCB[EX] = EX
+        ; S2 = (N1 >> 4) | ((N2 & 0x03) << 4)
+        LD      A, (fac_r0r1r2 + 1)     ; A = N1
+        SRL     A
+        SRL     A
+        SRL     A
+        SRL     A                       ; A = N1 >> 4
+        LD      C, A
+        LD      A, (fac_r0r1r2 + 2)     ; A = N2
+        AND     0x03
+        RLCA
+        RLCA
+        RLCA
+        RLCA                            ; A = (N2 & 0x03) << 4
+        OR      C                       ; A = S2
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_S2
+        ADD     HL, DE
+        LD      (HL), A                 ; FCB[S2] = S2
+        ; --- Pre-load DMA via F_READ_RAND if write-mode AND B>0 ---
+        ;   B is in fac_u. Skip if B == 0. Skip if fam_masked == 0 (R/O).
+        LD      A, (fac_u)              ; A = B
+        OR      A
+        JR      Z, .rf_no_preload       ; B = 0 → no pre-load needed
+        LD      HL, (fac_fcb)
+        CALL    fcb_fam_get             ; A = fam (clobbers BC, DE, HL, F)
+        AND     3
+        JR      Z, .rf_no_preload       ; R/O → no pre-load
+        ; Pre-load: set DMA, F_READ_RAND. Failure ignored (file may not
+        ; yet have record N — user is extending it via subsequent writes).
+        LD      HL, (fac_fcb)
+        CALL    fcb_idx_from_ptr        ; B = index
+        CALL    fcb_dma_ptr             ; HL = DMA ptr (clobbers A, F; B preserved)
+        EX      DE, HL                  ; DE = DMA ptr
+        CALL    bdos_set_dma
+        LD      DE, (fac_fcb)
+        CALL    bdos_read_rand          ; A = result; ignored
+.rf_no_preload:
+        ; --- Set fcb_byte_pos[index] = 128 + B ---
+        LD      HL, (fac_fcb)
+        CALL    fcb_idx_from_ptr        ; B = index
+        LD      A, B
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_byte_pos
+        ADD     HL, DE
+        LD      A, (fac_u)              ; A = B
+        ADD     A, 128
+        LD      (HL), A                 ; pos = 128 + B (encoded sentinel)
+        ; --- Success: ior = 0 ---
+        LD      BC, 0
+        LD      DE, (fac_ip)
+        NEXT
+.rf_overflow:
+        ; ud-high upper byte != 0 → target ≥ 16 MB. ior = 5; no FCB mutation.
+        LD      BC, 5
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; FILE-SIZE ( fileid -- ud ior )                ANS Forth 1994 §11.6.1.1522
+;   Return the byte size of an open file as a double-cell unsigned
+;   value (high cell on TOS per §3.1.4.1) plus an ior.
+;
+;   CP/M record-rounding caveat: CP/M 2.2's filesystem tracks size in
+;   128-byte records, not bytes. A file written with WRITE-FILE of 100
+;   bytes occupies 1 record on disk (128 bytes, with bytes 100..127
+;   padded to 0x1A by file_flush at CLOSE-FILE); FILE-SIZE reports
+;   128, not 100. Per ANS §11.6.1.1522 this is permitted: "the size,
+;   in characters, of the file" — on CP/M 2.2 this is rounded up to
+;   the nearest 128-byte boundary. AC #4 caveat documented.
+;
+;   Implementation:
+;     - Save FCB[R0..R2] to fac_r0r1r2 (F_SIZE clobbers these fields
+;       to write the size into them — must be restored to preserve the
+;       user's cursor).
+;     - bdos_file_size (F_SIZE = 35; Story 13.1 wrapper). After the
+;       call, FCB[R0..R2] = file's record count (24-bit unsigned).
+;     - bp = (record_count << 7) — multiply by 128 to convert records
+;       to bytes; up to 25 bits, fits in 32-bit unsigned.
+;     - Restore FCB[R0..R2] from fac_r0r1r2.
+;     - Push ud-low, ud-high, ior=0 (high cell on TOS).
+;
+;   ior is always 0 on the success path (CP/M 2.2 spec: F_SIZE never
+;   returns an error code; A documented as "not used" on return). A
+;   stale FID raises -70 THROW.
+; -----------------------------------------------
+w_FILE_SIZE:
+        DEFCODE "FILE-SIZE", 0
+w_FILE_SIZE_cf:
+        CALL    check_underflow
+        LD      (fac_ip), DE
+        LD      H, B
+        LD      L, C
+        CALL    fid_validate            ; -70 THROW on stale FID
+        LD      (fac_fcb), HL
+        ; --- Save FCB[R0..R2] to fac_r0r1r2 ---
+        LD      DE, (fac_fcb)
+        LD      HL, FCB_R0
+        ADD     HL, DE                  ; HL = &FCB[R0]
+        LD      DE, fac_r0r1r2
+        LD      BC, 3
+        LDIR
+        ; --- F_SIZE: writes file's record count into FCB[R0..R2] ---
+        LD      DE, (fac_fcb)
+        CALL    bdos_file_size          ; A = ignored per CP/M 2.2 spec
+        ; --- Read FCB[R0..R2] = 24-bit record count into (L, H, B) ---
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_R0
+        ADD     HL, DE
+        LD      A, (HL)
+        LD      C, A                    ; C = R0
+        INC     HL
+        LD      A, (HL)
+        LD      D, A                    ; D = R1
+        INC     HL
+        LD      A, (HL)
+        LD      B, A                    ; B = R2
+        LD      L, C
+        LD      H, D                    ; HL = (R0, R1) = low 16 bits
+        ; --- Multiply (L, H, B) by 128 = shift left 7 into 32-bit (L, H, B, bp+3) ---
+        XOR     A
+        LD      (fac_bp + 3), A         ; bp+3 = 0 (high byte)
+        LD      C, 7
+.fs_shift:
+        SLA     L
+        RL      H
+        RL      B
+        LD      A, (fac_bp + 3)
+        RLA
+        LD      (fac_bp + 3), A
+        DEC     C
+        JR      NZ, .fs_shift
+        LD      A, L
+        LD      (fac_bp + 0), A
+        LD      A, H
+        LD      (fac_bp + 1), A
+        LD      A, B
+        LD      (fac_bp + 2), A
+        ; bp+3 already in memory
+        ; --- Restore FCB[R0..R2] from fac_r0r1r2 ---
+        LD      HL, (fac_fcb)
+        LD      BC, FCB_R0
+        ADD     HL, BC
+        EX      DE, HL                  ; DE = &FCB[R0]
+        LD      HL, fac_r0r1r2
+        LD      BC, 3
+        LDIR
+        ; --- Push ud-low, ud-high, ior=0 (high cell on TOS) ---
+        LD      HL, (fac_bp)            ; ud-low
+        PUSH    HL
+        LD      HL, (fac_bp + 2)        ; ud-high
+        PUSH    HL
+        LD      BC, 0                   ; ior = 0
         LD      DE, (fac_ip)
         NEXT
 
