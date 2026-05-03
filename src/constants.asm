@@ -90,6 +90,13 @@ THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5
 ; Epic 13 (File-Access); THROW_ASM_LOAD_FAIL is reserved for the
 ; lazy-load assembler also in Epic 13.
 THROW_FCB_EXHAUSTED     EQU -69  ; ANS Forth 1994 §9.3.5 (post-1994 extension; Forth 2014 retains)
+; antforth re-purposing of Forth 2014 §9.3.5 reserved code -70 (originally
+; FREE/memory deallocator in Forth 2014). antforth has no separate FREE
+; wordset and re-uses -70 for the file-access invalid-FID condition
+; (closer in spirit to a use-after-free than to memory FREE). See
+; docs/throw-codes.md §b.1 for the rationale and Story 13.2 AC #8 for the
+; allocation history.
+THROW_FILE_INVALID_FID  EQU -70  ; antforth extension — see docs/throw-codes.md §b.1 (Story 13.2)
 
 ; --- antforth extensions: assembler-error codes (-258..-272) ---
 ; Allocated as one contiguous block for grep-ability; one code per error

@@ -206,7 +206,7 @@ development_status:
   # dev-pass starts.
   13-0-1-flip-double-cell-stack-order-ans-3-1-4-1: done
   13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: done
-  13-2-core-file-access-wordset: backlog
+  13-2-core-file-access-wordset: done
   13-3-file-positioning: backlog
   13-4-source-input-nesting-include-top-chain-discipline: backlog
   13-5-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: backlog

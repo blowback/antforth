@@ -107,6 +107,16 @@ fcb_pool_bitmap:    DB 0xFF
 ;   buffer at offset 0) and to 128 before a read loop (force refill).
 fcb_byte_pos:       DS FCB_POOL_COUNT
 
+; Per-FCB file-access mode (Story 13.2 — AC #2/#6). Stores the fam
+; argument passed to OPEN-FILE / CREATE-FILE so WRITE-FILE can enforce
+; the R/O guard (AC #6) without re-deriving it from the FCB. Layout pick
+; per Task 6.1: parallel array, mirror of fcb_byte_pos. Encoding picked
+; per Task 2.1: R/O = 0, R/W = 1, W/O = 2, BIN = | 4 (BIN is a no-op on
+; CP/M 2.2 which has no text/binary distinction; the bit is OR'd through
+; non-destructively). pool_init sets all 8 slots to 0; pool_release
+; resets the freed slot to 0 (R/O fallback) for stale-FID hardening.
+fcb_fam:            DS FCB_POOL_COUNT
+
 ; -----------------------------------------------
 ; pool_init — Cold-start initialiser; called from cold_start.
 ;   Resets fcb_pool_bitmap to 0xFF (all free), zeroes fcb_pool and
@@ -140,6 +150,17 @@ pool_init:
         LD      (HL), A
         INC     HL
         DJNZ    .pi_bp_loop
+        ; Story 13.2 — zero fcb_fam[*] so freshly-acquired slots default
+        ; to R/O (= 0). pool_acquire by itself does not set fam; the
+        ; user-facing OPEN-FILE / CREATE-FILE words call fcb_fam_set to
+        ; record the caller's fam after acquire.
+        LD      HL, fcb_fam
+        LD      B, FCB_POOL_COUNT
+        XOR     A
+.pi_fam_loop:
+        LD      (HL), A
+        INC     HL
+        DJNZ    .pi_fam_loop
         RET
 
 ; -----------------------------------------------
@@ -236,6 +257,14 @@ pool_release:
         LD      H, 0
         LD      L, B
         LD      DE, fcb_byte_pos
+        ADD     HL, DE
+        LD      (HL), 0
+        ; Story 13.2 — also reset fcb_fam[index] to 0 (R/O default) so a
+        ; stale FID that slips past fid_validate (defence-in-depth) lands
+        ; on R/O behaviour rather than whatever the previous holder set.
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_fam
         ADD     HL, DE
         LD      (HL), 0
         ; Zero the FCB record (36 bytes starting at DE)
@@ -670,6 +699,895 @@ file_flush:
         POP     DE
         RET
 .ff_idx:        DB 0
+
+; ===============================================
+; STORY 13.2 — User-facing File-Access wordset
+; ===============================================
+; The helpers below (fcb_fam_get, fcb_fam_set, fid_validate,
+; fcb_parse_filename, pf_to_upper, pf_validate_byte) and the user-
+; facing DEFCODE words (R/O, R/W, W/O, BIN, OPEN-FILE, CREATE-FILE,
+; DELETE-FILE, CLOSE-FILE, READ-FILE, WRITE-FILE) layer ANS Forth 1994
+; §11.6.1 File-Access semantics atop the Story 13.1 wrapper layer
+; (E13-D3, architecture.md:390-394). All BDOS I/O routes through the
+; existing wrappers — no new CALL BDOS_ENTRY sites added (AC #10).
+;
+; ior-vs-THROW split (AC #12):
+;   * ior (recoverable, no THROW): file not found, malformed filename,
+;     R/O write attempt, disk full, EOF mid-read.
+;   * THROW (unrecoverable): -69 FCB pool exhausted, -70 invalid FID.
+;
+; -----------------------------------------------
+; fcb_fam_get — Read fcb_fam[index of FCB ptr].
+;   Entry: HL = FCB ptr.   Exit: A = fam.
+;   Clobbers: A, BC, DE, HL, F. (Calls fcb_idx_from_ptr internally.)
+; -----------------------------------------------
+fcb_fam_get:
+        CALL    fcb_idx_from_ptr        ; B = index (0..7) or 0xFF
+        LD      A, B
+        CP      FCB_POOL_COUNT
+        JR      NC, .fg_oor             ; out-of-range — return 0 (R/O default)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_fam
+        ADD     HL, DE
+        LD      A, (HL)
+        RET
+.fg_oor:
+        XOR     A
+        RET
+
+; -----------------------------------------------
+; fcb_fam_set — Write A → fcb_fam[index of FCB ptr].
+;   Entry: HL = FCB ptr; A = fam.   Exit: -.
+;   Clobbers: BC, DE, HL, F. Preserves: A. (Calls fcb_idx_from_ptr.)
+; -----------------------------------------------
+fcb_fam_set:
+        LD      C, A                    ; preserve fam across fcb_idx_from_ptr
+        CALL    fcb_idx_from_ptr        ; B = index or 0xFF
+        LD      A, B
+        CP      FCB_POOL_COUNT
+        JR      NC, .fs_oor
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_fam
+        ADD     HL, DE
+        LD      A, C
+        LD      (HL), A
+        RET
+.fs_oor:
+        LD      A, C                    ; restore A on out-of-range no-op
+        RET
+
+; -----------------------------------------------
+; fcb_set_byte_pos — Set fcb_byte_pos[index of FCB] = A.
+;   Entry: HL = FCB ptr; A = byte_pos value (typical: 0 for write mode,
+;     128 for read sentinel).
+;   Exit:  - (no caller-visible state).
+;   Clobbers: BC, DE, HL, F. Preserves: A.
+;   Used by OPEN-FILE / CREATE-FILE to seed the cursor at success —
+;   pool_acquire (post-release) leaves pos=0 which is wrong for read
+;   mode and right for write mode; pool_init leaves pos=128 which is
+;   right for read and wrong for write. The mode-specific seed must
+;   happen at the user-facing word's success path so subsequent
+;   READ-FILE / WRITE-FILE cycles behave per the byte-stream contract.
+; -----------------------------------------------
+fcb_set_byte_pos:
+        LD      C, A                    ; stash A across fcb_idx_from_ptr
+        CALL    fcb_idx_from_ptr        ; B = index or 0xFF
+        LD      A, B
+        CP      FCB_POOL_COUNT
+        JR      NC, .fsbp_oor
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_byte_pos
+        ADD     HL, DE
+        LD      A, C
+        LD      (HL), A
+        RET
+.fsbp_oor:
+        LD      A, C
+        RET
+
+; -----------------------------------------------
+; fid_validate — Verify a fileid points at an in-use FCB pool slot;
+;   raise -70 THROW if not. AC #8 invariant.
+;   Entry: HL = FID (FCB ptr from caller).
+;   Exit:  returns normally if valid; otherwise JP w_THROW_cf.kernel_entry
+;     with BC = -70.
+;   Clobbers: A, BC, DE, F (HL preserved on success path).
+;   Discipline: every File-Access word that takes a fileid (CLOSE-FILE,
+;     READ-FILE, WRITE-FILE — and Story 13.3 FILE-POSITION etc.) calls
+;     this BEFORE any FCB-byte access or BDOS call. Use-after-free of
+;     a closed FID is then impossible.
+; -----------------------------------------------
+fid_validate:
+        PUSH    HL                      ; preserve FID across fcb_idx_from_ptr
+        CALL    fcb_idx_from_ptr        ; B = index or 0xFF
+        LD      A, B
+        CP      FCB_POOL_COUNT
+        JR      NC, .fv_invalid         ; pointer not in pool / not aligned
+        ; Mask = 1 << index. Bit set in bitmap means "free" (released);
+        ; in-use slot must have its bit clear.
+        LD      C, 1
+        OR      A                       ; clear CY for the rotate
+.fv_shift:
+        LD      A, B
+        OR      A
+        JR      Z, .fv_check
+        SLA     C
+        DEC     B
+        JR      .fv_shift
+.fv_check:
+        LD      A, (fcb_pool_bitmap)
+        AND     C
+        JR      NZ, .fv_invalid         ; bit set → slot is free → stale FID
+        POP     HL                      ; restore caller's FID
+        RET
+.fv_invalid:
+        POP     HL                      ; balance stack (HL discarded)
+        LD      BC, THROW_FILE_INVALID_FID
+        JP      w_THROW_cf.kernel_entry
+
+; -----------------------------------------------
+; pf_to_upper — Map ASCII a..z → A..Z; pass others through.
+;   Entry: A = byte.   Exit: A = uppercased byte.
+;   Clobbers: F.
+; -----------------------------------------------
+pf_to_upper:
+        CP      'a'
+        RET     C                       ; A < 'a' — leave alone
+        CP      'z' + 1
+        RET     NC                      ; A > 'z' — leave alone
+        SUB     'a' - 'A'
+        RET
+
+; -----------------------------------------------
+; pf_validate_byte — Reject filename chars that are illegal in a
+;   CP/M FCB name/ext field, per AC #9. Accepts: lower/upper alpha,
+;   digits, and the "tame" punctuation. Rejects: '*', '?', '/',
+;   ' ' (embedded space), '.' (a second dot in the ext, or any '.'
+;   the caller hasn't already filtered).
+;   Entry: A = byte.
+;   Exit:  CY = 0 valid / CY = 1 invalid.
+;   Clobbers: F.
+; -----------------------------------------------
+pf_validate_byte:
+        CP      '*'
+        JR      Z, .pvb_bad
+        CP      '?'
+        JR      Z, .pvb_bad
+        CP      '/'
+        JR      Z, .pvb_bad
+        CP      ' '
+        JR      Z, .pvb_bad
+        CP      '.'
+        JR      Z, .pvb_bad
+        OR      A                       ; clear CY (success)
+        RET
+.pvb_bad:
+        SCF
+        RET
+
+; -----------------------------------------------
+; fcb_parse_filename — Parse a Forth ( c-addr u ) tuple into a CP/M
+;   FCB's drive (FCB[0]) + name (FCB[1..8]) + ext (FCB[9..11]) fields.
+;   See AC #9 for the full rule set.
+;   Entry: DE = FCB ptr; HL = c-addr; B = u (length 0..255).
+;   Exit:  CY = 0 success — FCB[0..11] populated, name/ext space-padded;
+;          CY = 1 malformed input — FCB state is undefined (caller is
+;            expected to release the FCB on the failure path; see Task 5).
+;   Clobbers: A, BC, DE, HL, F.
+;
+; CP/M FCB drive byte uses 1-origin (0 = default, 1 = A:, 2 = B:, ...,
+; 16 = P:). BDOS function 25 / DRV_GET (Story 13.1's bdos_get_drive
+; helper at file_access.asm above) returns 0-origin (0 = A:). The two
+; encodings DO NOT MATCH. fcb_parse_filename produces FCB-form. AC #9
+; and AC #17(c) flag this as the canonical off-by-one trap on CP/M;
+; never pass the result of bdos_get_drive directly into FCB[0] without
+; an INC A translation step.
+; -----------------------------------------------
+fcb_parse_filename:
+        ; --- Length cap: u > 14 → reject before any byte inspection ---
+        LD      A, B
+        CP      15
+        JP      NC, .pf_reject
+        OR      A
+        JP      Z, .pf_reject           ; u = 0 → empty filename
+        ; --- Init FCB[0] = 0; FCB[1..11] = ' ' (0x20) ---
+        PUSH    DE                      ; save FCB ptr base for the parse
+        PUSH    HL                      ; save c-addr
+        PUSH    BC                      ; save u
+        XOR     A
+        LD      (DE), A                 ; FCB[0] = 0
+        ; Set FCB[1] = 0x20, then LDIR-propagate to FCB[2..11].
+        ;   LDIR semantics: copies (HL)→(DE), then HL++/DE++/BC--.
+        ;   src = FCB+1, dst = FCB+2, count = 10 → FCB[1..11] all 0x20.
+        LD      H, D
+        LD      L, E
+        INC     HL                      ; HL = FCB+1 (src)
+        LD      (HL), 0x20
+        LD      D, H
+        LD      E, L
+        INC     DE                      ; DE = FCB+2 (dst)
+        LD      BC, 10
+        LDIR
+        ; FCB[1..11] all 0x20 now. Restore initial registers.
+        POP     BC                      ; B = u
+        POP     HL                      ; HL = c-addr
+        POP     DE                      ; DE = FCB ptr base
+        ; --- Drive prefix: "X:" requires u >= 2 and (HL+1) == ':' ---
+        LD      A, B
+        CP      2
+        JR      C, .pf_no_drive         ; u < 2 — too short for prefix
+        INC     HL
+        LD      A, (HL)
+        DEC     HL
+        CP      ':'
+        JR      NZ, .pf_no_drive
+        ; Yes drive prefix. Validate letter; encode 1-origin.
+        LD      A, (HL)
+        CALL    pf_to_upper
+        SUB     'A'
+        JP      C, .pf_reject           ; below 'A'
+        CP      16
+        JP      NC, .pf_reject          ; above 'P'
+        INC     A                       ; FCB drive: A=1, B=2, ..., P=16
+        LD      (DE), A
+        ; Skip "X:" — advance HL by 2, decrement B by 2.
+        INC     HL
+        INC     HL
+        DEC     B
+        DEC     B
+        LD      A, B
+        OR      A
+        JP      Z, .pf_reject           ; "X:" with no name → reject
+.pf_no_drive:
+        ; --- Parse name into FCB[1..8] (up to 8 chars before '.' or EOI) ---
+        ; Save FCB[0] for ext-base computation.
+        PUSH    DE                      ; save FCB ptr base
+        INC     DE                      ; DE = FCB+1 (name slot 0)
+        LD      C, 8                    ; remaining name slots
+.pf_name_loop:
+        LD      A, B
+        OR      A
+        JR      Z, .pf_name_eoi         ; ran out of input — name done
+        LD      A, (HL)
+        CP      '.'
+        JR      Z, .pf_name_dot
+        CALL    pf_validate_byte        ; reject *, ?, /, space, '.'
+        JP      C, .pf_reject_pop
+        LD      A, C
+        OR      A
+        JP      Z, .pf_reject_pop       ; > 8 name chars before dot
+        LD      A, (HL)
+        CALL    pf_to_upper
+        LD      (DE), A
+        INC     DE
+        DEC     C
+        INC     HL
+        DEC     B
+        JR      .pf_name_loop
+.pf_name_eoi:
+        ; End of input during name (no extension). FCB[9..11] already
+        ; space-padded by the init pass.
+        ; Empty name? (C still 8 means we wrote nothing.) Reject.
+        LD      A, C
+        CP      8
+        JP      Z, .pf_reject_pop
+        POP     DE                      ; restore FCB ptr base
+        OR      A                       ; clear CY (success)
+        RET
+.pf_name_dot:
+        ; Found '.'. Verify name not empty.
+        LD      A, C
+        CP      8
+        JP      Z, .pf_reject_pop       ; "." or "X:.TXT" — empty name
+        ; Skip the dot.
+        INC     HL
+        DEC     B
+        ; --- Parse extension into FCB[9..11] ---
+        ; Recover FCB ptr base; advance to FCB_EXT (= FCB + 9). Use ADD
+        ; through A so we don't clobber B (which still holds remaining
+        ; input length).
+        POP     DE                      ; DE = FCB ptr base
+        PUSH    DE                      ; save again for cleanup label
+        LD      A, E
+        ADD     A, FCB_EXT
+        LD      E, A
+        JR      NC, .pf_nd_no_carry
+        INC     D
+.pf_nd_no_carry:
+        LD      C, 3                    ; max ext slots
+.pf_ext_loop:
+        LD      A, B
+        OR      A
+        JR      Z, .pf_ext_eoi
+        LD      A, (HL)
+        CALL    pf_validate_byte        ; reject *, ?, /, space, '.' (second dot)
+        JP      C, .pf_reject_pop
+        LD      A, C
+        OR      A
+        JP      Z, .pf_reject_pop       ; > 3 ext chars
+        LD      A, (HL)
+        CALL    pf_to_upper
+        LD      (DE), A
+        INC     DE
+        DEC     C
+        INC     HL
+        DEC     B
+        JR      .pf_ext_loop
+.pf_ext_eoi:
+        POP     DE                      ; restore FCB ptr base
+        OR      A                       ; clear CY (success)
+        RET
+.pf_reject_pop:
+        POP     DE                      ; balance stack
+        ; fall through
+.pf_reject:
+        SCF                             ; CY = 1 (rejected)
+        RET
+
+; -----------------------------------------------
+; STORY 13.2 — Scratch storage for user-facing File-Access words
+; -----------------------------------------------
+; All File-Access words use this single shared scratch since Forth is
+; single-threaded — no re-entrancy concern. Set at the top of each
+; word body, read at error/exit paths.
+fac_fcb:        DW 0                    ; current FCB ptr (acquired)
+fac_caddr:      DW 0                    ; current c-addr arg
+fac_u:          DB 0                    ; current u arg (filename length)
+fac_fam:        DB 0                    ; current fam arg
+fac_count:      DW 0                    ; READ-FILE / WRITE-FILE u1 arg
+fac_buf:        DW 0                    ; READ-FILE / WRITE-FILE c-addr arg
+fac_done:       DW 0                    ; READ-FILE u2 accumulator
+fac_ip:         DW 0                    ; saved Forth IP across helper calls
+                                        ;   (pool_acquire / pool_release /
+                                        ;    fcb_parse_filename clobber DE).
+
+; ===============================================
+; STORY 13.2 — User-facing DEFCODE words
+; ===============================================
+; All words below are production primitives — no IFDEF wrap. They sit
+; before the FILE_SANITY-wrapped harness so both build/antforth.com
+; and build/antforth_filesanity.com expose them.
+;
+; fam encoding pick (Task 2.1): R/O = 0, R/W = 1, W/O = 2, BIN = | 4.
+; Bit 2 (= 4) is the BIN flag; bits 0..1 carry the read/write mode.
+; The R/O guard in WRITE-FILE tests (fam & 3) == 0; BIN's bit-2 OR
+; passes through non-destructively. CP/M 2.2 has no text/binary
+; distinction so BIN is a semantic no-op on this platform.
+
+; -----------------------------------------------
+; R/O ( -- fam )                           ANS Forth 1994 §11.6.1.2054
+;   File-access mode: read-only.
+; -----------------------------------------------
+w_R_SLASH_O:
+        DEFCODE "R/O", 0
+w_R_SLASH_O_cf:
+        PUSH    BC
+        LD      BC, 0
+        NEXT
+
+; -----------------------------------------------
+; R/W ( -- fam )                           ANS Forth 1994 §11.6.1.2055
+;   File-access mode: read-write.
+; -----------------------------------------------
+w_R_SLASH_W:
+        DEFCODE "R/W", 0
+w_R_SLASH_W_cf:
+        PUSH    BC
+        LD      BC, 1
+        NEXT
+
+; -----------------------------------------------
+; W/O ( -- fam )                           ANS Forth 1994 §11.6.1.2425
+;   File-access mode: write-only.
+; -----------------------------------------------
+w_W_SLASH_O:
+        DEFCODE "W/O", 0
+w_W_SLASH_O_cf:
+        PUSH    BC
+        LD      BC, 2
+        NEXT
+
+; -----------------------------------------------
+; BIN ( fam1 -- fam2 )                     ANS Forth 1994 §11.6.1.0865
+;   Binary modifier — sets bit 2 of fam. CP/M 2.2 has no text/binary
+;   distinction; BIN is identity-by-mechanism on this platform but the
+;   bit is OR'd through so a future port to a system that distinguishes
+;   modes can read it back.
+; -----------------------------------------------
+w_BIN:
+        DEFCODE "BIN", 0
+w_BIN_cf:
+        LD      A, C
+        OR      4
+        LD      C, A
+        NEXT
+
+; -----------------------------------------------
+; OPEN-FILE ( c-addr u fam -- fileid ior )  ANS Forth 1994 §11.6.1.1970
+;   Open existing file. On success, fileid is the FCB ptr and ior = 0.
+;   On failure (file not found, malformed filename, drive out of range),
+;   fileid = 0 and ior is non-zero. Pool exhaustion → -69 THROW.
+;   ior picks (Task 14): 1 = malformed filename / u > 14; 2 = file not
+;   found from F_OPEN.
+; -----------------------------------------------
+w_OPEN_FILE:
+        DEFCODE "OPEN-FILE", 0
+w_OPEN_FILE_cf:
+        CALL    check_underflow_3
+        LD      (fac_ip), DE            ; pool_acquire/release/parser clobber DE
+        ; BC = fam, (SP) = u, (SP+2) = c-addr
+        LD      A, C
+        LD      (fac_fam), A
+        POP     HL                      ; HL = u
+        ; Cap check: u > 14 — guard before any pool_acquire (AC #17(e))
+        LD      A, H
+        OR      A
+        JP      NZ, .of_too_long
+        LD      A, L
+        CP      15
+        JP      NC, .of_too_long
+        LD      (fac_u), A
+        POP     HL                      ; HL = c-addr
+        LD      (fac_caddr), HL
+        ; pool_acquire (may THROW -69 — ANS-recoverable cases pre-handled above)
+        CALL    pool_acquire            ; HL = FCB ptr, B = index
+        LD      (fac_fcb), HL
+        ; Parse filename into FCB
+        EX      DE, HL                  ; DE = FCB ptr
+        LD      HL, (fac_caddr)
+        LD      A, (fac_u)
+        LD      B, A
+        CALL    fcb_parse_filename
+        JR      C, .of_release_malformed
+        ; Record fam in fcb_fam[index]
+        LD      HL, (fac_fcb)
+        LD      A, (fac_fam)
+        CALL    fcb_fam_set
+        ; F_OPEN
+        LD      DE, (fac_fcb)
+        CALL    bdos_open_file          ; A = 0..3 success / 0xFF not found
+        CP      0xFF
+        JR      Z, .of_release_notfound
+        ; Zero FCB[32] (CR) — CP/M 2.2 spec: CR is "undefined" after
+        ; F_OPEN, application must initialise. iz-cpm zeros it as a
+        ; courtesy so partial-record files read correctly without this
+        ; step; real MicroBeast firmware leaves CR set (typically to the
+        ; last-record value from the prior close-w cycle), so F_READ at
+        ; the first call sees CR >= RC and returns 1 (EOF) immediately.
+        ; Surfaced 2026-05-03 hardware smoke (Story 13.2 Task 17 probe:
+        ; EX=00 RC=01 CR=01 → READ-FILE u2=0 ior=0 instead of u2=N).
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_CR
+        ADD     HL, DE
+        LD      (HL), 0
+        ; Success — seed byte_pos by fam (Code Review H1, 2026-05-03):
+        ;   R/O (fam & 3 == 0)  → pos = 128 (refill sentinel; first
+        ;     READ-FILE triggers F_READ_SEQ to fill the DMA buffer).
+        ;   R/W or W/O          → pos = 0 (DMA buffer empty, ready for
+        ;     first WRITE-FILE byte at offset 0).
+        ; Without this discrimination, OPEN-FILE in W/O or R/W mode
+        ; followed by WRITE-FILE silently writes the first byte to
+        ; DMA[128] (out-of-bounds, corrupts adjacent FCB's buffer or
+        ; memory past fcb_dma_pool), and file_flush's `128 - pos`
+        ; underflow scribbles up to 224 bytes of 0x1A past the end.
+        ; Reproducer: `S" X" R/W CREATE-FILE DROP DROP S" X" R/W
+        ; OPEN-FILE DROP FA ! BUF 32 FA @ WRITE-FILE` returned ior=0
+        ; but wrote zero bytes of user data and corrupted memory.
+        ; AC #19 escalation note: this is a one-line user-facing-layer
+        ; fix and stays inside Story 13.2 per AC #19's "small in-pass
+        ; refinements" branch (mirroring Task 17's CR-zero defensive
+        ; write — same shape: fix at the user-facing word's success
+        ; path, not in Story 13.1's helper layer). The byte-stream
+        ; layer's pos-128-means-refill convention is unchanged; what
+        ; changed is OPEN-FILE's understanding that the convention is
+        ; read-mode-only. R/W mixed read+write within one FID still
+        ; needs REPOSITION-FILE (Story 13.3) to work cleanly — out of
+        ; scope for 13.2.
+        LD      HL, (fac_fcb)
+        LD      A, (fac_fam)
+        AND     3                       ; isolate read/write bits (mask BIN)
+        JR      Z, .of_seed_read        ; A = 0 → R/O → seed 128
+        XOR     A                       ; non-R/O → seed 0 (write start)
+        JR      .of_seed_apply
+.of_seed_read:
+        LD      A, 128
+.of_seed_apply:
+        CALL    fcb_set_byte_pos
+        LD      HL, (fac_fcb)
+        PUSH    HL                      ; fileid = FCB ptr
+        LD      BC, 0                   ; ior = 0
+        LD      DE, (fac_ip)
+        NEXT
+.of_release_malformed:
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0
+        PUSH    BC                      ; fileid = 0
+        LD      BC, 1                   ; ior = 1 (malformed filename)
+        LD      DE, (fac_ip)
+        NEXT
+.of_release_notfound:
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0
+        PUSH    BC                      ; fileid = 0
+        LD      BC, 2                   ; ior = 2 (file not found)
+        LD      DE, (fac_ip)
+        NEXT
+.of_too_long:
+        ; u > 14; FCB not yet acquired. c-addr still on the param stack.
+        POP     HL                      ; discard c-addr
+        LD      BC, 0
+        PUSH    BC                      ; fileid = 0
+        LD      BC, 1                   ; ior = 1 (malformed — over length cap)
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; CREATE-FILE ( c-addr u fam -- fileid ior ) ANS Forth 1994 §11.6.1.1010
+;   Create file in the manner of OPEN-FILE; if the file already exists,
+;   replace it with an empty one of the same name (truncate to zero
+;   length). Implementation: pre-emptive silent F_DELETE (ignoring 0xFF
+;   "not found") followed by F_MAKE. ior picks: 1 = malformed; 3 = F_MAKE
+;   failure (directory full or BDOS error).
+; -----------------------------------------------
+w_CREATE_FILE:
+        DEFCODE "CREATE-FILE", 0
+w_CREATE_FILE_cf:
+        CALL    check_underflow_3
+        LD      (fac_ip), DE
+        LD      A, C
+        LD      (fac_fam), A
+        POP     HL                      ; u
+        LD      A, H
+        OR      A
+        JP      NZ, .cf_too_long
+        LD      A, L
+        CP      15
+        JP      NC, .cf_too_long
+        LD      (fac_u), A
+        POP     HL                      ; c-addr
+        LD      (fac_caddr), HL
+        CALL    pool_acquire            ; HL = FCB ptr
+        LD      (fac_fcb), HL
+        EX      DE, HL                  ; DE = FCB ptr
+        LD      HL, (fac_caddr)
+        LD      A, (fac_u)
+        LD      B, A
+        CALL    fcb_parse_filename
+        JR      C, .cf_release_malformed
+        LD      HL, (fac_fcb)
+        LD      A, (fac_fam)
+        CALL    fcb_fam_set
+        ; --- Pre-emptive silent delete (mirror harness pattern at line 716-718) ---
+        ; Per AC #3 / §11.6.1.1010 truncation rule. Result ignored; 0xFF
+        ; ("not found") is the normal first-create path.
+        LD      DE, (fac_fcb)
+        CALL    bdos_delete_file
+        ; F_DELETE may have mutated FCB extent fields; re-parse filename
+        ; from scratch to restore a clean FCB before F_MAKE.
+        LD      HL, (fac_fcb)
+        EX      DE, HL                  ; DE = FCB ptr
+        LD      HL, (fac_caddr)
+        LD      A, (fac_u)
+        LD      B, A
+        CALL    fcb_parse_filename      ; cannot fail second time (same input)
+        ; F_MAKE
+        LD      DE, (fac_fcb)
+        CALL    bdos_create_file        ; A = 0..3 success / 0xFF directory full
+        CP      0xFF
+        JR      Z, .cf_release_makefail
+        ; Zero FCB[32] (CR) — same defensive reset as OPEN-FILE. F_MAKE
+        ; on real CP/M may leave CR in any state; F_WRITE depends on it
+        ; starting at 0 to write record 0 first. iz-cpm zeros it; real
+        ; hardware may not.
+        LD      HL, (fac_fcb)
+        LD      DE, FCB_CR
+        ADD     HL, DE
+        LD      (HL), 0
+        ; Success — seed byte_pos = 0 (start DMA fill at offset 0 for WRITE-FILE).
+        LD      HL, (fac_fcb)
+        XOR     A
+        CALL    fcb_set_byte_pos
+        LD      HL, (fac_fcb)
+        PUSH    HL                      ; fileid
+        LD      BC, 0                   ; ior = 0
+        LD      DE, (fac_ip)
+        NEXT
+.cf_release_malformed:
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0
+        PUSH    BC                      ; fileid = 0
+        LD      BC, 1                   ; ior = 1 (malformed filename)
+        LD      DE, (fac_ip)
+        NEXT
+.cf_release_makefail:
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0
+        PUSH    BC                      ; fileid = 0
+        LD      BC, 3                   ; ior = 3 (F_MAKE failure — dir full / disk error)
+        LD      DE, (fac_ip)
+        NEXT
+.cf_too_long:
+        POP     HL                      ; discard c-addr
+        LD      BC, 0
+        PUSH    BC                      ; fileid = 0
+        LD      BC, 1                   ; ior = 1 (malformed — over length cap)
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; DELETE-FILE ( c-addr u -- ior ) ANS Forth 1994 §11.6.1.1190
+;   Delete the named file. Acquires a transient FCB for the BDOS call,
+;   releases it unconditionally. ior picks: 1 = malformed filename or
+;   "not found" / other recoverable BDOS error.
+; -----------------------------------------------
+w_DELETE_FILE:
+        DEFCODE "DELETE-FILE", 0
+w_DELETE_FILE_cf:
+        CALL    check_underflow_2
+        LD      (fac_ip), DE
+        ; BC = u, (SP) = c-addr
+        LD      A, B
+        OR      A
+        JP      NZ, .df_too_long
+        LD      A, C
+        CP      15
+        JP      NC, .df_too_long
+        LD      (fac_u), A
+        POP     HL                      ; HL = c-addr
+        LD      (fac_caddr), HL
+        CALL    pool_acquire
+        LD      (fac_fcb), HL
+        EX      DE, HL                  ; DE = FCB ptr
+        LD      HL, (fac_caddr)
+        LD      A, (fac_u)
+        LD      B, A
+        CALL    fcb_parse_filename
+        JR      C, .df_release_malformed
+        LD      DE, (fac_fcb)
+        CALL    bdos_delete_file        ; A = 0..3 success / 0xFF not found
+        CP      0xFF
+        JR      Z, .df_release_notfound
+        ; Success — release and return ior = 0
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0                   ; ior = 0
+        LD      DE, (fac_ip)
+        NEXT
+.df_release_malformed:
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 1                   ; ior = 1 (malformed filename)
+        LD      DE, (fac_ip)
+        NEXT
+.df_release_notfound:
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 1                   ; ior = 1 (file not found)
+        LD      DE, (fac_ip)
+        NEXT
+.df_too_long:
+        ; u > 14; no acquire yet, but c-addr still on stack.
+        POP     HL                      ; discard c-addr
+        LD      BC, 1                   ; ior = 1 (malformed — over length cap)
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; CLOSE-FILE ( fileid -- ior ) ANS Forth 1994 §11.6.1.0900
+;   Close an open file. Flushes any partial-record buffered writes,
+;   issues F_CLOSE (16), releases the FCB to the pool. ior = 0 on
+;   success; non-zero on flush or close error. Stale-FID raises -70.
+;   Pool release happens regardless of close result so the slot is
+;   reclaimed (the user's ior signals close-failure, no leak).
+; -----------------------------------------------
+w_CLOSE_FILE:
+        DEFCODE "CLOSE-FILE", 0
+w_CLOSE_FILE_cf:
+        CALL    check_underflow
+        LD      (fac_ip), DE
+        ; BC = fileid (FCB ptr)
+        LD      H, B
+        LD      L, C                    ; HL = fileid
+        CALL    fid_validate            ; may raise -70 THROW
+        LD      (fac_fcb), HL
+        ; --- Flush any pending writes ---
+        LD      DE, (fac_fcb)
+        CALL    file_flush              ; A = 0 / non-zero on F_WRITE error
+        LD      (fac_u), A              ; reuse fac_u to hold flush ior temporarily
+        ; --- F_CLOSE ---
+        LD      DE, (fac_fcb)
+        CALL    bdos_close_file         ; A = 0..3 / 0xFF error
+        ; Combine flush and close error into a single ior — non-zero if either failed.
+        ;   Map: A = 0xFF (close error) → ior = the FF
+        ;        else if flush had error → ior = flush A
+        ;        else ior = 0
+        LD      C, A                    ; C = close result (0..3 success or 0xFF)
+        LD      A, (fac_u)
+        OR      A
+        JR      NZ, .clf_flush_err
+        LD      A, C
+        CP      0xFF
+        JR      Z, .clf_close_err
+        ; Both OK — release and return ior = 0.
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0
+        LD      DE, (fac_ip)
+        NEXT
+.clf_flush_err:
+        ; Release FCB anyway; ior = flush error code (in fac_u).
+        ; Sign-extend 0xFF → 0xFFFF (-1) for consistency with .clf_close_err
+        ; (Code Review L5); other small low-byte BDOS codes pass as-is.
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      A, (fac_u)
+        LD      C, A
+        LD      B, 0
+        CP      0xFF
+        JR      NZ, .clf_flush_err_done
+        LD      B, 0xFF                 ; A=0xFF → BC=0xFFFF (-1)
+.clf_flush_err_done:
+        LD      DE, (fac_ip)
+        NEXT
+.clf_close_err:
+        ; Release FCB; ior = close error (0xFF mapped to non-zero -1).
+        LD      HL, (fac_fcb)
+        CALL    pool_release
+        LD      BC, 0xFFFF              ; ior = -1 (close error)
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; READ-FILE ( c-addr u1 fileid -- u2 ior ) ANS Forth 1994 §11.6.1.2080
+;   Read u1 bytes into the buffer at c-addr. u2 = bytes actually read
+;   (u2 ≤ u1). On clean EOF, u2 reflects bytes-read-before-EOF and
+;   ior = 0. On I/O error, ior != 0. Stale-FID raises -70.
+;
+;   AC #17(h) note: Story 13.1's file_byte_read signals EOF and I/O
+;   error both via CY=1; Story 13.2 disambiguates only "no bytes vs
+;   some bytes" at the user-facing layer. Per the explicit ANS rule
+;   ("If u1 bytes are not available, this is not an exception"), all
+;   CY=1 returns map to clean EOF (ior=0) — the rare distinguishable
+;   I/O error path on CP/M F_READ (BDOS A return >1) is not
+;   surfaced separately here. Recorded as a deviation from approach
+;   (i); helper-layer rewrite deferred per AC #19 escalation gate.
+; -----------------------------------------------
+w_READ_FILE:
+        DEFCODE "READ-FILE", 0
+w_READ_FILE_cf:
+        CALL    check_underflow_3
+        LD      (fac_ip), DE
+        ; BC = fileid, (SP) = u1, (SP+2) = c-addr
+        LD      H, B
+        LD      L, C                    ; HL = fileid
+        CALL    fid_validate            ; raise -70 THROW on stale FID
+        LD      (fac_fcb), HL
+        POP     HL
+        LD      (fac_count), HL         ; u1
+        POP     HL
+        LD      (fac_buf), HL           ; c-addr
+        ; (Code Review L8) entry-time bdos_set_dma dropped — file_byte_read
+        ; sets DMA on every refill internally (file_access.asm:493-495), so
+        ; the entry-time set was dead code. Same in WRITE-FILE.
+        ; --- Read loop ---
+        LD      HL, 0
+        LD      (fac_done), HL          ; u2 accumulator
+.rf_loop:
+        ; Check remaining count
+        LD      HL, (fac_count)
+        LD      A, H
+        OR      L
+        JR      Z, .rf_done             ; count exhausted
+        ; Read one byte
+        LD      DE, (fac_fcb)
+        CALL    file_byte_read          ; A = byte, CY = 0 success / 1 EOF
+        JR      C, .rf_eof
+        ; Store byte at c-addr + u2_so_far
+        LD      HL, (fac_buf)
+        LD      DE, (fac_done)
+        ADD     HL, DE
+        LD      (HL), A
+        ; Increment counters
+        LD      HL, (fac_done)
+        INC     HL
+        LD      (fac_done), HL
+        LD      HL, (fac_count)
+        DEC     HL
+        LD      (fac_count), HL
+        JR      .rf_loop
+.rf_eof:
+        ; Clean EOF — ior = 0 per §11.6.1.2080.
+.rf_done:
+        ; Push u2, set BC = ior = 0.
+        LD      HL, (fac_done)
+        PUSH    HL                      ; u2
+        LD      BC, 0                   ; ior = 0
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; WRITE-FILE ( c-addr u1 fileid -- ior ) ANS Forth 1994 §11.6.1.2480
+;   Write u1 bytes from c-addr. ior = 0 on success; non-zero on disk
+;   error or R/O write attempt (no THROW for either — both ANS-
+;   recoverable per §11.3.5). Stale-FID raises -70.
+;
+;   R/O guard placement (AC #17(d)): the fam check happens BEFORE any
+;   DMA setup or FCB mutation. A R/O WRITE-FILE returns ior!=0 having
+;   touched no FCB state.
+; -----------------------------------------------
+w_WRITE_FILE:
+        DEFCODE "WRITE-FILE", 0
+w_WRITE_FILE_cf:
+        CALL    check_underflow_3
+        LD      (fac_ip), DE
+        ; BC = fileid, (SP) = u1, (SP+2) = c-addr
+        LD      H, B
+        LD      L, C                    ; HL = fileid
+        CALL    fid_validate            ; raise -70 on stale FID
+        LD      (fac_fcb), HL
+        ; --- R/O guard: read fam, mask bits 0..1, reject if = 0 ---
+        CALL    fcb_fam_get             ; A = fam
+        AND     3                       ; mask out BIN bit (= 4) and noise
+        JR      Z, .wf_ro_guard         ; A = 0 → R/O → reject without mutation
+        ; --- Pop args + DMA setup ---
+        POP     HL
+        LD      (fac_count), HL         ; u1
+        POP     HL
+        LD      (fac_buf), HL           ; c-addr
+        ; (Code Review L8) entry-time bdos_set_dma dropped — file_byte_write
+        ; sets DMA on every flush internally (file_access.asm:585-587).
+        ; --- Write loop ---
+.wf_loop:
+        LD      HL, (fac_count)
+        LD      A, H
+        OR      L
+        JR      Z, .wf_done
+        ; Fetch next source byte
+        LD      HL, (fac_buf)
+        LD      A, (HL)
+        INC     HL
+        LD      (fac_buf), HL
+        ; Write it
+        LD      DE, (fac_fcb)
+        CALL    file_byte_write         ; A = 0 success / non-zero on F_WRITE error
+        OR      A
+        JR      NZ, .wf_io_err
+        LD      HL, (fac_count)
+        DEC     HL
+        LD      (fac_count), HL
+        JR      .wf_loop
+.wf_done:
+        LD      BC, 0                   ; ior = 0
+        LD      DE, (fac_ip)
+        NEXT
+.wf_io_err:
+        ; F_WRITE error — A holds the BDOS return; map to ior in BC.
+        ; Sign-extend 0xFF → 0xFFFF (-1) for consistency with .clf_close_err
+        ; (Code Review L5); other low-byte BDOS codes pass through.
+        LD      C, A
+        LD      B, 0
+        CP      0xFF
+        JR      NZ, .wf_io_err_done
+        LD      B, 0xFF
+.wf_io_err_done:
+        LD      DE, (fac_ip)
+        NEXT
+.wf_ro_guard:
+        ; R/O FID — reject WITHOUT touching DMA / FCB. Pop the two
+        ; remaining args (u1, c-addr) and return ior = 1 (R/O write
+        ; refused; recoverable per ANS §11.3.5).
+        POP     HL                      ; discard u1
+        POP     HL                      ; discard c-addr
+        LD      BC, 1                   ; ior = 1 (R/O guard)
+        LD      DE, (fac_ip)
+        NEXT
 
 ; -----------------------------------------------
 ; (FILE-IO-SANITY) — Test harness for Story 13.1.

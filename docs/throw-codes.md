@@ -170,6 +170,40 @@ Epic 11 migration references it. That covers:
 
 ---
 
+## (b.1) Post-1994 ANS Reserved Codes Used by antforth
+
+DPANS94 §9.3.5 reserves `-59..-79` for post-1994 extensions; Forth 2014
+populates this block (notably `-69` File-Access, `-70` FREE,
+`-71` RESIZE, `-72` ALLOCATE). antforth uses two slots from this
+reserved block:
+
+| Code | Forth 2014 semantic | antforth usage | EQU | First-use story |
+|---:|---|---|---|---|
+| -69 | File-Access wordset (FCB pool exhaustion in Forth 2014's intent — kernel-resident pool) | FCB pool exhausted (`pool_acquire` failure when all 8 slots in-use) | `THROW_FCB_EXHAUSTED EQU -69` (`constants.asm:92`) | Story 13.1 (raise sites in `pool_acquire`) |
+| -70 | FREE (memory deallocator) | **Re-purposed**: invalid file-access fileid (closed FID / out-of-range pool ptr / use-after-free) — antforth has no separate FREE wordset, so the slot is re-allocated to a closer-in-spirit "use-after-free" diagnostic | `THROW_FILE_INVALID_FID EQU -70` (`constants.asm:101`) | Story 13.2 (raise site in `fid_validate`) |
+
+**Rationale for the `-70` re-purpose** (Story 13.2 AC #8): the standard
+allocates `-70` to FREE (memory-deallocator deallocate-failed), but
+antforth currently has no MEMORY wordset (`ALLOCATE` / `FREE` /
+`RESIZE`) and no near-term plan to add one. The FID-validation
+discipline introduced by Story 13.2 — closed/stale FID detection at
+every File-Access entry — is conceptually a "use-after-free" of an FCB
+slot, which is structurally analogous to FREE's memory-deallocator
+context. Re-using `-70` for this related-by-mechanism condition keeps
+the ANS-reserved block dense and avoids burning an antforth-extension
+code in the `-256..-32767` block. If antforth later acquires a MEMORY
+wordset, the FREE / FID-invalid pair must be split (likely by moving
+FID-invalid to a fresh antforth-extension code and reclaiming `-70`
+for FREE).
+
+The dev-pass alternative discussed in Story 13.2 AC #8 — picking a
+fresh antforth-extension code (e.g., `-273 THROW_FILE_INVALID_FID`) —
+was considered and rejected: the `-70` re-purpose is the project
+lead's stated default and the rationale above (related-by-mechanism)
+is stronger than the "fresh code is cleaner" counter-argument.
+
+---
+
 ## (c) antforth Extension Codes (Range -256 to -32767)
 
 All extensions allocated by Epic 11 sit in a contiguous block

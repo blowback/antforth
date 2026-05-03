@@ -17,7 +17,10 @@ IZCPM    = iz-cpm
 # 26 drive letters (A:..Z:); CP/M's own FCB drive byte covers A:..P:
 # (16 drives). Existing REPL tests do not depend on drive A: since
 # they exercise no file I/O — the flag is harmless.
-IZCPM_DISKS = --disk-a disk/a
+# Story 13.2 — extend with disk/b/ for the drive-routing probe (t8).
+# Per Action Item A2 of the Epic 12 retro (B:/discriminator-pair seed
+# files deferred to Stories 13.2/13.4).
+IZCPM_DISKS = --disk-a disk/a --disk-b disk/b
 
 SRCDIR   = src
 BUILDDIR = build
@@ -8007,6 +8010,172 @@ test-repl: $(TARGET)
 	if echo "$$OUTPUT" | grep -q '173 222 239 190  ok'; then \
 		echo "PASS: REPL test 904 — Story 13.0.1: (DLIT) inline-data layout high-at-low-addr (T-S1301-DLIT-BYTE-LAYOUT)"; \
 	else echo "FAIL: REPL test 904 — expected '173 222 239 190  ok' (AD DE EF BE) from (DLIT) inline data"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.2 — File-Access wordset probes (905..912) — see tests/file_access_tests.fth ===
+	@# (t1) Round-trip integrity: CREATE-FILE → WRITE-FILE → CLOSE-FILE →
+	@#      OPEN-FILE → READ-FILE → CLOSE-FILE → DELETE-FILE; verify the
+	@#      read-back content matches the written content byte-for-byte.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 32 ALLOT' \
+		'S" TESTRT.TXT" R/W CREATE-FILE DROP FA !' \
+		'S" Hello, antforth!" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TESTRT.TXT" R/O OPEN-FILE DROP FA !' \
+		'BFA 16 FA @ READ-FILE DROP DROP FA @ CLOSE-FILE DROP' \
+		'." T1=" BFA 16 TYPE CR' \
+		'S" TESTRT.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T1=Hello, antforth!'; then \
+		echo "PASS: REPL test 905 — Story 13.2 (t1) round-trip integrity (T-S132-T1-ROUNDTRIP)"; \
+	else echo "FAIL: REPL test 905 — expected 'T1=Hello, antforth!' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t2) Cross-record read with EOF: 256-byte payload = 2 full CP/M
+	@#      records (no partial-record padding). Story 13.1's byte-stream
+	@#      layer detects EOF at record boundaries via F_READ returning 1;
+	@#      it does NOT track logical byte-EOF mid-record (CP/M's record-
+	@#      level filesystem semantics — partial-record padding is
+	@#      indistinguishable from data at the byte-stream layer). 200-
+	@#      byte version per AC #13(t2) deviated to 256 bytes for clean
+	@#      record-aligned EOF; logical-size tracking is a Story 13.1
+	@#      helper-layer rewrite (escalation gate per Story 13.2 AC #19).
+	@# (in-pass-fix Task 14 / Task 8): interactive `."` clobbers BC (TOS)
+	@# in interpret mode (strings.asm:855-895 — the line-printer loop uses
+	@# C without a corresponding PUSH BC at entry). Tests 906..911 emit
+	@# the marker label BEFORE the stack-producing call, so the post-call
+	@# `.` reads the genuine TOS rather than `."`-residual.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 256 ALLOT' \
+		': P256 256 0 DO BFA I + I 26 MOD 65 + SWAP C! LOOP ;' \
+		'P256' \
+		'S" TESTCR.TXT" R/W CREATE-FILE DROP FA !' \
+		'BFA 256 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TESTCR.TXT" R/O OPEN-FILE DROP FA !' \
+		'." T2A=" HERE 256 FA @ READ-FILE . . CR' \
+		'." T2B=" HERE 1 FA @ READ-FILE . . CR' \
+		'FA @ CLOSE-FILE DROP' \
+		'S" TESTCR.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T2A=0 256 ' && echo "$$OUTPUT" | grep -q 'T2B=0 0 '; then \
+		echo "PASS: REPL test 906 — Story 13.2 (t2) cross-record read + EOF (T-S132-T2-CROSSRECORD)"; \
+	else echo "FAIL: REPL test 906 — expected 'T2A=0 256 ' and 'T2B=0 0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t3) Delete-then-reopen: confirm deleted file's OPEN-FILE returns
+	@#      fileid=0, ior=2 (file-not-found per ANS §11.3.5).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" TESTDR.TXT" R/W CREATE-FILE DROP FA !  FA @ CLOSE-FILE DROP' \
+		'S" TESTDR.TXT" DELETE-FILE DROP' \
+		'." T3=" S" TESTDR.TXT" R/O OPEN-FILE . . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T3=2 0 '; then \
+		echo "PASS: REPL test 907 — Story 13.2 (t3) delete-then-reopen → ior=2 (T-S132-T3-DELETE-REOPEN)"; \
+	else echo "FAIL: REPL test 907 — expected 'T3=2 0 ' (ior=2 fileid=0) from re-open of deleted file"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t4) Pool exhaustion: open 8 files, then attempt 9th via CATCH —
+	@#      must surface -69 THROW_FCB_EXHAUSTED. Pool resets each iz-cpm
+	@#      invocation so cleanup of the 8 transient files is unnecessary.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'S" P1.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P2.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P3.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P4.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P5.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P6.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P7.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" P8.TXT" R/W CREATE-FILE DROP DROP' \
+		'." T4=" S" P9.TXT" R/W '\'' CREATE-FILE CATCH . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T4=-69 '; then \
+		echo "PASS: REPL test 908 — Story 13.2 (t4) pool exhaustion → -69 THROW (T-S132-T4-POOL-EXHAUSTION)"; \
+	else echo "FAIL: REPL test 908 — expected 'T4=-69 ' from CATCH of 9th OPEN-FILE"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t5) R/O write attempt: open R/O, attempt WRITE-FILE — must return
+	@#      ior=1 (recoverable, no THROW per AC #6 R/O guard).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" TESTRO.TXT" R/W CREATE-FILE DROP FA !' \
+		'S" hi" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TESTRO.TXT" R/O OPEN-FILE DROP FA !' \
+		'." T5=" S" overwrite" FA @ WRITE-FILE . CR' \
+		'FA @ CLOSE-FILE DROP  S" TESTRO.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T5=1 '; then \
+		echo "PASS: REPL test 909 — Story 13.2 (t5) R/O WRITE-FILE → ior=1 (T-S132-T5-RO-GUARD)"; \
+	else echo "FAIL: REPL test 909 — expected 'T5=1 ' from R/O write attempt"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t6) Closed-FID detection: close a FID, attempt READ-FILE on stale —
+	@#      must raise -70 (caught via CATCH).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" TESTCD.TXT" R/W CREATE-FILE DROP FA !' \
+		'S" hi" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'." T6=" HERE 1 FA @ '\'' READ-FILE CATCH . CR' \
+		'S" TESTCD.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T6=-70 '; then \
+		echo "PASS: REPL test 910 — Story 13.2 (t6) closed-FID → -70 THROW (T-S132-T6-STALE-FID)"; \
+	else echo "FAIL: REPL test 910 — expected 'T6=-70 ' from CATCH of READ-FILE on closed FID"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t7) Malformed filename: empty, wildcard, embedded space, two dots,
+	@#      Unix path — each yields fileid=0 ior=1 (no THROW, ior-channel).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'." T7E=" S" " R/O OPEN-FILE . . CR' \
+		'." T7W=" S" hi*.txt" R/O OPEN-FILE . . CR' \
+		'." T7S=" S" hi sp.txt" R/O OPEN-FILE . . CR' \
+		'." T7D=" S" two..dot" R/O OPEN-FILE . . CR' \
+		'." T7P=" S" /path/x" R/O OPEN-FILE . . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T7E=1 0 ' && \
+	   echo "$$OUTPUT" | grep -q 'T7W=1 0 ' && \
+	   echo "$$OUTPUT" | grep -q 'T7S=1 0 ' && \
+	   echo "$$OUTPUT" | grep -q 'T7D=1 0 ' && \
+	   echo "$$OUTPUT" | grep -q 'T7P=1 0 '; then \
+		echo "PASS: REPL test 911 — Story 13.2 (t7) malformed filenames → ior=1 (T-S132-T7-MALFORMED)"; \
+	else echo "FAIL: REPL test 911 — expected 'T7E/W/S/D/P=1 0 ' on each malformed input"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t8) Drive prefix routing: A: vs B: refer to different files. Seed-
+	@#      staging pick (Task 14): re-create at start (files transient,
+	@#      .gitignore-d). Discriminator content "Aside"/"Bside" lets a
+	@#      single TYPE oracle confirm A:HELLO.TXT and B:HELLO.TXT routed
+	@#      to disk/a/ and disk/b/ respectively.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BA 16 ALLOT  BA 16 0 FILL' \
+		'S" A:HELLO.TXT" R/W CREATE-FILE DROP FA !' \
+		'S" Aside" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" B:HELLO.TXT" R/W CREATE-FILE DROP FA !' \
+		'S" Bside" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" A:HELLO.TXT" R/O OPEN-FILE DROP FA !' \
+		'BA 5 FA @ READ-FILE DROP DROP FA @ CLOSE-FILE DROP' \
+		'." T8A=" BA 5 TYPE CR  BA 16 0 FILL' \
+		'S" B:HELLO.TXT" R/O OPEN-FILE DROP FA !' \
+		'BA 5 FA @ READ-FILE DROP DROP FA @ CLOSE-FILE DROP' \
+		'." T8B=" BA 5 TYPE CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T8A=Aside' && echo "$$OUTPUT" | grep -q 'T8B=Bside'; then \
+		echo "PASS: REPL test 912 — Story 13.2 (t8) drive prefix A:/B: routing (T-S132-T8-DRIVE-ROUTING)"; \
+	else echo "FAIL: REPL test 912 — expected 'T8A=Aside' and 'T8B=Bside' (per-drive content)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t9) Code-review H1 regression: OPEN-FILE in W/O / R/W mode
+	@#      followed by WRITE-FILE without an intervening READ. Pre-fix
+	@#      the byte-stream layer wrote at DMA[128] (out-of-bounds), so
+	@#      the user's bytes were silently lost and adjacent FCB DMA
+	@#      buffers got scribbled. Post-fix, OPEN-FILE seeds pos based
+	@#      on fam: R/O → 128 (refill sentinel), R/W or W/O → 0 (write
+	@#      start). The probe creates an empty file, re-opens W/O,
+	@#      writes 5 bytes "Hello", closes, re-opens R/O, reads back,
+	@#      and verifies first byte = 'H'.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 8 ALLOT  BFA 8 0 FILL' \
+		'S" T9WO.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" T9WO.TXT" W/O OPEN-FILE DROP FA !' \
+		'S" Hello" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" T9WO.TXT" R/O OPEN-FILE DROP FA !' \
+		'BFA 5 FA @ READ-FILE DROP DROP FA @ CLOSE-FILE DROP' \
+		'." T9=" BFA 5 TYPE CR' \
+		'S" T9WO.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T9=Hello'; then \
+		echo "PASS: REPL test 913 — Story 13.2 (t9) OPEN W/O → WRITE-FILE round-trip [Code Review H1] (T-S132-T9-OPENWO-WRITE)"; \
+	else echo "FAIL: REPL test 913 — expected 'T9=Hello' (H1 regression: OPEN W/O → WRITE byte loss)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===

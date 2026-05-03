@@ -395,6 +395,32 @@ These words are **not in §6.1 Core** and therefore are NOT part of the FR15 100
 
 (13 §8.6 additions planned; all 13 implemented post-Story-10.8 — `D.` and `D.R` landed with this refresh. None on the §6.1 critical path.)
 
+### §11.6 File-Access wordset — bonus coverage from Epic 13
+
+Story 13.2 lands the user-facing core File-Access primitives atop
+Story 13.1's FCB pool + BDOS wrapper layer. Story 13.3 extends with
+file-positioning words; Story 13.4 wires source-input nesting.
+
+| Word | §-number | Source | Notes |
+|------|---------:|--------|-------|
+| `R/O` | 11.6.1.2054 | `file_access.asm` (Story 13.2) | File-access mode constant — read-only |
+| `R/W` | 11.6.1.2055 | `file_access.asm` (Story 13.2) | File-access mode constant — read-write |
+| `W/O` | 11.6.1.2425 | `file_access.asm` (Story 13.2) | File-access mode constant — write-only |
+| `BIN` | 11.6.1.0865 | `file_access.asm` (Story 13.2) | Binary modifier (no-op on CP/M 2.2 — text/binary undistinguished) |
+| `OPEN-FILE` | 11.6.1.1970 | `file_access.asm` (Story 13.2) | `( c-addr u fam -- fileid ior )` |
+| `CREATE-FILE` | 11.6.1.1010 | `file_access.asm` (Story 13.2) | `( c-addr u fam -- fileid ior )` — truncates if exists |
+| `CLOSE-FILE` | 11.6.1.0900 | `file_access.asm` (Story 13.2) | `( fileid -- ior )` — flush + close + pool_release |
+| `DELETE-FILE` | 11.6.1.1190 | `file_access.asm` (Story 13.2) | `( c-addr u -- ior )` — F_DELETE via transient FCB |
+| `READ-FILE` | 11.6.1.2080 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- u2 ior )` |
+| `WRITE-FILE` | 11.6.1.2480 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- ior )` — R/O guard via fcb_fam |
+
+**Story 13.2 ior/THROW split:**
+- ior (recoverable): file not found, malformed filename, R/O write
+  attempt, disk-full, EOF mid-read.
+- THROW (unrecoverable): `-69 THROW_FCB_EXHAUSTED` (FCB pool full),
+  `-70 THROW_FILE_INVALID_FID` (closed/stale FID — antforth re-purpose
+  of Forth 2014 §9.3.5 `-70 FREE`; see `docs/throw-codes.md` §b.1).
+
 ### Non-standard words (not in Core or Core Extension)
 
 antforth also defines words that are useful but outside the Core word sets:

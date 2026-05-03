@@ -8,3 +8,7 @@ build/
 # the directory itself for iz-cpm's --disk-a mapping (AC #8).
 disk/a/*.TXT
 disk/a/*.BIN
+# Story 13.2 — disk/b/ wired as iz-cpm's drive B: for the
+# drive-routing probe (t8). Same transient-output convention.
+disk/b/*.TXT
+disk/b/*.BIN
