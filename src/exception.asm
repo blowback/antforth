@@ -45,6 +45,21 @@ w_CATCH_TOP_cf:
         JP      push_user_var
 
 ; -----------------------------------------------
+; INCLUDE-TOP ( -- a-addr )
+;   Push the address of the most-recent INCLUDE source-frame USER variable.
+;   Zero when no INCLUDE is in progress (cold-start init in antforth.asm;
+;   restored to prev value on every (input-frame-pop) and on the THROW
+;   chain-walk per Story 13.4 v2 PD-9).
+; antforth extension  INCLUDE-TOP  — most recent INCLUDE source-frame addr (CCD-1 chain head)
+;   (CCD-1 dual-LIFO chain discipline; DPANS94 §11.6 does not require user-visibility)
+; -----------------------------------------------
+w_INCLUDE_TOP:
+        DEFCODE "INCLUDE-TOP", 0        ; ( -- a-addr )
+w_INCLUDE_TOP_cf:
+        LD      A, UserArea.include_top
+        JP      push_user_var
+
+; -----------------------------------------------
 ; CATCH ( i*x xt -- j*x 0 | i*x n )
 ;   Execute xt with an exception frame on the IX return stack.
 ;   On normal return: push 0 onto the parameter stack as the success code.
@@ -335,9 +350,15 @@ w_THROW_cf:
         LD      (throw_saved_n), BC
         PUSH    HL
         POP     IX                       ; IX = target frame base
-        ; (Pre-Epic-13: INCLUDE-TOP chain walk is a no-op — Story 13.4
-        ;  inserts the loop here, between the CATCH-TOP read above and
-        ;  the SP/CATCH-TOP/IP restores below.)
+        ; --- Story 13.4 v2: INCLUDE-TOP chain walk (PD-10 / AC #11).
+        ;     Pop INCLUDE source frames more recent than the target catch
+        ;     frame (rstack grows DOWN: frame addr < IX_target ⇒ more
+        ;     recent). Closes each FID on the way and restores the
+        ;     parent's input-spec into USER. IX is preserved across the
+        ;     walk; chain_walk_target scratch cell holds the target frame
+        ;     base for the unsigned `<` compare. See architecture.md
+        ;     E11-D2 (THROW algorithm) and E13-D2 (frame layout). ---
+        CALL    throw_chain_walk_caught
         ; --- Restore CATCH-TOP from frame +6 (read while IX = base) ---
         LD      A, (IX+6)
         LD      (IY+UserArea.catch_top), A
@@ -415,6 +436,11 @@ w_THROW_cf:
         CALL    print_throw_description
         ; --- Trailing CR/LF ---
         CALL    bdos_crlf
+        ; --- Story 13.4 v2: walk INCLUDE-TOP chain to completion (PD-10
+        ;     uncaught). Closes every FID from in-progress INCLUDEs and
+        ;     restores the input-spec back to the outermost (typically
+        ;     keyboard). NFR9 ("no orphaned FIDs after THROW") closure. ---
+        CALL    throw_chain_walk_uncaught
         ; --- State reset + REPL recovery (Story 11.7 inline).
         ;     Pre-Story-11.7 this was `JP w_ABORT_cf` and the chain
         ;     lived in w_ABORT_cf's body; Story 11.7 retargets
@@ -544,6 +570,125 @@ print_throw_description:
         JR      .ptd_loop
 
 ; -----------------------------------------------
+; Story 13.4 v2 — THROW INCLUDE-TOP chain-walk helpers (PD-10 / AC #11).
+;   Used by both the caught path (target = IX = catch frame base; pops
+;   only frames more recent than target) and the uncaught path (target
+;   = 0xFFFF effective; walks to completion). HL = walk pointer; IX
+;   preserved; chain_walk_target scratch holds the unsigned-compare
+;   target. Close-failure semantics: ior is DISCARDED, pool_release is
+;   always called, walk continues regardless (PD-10 close-failure spec).
+; -----------------------------------------------
+
+; throw_chain_walk_caught — Walk frames more recent than IX (target catch
+;   frame base). Captures IX → chain_walk_target then falls into the
+;   common loop. IX is preserved across the call.
+throw_chain_walk_caught:
+        PUSH    IX
+        POP     HL
+        LD      (chain_walk_target), HL
+        JR      throw_chain_walk_loop_init
+
+; throw_chain_walk_uncaught — Walk all remaining frames (target = 0xFFFF
+;   means "no upper bound"; the loop terminates only at HL == 0).
+throw_chain_walk_uncaught:
+        LD      HL, 0xFFFF
+        LD      (chain_walk_target), HL
+        ; fall through
+
+throw_chain_walk_loop_init:
+        ; Initialise HL = USER.INCLUDE-TOP and run the loop.
+        LD      L, (IY+UserArea.include_top)
+        LD      H, (IY+UserArea.include_top+1)
+.cw_loop:
+        ; Termination 1: HL == 0?
+        LD      A, H
+        OR      L
+        JR      Z, .cw_done
+        ; Termination 2: HL < target? (unsigned compare)
+        PUSH    HL
+        LD      DE, (chain_walk_target)
+        OR      A                       ; clear carry
+        SBC     HL, DE
+        POP     HL                      ; restore walk pointer
+        JR      NC, .cw_done            ; HL >= target → stop
+        ; --- Frame is more recent than target. Unwind it. ---
+        ; Close current FID if SOURCE-ID > 0 (preserves HL).
+        CALL    chain_walk_close_current_fid
+        ; Restore parent spec from frame slots HL+0..HL+7.
+        LD      A, (HL)
+        LD      (IY+UserArea.tib_in), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.tib_in+1), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.tib_len), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.tib_len+1), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.tib_addr), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.tib_addr+1), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.source_id), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.source_id+1), A
+        INC     HL
+        ; HL points at INCLUDE_FRAME_PREV slot (offset +8). Read prev-link.
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        EX      DE, HL                  ; HL = prev frame ptr
+        JR      .cw_loop
+.cw_done:
+        ; Final write-back: USER.INCLUDE-TOP = surviving frame addr (= 0
+        ; if walk completed entire chain).
+        LD      (IY+UserArea.include_top), L
+        LD      (IY+UserArea.include_top+1), H
+        RET
+
+; chain_walk_close_current_fid — Close USER.source_id if it's a real FID.
+;   No-op for keyboard (0) / EVALUATE (-1). Discards close ior. Preserves
+;   HL (walk pointer) across the call. Clobbers A, BC, DE, F.
+;   Note: no file_flush call in this body (review L4) — the INCLUDE
+;   close path always closes R/O FIDs whose byte-stream layer has only
+;   been reading, so the per-FCB `fcb_has_written` bit stays 0.
+;   file_flush is mode-aware as of Story 13.5 via that bit and would
+;   itself skip even if called; omitting the call is documented intent.
+chain_walk_close_current_fid:
+        PUSH    HL                      ; preserve walk pointer
+        ; Exact-value sentinel tests (0 keyboard, 0xFFFF EVALUATE); avoid
+        ; a bit-7 sniff so the check stays correct if the FCB pool ever
+        ; lands at addr ≥ 0x8000.
+        LD      L, (IY+UserArea.source_id)
+        LD      H, (IY+UserArea.source_id+1)
+        LD      A, H
+        OR      L
+        JR      Z, .cwc_skip            ; HL == 0 → keyboard
+        LD      A, H
+        AND     L
+        INC     A                       ; A == 0 iff HL == 0xFFFF
+        JR      Z, .cwc_skip            ; HL == 0xFFFF → EVALUATE
+        EX      DE, HL                  ; DE = FID
+        CALL    bdos_close_file
+        EX      DE, HL                  ; HL = FID for pool_release
+        CALL    pool_release
+.cwc_skip:
+        POP     HL                      ; restore walk pointer
+        RET
+
+; chain_walk_target — Scratch cell for the unsigned 16-bit compare.
+;   Set by throw_chain_walk_caught (= target catch frame base) or by
+;   throw_chain_walk_uncaught (= 0xFFFF). Read inside the loop. Single-
+;   threaded invariant: never re-entered.
+chain_walk_target:      DW      0
+
+; -----------------------------------------------
 ; Exception-subsystem string pool (kept here, not in antforth.asm's
 ; string pool, so the strings live alongside their only consumers).
 ; -----------------------------------------------
@@ -606,6 +751,13 @@ throw_desc_table:
         DW      -58
         DB      23
         DB      "unexpected end of input"
+        ; --- File-Access codes (Story 13.4 v2) ---
+        DW      THROW_FILE_IO               ; -37
+        DB      14
+        DB      "file I/O error"
+        DW      THROW_FILE_NOT_FOUND        ; -38
+        DB      14
+        DB      "file not found"
         ; --- antforth extension codes -258..-272 (assembler errors) ---
         ; Added by Story 11.5 (-258..-269), extended by Story 11.6
         ; (-270 / -271 to retire the asm_die residual: check_asm_mode

@@ -416,13 +416,20 @@ file-positioning words; Story 13.4 wires source-input nesting.
 | `FILE-POSITION` | 11.6.1.1520 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — high cell on TOS per §3.1.4.1 |
 | `REPOSITION-FILE` | 11.6.1.2142 | `file_access.asm` (Story 13.3) | `( ud fileid -- ior )` — discard discipline (no auto-flush); ior=5 if ≥ 16 MB |
 | `FILE-SIZE` | 11.6.1.1522 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — record-rounded (see Story 13.3 caveat below) |
+| `INCLUDED` | 11.6.1.1718 | `file_access.asm` (Story 13.4 v2) | `( i*x c-addr u -- j*x )` — load source from file; CCD-1 INCLUDE-TOP framed; -38 if not found |
+| `INCLUDE-FILE` | 11.6.1.1717 | `file_access.asm` (Story 13.4 v2) | `( i*x fileid -- j*x )` — load source from open FID; caller retains FID on clean EOF; FID closed on THROW path (deviation) |
+| `INCLUDE` | 11.6.2.1717.40 | `file_access.asm` (Story 13.4 v2) | `( "name" -- )` — token-form INCLUDE; = `BL WORD COUNT INCLUDED` |
+| `INCLUDE-TOP` | antforth ext | `exception.asm` (Story 13.4 v2) | `( -- a-addr )` — CCD-1 chain head USER variable; pushes user-area cell address |
 
-**Story 13.2 + 13.3 ior/THROW split:**
+**Story 13.2 + 13.3 + 13.4 ior/THROW split:**
 - ior (recoverable): file not found, malformed filename, R/O write
   attempt, disk-full, EOF mid-read, REPOSITION-FILE 24-bit overflow.
-- THROW (unrecoverable): `-69 THROW_FCB_EXHAUSTED` (FCB pool full),
-  `-70 THROW_FILE_INVALID_FID` (closed/stale FID — antforth re-purpose
-  of Forth 2014 §9.3.5 `-70 FREE`; see `docs/throw-codes.md` §b.1).
+- THROW (unrecoverable): `-37 THROW_FILE_IO` (file I/O error — currently
+  latent; allocated for forward use by `(file-refill)`'s F_READ error
+  path, Story 13.4 v2), `-38 THROW_FILE_NOT_FOUND` (raised by INCLUDED
+  when OPEN-FILE returns non-zero ior, Story 13.4 v2), `-69 THROW_FCB_EXHAUSTED`
+  (FCB pool full), `-70 THROW_FILE_INVALID_FID` (closed/stale FID — antforth
+  re-purpose of Forth 2014 §9.3.5 `-70 FREE`; see `docs/throw-codes.md` §b.1).
 
 **Story 13.3 caveats:**
 - `FILE-SIZE` reports size rounded UP to the nearest 128-byte CP/M
@@ -441,6 +448,43 @@ file-positioning words; Story 13.4 wires source-input nesting.
   (the formula uses W/O-shape "no decrement" for fam_masked != 0;
   R/O FIDs are correct in all states). Mid-read R/W FILE-POSITION
   accuracy is deferred to Story 13.5 alongside the dirty-flag work.
+
+**Story 13.4 v2 caveats:**
+- Source-line truncation at TIB_SIZE = 128 bytes is silent: lines
+  exceeding 128 bytes are truncated to the first 128 bytes; the rest
+  of the line up to the next LF/0x1A is consumed without storage
+  (gforth / SwiftForth precedent; Lesson 12-D).
+- Line-ending discipline: LF (0x0A) and 0x1A (CP/M soft EOF) terminate
+  a line; CR (0x0D) is silently dropped (treated as whitespace).
+  Handles CRLF, LF-only, and CP/M soft-EOF mid-record formats.
+- Per-FCB private slab buffer ownership (PD-1): each of the 8 FCB pool
+  slots gets a private 128-byte slab via `slab[i] = include_line_pool
+  + (i << 7)`. Children's INCLUDE writes to their own slab — clobber
+  across nesting levels is structurally impossible (no shared
+  `include_buffer`).
+- INCLUDE-FILE THROW-path FID-close deviation: ANS Forth 1994
+  §11.6.1.1717 says "INCLUDE-FILE does not close the FID." On the
+  clean-EOF path antforth honours this (caller retains FID ownership).
+  On the THROW path antforth deviates: the FID is closed (gforth /
+  SwiftForth precedent — deterministic cleanup beats handle leak).
+- (close-current-fid) skipping file_flush is now redundant defence-in-
+  depth as of Story 13.5. file_flush itself is mode-aware via a per-FCB
+  `fcb_has_written` bit (set inside `file_byte_write` entry and
+  `bdos_write_seq` A==0 success; cleared at `pool_acquire` /
+  `pool_release`). R/O reads never touch `file_byte_write`, so the bit
+  stays 0 and `file_flush` skips the destructive pad-and-F_WRITE path.
+  R/W FCBs that have not been written likewise skip. The user-facing
+  `CLOSE-FILE` (Story 13.2) is now safe on R/O FIDs in all states.
+  Audit anchor: Makefile test 938 flipped 2026-05-04 from expects-bug
+  (SZ ≠ 128 — first observed `SZ=1507456`, an artefact of the F2 BC-
+  clobber and F1 stale-FCB pollution in the original probe; the actual
+  host-side delta is +128 per cycle, so a single uncorrected cycle
+  records `SZ=256`) to expects-fix (`SZ=128` — the source-file size
+  before the partial-read close cycle).
+- EVALUATE-absorb explicitly out-of-scope (PD-11): EVALUATE keeps its
+  private `(SAVE-INPUT)` / `(RESTORE-INPUT)` plumbing in
+  `outer_interpreter.asm:395-460`. Future absorption into the INCLUDE-
+  TOP frame layout is a Story 13.6 candidate, not pursued here.
 
 ### Non-standard words (not in Core or Core Extension)
 

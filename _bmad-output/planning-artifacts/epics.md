@@ -1572,7 +1572,72 @@ So that I can build sessions from multiple source files and recover cleanly from
 **When** it runs
 **Then** it covers: single `INCLUDE` of a known file; nested `INCLUDE` (A includes B includes C); `INCLUDE` that runs a THROW mid-file → FID closed, REPL live, state intact; `INCLUDED` with a bad filename → `-38 THROW` (file not found); pool stress — deep nesting up to 8 FIDs.
 
-### Story 13.5: Epic 13 FS stress, BDOS audit, ROM delta + antforth 2.0 release gate (CCD-4)
+### Story 13.5: R/O `CLOSE-FILE` destructive-flush — verdict-only audit + structural fix
+
+**Origin:** Surfaced during Story 13.4 v2 dev-pass (party-mode session 2026-05-04 post-13.4-v2-review). Story 13.4 v2's `(close-current-fid)` had to drop `file_flush` because flushing R/O FCBs after partial-record reads is destructive — `file_flush` (`src/file_access.asm:711-779`) pads DMA[pos..127] with 0x1A and F_WRITEs the record, which on an R/O source file corrupts the on-disk content. Story 13.4 dodged it by skipping flush in the INCLUDE close path; the user-facing Story-13.2 `CLOSE-FILE` (`src/file_access.asm:1489-1544`) still calls `file_flush` unconditionally and therefore inherits the latent.
+
+**Verdict-only audit-anchor probe (test 938) landed 2026-05-04** ahead of this story's create-story to demonstrate reproducibility against the unpatched source. Probe sequence: `CREATE-FILE` R/W, write 13 bytes, `CLOSE-FILE` clean (correct), reopen R/O, partial-read 5 bytes via `READ-FILE`, `CLOSE-FILE`, reopen R/O, query `FILE-SIZE`. Wired into `Makefile:8454-8488` as test 938 (T-S135-AUDIT-RO-FLUSH); descriptive header in `tests/file_access_tests.fth:344-378`. Probe asserts `SZ != 128` (expects-bug); FLIPS to assert `SZ = 128` (expects-fix) when this story's structural fix lands.
+
+**Observed bug magnitude — substantially worse than initial hypothesis:** the audit-anchor probe records **`SZ=1507456`** — ~1.47 MB on disk for a 13-byte source file, after a single open → partial-read-5-bytes → close cycle. The "+128 per close" hypothesis from the party-mode discussion is wrong: the actual blast radius is ~1.4 MB **per cycle**, not per-record. Likely mechanism: the byte-stream layer (`file_byte_read` at `src/file_access.asm:475-`) advances the FCB's record-position fields (CR / EX / S2 — see `src/structures.asm` FCB layout) when reading sequentially, so by the time `file_flush` runs, the FCB's sequential pointer has advanced. `F_WRITE_SEQ` writes at that position; CP/M's F_FILE_SIZE (function 35) reports the highest-allocated-record's byte count, and the kernel's "sparse" extent allocation pads up to the new high-water mark. **A single R/O open-partial-read-close therefore extends the source file by ~1.4 MB.** This is a filesystem-level corruption with blast radius far exceeding the `fcb_byte_pos in 1..127` variable that the party-mode investigation initially focused on — the investigation must trace the *full* FCB record-position state, not just `fcb_byte_pos`.
+
+**Severity escalation:** previously framed as "annoying source-corruption latent." Audit-anchor probe magnitude flips classification to **filesystem-blast-radius release blocker**. Single-cycle 1.4 MB extension means: (a) any user who opens an R/O file, partial-reads, and closes will silently corrupt that file by orders of magnitude; (b) repeated cycles compound; (c) on a real CP/M 2.2 disk (~241 KB per side on standard 5.25" SD), one cycle exhausts the entire disk. The `antforth 2.0` release MUST NOT ship with this latent live.
+
+The `fcb_byte_pos` variable carries dual meaning ("next byte to read" vs "next byte to write") and `file_flush` cannot tell which without external information. The Story-13.2 mitigation (bump pos to 128 after reads as a "skip flush" sentinel — see `src/file_access.asm:730-736`) is a per-read-site discipline contract, not structural separation; any read site that leaves pos in 1..127 recreates the latent. Given the audit-anchor probe magnitude, the fix shape must address both (i) the read/write disambiguation in `file_flush` AND (ii) the FCB record-position-advance side-effect of read-walking.
+
+**Why this lands before the release gate:** R/O `CLOSE-FILE` extending source files by ~1.4 MB per cycle is a release blocker for `antforth 2.0`. The original Epic-13 release-gate scope is renumbered to **Story 13.6** (no scope change there).
+
+**Anti-pattern non-recurrence:** This is NOT a sibling-story-spawn of 13.4 (the v1 anti-pattern explicitly forbidden by Story 13.4 v2 AC #26). The latent originated in Story 13.2 and was *surfaced by* Story 13.4 v2's dev-pass. It is an epic-scope-discovered defect, owned by its own story.
+
+As an antforth user reading source files,
+I want `CLOSE-FILE` on a read-only FID to leave the source file's bytes untouched after a partial-record read,
+So that opening, partial-reading, and closing a file does not silently corrupt its contents.
+
+**Acceptance Criteria:**
+
+**Given** the latent reproducer pattern (write known content; close clean; reopen R/O; partial-record read; CLOSE-FILE; verify FILE-SIZE) and the audit-anchor probe **already landed as Makefile test 938** on 2026-05-04
+**When** Story 13.5's create-story workflow runs
+**Then** the AC #1 probe is **already in the tree** (`Makefile:8454-8488` + `tests/file_access_tests.fth:344-378`); Story 13.5 verifies that the probe still PASSes in expects-bug mode at story start (`make test-repl` → 947 PASS / 0 FAIL with test 938 reporting `SZ=1507456`). At story close, the probe's assertion is FLIPPED in-place from `if SZ=128 then FAIL` to `if SZ=128 then PASS` — same probe, same trigger sequence, opposite verdict. **No second probe authored** (the verdict-only discipline keeps the regression boundary pinned at one source-of-truth assertion). Probe flip is part of the AC #4 fix-landing diff.
+
+**Given** the substantial bug-magnitude observed (`SZ=1507456` from a 13-byte source file after one open-partial-read-close cycle — per the audit-anchor probe) which proves the latent is not merely an `fcb_byte_pos in 1..127` issue but involves the FCB's record-position fields (CR, EX, S2) being advanced by `file_byte_read`'s sequential-walk before `file_flush` issues `F_WRITE_SEQ` at that advanced position
+**When** an investigation pass traces the full FCB-state evolution across the bug-trigger sequence
+**Then** the investigation catalogues, per FCB-state field per code site:
+- **`fcb_byte_pos`** evolution across `READ-FILE`, `READ-LINE`, `(file-refill)`, `file_byte_read`, `file_byte_write`, `bdos_read_seq` / `bdos_write_seq`, `REPOSITION-FILE`'s pos arithmetic, the partial-record paths. Which sites leave pos in 1..127 (latent-recreation risk), which bump to 0 (clean post-record-boundary), which bump to 128 (sentinel "DMA exhausted; refill on next read").
+- **FCB record-position fields (CR / EX / S2)** evolution across the same sites. Where does sequential reading advance these fields? Where does sequential writing advance them? Where do they get reset / repositioned? The 1.4 MB blast radius implies these fields advance pathologically far during the partial-read sequence — the catalogue must explain *why* and identify the correctable site.
+- **DMA buffer state** at `file_flush` entry — what bytes are in the DMA when flush runs after a partial read? The audit-anchor probe's source content is 13 bytes; the post-bug file size is 1.5 MB; either F_WRITE_SEQ is writing far-advanced records OR CP/M is sparse-allocating extents up to a high-water mark.
+
+The catalogue is recorded in the story's Completion Notes and informs AC #3's fix-shape pick. **Investigation HALTS** if the catalogue reveals additional structural defects (e.g., a Story-13.2 read-site that's *also* corrupting state on writes); HALT discipline per Story 13.4 v2 AC #26.
+
+**Given** the catalogue from AC #2 and the architectural options on the table (option 2 — `file_flush` consults FAM via `fcb_fam_get`; option 1 — discriminator bit `fcb_last_op` parallel array; hybrid — FAM gates R/O wholesale, plus a "has-written" bit on R/W FCBs)
+**When** the fix shape is committed
+**Then** the chosen approach is structurally correct for all FAM modes: R/O skips flush unconditionally (option 2 alone suffices); W/O flushes per current logic; **R/W requires that flush only fires if at least one F_WRITE has been issued on this FCB** — a partial READ followed by CLOSE on an R/W FCB must not destructively pad. Provisional pick: **option 2 + a per-FCB "has-written" bit** (the hybrid). Investigation may revise. **HALT signal** if no option satisfies all three FAM modes without compensation logic.
+
+**Given** the structural fix from AC #3
+**When** it lands in `src/file_access.asm`
+**Then** `file_flush` becomes mode-aware: R/O FCBs are no-op; W/O FCBs flush as before; R/W FCBs flush only if the per-FCB "has-written" bit is set. The bit is cleared at `pool_acquire` (Story 13.1) and set by every successful `bdos_write_seq` call. The `fcb_byte_pos == 128` sentinel from Story 13.2 is preserved as defence-in-depth (no regression of existing read-site contracts). The verdict-only probe from AC #1 flips from "expects bug" to "expects fix" — `FILE-SIZE` unchanged across reopen-partial-read-close.
+
+**Given** Story 13.4 v2's `(close-current-fid)` and `chain_walk_close_current_fid` flush-skip code (`src/file_access.asm:2396-2400` cite)
+**When** AC #4's fix lands
+**Then** the explicit flush-skip remains in place as defence-in-depth (commented as such); it becomes a no-op once `file_flush` itself is mode-aware, but the explicit skip documents intent at the INCLUDE close site and protects against future `file_flush` regressions.
+
+**Given** the new "has-written" bit on each FCB
+**When** the existing CLOSE-FILE / WRITE-FILE / FILE-SIZE / REPOSITION-FILE / DELETE-FILE flows are re-tested
+**Then** all 946 existing REPL tests pass — zero regression. Story 13.1's `(FILE-IO-SANITY)` harness still passes. The Story-13.2 R/W mode probes (REPL tests covering OPEN-FILE / WRITE-FILE / READ-FILE / CLOSE-FILE round-trip) still pass with byte-identical file content.
+
+**Given** the byte-budget discipline (per Story 13.4 v2 retrospective: PD-13 envelope under-counted; calibrate from 13.4 v2 actuals + margin)
+**When** Story 13.5 closes
+**Then** the byte-count delta is reported as TWO numbers (data delta + code delta) per Story 13.4 v2 PD-13 idiom. Expected envelope: data +8..+16 bytes (an 8-byte parallel array `fcb_has_written` for the pool), code +50..+100 bytes (the FAM-consult in `file_flush` + the bit-set in `bdos_write_seq` callers + the bit-clear in `pool_acquire`). Either gate exceeded → HALT per the 13.4 v2 discipline.
+
+**Given** the Story 13.4 v2 caveat in `docs/ans-forth-core-compliance.md` documenting the R/O destructive-flush latent as out-of-scope-for-13.4
+**When** Story 13.5 closes
+**Then** the caveat is updated to record the fix landing in Story 13.5 with the chosen approach (mode-aware `file_flush` + has-written bit) and the AC #1 verdict-only probe's bug→fix flip date. `docs/throw-codes.md` requires no edits (no new THROW codes).
+
+**Given** Story 13.5 is a release-blocker for `antforth 2.0`
+**When** Story 13.5 closes
+**Then** Story 13.6 (originally Story 13.5 — Epic 13 FS stress, BDOS audit, antforth 2.0 release gate) is unblocked and can begin. Sprint-status flips: `13-5-r-o-close-file-destructive-flush-audit-and-fix: backlog → ready-for-dev → in-progress → review → done`. Story 13.6 sequencing unchanged (gates the 2.0 release tag).
+
+### Story 13.6: Epic 13 FS stress, BDOS audit, ROM delta + antforth 2.0 release gate (CCD-4)
+
+**Renumbered from Story 13.5 on 2026-05-04** (party-mode session post-13.4-v2-review). Scope unchanged; only the story number moved to make room for Story 13.5 (R/O destructive-flush audit-and-fix), which is a release-blocker for `antforth 2.0`. Forward references in `_bmad-output/implementation-artifacts/sprint-status.yaml` and any cross-story citations updated accordingly.
 
 As an antforth maintainer,
 I want Epic 13 to close with a filesystem-error stress suite (NFR8), a BDOS-function-allow-list audit (NFR13), ROM delta accounting for the phase as a whole (NFR4), and a full Phase-1 + Epics 9–12 regression pass on real MicroBeast hardware,

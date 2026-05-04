@@ -208,6 +208,21 @@ development_status:
   13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: done
   13-2-core-file-access-wordset: done
   13-3-file-positioning: done
-  13-4-source-input-nesting-include-top-chain-discipline: backlog
-  13-5-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: backlog
+  13-4-source-input-nesting-include-top-chain-discipline-v2: done
+  # Story 13.5 inserted 2026-05-04 as a latent-defect audit-and-fix ahead of
+  # the original Epic-13 release-gate (now renumbered to 13.6). Surfaced
+  # during Story 13.4 v2's dev-pass: `(close-current-fid)` had to drop
+  # `file_flush` because flushing R/O FCBs after partial-record reads is
+  # destructive — `file_flush` pads DMA[pos..127] with 0x1A and F_WRITEs
+  # the record, corrupting the source file. Story 13.2's user-facing
+  # `CLOSE-FILE` has the same shape on R/O FCBs (documented in
+  # docs/ans-forth-core-compliance.md Story 13.4 caveats). 13.5 owns the
+  # verdict-only reproducer + investigation + structural fix; 13.6 keeps
+  # the original release-gate scope unchanged. Decision: party-mode
+  # session 2026-05-04 post-13.4-v2-review. The 13.4.1 sibling-story
+  # anti-pattern is explicitly NOT being repeated — this is an
+  # epic-scope-discovered latent (Story 13.2 origin), not a 13.4
+  # band-aid.
+  13-5-r-o-close-file-destructive-flush-audit-and-fix: done
+  13-6-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: backlog
   epic-13-retrospective: optional

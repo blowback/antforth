@@ -84,6 +84,13 @@ THROW_CONTROL_MISMATCH  EQU -22  ; ANS Forth 1994 §9.3.5
 THROW_SEARCH_ORDER_OVERFLOW EQU -49  ; ANS Forth 1994 §9.3.5 (search-order overflow; Story 12.3 SET-ORDER bounds check)
 THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5
 
+; --- File-Access codes (ANS Forth 1994 §9.3.5) — Story 13.4 v2 allocation ---
+; -37 raised by (file-refill) on F_READ I/O error (currently latent: the
+;   helper treats F_READ failure as EOF; reserved for forward use).
+; -38 raised by INCLUDED when OPEN-FILE returns non-zero ior.
+THROW_FILE_IO           EQU -37  ; ANS Forth 1994 §9.3.5
+THROW_FILE_NOT_FOUND    EQU -38  ; ANS Forth 1994 §9.3.5
+
 ; --- Architecture-mandated example EQUs (architecture.md:476-478) ---
 ; Declared upfront per the design-upfront feedback rule even though no
 ; Epic 11 migration references them. THROW_FCB_EXHAUSTED lands first in

@@ -106,8 +106,8 @@ back to the per-file inventory in §d.
 | -34 | block write exception | no | — |
 | -35 | invalid block number | no | — |
 | -36 | invalid file position | no | — |
-| -37 | file I/O exception | no | — |
-| -38 | non-existent file | no | — |
+| -37 | file I/O exception | **latent** (Story 13.4 v2) | `THROW_FILE_IO EQU -37` (`constants.asm`) — allocated for `(file-refill)`'s F_READ I/O error path; currently the helper treats F_READ failure as EOF |
+| -38 | non-existent file | yes (Story 13.4 v2) | `THROW_FILE_NOT_FOUND EQU -38` (`constants.asm`) — raised by INCLUDED on OPEN-FILE failure |
 | -39 | unexpected end of file | no | — |
 | -40 | invalid BASE for floating point conversion | no | — |
 | -41 | loss of precision | no | — |

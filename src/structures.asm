@@ -33,4 +33,6 @@ current_wordlist    DW      0       ; CURRENT-WORDLIST USER var (Story 12.4 — 
 dpl                 DW      0       ; DPL: digits-after-dot from last successful number parse, -1 if no dot.
                                     ; de-facto Forth convention (fig-Forth / F83 / gforth / SwiftForth / pforth);
                                     ; NOT in ANS Core. Story 13.0 ANS Forth 1994 §3.4.1.3 dot-marker recogniser.
+include_top         DW      0       ; INCLUDE-TOP: most-recent INCLUDE source-frame address, 0 if none (CCD-1).
+                                    ; antforth extension — exposed via DEFCODE INCLUDE-TOP (Story 13.4 v2).
     ENDS

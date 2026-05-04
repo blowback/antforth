@@ -341,10 +341,60 @@ FA @ CLOSE-FILE DROP  S" T16.TXT" DELETE-FILE DROP
 \ Expected fragment: "T16=0 8 0 "
 
 \ ============================================================
-\ Forward-pointers — Stories 13.4 / 13.5 add more probes
+\ Story 13.5 audit anchor — R/O CLOSE-FILE destructive flush — Makefile test 938
 \ ============================================================
-\ Story 13.4 (INCLUDE-top chain) extends with source-input nesting.
-\ Story 13.5 (FS stress + BDOS audit) is the Epic 13 close-out gate;
-\   may add a per-FCB dirty-flag infrastructure that enables safe
-\   auto-flush in REPOSITION-FILE (the (t13) follow-up deferred from
-\   Story 13.3 per AC #11(b) and AC #19).
+\ Verdict-flipped 2026-05-04 at Story 13.5 close (per
+\ feedback_verdict_only_audit.md): same probe sequence, opposite
+\ verdict. Pre-flip the probe asserted SZ != 128 (bug-state); post-flip
+\ asserts SZ = 128 (fix landed).
+\
+\ The latent (now fixed): `file_flush` (src/file_access.asm) was called
+\ by `CLOSE-FILE` before F_CLOSE on every close path. After a partial-
+\ record READ-FILE with `fcb_byte_pos` in 1..127, file_flush padded
+\ DMA[pos..127] with 0x1A and unconditionally F_WRITE'd the record. On
+\ R/O FCBs this extended the on-disk source file by one record per
+\ open-partial-read-close cycle.
+\
+\ Story 13.4 v2 dodged this in `(close-current-fid)` by skipping the
+\ flush entirely (INCLUDE always opens R/O). The user-facing
+\ CLOSE-FILE inherited the latent until Story 13.5.
+\
+\ Story 13.5 fix: file_flush consults a per-FCB `fcb_has_written`
+\ bit (set inside file_byte_write entry and bdos_write_seq A==0
+\ success; cleared at pool_acquire / pool_release). R/O reads never
+\ touch file_byte_write so the bit stays 0; close-time file_flush
+\ skips the destructive pad-and-F_WRITE on R/O FCBs.
+\
+\ Probe sequence:
+\   1. CREATE-FILE R/W RODEMO.TXT, write "Hello, world." (13 bytes),
+\      CLOSE-FILE clean (the writeable close path is correct).
+\   2. Reopen R/O, partial-read 5 bytes via HERE, CLOSE-FILE — was
+\      the bug-trigger; post-fix is benign.
+\   3. Reopen R/O, query FILE-SIZE.
+\
+\ Verdict on CP/M 2.2 (FILE-SIZE returns record-aligned bytes):
+\   * Clean state (fix landed): 128 bytes (1 record from cycle 1).
+\   * Bug state (latent fired pre-fix): 256 bytes (cycle 2 wrote one
+\     extra padded record at the post-read FCB.CR position).
+\
+\ Probe-quality fixes that landed with the verdict-flip:
+\   * `PAD` (undefined in antforth) → `HERE` (free dictionary space
+\     used as a 5-byte scratch buffer for the partial read).
+\   * `." SZ="` (clobbered BC across the print, garbling D.'s
+\     subsequent FILE-SIZE output) → `S" SZ=" TYPE` (BC-preserving).
+\
+\ Story 13.5 owns the audit + structural fix; Story 13.6 (renumbered
+\ from original 13.5 per party-mode session 2026-05-04) is the Epic
+\ 13 release gate.
+
+\ ============================================================
+\ Forward-pointers — Story 13.6 closes the epic
+\ ============================================================
+\ Story 13.6 (FS stress + BDOS audit + antforth 2.0 release gate;
+\   renumbered from 13.5 on 2026-05-04 to make room for the R/O
+\   destructive-flush story) may add a per-FCB dirty-flag
+\   infrastructure that enables safe auto-flush in REPOSITION-FILE
+\   (the (t13) follow-up deferred from Story 13.3 per AC #11(b) and
+\   AC #19), pending Story 13.5's investigation outcome — the
+\   "has-written" bit Winston proposed in the party-mode discussion
+\   may overlap or fully subsume that infrastructure.

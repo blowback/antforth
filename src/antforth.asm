@@ -71,6 +71,11 @@ cold_start:
         LD      (IY+UserArea.catch_top), 0
         LD      (IY+UserArea.catch_top+1), 0
 
+        ; 8b''. INCLUDE-TOP = 0 (no INCLUDE source-frame at REPL start —
+        ;       Story 13.4 v2; CCD-1 dual-LIFO chain head)
+        LD      (IY+UserArea.include_top), 0
+        LD      (IY+UserArea.include_top+1), 0
+
         ; 8c. HLD = IY + UserArea.pic_buf + PIC_BUF_SIZE
         ;     (sentinel one past the buffer's high end; <# resets to this)
         PUSH    IY

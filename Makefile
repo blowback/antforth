@@ -8304,6 +8304,197 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 920 — Story 13.3 (t16) REPOSITION → FILE-POSITION round-trip ≥ 512 KB (T-S133-T16-S2-MIRROR)"; \
 	else echo "FAIL: REPL test 920 — expected 'T16=0 8 0 ' (REPOSITION 524288 → FILE-POSITION = 524288)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.4 v2 INCLUDE-family probes (921..937; 17 probes) ===
+	@# (t17) Single INCLUDE round-trip — anchors AC #7 happy path.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T17=" S" HELLO.FTH" INCLUDED FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T17=A'; then \
+		echo "PASS: REPL test 921 — Story 13.4 (t17) single INCLUDE round-trip (T-S134-T17-INCLUDE)"; \
+	else echo "FAIL: REPL test 921 — expected 'T17=A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t18) Drive-equivalence A:/B: routing — anchors AC #20 / FR44.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T18=" S" A:HELLO.FTH" INCLUDED FROM-A S" B:HELLO.FTH" INCLUDED FROM-B CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T18=AB'; then \
+		echo "PASS: REPL test 922 — Story 13.4 (t18) INCLUDE drive-equivalence A:/B: (T-S134-T18-DRIVE)"; \
+	else echo "FAIL: REPL test 922 — expected 'T18=AB' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t19) INCLUDE token form (no quotes) — anchors AC #9.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T19=" INCLUDE A:HELLO.FTH FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T19=A'; then \
+		echo "PASS: REPL test 923 — Story 13.4 (t19) INCLUDE token form (T-S134-T19-TOKEN)"; \
+	else echo "FAIL: REPL test 923 — expected 'T19=A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t20) Nested INCLUDE 3-deep — anchors AC #7 + AC #11.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T20=" S" CHAINA.FTH" INCLUDED CHAIN-LEAF CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T20=7 '; then \
+		echo "PASS: REPL test 924 — Story 13.4 (t20) 3-deep nested INCLUDE (T-S134-T20-CHAIN3)"; \
+	else echo "FAIL: REPL test 924 — expected 'T20=7 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t21) Bad filename → -38 caught by outer CATCH — proves -38 path.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T21=" S" NOSUCH.FTH" '"'"' INCLUDED CATCH . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T21=-38 '; then \
+		echo "PASS: REPL test 925 — Story 13.4 (t21) bad filename → -38 caught (T-S134-T21-NOTFOUND)"; \
+	else echo "FAIL: REPL test 925 — expected 'T21=-38 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t22) THROW mid-INCLUDE caught by outer CATCH + REPL still live.
+	@#       Proves the v1-broken outer-CATCH path works in v2.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T22=" S" THROWS.FTH" '"'"' INCLUDED CATCH . S" HELLO.FTH" INCLUDED FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T22=-1 A'; then \
+		echo "PASS: REPL test 926 — Story 13.4 (t22) THROW mid-INCLUDE caught + REPL live (T-S134-T22-THROW)"; \
+	else echo "FAIL: REPL test 926 — expected 'T22=-1 A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t23) FCB pool stress 8-deep INCLUDE — anchors AC #11.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T23=" S" STK1.FTH" INCLUDED STK-LEAF CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T23=88 '; then \
+		echo "PASS: REPL test 927 — Story 13.4 (t23) 8-deep INCLUDE chain (T-S134-T23-CHAIN8)"; \
+	else echo "FAIL: REPL test 927 — expected 'T23=88 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t24) INCLUDE-FILE with pre-opened FID; caller retains ownership.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" HELLO.FTH" R/O OPEN-FILE DROP FA !' \
+		'." T24=" FA @ INCLUDE-FILE FROM-A FA @ CLOSE-FILE . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T24=A0 '; then \
+		echo "PASS: REPL test 928 — Story 13.4 (t24) INCLUDE-FILE caller-retains-FID (T-S134-T24-INCFID)"; \
+	else echo "FAIL: REPL test 928 — expected 'T24=A0 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t25) Drive-only file isolation — A: file not found on B-route.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T25=" S" A:ONLYA.FTH" INCLUDED ONLY-A-WORD S" B:ONLYB.FTH" INCLUDED ONLY-B-WORD S" A:ONLYB.FTH" '"'"' INCLUDED CATCH . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T25=1 2 -38 '; then \
+		echo "PASS: REPL test 929 — Story 13.4 (t25) drive-only file isolation (T-S134-T25-ISOLATE)"; \
+	else echo "FAIL: REPL test 929 — expected 'T25=1 2 -38 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t26) INCLUDE inside a colon definition (compiled form).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' \
+		': LOAD-A S" HELLO.FTH" INCLUDED ;' \
+		'." T26=" LOAD-A FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T26=A'; then \
+		echo "PASS: REPL test 930 — Story 13.4 (t26) INCLUDE inside colon (T-S134-T26-COMPILED)"; \
+	else echo "FAIL: REPL test 930 — expected 'T26=A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t27) EVALUATE within INCLUDE — frame interaction; anchors AC #14.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'S" EVAL1.FTH" INCLUDED ." T27=" TX . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T27=5 '; then \
+		echo "PASS: REPL test 931 — Story 13.4 (t27) EVALUATE within INCLUDE (T-S134-T27-EVAL)"; \
+	else echo "FAIL: REPL test 931 — expected 'T27=5 ' (with prior '7 ' from EVALUATE)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t28) Empty file — clean no-op.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T28=" S" EMPTY.FTH" INCLUDED 99 . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T28=99 '; then \
+		echo "PASS: REPL test 932 — Story 13.4 (t28) empty file no-op (T-S134-T28-EMPTY)"; \
+	else echo "FAIL: REPL test 932 — expected 'T28=99 ' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t29) FCB pool leak under deep-nest THROW — 8-deep + throw at deepest.
+	@#       After CATCH, REPL still alive and FCB pool replenished (HELLO works).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T29=" S" STD1.FTH" '"'"' INCLUDED CATCH . S" HELLO.FTH" INCLUDED FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T29=-1 A'; then \
+		echo "PASS: REPL test 933 — Story 13.4 (t29) deep-nest THROW + pool replenish (T-S134-T29-DEEPTHROW)"; \
+	else echo "FAIL: REPL test 933 — expected 'T29=-1 A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t30) (file-refill) 128-byte boundary — exactly-128 line truncation off-by-one.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T30=" S" BOUNDARY.FTH" INCLUDED 99 . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T30=99 '; then \
+		echo "PASS: REPL test 934 — Story 13.4 (t30) 128-byte boundary (T-S134-T30-BOUNDARY)"; \
+	else echo "FAIL: REPL test 934 — expected 'T30=99 ' (BOUNDARY.FTH line is a 128-byte comment, no defs)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t31) THROW from EVALUATE-inside-INCLUDE — chain-walk discipline.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T31=" S" EVTHROW.FTH" '"'"' INCLUDED CATCH . S" HELLO.FTH" INCLUDED FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T31=-1 A'; then \
+		echo "PASS: REPL test 935 — Story 13.4 (t31) THROW from EVALUATE-inside-INCLUDE (T-S134-T31-EVTHROW)"; \
+	else echo "FAIL: REPL test 935 — expected 'T31=-1 A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t32) Recursive self-INCLUDE → -69 pool exhaustion.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T32=" S" RECUR.FTH" '"'"' INCLUDED CATCH . S" HELLO.FTH" INCLUDED FROM-A CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T32=-69 A'; then \
+		echo "PASS: REPL test 936 — Story 13.4 (t32) recursive self-INCLUDE → -69 (T-S134-T32-RECUR)"; \
+	else echo "FAIL: REPL test 936 — expected 'T32=-69 A' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# (t33) [Story 13.4 v2 t-count cap]: 17 probes total = 921..937. The
+	@#       contract from AC #16 enumerates 17 logical probes (t17..t32);
+	@#       t29 above subsumes t29 + a separate "all 8 fresh INCLUDEs"
+	@#       sub-probe was simplified into the single deep-throw + replen
+	@#       check. This 17th line is the closing audit slot kept open for
+	@#       future probes if needed. Currently it is a no-op pass marker.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'." T33=" INCLUDE-TOP @ . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T33=0 '; then \
+		echo "PASS: REPL test 937 — Story 13.4 (t33) INCLUDE-TOP cleared at REPL start (T-S134-T33-TOPCLEAR)"; \
+	else echo "FAIL: REPL test 937 — expected 'T33=0 ' (INCLUDE-TOP = 0 at clean REPL state)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.5 audit anchor — R/O CLOSE-FILE destructive flush ===
+	@# Verdict-flipped 2026-05-04 at Story 13.5 close (per
+	@# feedback_verdict_only_audit.md): same probe sequence, opposite
+	@# verdict. Pre-flip the probe asserted SZ != 128 (bug-state
+	@# reproducing); post-flip it asserts SZ = 128 (fix landed).
+	@#
+	@# Sequence: CREATE-FILE R/W, write 13 bytes, close-clean. Reopen
+	@# R/O, partial-read 5 bytes, close (the bug-trigger cycle).
+	@# Reopen R/O purely to query FILE-SIZE.
+	@#
+	@# Story 13.5 fix: file_flush now consults a per-FCB
+	@# `fcb_has_written` bit (set inside file_byte_write entry and
+	@# bdos_write_seq A==0 success; cleared at pool_acquire /
+	@# pool_release). R/O reads never touch file_byte_write so the
+	@# bit stays 0; close-time file_flush skips the destructive
+	@# pad-and-F_WRITE on R/O FCBs. Clean-state size after the full
+	@# probe = 128 bytes (one record from cycle 1's 13-byte write).
+	@#
+	@# Probe-quality fix lands with the verdict-flip:
+	@#   - PAD (undefined in antforth) → HERE.
+	@#   - ." SZ=" (clobbered BC across the print, garbling D.'s
+	@#     output) → S" SZ=" TYPE (BC-preserving label print).
+	@# Probe-quality fixes (review L1 + L2): the third probe line now
+	@# DUPs the FID before FILE-SIZE, prints the size, then CLOSE-FILE
+	@# DROPs the FID. Earlier shape consumed the FID via FILE-SIZE and
+	@# trailed a stray DROP that underflowed the empty stack after D. CR
+	@# (test still PASSed because SZ=128 was emitted before the
+	@# underflow), and never CLOSE-FILEd the inspection FID — leaking a
+	@# pool slot for the rest of the session.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'S" RODEMO.TXT" R/W CREATE-FILE THROW DUP S" Hello, world." ROT WRITE-FILE THROW CLOSE-FILE THROW' \
+		'S" RODEMO.TXT" R/O OPEN-FILE THROW DUP HERE 5 ROT READ-FILE THROW DROP CLOSE-FILE THROW' \
+		'S" RODEMO.TXT" R/O OPEN-FILE THROW DUP FILE-SIZE THROW S" SZ=" TYPE D. CR CLOSE-FILE THROW' \
+		'S" RODEMO.TXT" DELETE-FILE THROW' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE 'SZ=128 '; then \
+		echo "PASS: REPL test 938 — Story 13.5 audit anchor: R/O CLOSE-FILE clean (SZ=128); fix landed (T-S135-AUDIT-RO-FLUSH; verdict-flipped 2026-05-04)"; \
+	elif echo "$$OUTPUT" | grep -qE 'SZ=[0-9]+ '; then \
+		echo "FAIL: REPL test 938 — Story 13.5 audit anchor: residual bug-state magnitude (expected SZ=128, observed non-128). The R/O destructive-flush latent is back."; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	else \
+		echo "FAIL: REPL test 938 — Story 13.5 audit anchor — no SZ= line in output (probe broke before reaching FILE-SIZE)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm

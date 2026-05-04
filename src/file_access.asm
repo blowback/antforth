@@ -92,6 +92,14 @@ FCB_R2      EQU 35          ; CP/M 2.2 §5.4 — random-record byte 2 (overflow)
 fcb_pool:           DS FCB_POOL_COUNT * FCB_SIZE        ; 288 bytes (8 × 36)
 fcb_dma_pool:       DS FCB_DMA_POOL_SIZE                ; 1024 bytes (8 × 128)
 
+; Story 13.4 v2 PD-1 — per-FCB private source-line slab. Each of the 8
+; FCB pool slots gets a 128-byte source-line buffer addressed via
+; slab[i] = include_line_pool + (i << 7). Children's INCLUDE writes to
+; their own slab — clobber across nesting levels is structurally
+; impossible (vs the v1 shared `include_buffer` band-aid).
+include_line_pool:  DS FCB_POOL_COUNT * TIB_SIZE        ; 1024 bytes (8 × 128)
+        ASSERT FCB_POOL_COUNT * TIB_SIZE = 1024
+
 ; Free-list bitmap (AC #4 pick: 1-byte bitmap, 1 = free).
 ;   bit i (i = 0..7) corresponds to fcb_pool[i].
 ;   Initial value 0xFF: all 8 slots free at boot.
@@ -116,6 +124,16 @@ fcb_byte_pos:       DS FCB_POOL_COUNT
 ; non-destructively). pool_init sets all 8 slots to 0; pool_release
 ; resets the freed slot to 0 (R/O fallback) for stale-FID hardening.
 fcb_fam:            DS FCB_POOL_COUNT
+
+; Story 13.5 — per-FCB "has-written" bit; consulted by file_flush in
+; R/W mode to skip destructive flush after partial-record reads on a
+; never-written R/W FCB. Encoding: 0 = never-written (the only state
+; that enables the R/W flush-skip arm), non-zero = at-least-one-write
+; (flush proceeds normally). Cleared at pool_acquire (fresh FCB starts
+; never-written). Set inside bdos_write_seq on A==0 success (covers all
+; F_WRITE callers in one place). Reset at pool_release for stale-FID
+; hardening (mirror of fcb_fam reset at line 280-282).
+fcb_has_written:    DS FCB_POOL_COUNT
 
 ; -----------------------------------------------
 ; pool_init — Cold-start initialiser; called from cold_start.
@@ -142,6 +160,16 @@ pool_init:
         INC     DE
         LD      BC, FCB_DMA_POOL_SIZE - 1
         LDIR
+        ; Story 13.4 v2 — zero include_line_pool (1024 bytes). Each of the
+        ; 8 per-FCB source-line slabs starts cleared so a fresh acquire
+        ; never inherits stale bytes from a prior INCLUDE.
+        LD      HL, include_line_pool
+        LD      (HL), 0
+        LD      D, H
+        LD      E, L
+        INC     DE
+        LD      BC, FCB_POOL_COUNT * TIB_SIZE - 1
+        LDIR
         ; Set fcb_byte_pos[*] = 128 (sentinel: refill on first read).
         LD      HL, fcb_byte_pos
         LD      B, FCB_POOL_COUNT
@@ -161,6 +189,17 @@ pool_init:
         LD      (HL), A
         INC     HL
         DJNZ    .pi_fam_loop
+        ; Story 13.5 — zero fcb_has_written[*] so freshly-acquired slots
+        ; start as never-written. pool_acquire also clears the bit at the
+        ; per-acquire site; this cold-start zero is hygiene + matches the
+        ; fcb_fam idiom above.
+        LD      HL, fcb_has_written
+        LD      B, FCB_POOL_COUNT
+        XOR     A
+.pi_hw_loop:
+        LD      (HL), A
+        INC     HL
+        DJNZ    .pi_hw_loop
         RET
 
 ; -----------------------------------------------
@@ -198,6 +237,18 @@ pool_acquire:
         LD      A, (fcb_pool_bitmap)
         XOR     C                       ; clear the bit (it was set, XOR clears)
         LD      (fcb_pool_bitmap), A
+        ; Story 13.5 — clear fcb_has_written[B]: a fresh FCB starts as
+        ; never-written. PUSH/POP HL across the index→address compute so
+        ; the caller still sees HL = FCB ptr at exit.
+        PUSH    HL
+        PUSH    BC
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 0
+        POP     BC
+        POP     HL
         RET
 .pa_exhausted:
         LD      BC, THROW_FCB_EXHAUSTED ; -69; consumed by w_THROW_cf.kernel_entry
@@ -267,8 +318,30 @@ pool_release:
         LD      DE, fcb_fam
         ADD     HL, DE
         LD      (HL), 0
-        ; Zero the FCB record (36 bytes starting at DE)
-        EX      DE, HL                  ; HL = FCB ptr
+        ; Story 13.5 — also reset fcb_has_written[index] to 0 (mirror
+        ; fcb_fam reset above). A stale FID can never lift the
+        ; has-written gate from a prior holder's state.
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 0
+        ; Zero the FCB record (36 bytes starting at the FCB ptr).
+        ; Story 13.5 — recover the FCB ptr from the function-entry
+        ; scratch (.pr_save_h/.pr_save_l) before the LDIR. The prior
+        ; per-array resets (fcb_byte_pos / fcb_fam / fcb_has_written)
+        ; each clobbered DE with their parallel-array bases; without
+        ; this recovery the LDIR was zeroing 36 bytes starting at the
+        ; last-loaded parallel-array base — silently corrupting the
+        ; bytes after the array (pool_init's code, which only runs at
+        ; cold-start, so the corruption was undetectable in practice).
+        ; Surfaced 2026-05-04 during Story 13.5 dev-pass when the
+        ; audit-anchor probe relied on a clean FCB[R0..R2] state across
+        ; reopen-then-FILE-SIZE. Story 13.5 Task 2 catalogue, finding F.
+        LD      A, (.pr_save_h)
+        LD      H, A
+        LD      A, (.pr_save_l)
+        LD      L, A                    ; HL = FCB ptr (from entry scratch)
         LD      D, H
         LD      E, L
         INC     DE
@@ -339,6 +412,51 @@ fcb_idx_from_ptr:
         RET
 
 ; -----------------------------------------------
+; Story 13.4 v2 — INCLUDE source-frame layout (PD-4 / AC #5).
+;   10-byte rstack frame; chain-walk reads slots via (IX+EQU), never
+;   via magic numbers. Frame written highest-addr-first by
+;   (input-frame-push) so IX = frame base after the push.
+;       +8: previous INCLUDE-TOP   (chain link)
+;       +6: saved SOURCE-ID        (parent's source-id)
+;       +4: saved tib_addr         (parent's input buffer address)
+;       +2: saved tib_len          (parent's input buffer length)
+;       +0: saved >IN              (parent's parse offset)
+; -----------------------------------------------
+INCLUDE_FRAME_TIB_IN_OFFSET     EQU 0
+INCLUDE_FRAME_TIB_LEN_OFFSET    EQU 2
+INCLUDE_FRAME_TIB_ADDR_OFFSET   EQU 4
+INCLUDE_FRAME_SOURCE_ID_OFFSET  EQU 6
+INCLUDE_FRAME_PREV_OFFSET       EQU 8
+INCLUDE_FRAME_SIZE              EQU 10
+        ASSERT INCLUDE_FRAME_TIB_IN_OFFSET = 0
+        ASSERT INCLUDE_FRAME_TIB_LEN_OFFSET = 2
+        ASSERT INCLUDE_FRAME_TIB_ADDR_OFFSET = 4
+        ASSERT INCLUDE_FRAME_SOURCE_ID_OFFSET = 6
+        ASSERT INCLUDE_FRAME_PREV_OFFSET = 8
+        ASSERT INCLUDE_FRAME_SIZE = 10
+
+; -----------------------------------------------
+; slab_from_fid — Derive the per-FCB source-line slab address.
+;   Entry: HL = FID (FCB ptr).
+;   Exit:  HL = include_line_pool + (idx << 7) where idx = fcb_idx_from_ptr(HL).
+;   Clobbers: A, BC, DE, HL, F. Preserves: IX, IY.
+;   antforth internal  slab_from_fid  — derive per-FCB source-line buffer addr (asm helper)
+; -----------------------------------------------
+slab_from_fid:
+        CALL    fcb_idx_from_ptr        ; B = index (0..7), or 0xFF if OOR
+        LD      A, B
+        AND     1
+        RRCA                            ; A = 0x80 if odd, 0x00 if even
+        LD      L, A
+        LD      A, B
+        SRL     A                       ; A = index/2 (0..3)
+        LD      H, A
+        ; HL = index*128, low byte first.
+        LD      DE, include_line_pool
+        ADD     HL, DE
+        RET
+
+; -----------------------------------------------
 ; BDOS wrapper helpers (AC #2). Each subroutine takes DE = FCB ptr
 ; (for FCB-arg functions) and returns A = BDOS result code. DE is
 ; preserved across the wrapper (BDOS_SAVE/RESTORE round-trip). BC is
@@ -391,11 +509,41 @@ bdos_read_seq:
 ; bdos_write_seq — F_WRITE (21): write next sequential record from DMA
 ;   Entry: DE = FCB ptr.  Exit: A = 0 success / non-zero error.
 ;   Caller must have set DMA via bdos_set_dma before this call.
+;   Story 13.5: on A==0 success, sets fcb_has_written[idx_of(DE)] := 1
+;   so file_flush's R/W-mode guard sees the FCB has been written.
+;   Single-point bit-set covers all callers (file_flush, file_byte_write
+;   auto-flush, future direct WRITE-FILE sites).
 bdos_write_seq:
         BDOS_SAVE
         LD      C, F_WRITE              ; F_WRITE (21)
         CALL    BDOS_ENTRY
         BDOS_RESTORE
+        OR      A
+        RET     NZ                      ; F_WRITE error — leave bit alone
+        ; Success — set fcb_has_written[idx_of(DE)] := 1.
+        ; Preserve A (= 0 success), BC (caller's TOS — restored by
+        ; BDOS_RESTORE above), and DE (caller's FCB ptr) across the
+        ; index→address compute. fcb_idx_from_ptr clobbers A, BC, DE,
+        ; HL — without saving BC the caller's TOS is destroyed (a
+        ; cross-call bug surfaced by Story 13.5 dev-pass when the
+        ; FILE-SIZE THROW D. probe sequence printed garbage).
+        PUSH    AF
+        PUSH    BC
+        PUSH    DE
+        EX      DE, HL                  ; HL = FCB ptr
+        CALL    fcb_idx_from_ptr        ; B = index (0..7) or 0xFF if OOR
+        LD      A, B
+        CP      FCB_POOL_COUNT
+        JR      NC, .bws_oor            ; OOR — defensive no-op
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 1
+.bws_oor:
+        POP     DE
+        POP     BC
+        POP     AF
         RET
 
 ; bdos_create_file — F_MAKE (22): create new file (directory entry)
@@ -566,6 +714,18 @@ file_byte_write:
         CALL    fcb_idx_from_ptr        ; B = index
         LD      A, B
         LD      (.fbw_idx), A
+        ; Story 13.5 — set fcb_has_written[index] := 1 at byte-write
+        ; entry. The bit gates file_flush at close-time: any FCB on
+        ; which file_byte_write has been called has dirty DMA bytes that
+        ; must be flushed even if the count is below the 128-byte
+        ; record threshold (i.e., bdos_write_seq never fired). Without
+        ; this site the close-time flush would skip and the buffered
+        ; bytes would be lost (regression of WRITE-FILE for u1 < 128).
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 1
         ; HL = &fcb_byte_pos[index]
         LD      H, 0
         LD      L, A
@@ -657,6 +817,35 @@ file_flush:
         CALL    fcb_idx_from_ptr        ; B = index
         LD      A, B
         LD      (.ff_idx), A
+        ; Story 13.5 — has-written guard. Skip flush if no F_WRITE has
+        ; been issued on this FCB. The bit is cleared at pool_acquire
+        ; / pool_release (fresh / freed slot = never-written) and set
+        ; inside bdos_write_seq on A==0 success (covers all callers:
+        ; file_flush itself, file_byte_write auto-flush, future direct
+        ; WRITE-FILE sites). The has-written bit is the source of truth
+        ; for "this FCB is dirty"; FAM consult is unnecessary because:
+        ;   R/O: has-written stays 0 (no writes possible) → skip.
+        ;   R/W reads-only: has-written stays 0 → skip.
+        ;   R/W with writes / W/O writes: has-written = 1 → flush.
+        ; The audit-anchor (Story 13.5 test 938) closes via this gate:
+        ; R/O OPEN → READ-FILE → CLOSE-FILE no longer fires F_WRITE_SEQ
+        ; (which previously padded DMA[pos..127] with 0x1A and wrote at
+        ; the read-walk-advanced FCB.CR, extending the source file by
+        ; ~1.5 MB per cycle on iz-cpm).
+        ; OOR-check the index before touching fcb_has_written so a
+        ; corrupt FCB ptr (B==0xFF from fcb_idx_from_ptr) does not read
+        ; a byte 255 deep into pool_init code and decide flush policy
+        ; from it. Mirrors bdos_write_seq's .bws_oor guard (review L3).
+        CP      FCB_POOL_COUNT
+        JR      NC, .ff_empty           ; OOR index → skip flush
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      A, (HL)
+        OR      A
+        JR      Z, .ff_empty            ; never written → skip flush
+        LD      A, (.ff_idx)
         LD      H, 0
         LD      L, A
         LD      DE, fcb_byte_pos
@@ -2110,6 +2299,483 @@ w_FILE_SIZE_cf:
         LD      BC, 0                   ; ior = 0
         LD      DE, (fac_ip)
         NEXT
+
+; ===============================================
+; STORY 13.4 v2 — INCLUDE source-input nesting helpers
+; ===============================================
+; Per PD-1..PD-14: per-FCB private slab (no shared include_buffer); 10-byte
+; IX-rstack INCLUDE frames; chain-walk discipline in src/exception.asm. All
+; helpers below are production primitives (no IFDEF wrap). The INCLUDE family
+; (INCLUDED / INCLUDE-FILE / INCLUDE) sits before the FILE_SANITY-wrapped
+; harness so both build/antforth.com and build/antforth_filesanity.com expose
+; them.
+
+; -----------------------------------------------
+; Scratch storage for (file-refill) and (input-frame-push). Single-threaded
+; Forth — no re-entrancy concern. Always set at the top of each helper body.
+; -----------------------------------------------
+fr_fid:         DW 0                    ; (file-refill) current FID
+fr_slab:        DW 0                    ; (file-refill) per-FCB slab address
+fr_pos:         DB 0                    ; (file-refill) current line-byte count
+ifp_src_id:     DW 0                    ; (input-frame-push) source-id arg
+ifp_u:          DW 0                    ; (input-frame-push) tib_len arg
+ifp_caddr:      DW 0                    ; (input-frame-push) tib_addr arg
+
+; -----------------------------------------------
+; (slab-from-fid) ( fileid -- slab )  PD-2 / AC #3
+;   DEFCODE wrapper around the slab_from_fid asm helper. Used by INCLUDED's
+;   and INCLUDE-FILE's colon-thread bodies (DEFWORDs cannot call asm-only
+;   helpers directly).
+; antforth internal  (slab-from-fid) — DEFCODE wrapper for colon-thread callers
+; -----------------------------------------------
+w_PAREN_SLAB_FROM_FID:
+        DEFCODE "(slab-from-fid)", 0
+w_PAREN_SLAB_FROM_FID_cf:
+        CALL    check_underflow         ; 1-cell guard (BC = fileid)
+        LD      (fac_ip), DE            ; fcb_idx_from_ptr clobbers DE
+        LD      H, B
+        LD      L, C                    ; HL = fileid
+        CALL    slab_from_fid           ; HL = slab address
+        LD      B, H
+        LD      C, L                    ; BC = slab → new TOS
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; (fid-validate) ( fileid -- fileid )  PD-7 / AC #6
+;   DEFCODE wrapper around fid_validate. On valid: passes fileid through.
+;   On stale FID: raises -70 THROW_FILE_INVALID_FID via fid_validate's
+;   internal JP w_THROW_cf.kernel_entry.
+; antforth internal  (fid-validate) — DEFCODE wrapper for fid_validate
+; -----------------------------------------------
+w_PAREN_FID_VALIDATE:
+        DEFCODE "(fid-validate)", 0
+w_PAREN_FID_VALIDATE_cf:
+        CALL    check_underflow         ; 1-cell guard
+        LD      (fac_ip), DE            ; fid_validate may JP w_THROW
+        LD      H, B
+        LD      L, C                    ; HL = fileid
+        CALL    fid_validate            ; -70 THROW on stale FID
+        ; HL still holds fileid on success path (per fid_validate contract)
+        LD      B, H
+        LD      C, L                    ; BC = fileid (passes through)
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; (input-frame-push) ( c-addr u source-id -- )  PD-5 / AC #6
+;   Saves parent's source_id / tib_addr / tib_len / >IN + previous
+;   INCLUDE-TOP into a 10-byte IX-rstack frame; sets INCLUDE-TOP to the
+;   new frame base; installs the new spec (tib_addr=c-addr, tib_len=u,
+;   source_id=arg, >IN=0). Frame written highest-addr-first so IX = frame
+;   base after the push.
+; antforth internal  (input-frame-push) — push INCLUDE source frame
+; -----------------------------------------------
+w_PAREN_INPUT_FRAME_PUSH:
+        DEFCODE "(input-frame-push)", 0
+w_PAREN_INPUT_FRAME_PUSH_cf:
+        CALL    check_underflow_3       ; 3-cell guard
+        LD      (fac_ip), DE
+        ; BC = source-id, SP[0] = u, SP[2] = c-addr
+        LD      (ifp_src_id), BC
+        POP     HL
+        LD      (ifp_u), HL
+        POP     HL
+        LD      (ifp_caddr), HL
+        ; --- Push 10-byte frame on rstack (highest-addr first; IX grows down) ---
+        ; +8: previous INCLUDE-TOP
+        DEC     IX
+        DEC     IX
+        LD      A, (IY+UserArea.include_top)
+        LD      (IX+0), A
+        LD      A, (IY+UserArea.include_top+1)
+        LD      (IX+1), A
+        ; +6: saved SOURCE-ID
+        DEC     IX
+        DEC     IX
+        LD      A, (IY+UserArea.source_id)
+        LD      (IX+0), A
+        LD      A, (IY+UserArea.source_id+1)
+        LD      (IX+1), A
+        ; +4: saved tib_addr
+        DEC     IX
+        DEC     IX
+        LD      A, (IY+UserArea.tib_addr)
+        LD      (IX+0), A
+        LD      A, (IY+UserArea.tib_addr+1)
+        LD      (IX+1), A
+        ; +2: saved tib_len
+        DEC     IX
+        DEC     IX
+        LD      A, (IY+UserArea.tib_len)
+        LD      (IX+0), A
+        LD      A, (IY+UserArea.tib_len+1)
+        LD      (IX+1), A
+        ; +0: saved >IN
+        DEC     IX
+        DEC     IX
+        LD      A, (IY+UserArea.tib_in)
+        LD      (IX+0), A
+        LD      A, (IY+UserArea.tib_in+1)
+        LD      (IX+1), A
+        ; --- Update INCLUDE-TOP = frame base. IX now = frame base. ---
+        PUSH    IX
+        POP     HL
+        LD      (IY+UserArea.include_top), L
+        LD      (IY+UserArea.include_top+1), H
+        ; --- Install new spec ---
+        ; tib_addr = c-addr (saved arg)
+        LD      HL, (ifp_caddr)
+        LD      (IY+UserArea.tib_addr), L
+        LD      (IY+UserArea.tib_addr+1), H
+        ; tib_len = u
+        LD      HL, (ifp_u)
+        LD      (IY+UserArea.tib_len), L
+        LD      (IY+UserArea.tib_len+1), H
+        ; source_id = arg (was BC at entry, stashed in ifp_src_id)
+        LD      HL, (ifp_src_id)
+        LD      (IY+UserArea.source_id), L
+        LD      (IY+UserArea.source_id+1), H
+        ; tib_in = 0
+        LD      (IY+UserArea.tib_in), 0
+        LD      (IY+UserArea.tib_in+1), 0
+        ; --- Pop new TOS into BC; restore IP; NEXT ---
+        POP     BC
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; (input-frame-pop) ( -- )  PD-5 / AC #6
+;   Restores parent's 4-cell spec from the most-recent INCLUDE frame; relinks
+;   INCLUDE-TOP from slot +8; advances IX past the 10-byte frame. NO
+;   compensation logic. NO marker flag. NO `tib_in = tib_len` fixup —
+;   per-FCB slab discipline (PD-1) makes those structurally unnecessary.
+; antforth internal  (input-frame-pop) — pop INCLUDE source frame
+; -----------------------------------------------
+w_PAREN_INPUT_FRAME_POP:
+        DEFCODE "(input-frame-pop)", 0
+w_PAREN_INPUT_FRAME_POP_cf:
+        ; IX points at frame base (frame is most-recent on rstack).
+        ; Restore parent's spec from frame slots HL+0..HL+6.
+        ; >IN
+        LD      A, (IX+INCLUDE_FRAME_TIB_IN_OFFSET)
+        LD      (IY+UserArea.tib_in), A
+        LD      A, (IX+INCLUDE_FRAME_TIB_IN_OFFSET+1)
+        LD      (IY+UserArea.tib_in+1), A
+        ; tib_len
+        LD      A, (IX+INCLUDE_FRAME_TIB_LEN_OFFSET)
+        LD      (IY+UserArea.tib_len), A
+        LD      A, (IX+INCLUDE_FRAME_TIB_LEN_OFFSET+1)
+        LD      (IY+UserArea.tib_len+1), A
+        ; tib_addr
+        LD      A, (IX+INCLUDE_FRAME_TIB_ADDR_OFFSET)
+        LD      (IY+UserArea.tib_addr), A
+        LD      A, (IX+INCLUDE_FRAME_TIB_ADDR_OFFSET+1)
+        LD      (IY+UserArea.tib_addr+1), A
+        ; source_id
+        LD      A, (IX+INCLUDE_FRAME_SOURCE_ID_OFFSET)
+        LD      (IY+UserArea.source_id), A
+        LD      A, (IX+INCLUDE_FRAME_SOURCE_ID_OFFSET+1)
+        LD      (IY+UserArea.source_id+1), A
+        ; INCLUDE-TOP := previous (slot +8)
+        LD      A, (IX+INCLUDE_FRAME_PREV_OFFSET)
+        LD      (IY+UserArea.include_top), A
+        LD      A, (IX+INCLUDE_FRAME_PREV_OFFSET+1)
+        LD      (IY+UserArea.include_top+1), A
+        ; Advance IX past the 10-byte frame
+        PUSH    BC
+        LD      BC, INCLUDE_FRAME_SIZE
+        ADD     IX, BC
+        POP     BC
+        NEXT
+
+; -----------------------------------------------
+; (close-current-fid) ( -- )  PD-15 / AC #15
+;   Closes the FID currently bound to USER.source_id if it is a real FID
+;   (> 0). No-op for keyboard (0) and EVALUATE (-1). Runs flush + F_CLOSE
+;   + pool_release via existing Story-13.2 wrappers; the resulting ior is
+;   DISCARDED (per PD-10 close-failure semantics: pool_release always runs,
+;   the user only sees the original THROW code that triggered the cleanup).
+; antforth internal  (close-current-fid) — release the active INCLUDE FID
+; -----------------------------------------------
+w_PAREN_CLOSE_CURRENT_FID:
+        DEFCODE "(close-current-fid)", 0
+w_PAREN_CLOSE_CURRENT_FID_cf:
+        LD      (fac_ip), DE            ; EX DE,HL below clobbers DE; bdos_close_file
+                                        ; itself preserves DE via BDOS_SAVE/RESTORE
+                                        ; (src/macros.asm:141-152), so the save is
+                                        ; only required for the EX traffic.
+        PUSH    BC                      ; preserve TOS — pool_release clobbers BC
+        ; Read source_id; treat 0 (keyboard) and 0xFFFF (-1 EVALUATE) as
+        ; sentinels. Exact-value tests instead of a bit-7 sniff so the
+        ; check stays correct if the FCB pool ever lands at addr ≥ 0x8000.
+        LD      L, (IY+UserArea.source_id)
+        LD      H, (IY+UserArea.source_id+1)
+        LD      A, H
+        OR      L
+        JR      Z, .ccf_skip            ; HL == 0 → keyboard
+        LD      A, H
+        AND     L
+        INC     A                       ; A == 0 iff HL == 0xFFFF
+        JR      Z, .ccf_skip            ; HL == 0xFFFF → EVALUATE
+        ; HL = real FID. F_CLOSE + pool_release; ior discarded.
+        ; Note: no file_flush call in this body (review L4 — earlier
+        ; "explicit skip" framing was figurative; the body just omits
+        ; the call). INCLUDE always opens R/O so the byte-stream layer
+        ; never invokes file_byte_write and the per-FCB
+        ; `fcb_has_written` bit stays 0 — file_flush is now mode-aware
+        ; via that bit (Story 13.5) and would itself skip even if
+        ; called. Omitting the call is documented intent + defence-in-
+        ; depth (clarity at the INCLUDE close-site + regression
+        ; protection per Story 13.5 AC #5).
+        EX      DE, HL                  ; DE = FID
+        CALL    bdos_close_file         ; A discarded
+        EX      DE, HL                  ; HL = FID for pool_release
+        CALL    pool_release
+.ccf_skip:
+        POP     BC                      ; restore TOS
+        LD      DE, (fac_ip)
+        NEXT
+
+; -----------------------------------------------
+; (file-refill) ( -- flag )  PD-3 / AC #4
+;   Reads one line from the file bound to USER.source_id (must be > 0)
+;   into the per-FCB slab via Story 13.1's file_byte_read byte-stream
+;   helper. Sets USER.tib_addr = slab, USER.tib_len = line length,
+;   USER.tib_in = 0. Returns -1 (true) if any byte was read before EOF;
+;   0 (false) on immediate EOF.
+;
+;   Line-end discipline:
+;     LF (0x0A) and 0x1A (CP/M soft EOF) terminate the line.
+;     CR (0x0D) is silently dropped (treated as whitespace).
+;     If a line exceeds TIB_SIZE (128) bytes, the first 128 bytes are
+;     stored, the rest of the line is silently consumed up to the next
+;     terminator.
+;
+;   Precondition: USER.source_id > 0 (real FID, not keyboard 0 / not
+;     EVALUATE -1). Defensive guard: raises -70 THROW_FILE_INVALID_FID
+;     if the precondition fails (caller misfire defence).
+; antforth internal  (file-refill) — read one line from file source into per-FCB slab
+; -----------------------------------------------
+w_PAREN_FILE_REFILL:
+        DEFCODE "(file-refill)", 0
+w_PAREN_FILE_REFILL_cf:
+        LD      (fac_ip), DE
+        PUSH    BC                      ; preserve old TOS
+        ; Precondition: USER.source_id is a real FID (not 0 keyboard, not
+        ; -1 EVALUATE). Exact-value tests instead of a bit-7 sniff so the
+        ; check stays correct if the FCB pool ever lands at addr ≥ 0x8000.
+        LD      L, (IY+UserArea.source_id)
+        LD      H, (IY+UserArea.source_id+1)
+        LD      A, H
+        OR      L
+        JP      Z, .fr_invalid_src      ; HL == 0 → keyboard → invalid
+        LD      A, H
+        AND     L
+        INC     A                       ; A == 0 iff HL == 0xFFFF
+        JP      Z, .fr_invalid_src      ; HL == 0xFFFF → EVALUATE → invalid
+        ; HL = FID. Save and derive slab.
+        LD      (fr_fid), HL
+        CALL    slab_from_fid           ; HL = slab address
+        LD      (fr_slab), HL
+        LD      (IY+UserArea.tib_addr), L
+        LD      (IY+UserArea.tib_addr+1), H
+        ; pos = 0; >IN = 0
+        XOR     A
+        LD      (fr_pos), A
+        LD      (IY+UserArea.tib_in), 0
+        LD      (IY+UserArea.tib_in+1), 0
+.fr_loop:
+        LD      DE, (fr_fid)
+        CALL    file_byte_read          ; A = byte / CY = 1 on EOF
+        JR      C, .fr_eof
+        CP      0x0A
+        JR      Z, .fr_terminator
+        CP      0x1A
+        JR      Z, .fr_terminator
+        CP      0x0D
+        JR      Z, .fr_loop             ; CR — drop silently
+        ; Regular byte. Store if pos < TIB_SIZE.
+        LD      L, A                    ; spill byte
+        LD      A, (fr_pos)
+        CP      TIB_SIZE
+        JR      NC, .fr_truncate
+        ; slab[pos] = byte; pos++
+        LD      C, A                    ; C = pos
+        LD      B, 0                    ; BC = pos
+        LD      A, L                    ; A = byte
+        LD      HL, (fr_slab)
+        ADD     HL, BC
+        LD      (HL), A
+        LD      A, C
+        INC     A
+        LD      (fr_pos), A
+        JR      .fr_loop
+.fr_truncate:
+        ; pos >= 128. Consume bytes silently until terminator / EOF.
+        LD      DE, (fr_fid)
+        CALL    file_byte_read
+        JR      C, .fr_terminator       ; EOF in truncate-consume → return data
+        CP      0x0A
+        JR      Z, .fr_terminator
+        CP      0x1A
+        JR      Z, .fr_terminator
+        JR      .fr_truncate
+.fr_eof:
+        ; F_READ returned EOF. Return -1 if any bytes read, else 0.
+        LD      A, (fr_pos)
+        OR      A
+        JR      Z, .fr_immediate_eof
+        ; Fall through to .fr_terminator with bytes-read=true
+.fr_terminator:
+        ; Set tib_len = pos; flag = -1.
+        LD      A, (fr_pos)
+        LD      (IY+UserArea.tib_len), A
+        LD      (IY+UserArea.tib_len+1), 0
+        LD      BC, -1                  ; flag = TRUE
+        LD      DE, (fac_ip)
+        NEXT
+.fr_immediate_eof:
+        ; tib_len = 0; flag = 0.
+        LD      (IY+UserArea.tib_len), 0
+        LD      (IY+UserArea.tib_len+1), 0
+        LD      BC, 0                   ; flag = FALSE
+        LD      DE, (fac_ip)
+        NEXT
+.fr_invalid_src:
+        ; Discard the saved old-TOS and raise -70.
+        POP     BC                      ; balance the PUSH BC
+        LD      BC, THROW_FILE_INVALID_FID
+        JP      w_THROW_cf.kernel_entry
+
+; -----------------------------------------------
+; (refill-and-interpret-loop) ( -- )  Task 9 / AC #10
+;   Run-loop body wrapped in CATCH by INCLUDED / INCLUDE-FILE.
+;   `BEGIN (file-refill) WHILE INTERPRET REPEAT` — terminates on first
+;   immediate-EOF return from (file-refill); INTERPRET handles each
+;   refilled line and may THROW (caught by the surrounding CATCH).
+; -----------------------------------------------
+w_PAREN_REFILL_AND_INTERPRET_LOOP:
+        DEFWORD "(refill-and-interpret-loop)", 0
+w_PAREN_REFILL_AND_INTERPRET_LOOP_body:
+w_PAREN_REFILL_AND_INTERPRET_LOOP_cf EQU w_PAREN_REFILL_AND_INTERPRET_LOOP_body - 3
+.ril_loop:
+        DW      w_PAREN_FILE_REFILL_cf
+        DW      w_QBRANCH_cf
+        DW      .ril_done - $
+        DW      w_INTERPRET_cf
+        DW      w_BRANCH_cf
+        DW      .ril_loop - $
+.ril_done:
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; INCLUDED ( i*x c-addr u -- j*x )  ANS Forth 1994 §11.6.1.1718
+;   Open the named file (R/O), make it the current source, run the
+;   refill+interpret loop wrapped in CATCH, then close the FID and pop
+;   the source frame. -38 THROW_FILE_NOT_FOUND on open-failure.
+;   On caught THROW: close FID + pop frame + re-raise.
+;   On clean EOF: close FID + pop frame + return.
+; ANS Forth 1994 §11.6.1.1718  INCLUDED  — load source from file (CCD-1 INCLUDE-TOP framed)
+;   See architecture.md E13-D2 (INCLUDE source frame layout) and PD-1
+;   (per-FCB slab) for the structural design.
+; -----------------------------------------------
+w_INCLUDED:
+        DEFWORD "INCLUDED", 0
+w_INCLUDED_body:
+w_INCLUDED_cf EQU w_INCLUDED_body - 3
+        ; ( c-addr u )
+        DW      w_R_SLASH_O_cf                          ; R/O
+        DW      w_OPEN_FILE_cf                          ; ( fileid ior )
+        DW      w_ZERO_EQUALS_cf                        ; ( fileid flag )
+        DW      w_QBRANCH_cf                            ; if ior != 0 → .inc_open_fail
+        DW      .inc_open_fail - $
+        ; ior == 0: ( fileid )
+        DW      w_DUP_cf                                ; ( fileid fileid )
+        DW      w_PAREN_SLAB_FROM_FID_cf                ; ( fileid slab )
+        DW      w_SWAP_cf                               ; ( slab fileid )
+        DW      w_LIT_cf, 0                             ; ( slab fileid 0 )
+        DW      w_SWAP_cf                               ; ( slab 0 fileid )
+        DW      w_PAREN_INPUT_FRAME_PUSH_cf             ; ( -- ) push frame
+        DW      w_LIT_cf, w_PAREN_REFILL_AND_INTERPRET_LOOP_cf
+        DW      w_CATCH_cf                              ; ( 0 | n )
+        DW      w_QDUP_cf                               ; ( 0 | n n )
+        DW      w_QBRANCH_cf                            ; if 0 → .inc_clean_eof
+        DW      .inc_clean_eof - $
+        ; Caught THROW: ( n )
+        DW      w_PAREN_CLOSE_CURRENT_FID_cf
+        DW      w_PAREN_INPUT_FRAME_POP_cf
+        DW      w_THROW_cf                              ; re-raise (does not return)
+.inc_clean_eof:
+        DW      w_PAREN_CLOSE_CURRENT_FID_cf
+        DW      w_PAREN_INPUT_FRAME_POP_cf
+        DW      w_BRANCH_cf
+        DW      .inc_done - $
+.inc_open_fail:
+        ; ( fileid ) where fileid = 0 on failure
+        DW      w_DROP_cf
+        DW      w_LIT_cf, THROW_FILE_NOT_FOUND
+        DW      w_THROW_cf
+.inc_done:
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; INCLUDE-FILE ( i*x fileid -- j*x )  ANS Forth 1994 §11.6.1.1717
+;   Make the open FID the current source and run the refill+interpret
+;   loop wrapped in CATCH. (fid-validate) is called FIRST — stale FID
+;   raises -70 before any frame push.
+;
+;   Caller-retains-ownership deviation: ANS literally reads "INCLUDE-FILE
+;   does not close the FID." On clean EOF antforth honours this. On
+;   the THROW path antforth deviates: the FID is closed (gforth /
+;   SwiftForth precedent — deterministic cleanup beats handle leak).
+;   Documented in docs/ans-forth-core-compliance.md.
+; ANS Forth 1994 §11.6.1.1717 INCLUDE-FILE — load source from open FID
+; -----------------------------------------------
+w_INCLUDE_FILE:
+        DEFWORD "INCLUDE-FILE", 0
+w_INCLUDE_FILE_body:
+w_INCLUDE_FILE_cf EQU w_INCLUDE_FILE_body - 3
+        ; ( fileid )
+        DW      w_PAREN_FID_VALIDATE_cf                 ; -70 THROW on stale FID;
+                                                        ; passthrough per PD-2 / AC #6.
+                                                        ; PD-7 pseudocode "DUP (fid-validate)"
+                                                        ; is a typo — wrapper does not consume.
+        ; ( fileid )
+        DW      w_DUP_cf                                ; ( fileid fileid )
+        DW      w_PAREN_SLAB_FROM_FID_cf                ; ( fileid slab )
+        DW      w_SWAP_cf                               ; ( slab fileid )
+        DW      w_LIT_cf, 0                             ; ( slab fileid 0 )
+        DW      w_SWAP_cf                               ; ( slab 0 fileid )
+        DW      w_PAREN_INPUT_FRAME_PUSH_cf             ; ( -- )
+        DW      w_LIT_cf, w_PAREN_REFILL_AND_INTERPRET_LOOP_cf
+        DW      w_CATCH_cf                              ; ( 0 | n )
+        DW      w_QDUP_cf
+        DW      w_QBRANCH_cf                            ; if 0 → .if_clean_eof
+        DW      .if_clean_eof - $
+        ; Caught THROW path: close FID (gforth precedent), pop frame, re-raise.
+        DW      w_PAREN_CLOSE_CURRENT_FID_cf
+        DW      w_PAREN_INPUT_FRAME_POP_cf
+        DW      w_THROW_cf                              ; re-raise
+.if_clean_eof:
+        ; Clean EOF: leave FID open (caller retains ownership per ANS).
+        DW      w_PAREN_INPUT_FRAME_POP_cf
+        DW      EXIT_CODE
+
+; -----------------------------------------------
+; INCLUDE ( "name" -- )  Forth 2014 §11.6.2.1717.40
+;   Token-form INCLUDE: parse one space-delimited filename and run INCLUDED.
+; Forth 2014 §11.6.2.1717.40 INCLUDE — = BL WORD COUNT INCLUDED
+; -----------------------------------------------
+w_INCLUDE:
+        DEFWORD "INCLUDE", 0
+w_INCLUDE_body:
+w_INCLUDE_cf EQU w_INCLUDE_body - 3
+        DW      w_BL_cf
+        DW      w_WORD_cf                               ; ( c-addr )
+        DW      w_COUNT_cf                              ; ( c-addr u )
+        DW      w_INCLUDED_cf
+        DW      EXIT_CODE
 
 ; -----------------------------------------------
 ; (FILE-IO-SANITY) — Test harness for Story 13.1.
