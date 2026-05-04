@@ -8495,6 +8495,102 @@ test-repl: $(TARGET)
 		echo "FAIL: REPL test 938 — Story 13.5 audit anchor — no SZ= line in output (probe broke before reaching FILE-SIZE)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
+	@# === Story 13.6 closure suite — FS error-stress matrix (NFR8) ===
+	@# AC #1: 4 active probes (939..942) cover stress matrix rows (a)-(d).
+	@# AC #1(e) disk-full: documented as code-path-only in Story 13.6
+	@# Completion Notes Task 2.4 — no active probe (iz-cpm disk image
+	@# cannot be exhausted within probe budget).
+	@# AC #1(f) post-stress pool occupancy: subsumed by test 939's
+	@# re-acquire half + existing test 908 + test 936 coverage.
+	@# AC #2: deep-nest INCLUDE-mid-THROW probe = test 943.
+	@# Drafter-figure correction F-1: closure-suite range was drafted as
+	@# 948..954, but highest pre-Story-13.6 test ID is 938 (the 947 figure
+	@# is PASS-line count, not unique test ID). Closure tests run 939..943
+	@# with no gap.
+	@# Probe-quality forward-port (Story 13.5 F2/F3): S" + TYPE for string
+	@# labels (not ."); HERE for byte buffers (not PAD).
+	@# === (s136-stress-a) Test 939: pool-exhaust + post-release re-acquire ===
+	@# AC #1(a) re-frame: test 908 covers basic pool-exhaust → -69. New
+	@# evidence is post-release re-acquire — close one of the 8 active
+	@# FIDs and prove the next CREATE-FILE succeeds (pool hand-off is
+	@# symmetrical). Filenames Z1..Z9 to avoid collision with test 908's
+	@# persistent P*.TXT artefacts.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'CREATE FA8 16 ALLOT' \
+		'S" Z1.TXT" R/W CREATE-FILE THROW FA8     !' \
+		'S" Z2.TXT" R/W CREATE-FILE THROW FA8 2 + !' \
+		'S" Z3.TXT" R/W CREATE-FILE THROW FA8 4 + !' \
+		'S" Z4.TXT" R/W CREATE-FILE THROW FA8 6 + !' \
+		'S" Z5.TXT" R/W CREATE-FILE THROW FA8 8 + !' \
+		'S" Z6.TXT" R/W CREATE-FILE THROW FA8 10 + !' \
+		'S" Z7.TXT" R/W CREATE-FILE THROW FA8 12 + !' \
+		'S" Z8.TXT" R/W CREATE-FILE THROW FA8 14 + !' \
+		'S" T39A=" TYPE S" Z9.TXT" R/W '\'' CREATE-FILE CATCH . CR' \
+		'FA8 @ CLOSE-FILE THROW' \
+		'S" T39B=" TYPE S" Z9.TXT" R/W CREATE-FILE THROW DROP S" OK" TYPE CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T39A=-69 ' && echo "$$OUTPUT" | grep -q 'T39B=OK'; then \
+		echo "PASS: REPL test 939 — Story 13.6 (s136-stress-a) pool-exhaust + post-release re-acquire (T-S136-STRESS-A-POOL-REACQUIRE)"; \
+	else echo "FAIL: REPL test 939 — expected 'T39A=-69 ' (CATCH'd 9th CREATE-FILE) and 'T39B=OK' (post-release re-acquire)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (s136-stress-b) Test 940: closed-FID -70 sweep on WRITE-FILE ===
+	@# AC #1(b) re-frame: tests 910/916 cover closed-FID -70 on READ-FILE,
+	@# FILE-POSITION, REPOSITION-FILE, FILE-SIZE. WRITE-FILE was missing
+	@# from existing closed-FID coverage; this probe closes the per-word
+	@# sweep gap.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" ZC.TXT" R/W CREATE-FILE THROW FA !' \
+		'FA @ CLOSE-FILE THROW' \
+		'S" T40W=" TYPE S" hi" FA @ '\'' WRITE-FILE CATCH . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T40W=-70 '; then \
+		echo "PASS: REPL test 940 — Story 13.6 (s136-stress-b) closed-FID -70 sweep on WRITE-FILE (T-S136-STRESS-B-WRITE-STALE)"; \
+	else echo "FAIL: REPL test 940 — expected 'T40W=-70 ' from WRITE-FILE on closed FID"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (s136-stress-c) Test 941: R/O write-attempt + post-close pool re-acquire ===
+	@# AC #1(c) re-frame: test 909 covers R/O WRITE-FILE → ior=1. New
+	@# evidence: after the failed write + CLOSE-FILE, the slot releases
+	@# back to the pool (verified by re-opening the same file R/O and
+	@# reading 2 bytes successfully — proving the slot is re-usable).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" ZR.TXT" R/W CREATE-FILE THROW FA !' \
+		'S" hi" FA @ WRITE-FILE THROW FA @ CLOSE-FILE THROW' \
+		'S" ZR.TXT" R/O OPEN-FILE THROW FA !' \
+		'S" T41W=" TYPE S" oops" FA @ WRITE-FILE . CR FA @ CLOSE-FILE THROW' \
+		'S" T41R=" TYPE S" ZR.TXT" R/O OPEN-FILE THROW FA ! HERE 2 FA @ READ-FILE THROW . CR FA @ CLOSE-FILE THROW' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T41W=1 ' && echo "$$OUTPUT" | grep -q 'T41R=2 '; then \
+		echo "PASS: REPL test 941 — Story 13.6 (s136-stress-c) R/O write-attempt + post-close pool re-acquire (T-S136-STRESS-C-RO-CYCLE)"; \
+	else echo "FAIL: REPL test 941 — expected 'T41W=1 ' (R/O WRITE-FILE → ior=1) and 'T41R=2 ' (re-acquire + 2-byte read)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (s136-stress-d) Test 942: DELETE-FILE missing → ior=1 ===
+	@# AC #1(d) re-frame: DELETE-FILE on a non-existent file returns
+	@# ior=1 per Story 13.2's CP/M F_DELETE A=0xFF wrapper.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'S" T42=" TYPE S" NOSUCH.TXT" DELETE-FILE . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T42=1 '; then \
+		echo "PASS: REPL test 942 — Story 13.6 (s136-stress-d) DELETE-FILE missing → ior=1 (T-S136-STRESS-D-DELMISS)"; \
+	else echo "FAIL: REPL test 942 — expected 'T42=1 ' (DELETE-FILE on NOSUCH.TXT → ior=1)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (s136-deep-nest) Test 943: INCLUDE-mid-THROW deep-nest at depth 6 ===
+	@# AC #2 + AC #12(a): self-recursive INCLUDED via disk/a/DEEPN.FTH
+	@# which decrements VARIABLE DPN each invocation and THROWs -1 when
+	@# DPN hits 0. Initial DPN=5 → 6 levels of recursion → 6 active FCBs
+	@# at THROW time (< pool ceiling 8). Verifies deep-nest THROW unwind
+	@# via chain-walk: INCLUDE-TOP returns to 0 post-CATCH.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE DPN 5 DPN !' \
+		': DEEPN-STEP DPN @ 0= IF -1 THROW THEN DPN @ 1- DPN ! S" DEEPN.FTH" INCLUDED ;' \
+		'S" T43A=" TYPE S" DEEPN.FTH" '\'' INCLUDED CATCH . CR' \
+		'S" T43B=" TYPE INCLUDE-TOP @ . CR' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T43A=-1 ' && echo "$$OUTPUT" | grep -q 'T43B=0 '; then \
+		echo "PASS: REPL test 943 — Story 13.6 (s136-deep-nest) INCLUDE-mid-THROW depth-6 self-recursion (T-S136-DEEPN-CHAIN-WALK)"; \
+	else echo "FAIL: REPL test 943 — expected 'T43A=-1 ' (CATCH'd deep THROW) and 'T43B=0 ' (INCLUDE-TOP cleared)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm

@@ -99,3 +99,18 @@ Forth Dimensions Volume IX onwards.
 
 Argh! We don't support comment words! How have we got this far without me noticing...
 Prolly should comment code more often.
+
+# Phase-3 systematic §-by-§ ANS Forth Core re-audit
+
+Epic 10's "100% Core" claim was word-counted, not §-counted. Two §-level structural-rule gaps surfaced
+post-claim and were back-filled inside Epic 13: §3.4.1.3 (dot-anywhere parser rule, closed by Story 13.0)
+and §3.1.4.1 (high-on-TOS double-cell stack-layout, closed by Story 13.0.1). Both were structurally
+invisible to a word-counted survey because they describe behaviour at the parser / stack-convention level
+rather than per-word.
+
+A systematic §-by-§ pre-audit would walk DPANS94 and Forth 2014 chapter-by-chapter and verify each
+mandatory rule against the implementation. Likely find 0–2 further §-level gaps; framework is the same as
+Stories 13.0 / 13.0.1 / 13.5 (one back-fill story per gap, paired with a compliance-doc row addition).
+
+Carry-forward proposed at Story 13.6's Phase-2 release gate (Task 8.5; AC #8). Not 2.0-tag-blocking;
+documented in `docs/ans-forth-core-compliance.md` lines 5-6 + 18 + 29.

@@ -398,3 +398,76 @@ FA @ CLOSE-FILE DROP  S" T16.TXT" DELETE-FILE DROP
 \   AC #19), pending Story 13.5's investigation outcome — the
 \   "has-written" bit Winston proposed in the party-mode discussion
 \   may overlap or fully subsume that infrastructure.
+
+\ ============================================================
+\ Section 10 — Story 13.6 closure suite
+\ FS error-stress matrix (NFR8) + INCLUDE-mid-THROW deep-nest
+\ ============================================================
+\ Probes 939..943 anchor Story 13.6 ACs #1 + #2. Full Makefile probe
+\ shapes live next to existing 13.x tests in the test-repl target;
+\ this section documents probe intent, AC mapping, verdict pattern,
+\ and disk-corpus dependencies.
+\
+\ Drafter-figure correction (Story 13.6 Finding F-1): AC #1 names
+\ the closure-suite range as 948..954, but the highest pre-Story-13.6
+\ test ID is 938 (PASS-line count 947 because multi-pass probes inflate
+\ above unique-ID count). Closure tests therefore run 939..943 with
+\ no gap. Documented in Story 13.6 Completion Notes Task 1 + Task 11.
+\
+\ Probe-quality forward-port (Story 13.5 findings F2 + F3):
+\   * String labels use S" + TYPE (not ."), since ." clobbers BC
+\     across the print, garbling subsequent value prints.
+\   * Byte buffers use HERE (not PAD), since PAD is undefined in
+\     antforth (separate WISHLIST item).
+
+\ (s136-stress-a) Test 939 — pool-exhaust + post-release re-acquire
+\ AC #1(a) re-frame: test 908 already covers pool-exhaust → -69. New
+\ evidence is *post-release re-acquire*: close one of the 8 active
+\ FIDs and prove the next CREATE-FILE succeeds (pool hand-off is
+\ symmetrical).
+\ Filenames: Z1.TXT..Z9.TXT (Z prefix avoids collision with test 908's
+\ persistent P*.TXT artefacts).
+\ Verdict regex: T39A=-69 (CATCH'd) AND T39B=OK (re-acquire works).
+
+\ (s136-stress-b) Test 940 — closed-FID -70 sweep on WRITE-FILE
+\ AC #1(b) re-frame: tests 910/916 cover closed-FID -70 for READ-FILE,
+\ FILE-POSITION, REPOSITION-FILE, FILE-SIZE. WRITE-FILE was missing
+\ from existing per-word coverage; test 940 closes the gap.
+\ Verdict regex: T40W=-70.
+
+\ (s136-stress-c) Test 941 — R/O write + post-close pool re-acquire
+\ AC #1(c) re-frame: test 909 covers R/O WRITE-FILE → ior=1. New
+\ evidence: after the failed write + CLOSE-FILE, the slot releases
+\ back to the pool (verified by re-opening the same file R/O and
+\ reading 2 bytes successfully).
+\ Verdict regex: T41W=1 AND T41R=2.
+
+\ (s136-stress-d) Test 942 — DELETE-FILE missing → ior=1
+\ AC #1(d) re-frame: DELETE-FILE on non-existent file returns ior=1
+\ per Story 13.2's CP/M F_DELETE 0xFF wrapper.
+\ Verdict regex: T42=1.
+
+\ (s136-stress-e) AC #1(e) — disk-full simulation: NO ACTIVE PROBE
+\ Methodology decision recorded in Story 13.6 Completion Notes
+\ Task 2.4: iz-cpm's disk image cannot be exhausted within a probe
+\ budget (host filesystem, not host-disk-free-bounded). Evidence
+\ captured as "code-path traversal" — F_WRITE A != 0 path exists in
+\ src/file_access.asm and is exercised by the wrapper's existing
+\ ior return. Hardware re-verification deferred to Task 9 hardware
+\ smoke if budget permits.
+
+\ (s136-stress-f) AC #1(f) — post-stress pool occupancy: SUBSUMED
+\ Test 939's re-acquire half directly proves the pool is usable
+\ post-CATCH. Combined with existing test 908 (pool-exhaust) + test
+\ 936 (recursive INCLUDE → -69 + replenish), AC #1(f) is satisfied
+\ without a separate probe.
+
+\ (s136-deep-nest) Test 943 — INCLUDE-mid-THROW deep-nest at depth 6
+\ AC #2 + AC #12(a): self-recursive INCLUDED via disk/a/DEEPN.FTH
+\ which decrements VARIABLE DPN each invocation and THROWs -1 when
+\ DPN hits 0. Initial DPN=5 → 6 levels of recursion → 6 active FCBs
+\ at THROW time (< pool ceiling 8).
+\ Differs from existing test 933 (STK1..STK8 chain at depth 8) by:
+\   * self-recursive single file vs chain of distinct files
+\   * explicit INCLUDE-TOP @ verification post-CATCH (= 0)
+\ Verdict regex: T43A=-1 AND T43B=0.

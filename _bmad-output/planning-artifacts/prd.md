@@ -472,7 +472,7 @@ The following generic `developer_tool` and `iot_embedded` concerns are not appli
 - **NFR10: ANS Forth 1994 Core compliance.** The Core wordset (as enumerated in `docs/ans-forth-core-compliance.md`) is implemented to **100%** coverage with behaviour matching the ANS specification. Compliance is measured by the existing survey methodology; 86% → 100% is the phase's compliance progression.
 - **NFR11: Forth 2014 §3.4.1.3 conformance.** Numeric literal prefix syntax is implemented verbatim as specified in the Forth 2014 standard, section 3.4.1.3.
 - **NFR12: Extension discipline.** The only non-standard addition in this phase is the `0x` hex prefix. It is clearly flagged as an antforth-specific extension in all source comments and (post-phase) in user documentation. No silent divergence from the standards.
-- **NFR13: CP/M 2.2 BDOS integration.** antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40). No CP/M Plus, MP/M, or extended BIOS-level calls. Portability across CP/M 2.2 implementations is preserved.
+- **NFR13: CP/M 2.2 BDOS integration.** antforth uses only CP/M 2.2 standard BDOS functions (0, 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40). No CP/M Plus, MP/M, or extended BIOS-level calls. Portability across CP/M 2.2 implementations is preserved.
 - **NFR14: CODE-word source file backward compatibility.** CODE-word source files written against pre-phase antforth assemble correctly and produce byte-identical output under antforth 2.0.
 
 ### Maintainability

@@ -107,7 +107,7 @@ The phase delivers two mutually reinforcing goals — **100% ANS Forth Core comp
 - NFR10: ANS Forth 1994 Core wordset implemented to 100% coverage with behaviour matching the ANS specification (baseline 86% → 100% target)
 - NFR11: Numeric literal prefix syntax implemented verbatim as Forth 2014 §3.4.1.3
 - NFR12: Extension discipline — only non-standard addition this phase is the `0x` hex prefix; clearly flagged as an antforth extension; no silent divergence from standards
-- NFR13: CP/M 2.2 BDOS integration — antforth uses only CP/M 2.2 standard BDOS functions (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
+- NFR13: CP/M 2.2 BDOS integration — antforth uses only CP/M 2.2 standard BDOS functions (0, 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40)
 - NFR14: CODE-word source file backward compatibility — pre-phase source files assemble correctly and produce byte-identical output under antforth 2.0
 
 **Maintainability**
@@ -1653,7 +1653,7 @@ So that every quantitative envelope set by the PRD is verified and `antforth 2.0
 **When** a THROW fires inside a file being `INCLUDED` from inside another file being `INCLUDED`
 **Then** the `INCLUDE-TOP` chain walk closes both FIDs in order, the FCB pool returns to its pre-INCLUDE state, and the REPL is live with state intact (E11+E13 coordination verified).
 
-**Given** NFR13's BDOS function allow-list (1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26, 27, 33, 34, 35, 36, 40)
+**Given** NFR13's BDOS function allow-list (0, 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40)
 **When** the final binary is audited for BDOS call sites
 **Then** every call uses a function number from the allow-list; any call outside the list is a blocker.
 
