@@ -225,4 +225,30 @@ development_status:
   # band-aid.
   13-5-r-o-close-file-destructive-flush-audit-and-fix: done
   13-6-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: done
-  epic-13-retrospective: optional
+  epic-13-retrospective: done
+
+  # Epic 13.5 inserted 2026-05-05 by Epic 13 retrospective. Project lead
+  # direction at retro: all of TD-1..TD-7 land before the v2.0.0 tag, plus
+  # the retro-discovered process foundation PD-1. The original plan had
+  # Story 13.6 close out the phase with TD items as carry-forward; the
+  # retro re-classified TD-5 / TD-6 upward from "accepted-with-rationale:
+  # pre-existing" to tag-blocking correctness defects per
+  # feedback_no_preexisting_discharge.md (Lesson 13-B). Epic 13.5 is the
+  # process-recovery vehicle — zero new feature scope; every story
+  # discharges debt named in the Epic 13 retro's Tag-Blocking Slate. v2.0.0
+  # tag is DEFERRED until Story 13.5.6 close. Story 13.5.0 (PD-1) lands
+  # FIRST — it's the workflow-vs-codified-intent fix that makes the rest
+  # of the slate's S1 standing commitment (no in-pass adversarial review)
+  # structurally enforceable. See planning-artifacts/epics.md §"Epic 13.5"
+  # for full slate spec; epic-13-retro-2026-05-05.md §"Tag-Blocking Slate"
+  # for canonical TD-N → Story-13.5.x mapping.
+
+  epic-13.5: in-progress
+  13.5-0-pd-1-workflow-and-create-story-ac-alignment: done
+  13.5-1-td-1-td-2-td-4-r-w-per-fcb-dirty-flag: done
+  13.5-2-td-3-read-file-eof-error-disambiguation: backlog
+  13.5-3-td-5-dot-quote-bc-clobber: backlog
+  13.5-4-td-6-pad-here-cross-line-correctness: backlog
+  13.5-5-td-7-save-input-restore-input-for-evaluate: backlog
+  13.5-6-epic-13-5-close-out-gate-and-antforth-2-0-tag: backlog
+  epic-13.5-retrospective: optional

@@ -658,8 +658,10 @@ throw_chain_walk_loop_init:
 ;   Note: no file_flush call in this body (review L4) — the INCLUDE
 ;   close path always closes R/O FIDs whose byte-stream layer has only
 ;   been reading, so the per-FCB `fcb_has_written` bit stays 0.
-;   file_flush is mode-aware as of Story 13.5 via that bit and would
-;   itself skip even if called; omitting the call is documented intent.
+;   file_flush is mode-aware as of Story 13.5 via that bit, plus the
+;   per-FCB `fcb_dirty` bit (Story 13.5.1, transient counterpart), and
+;   would itself skip even if called; omitting the call is documented
+;   intent.
 chain_walk_close_current_fid:
         PUSH    HL                      ; preserve walk pointer
         ; Exact-value sentinel tests (0 keyboard, 0xFFFF EVALUATE); avoid

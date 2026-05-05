@@ -1680,3 +1680,161 @@ So that every quantitative envelope set by the PRD is verified and `antforth 2.0
 **Given** all the above AC met
 **When** the release is tagged
 **Then** the project is **antforth 2.0** — the five-epic phase is complete.
+
+## Epic 13.5: Phase-2 Cleanup Slate — gates `antforth 2.0` release tag
+
+**Origin (binding):** Epic 13 retrospective 2026-05-05 (`_bmad-output/implementation-artifacts/epic-13-retro-2026-05-05.md`). Project lead direction at retro: **all of TD-1..TD-7 land before the v2.0.0 tag**, plus the retro-discovered process foundation **PD-1**. The original plan had Story 13.6 close out the phase with TD items as carry-forward; the retro re-classified TD-5 (`."` BC-clobber) and TD-6 (PAD / HERE-cross-line correctness) upward from "accepted-with-rationale: pre-existing" to **tag-blocking correctness defects** (codified in `feedback_no_preexisting_discharge.md` per Lesson 13-B). The remaining TDs (1, 2, 3, 4, 7) were already named tag-blockers in the Story 13.6 verdict table; the retro made TD-5 and TD-6 join them.
+
+**Epic 13.5 is the process-recovery vehicle.** It carries forward zero new feature scope; every story is a discharge of debt named in the Epic 13 retro's "Tag-Blocking Slate" table. Project-lead reframe at retro: *"a clobber like that should never have been passed off as 'pre-existing, so I'll ignore it'."* — applies retroactively to the whole TD-1..TD-7 slate.
+
+**Story slate (canonical):**
+
+| # | TD ref | Title | Source |
+|---|---|---|---|
+| 13.5.0 | **PD-1** | Workflow + create-story-AC alignment (in-pass adversarial review removal) | F-Retro-1 |
+| 13.5.1 | TD-1 + TD-2 + TD-4 | R/W per-FCB dirty-flag (FILE-POSITION accuracy + mixed-mode + W/O probe) | `13-3-…md:90,142,475`, `13-2-…md` (W/O coverage gap) |
+| 13.5.2 | TD-3 | READ-FILE EOF/error disambiguation (helper-layer rewrite of `file_byte_read`) | `13-2-…md` AC #17(h) deviation, `13-3-…md:475` cross-ref |
+| 13.5.3 | TD-5 | `."` BC-clobber (re-classified upward at retro from MEDIUM-pre-existing to tag-blocking) | `13-5-…md:305` |
+| 13.5.4 | TD-6 | PAD / HERE-cross-line correctness (re-classified upward at retro from doc-only to correctness) | `13-5-…md:306` + `13-6-…md:1192` F-9 |
+| 13.5.5 | TD-7 | `(SAVE-INPUT)` / `(RESTORE-INPUT)` for `EVALUATE` (compliance close-out) | `13-4-…md:654-655` |
+| 13.5.6 | — | Epic 13.5 close-out gate — verdict table for TD-1..TD-7 + PD-1; hardware re-run; **v2.0.0 tag applied** | This retro |
+
+**Sequencing:** 13.5.0 lands FIRST (process foundation gates every subsequent dev-pass — workflow-vs-codified-intent fix per Lesson 13-A). 13.5.1..13.5.5 may run in any order within the slate (no inter-story dependencies — leaf stories with one focused thing each per Lesson 13-C drafting discipline). 13.5.6 lands LAST (mirror of Story 13.6 close-out gate; tag applies at story close).
+
+**Standing process commitments (from Epic 13 retro, applied to every 13.5.x story):**
+- **S1** — Adversarial review continues, but **fresh-context external pass via `CR` command, not in-pass**. Story 13.5.x dev-passes do NOT contain an "adversarial review pass" task (PD-1 lands first to make this structural).
+- **S5** — PARTIAL verdicts require independent verification — HALT on PARTIAL ship attempts. No 13.4-v1-style ship-N/M + spawn-substory pattern.
+- **S8** — "Pre-existing" / "out-of-scope" cannot discharge correctness defects (`feedback_no_preexisting_discharge.md`). Review disposition tables flag clobbers / lost writes / silent error swallowing as in-pass-fix or HALT, never accepted-with-rationale: pre-existing.
+- **S9** — Mid-epic hardware-smoke cadence is mandatory. Each 13.5.x story has its own hardware-smoke task; no "deferred to project lead at cadence" pattern.
+- **S10** — Workflow > memory > prompt when intent is in conflict. Codified intent must live in workflow files + templates, not in memory or instructions alone (Lesson 13-A applied).
+
+**Byte-budget gate:** Epic 13.5 is debt discharge, not feature work. Net-positive byte delta for the epic should be small (estimate +50..+200 bytes for TD-3 + TD-5 + TD-6 fixes; TD-1+2+4 dirty-flag adds ~30 bytes per Story 13.3 Task 11 forward-pointer; TD-7 SAVE-INPUT/RESTORE-INPUT adds ~50..+100 bytes; PD-1 is doc-only / workflow-only zero-binary). Two-number byte gate per Story 13.4 v2 PD-13 idiom applies per story.
+
+**v2.0.0 tag application:** at Story 13.5.6 close, NOT before. This is a hard gate — the retro is explicit: *"v2.0.0 tag DEFERRED post-retro pending Epic 13.5 cleanup slate (project-lead direction 2026-05-05)."*
+
+### Story 13.5.0: PD-1 — workflow + create-story-AC alignment (in-pass adversarial review removal)
+
+**Origin (binding):** F-Retro-1 from Epic 13 retro 2026-05-05. Codified intent (`feedback_adversarial_review.md` + dev-agent definition `_bmad/bmm/agents/dev.md:64`) says fresh-context external review only, via the `CR` command. Workflow tree (`_bmad/bmm/workflows/bmad-quick-flow/quick-dev/steps/step-05-adversarial-review.md`) mandates in-pass review as Step 5 with no skip branch and a hard-coded `nextStepFile`. Story templates (every Story 13.x AC) include "trigger an adversarial review pass per `feedback_adversarial_review.md`". Three layers in conflict; workflow-as-runtime won throughout Epic 13. **Lesson 13-A: codified intent loses to workflow-as-runtime when they conflict.**
+
+**Why this lands first:** PD-1 is the process foundation that gates every subsequent 13.5.x dev-pass. If 13.5.1..13.5.6 dev-passes run against the existing workflow + AC pattern, they will repeat the eleventh-consecutive-epic anti-pattern of in-pass adversarial review. The fix lives in workflow files + templates, not in memory or prompts (per S10). Project lead direction at retro: PD-1 explicitly *before* the cleanup stories' dev-passes start.
+
+**Severity:** Process / structural. Zero binary delta. Doc-only and workflow-config-only edits. The story's risk profile is the opposite of Story 13.5: not filesystem corruption, but workflow-vs-intent drift compounding across future epics if not closed now.
+
+As a BMad Method workflow author and dev agent operator,
+I want the in-pass adversarial review step removed (or skip-branched) from the quick-dev workflow tree, the create-story AC pattern, and the story-template prompts; reconciled with the `CR` command's fresh-context external-review semantics; documented in retro and memory,
+So that future story dev-passes structurally cannot re-introduce the in-pass review anti-pattern that surfaced as F-Retro-1 across all eleven post-Epic-2 epics.
+
+**Acceptance Criteria:**
+
+**Given** the workflow file `_bmad/bmm/workflows/bmad-quick-flow/quick-dev/steps/step-05-adversarial-review.md` (the in-pass review step) and its hard-coded `nextStepFile: './step-06-resolve-findings.md'` (line 5)
+**When** the PD-1 fix lands
+**Then** Step 5 is **either removed entirely** (Step 4 advances directly to Step 6) **or** carries a documented skip-branch that is the default path. The dev-pass picks the cleaner option per AC #11 HALT discipline. The pick is recorded in Completion Notes Task 1 with rationale. **Constraint:** Step 6 (`step-06-resolve-findings.md`) must remain reachable for the cases where a dev-pass legitimately surfaces findings during implementation (not the codified-intent in-pass review, but ad-hoc dev-internal "I noticed this" findings) — Step 6 may need a renaming or a minor preamble edit to reflect that its trigger is now optional/conditional, not the post-Step-5 default.
+
+**Given** Step 4's `nextStepFile` (currently pointing to `step-05-adversarial-review.md`) and the workflow tree's expected linearity
+**When** Step 5 is removed or skip-branched
+**Then** Step 4's `nextStepFile` is updated to point to whichever step is now the post-implementation default (Step 6 if Step 5 is removed, Step 6 with optional Step 5 skip if branched). Workflow integrity (a clean linear path from Step 1 → Done) is verified by manual walk-through and recorded in Completion Notes Task 2.
+
+**Given** every Story 13.x AC pattern that says "trigger an adversarial review pass per `feedback_adversarial_review.md`"
+**When** the create-story AC pattern is updated
+**Then** the phrase is **removed** from any story-drafting template or workflow prompt that still emits it. The replacement guidance (per S1 standing commitment) is: "Adversarial review is run separately via the `CR` command in fresh context after dev-pass close — story ACs do not enumerate it." If the story-drafting template lives in `_bmad/bmm/workflows/4-implementation/create-story/` (template.md / instructions.xml / any prompt fragments), edits land there. If the pattern is convention-only (re-emitted by the SM agent's prompt), the SM agent definition at `_bmad/bmm/agents/sm.md` (or the equivalent) is updated to omit the phrase.
+
+**Given** the `CR` command guidance (the fresh-context external review entry-point)
+**When** PD-1's reconciliation pass runs
+**Then** the `CR` command's documentation / agent definition is verified to be the canonical "where does adversarial review live now" entry-point. If the documentation is silent on when to run `CR` (after each story-close vs. epic-close), an explicit "after each story-close" line is added per S1 standing commitment. The reconciliation is recorded in Completion Notes Task 4.
+
+**Given** `feedback_adversarial_review.md` (the memory file expressing the codified intent)
+**When** PD-1 lands
+**Then** the memory file is updated with a one-line forward-pointer: "PD-1 (Story 13.5.0) closed the workflow-vs-intent gap by removing in-pass review from the quick-dev tree and the create-story AC pattern. Adversarial review now runs via the `CR` command in fresh context, codified in workflow + agent files (see Story 13.5.0 Completion Notes for citations)." The forward-pointer prevents future agents from re-discovering F-Retro-1 by reading the memory file alone. Memory file edit is logged in Memory Files Touched.
+
+**Given** every story file in `_bmad-output/implementation-artifacts/` for Epic 13 (8 files: 13-0, 13-0-1, 13-1, 13-2, 13-3, 13-4, 13-5, 13-6) that contains the in-pass adversarial review pattern
+**When** PD-1 lands
+**Then** those story files are **not** retroactively edited (they are historical record; the in-pass pattern they document is true-as-of-the-time-of-the-dev-pass). The forward fix is structural (workflow tree + create-story pattern + memory pointer), not retroactive (per S10: workflow > memory > prompt). Story 13.5.x stories drafted *after* PD-1 land will structurally not contain the pattern. This boundary is documented in Completion Notes Task 6.
+
+**Given** the dev-agent definition `_bmad/bmm/agents/dev.md` (which already says "For best results, use a fresh context and a different quality LLM if available" near line 64)
+**When** PD-1's reconciliation pass runs
+**Then** the dev-agent definition is verified to remain consistent with the post-PD-1 workflow tree. If the dev-agent's prompt still references "Step 5 adversarial review" or implies in-pass review, those references are removed. The agent file edits (if any) are recorded in Completion Notes Task 7.
+
+**Given** the Epic 13.5 close-out gate (Story 13.5.6) will run a verdict-table walk over PD-1 + TD-1..TD-7
+**When** PD-1 closes
+**Then** the close-out verdict criteria for PD-1 are explicitly stated in this story's Completion Notes Task 8: (a) `step-05-adversarial-review.md` is removed or skip-branched (verifiable by file inspection); (b) Step 4's `nextStepFile` no longer points to step-05 (verifiable by `grep`); (c) `feedback_adversarial_review.md` carries the forward-pointer (verifiable by `grep`); (d) any 13.5.1..13.5.5 dev-pass drafted *after* this story does NOT contain "trigger an adversarial review pass" in its ACs (verifiable by `grep` over those story files); (e) the `CR` command remains the canonical entry-point with documentation reflecting "after each story-close" cadence.
+
+**Given** the byte-budget discipline (per Story 13.4 v2 retrospective: PD-13 envelope under-counted; calibrate from actuals + margin)
+**When** Story 13.5.0 closes
+**Then** the byte-count delta is reported as TWO numbers (data delta + code delta) per Story 13.4 v2 PD-13 idiom. **Expected envelope: data 0 / code 0 (zero binary delta — this is workflow + doc + memory + agent-definition only).** Either gate exceeded (any binary delta) → HALT and investigate (PD-1 has no implementation in `src/`; any binary delta indicates a misroute).
+
+**Given** `make test-repl` baseline (952 PASS / 0 FAIL at Epic-13 close per `epic-13-retro-2026-05-05.md:255` — the +7 closure tests numbered 939..945 are a SUBSET of the 952, not additive; "959" was an arithmetic error in earlier drafts)
+**When** Story 13.5.0 closes
+**Then** `make test-repl` continues to report 952 PASS / 0 FAIL (zero regression — workflow / memory / agent-definition edits are non-binary and cannot move the test count). Completion Notes Task 9 records the post-edit test count.
+
+**Given** the mid-epic hardware-smoke cadence per S9 standing commitment
+**When** Story 13.5.0 closes
+**Then** a hardware-smoke run is **NOT required** for this story specifically (PD-1 has zero binary delta — there is nothing in the kernel to smoke). The story documents this exemption explicitly in Completion Notes Task 10 with rationale: "S9 applies to stories with binary delta; PD-1 is workflow + doc only." The exemption is the only legitimate exception to S9 anticipated in Epic 13.5; subsequent stories (13.5.1..13.5.6) all have binary delta and run hardware smoke per S9.
+
+**Given** the HALT-on-PARTIAL discipline per S5
+**When** any AC in this story cannot land cleanly (e.g., the workflow tree edit reveals a downstream coupling that needs broader surgery, or the create-story AC pattern fix reveals additional pattern-drift not flagged in the retro)
+**Then** the dev-pass HALTs and surfaces to project lead before any partial ship. No "ship 4/10 ACs + spawn 13.5.0.1" pattern (the 13.4-v1 anti-pattern explicitly forbidden). The HALT trigger and discharge pattern is documented in Completion Notes Task 11.
+
+### Story 13.5.1: TD-1 + TD-2 + TD-4 — per-FCB R/W dirty-flag (FILE-POSITION accuracy + mixed-mode + W/O probe coverage)
+
+**Per-story full-AC drafting deferred to its own `bmad-bmm-create-story` pass** (per Epic 13.5 P7 prep task: "Verify TD-1..TD-7 file:line citations against current HEAD when drafting each 13.5.x story"). Scope is fixed by retro slate; the citation pass landing at draft time prevents stale-line-number drift.
+
+**Scope (binding):** Add a per-FCB dirty-flag (1 byte per FCB pool slot, parallel-array idiom mirroring `fcb_has_written` from Story 13.5). Set in `file_byte_write` after the byte-write commit; cleared in `file_byte_read` on refill (so a read after a partial-write clears the dirty bit appropriately). Gates `file_flush` such that `REPOSITION-FILE` between a READ and a WRITE on the same R/W FID can safely auto-flush (vs the Story-13.3 Task-1.9 "discard discipline" silent-data-loss fallback). Closes:
+- **TD-1** — Story 13.3 R/W mid-read FILE-POSITION accuracy (off-by-2 traced to file_flush at `pos in 1..127 (read state)` writing stale read DMA back to disk at the previously-read CR — see `13-3-…md:434`)
+- **TD-2** — Story 13.2 R/W mixed-mode discipline (per-FCB dirty-flag was the named forward-pointer at `13-3-…md:475`)
+- **TD-4** — Story 13.3's W/O probe coverage gap (no W/O FCB probe currently exercises the auto-flush path; add a probe to round out the matrix)
+
+**Forward citations (verify at draft time):** `13-3-…md:90` (option-(b) defer-to-Story-13.5 framing), `13-3-…md:142` (load-bearing-structural-change escalation gate), `13-3-…md:475` (canonical Task-11 forward-pointer). The R/W mixed-mode follow-up was explicitly deferred from Story 13.3 with the dirty-flag shape pre-scoped (~30 bytes). Story 13.5.1 lands the deferred shape.
+
+**Byte envelope (provisional):** data +8 bytes (`fcb_dirty` parallel array, 1 byte × 8 FCBs); code +30..+50 bytes (set in `file_byte_write`, clear in `file_byte_read` refill, gate in `file_flush`, plus the W/O probe). Two-number byte gate per S3.
+
+### Story 13.5.2: TD-3 — `READ-FILE` EOF/error disambiguation (helper-layer rewrite of `file_byte_read`)
+
+**Per-story full-AC drafting deferred to its own create-story pass.** Citations to be re-verified at draft time.
+
+**Scope (binding):** Story 13.2 documented an AC #17(h) deviation: `READ-FILE` cannot cleanly disambiguate "EOF reached cleanly" from "I/O error mid-read" because the helper layer (`file_byte_read`) returns a single sentinel for both conditions. The proper fix is a helper-layer rewrite (separate return paths for EOF vs error vs success-with-bytes). This was carry-forward at Story 13.2 close (would have been content of a Story 13.2.1 had the sibling-spawn anti-pattern been allowed; per Story 13.4 v2 AC #26 it was not). Story 13.5.2 lands the helper-layer rewrite.
+
+**Compliance impact:** ANS §11.6.1.2080 `READ-FILE` requires distinct error vs EOF semantics (`ior` 0 with `u2 = 0` at EOF; `ior` non-zero on error). Current implementation collapses both onto `ior=0; u2=0`. TD-3 close brings antforth into compliance.
+
+**Byte envelope (provisional):** code +50..+100 bytes (helper-layer rewrite typically grows the helper's case analysis). HALT signal if envelope blown — TD-3 is contained, not capstone-shape; an over-budget surface area suggests a wider problem.
+
+### Story 13.5.3: TD-5 — `."` BC-clobber (re-classified upward at retro from MEDIUM-pre-existing to tag-blocking)
+
+**Per-story full-AC drafting deferred to its own create-story pass.** Citation `13-5-…md:305` to be re-verified at draft time.
+
+**Scope (binding):** Story 13.5's adversarial review surfaced a BC-clobber in `."` — classified MEDIUM, accepted-with-rationale because pre-existing. Project lead at retro: *"a clobber like that should never have been passed off as 'pre-existing, so I'll ignore it'."* Re-classified upward to tag-blocking correctness defect under `feedback_no_preexisting_discharge.md` (S8). TD-5 closes the clobber.
+
+**Investigation pre-requisites (binding):** the dev-pass starts by tracing every `."` invocation site in the kernel + tests, cataloguing what BC carries at the call boundary, and identifying which sites depend on BC-preservation across `."`. The fix shape is committed only after the catalogue completes (verdict-only audit pattern per `feedback_verdict_only_audit.md` if a probe-in-tree is needed before the fix). HALT if the catalogue surfaces dependent sites that themselves carry latent BC-clobber assumptions.
+
+**Byte envelope (provisional):** code +10..+30 bytes (a typical EXX-or-PUSH/POP wrap of the BC-clobbering inner code). Two-number byte gate per S3.
+
+### Story 13.5.4: TD-6 — PAD / HERE-cross-line correctness
+
+**Per-story full-AC drafting deferred to its own create-story pass.** Citations `13-5-…md:306` and `13-6-…md:1192 F-9` to be re-verified at draft time.
+
+**Scope (binding):** Story 13.5's review-fix F3 said "use HERE not PAD" — but Story 13.6's hardware-finding F-9 revealed that's wrong across REPL lines (PAD and HERE both have cross-line volatility under specific REPL scenarios). Two findings against the same incorrect mental model — initially classified as smoke-batch authoring bug, retroactively re-classified at retro as kernel correctness concern. TD-6 closes the underlying volatility and produces the canonical cross-line-safe transient-buffer guidance.
+
+**Compliance impact:** ANS §3.3.3.6 `PAD` and §3.3.3 `HERE` — antforth's behaviour deviates from the standard's transient-region semantics in a way that surfaces at REPL boundaries. The standard is permissive (`PAD` content is unspecified after a definition is created; `HERE` advances on `ALLOT`/word-creation), but the cross-line volatility observed in F-9 is **silent data corruption** for any code that assumes PAD/HERE survive across one REPL line — a real anti-affordance.
+
+**Byte envelope (provisional):** TBD — depends on fix shape. Possible shapes: (a) reserve a dedicated transient buffer separate from PAD and HERE that survives across REPL lines (data ~80..+128 bytes); (b) document the volatility and update kernel call sites to use stable buffers (zero binary delta, doc + tests only); (c) make PAD survive across one line while keeping HERE volatile (small data + small code). The dev-pass picks per AC and HALT discipline.
+
+### Story 13.5.5: TD-7 — `(SAVE-INPUT)` / `(RESTORE-INPUT)` for `EVALUATE` (compliance close-out)
+
+**Per-story full-AC drafting deferred to its own create-story pass.** Citation `13-4-…md:654-655` to be re-verified at draft time.
+
+**Scope (binding):** Story 13.4 v2 left `(SAVE-INPUT)` / `(RESTORE-INPUT)` for `EVALUATE` as compliance close-out — implementing them for `INCLUDE-FILE` source-input nesting was structurally sufficient for the user-facing `INCLUDE` flow, but ANS §6.2.2148 `SAVE-INPUT` and §6.2.2125 `RESTORE-INPUT` require coverage for `EVALUATE` as well (the EVALUATE source-spec is part of the `SOURCE-ID` discrimination). TD-7 closes the EVALUATE arms.
+
+**Compliance impact:** §6.2.2148 / §6.2.2125 are CORE-EXT, not CORE — the wordset claim already gates these as extension-level, and antforth's coverage is partial (INCLUDE-FILE arm landed, EVALUATE arm did not). TD-7 finishes the wordset.
+
+**Byte envelope (provisional):** code +50..+100 bytes (the EVALUATE arm mirrors the INCLUDE-FILE arm shape from Story 13.4 v2; lookup for the EVALUATE source-frame is already established).
+
+### Story 13.5.6: Epic 13.5 close-out gate — verdict table for TD-1..TD-7 + PD-1; on-device round-trip re-run; **antforth 2.0 tag applied**
+
+**Per-story full-AC drafting deferred to its own create-story pass.**
+
+**Scope (binding):** Mirror of Story 13.6 (Epic-13 close-out gate). Verdict-table walk over all of: PD-1 (Story 13.5.0), TD-1+TD-2+TD-4 (Story 13.5.1), TD-3 (Story 13.5.2), TD-5 (Story 13.5.3), TD-6 (Story 13.5.4), TD-7 (Story 13.5.5). On-device round-trip re-run on real MicroBeast hardware (Journey 1 PRD success criterion re-verified post-cleanup-slate). Phase-2 cumulative ROM-delta re-recorded to absorb the Epic 13.5 byte-deltas.
+
+**Tag application:** at this story's close, AND ONLY AT THIS STORY'S CLOSE, the **`antforth 2.0` tag is applied**. This is the binding gate per project-lead direction at the Epic 13 retro 2026-05-05. Before-tag verification: (a) verdict table for PD-1 + TD-1..TD-7 all PASS; (b) hardware re-run passes; (c) Phase-2 cumulative byte-delta reconciles to absolute (zero residual at both per-story sum and per-epic sum levels per Epic 13 retro precedent); (d) `make test-repl` baseline at Epic-13 close (952 PASS) extended by 13.5.x test additions and zero regressions on the 1..952 baseline.
+
+**Byte envelope:** 0 bytes (audit-only / tag-only — this story is verification, not implementation).
+
+**Hardware smoke:** **MANDATORY**. Per S9, this story specifically runs the full Phase-2 hardware smoke (Phase-1 regressions + Epics 9–13 regressions + Epic 13.5 cleanup-slate tests) on real CP/M 2.2 / MicroBeast. Hardware transcript is the binding artefact for tag application.

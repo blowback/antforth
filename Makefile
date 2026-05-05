@@ -8591,6 +8591,136 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 943 — Story 13.6 (s136-deep-nest) INCLUDE-mid-THROW depth-6 self-recursion (T-S136-DEEPN-CHAIN-WALK)"; \
 	else echo "FAIL: REPL test 943 — expected 'T43A=-1 ' (CATCH'd deep THROW) and 'T43B=0 ' (INCLUDE-TOP cleared)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.5.1 dirty-flag closure suite (944..948) ===
+	@# Per AC #11: probe matrix covers TD-1 (R/W mid-read FILE-POSITION
+	@# accuracy), TD-2 (REPOSITION-FILE auto-flush replaces silent
+	@# discard), TD-4 (W/O REPOSITION auto-flush coverage gap), plus
+	@# defence-in-depth R/O REPOSITION (no-op via has-written gate).
+	@# Per Story 13.5 / 13.3 conventions: S" + TYPE for labels (BC-clobber
+	@# avoidance), HERE for read buffers (PAD undefined), DELETE-FILE
+	@# at probe end (fixture-leakage discipline).
+	@# === (p1) Test 944: TD-1 R/W mid-read FILE-POSITION accuracy ===
+	@# Pre-fix: R/W formula gated on fam_masked==0 (R/O only) → R/W
+	@# mid-read reported +128 too high. Post-fix: gated on dirty==0
+	@# (universal) → mid-read reports the true byte cursor.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE BFA 200 ALLOT' \
+		': P200 200 0 DO BFA I + I 26 MOD 65 + SWAP C! LOOP ;' \
+		'P200' \
+		'S" TS1351RW.TXT" R/W CREATE-FILE DROP FA !' \
+		'BFA 200 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TS1351RW.TXT" R/W OPEN-FILE DROP FA !' \
+		'0 0 FA @ REPOSITION-FILE DROP' \
+		'HERE 100 FA @ READ-FILE DROP DROP' \
+		'S" T44=" TYPE FA @ FILE-POSITION . . . CR' \
+		'FA @ CLOSE-FILE DROP S" TS1351RW.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T44=0 0 100 '; then \
+		echo "PASS: REPL test 944 — Story 13.5.1 (p1) TD-1 R/W mid-read FILE-POSITION accuracy (T-S1351-P1-RW-MID-READ)"; \
+	else echo "FAIL: REPL test 944 — expected 'T44=0 0 100 ' (R/W mid-read after 100 bytes; pre-fix would report +128 too high)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p2) Test 945: TD-2 partial-write survives REPOSITION ===
+	@# Pre-fix: REPOSITION used silent discard discipline → 1-byte write
+	@# was dropped. Post-fix: REPOSITION auto-flushes via dirty gate →
+	@# write is committed (file size = 128 = one padded record).
+	@# T45C (CR-009): post-CLOSE-reopen-READ-1, FILE-POSITION reports
+	@# byte-cursor = 1 — pins auto-flush byte-cursor semantics so a
+	@# future regression that reverts auto-flush surfaces here too.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B45 16 ALLOT' \
+		'65 B45 C!' \
+		'S" TS1351MX.TXT" R/W CREATE-FILE DROP FA !' \
+		'B45 1 FA @ WRITE-FILE DROP' \
+		'0 0 FA @ REPOSITION-FILE DROP' \
+		'FA @ CLOSE-FILE DROP' \
+		'S" TS1351MX.TXT" R/O OPEN-FILE DROP FA !' \
+		'S" T45A=" TYPE FA @ FILE-SIZE DROP D. CR FA @ CLOSE-FILE DROP' \
+		'S" TS1351MX.TXT" R/O OPEN-FILE DROP FA !' \
+		'S" T45B=" TYPE B45 1 FA @ READ-FILE DROP DROP B45 C@ . CR' \
+		'S" T45C=" TYPE FA @ FILE-POSITION . . . CR' \
+		'FA @ CLOSE-FILE DROP S" TS1351MX.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T45A=128 ' && echo "$$OUTPUT" | grep -q 'T45B=65 ' && echo "$$OUTPUT" | grep -q 'T45C=0 0 1 '; then \
+		echo "PASS: REPL test 945 — Story 13.5.1 (p2) TD-2 partial-write survives REPOSITION (T-S1351-P2-REPOS-COMMITS)"; \
+	else echo "FAIL: REPL test 945 — expected 'T45A=128 ' (file size after auto-flush), 'T45B=65 ' (first byte = 'A'), 'T45C=0 0 1 ' (byte-cursor = 1 after 1-byte read)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p3) Test 946: TD-2 R/W write-read-write round-trip ===
+	@# Stresses dirty bit transitions: set on WRITE, cleared on READ
+	@# refill, set again on subsequent WRITE, all within one FID
+	@# lifetime. Pre-fix: silent data corruption from stale-DMA flush
+	@# at advanced CR. Post-fix: dirty gate makes both REPOSITIONs
+	@# cleanly auto-flush-or-skip; final file = AAAAABBB.
+	@# Buffer aliasing (CR-008 documentation): B46 is reused as both
+	@# write-source and read-destination. Initial fill: B46[0..4]='A',
+	@# B46[5..7]='B'. First WRITE pulls from B46[0..4]; intervening
+	@# READ-FILE 3 reads "AAA" back into B46[0..2] (same byte values
+	@# as before — disk content matches in-buffer pre-read state, so
+	@# B46[5..7]='B' is unaffected); second WRITE then pulls from
+	@# `B46 5 +` (= B46[5..7]='BBB'). Aliasing only works because the
+	@# on-disk content at offsets 0..2 matches what was already in the
+	@# buffer. Future readers: if you change the write-source bytes,
+	@# you'll need to either split into separate buffers or refresh
+	@# B46[0..4] before the second write.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B46 16 ALLOT' \
+		'65 B46 C! 65 B46 1+ C! 65 B46 2 + C! 65 B46 3 + C! 65 B46 4 + C!' \
+		'66 B46 5 + C! 66 B46 6 + C! 66 B46 7 + C!' \
+		'S" TS1351MR.TXT" R/W CREATE-FILE DROP FA !' \
+		'B46 5 FA @ WRITE-FILE DROP' \
+		'0 0 FA @ REPOSITION-FILE DROP' \
+		'B46 3 FA @ READ-FILE DROP DROP' \
+		'5 0 FA @ REPOSITION-FILE DROP' \
+		'B46 5 + 3 FA @ WRITE-FILE DROP' \
+		'FA @ CLOSE-FILE DROP' \
+		'S" TS1351MR.TXT" R/O OPEN-FILE DROP FA ! S" T46=" TYPE B46 8 FA @ READ-FILE DROP DROP B46 8 TYPE CR FA @ CLOSE-FILE DROP S" TS1351MR.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T46=AAAAABBB'; then \
+		echo "PASS: REPL test 946 — Story 13.5.1 (p3) TD-2 R/W write-read-write round-trip (T-S1351-P3-RW-MIXED)"; \
+	else echo "FAIL: REPL test 946 — expected 'T46=AAAAABBB' (5 bytes A then 3 bytes B after REPOSITION+WRITE; pre-fix lost data)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p4) Test 947: TD-4 W/O REPOSITION auto-flush coverage ===
+	@# Closes Story 13.3 LOW#4 / Task 10 finding #12 — no probe
+	@# previously exercised W/O FCB through REPOSITION's auto-flush path.
+	@# Verifies: W/O write 5 bytes → REPOSITION → CLOSE → file size 128
+	@# AND first 5 bytes = "XYZAB" (auto-flush wrote at correct CR).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B47 16 ALLOT' \
+		'88 B47 C! 89 B47 1+ C! 90 B47 2 + C! 65 B47 3 + C! 66 B47 4 + C!' \
+		'S" TS1351WO.TXT" R/W CREATE-FILE DROP DROP' \
+		'S" TS1351WO.TXT" W/O OPEN-FILE DROP FA !' \
+		'B47 5 FA @ WRITE-FILE DROP' \
+		'0 0 FA @ REPOSITION-FILE DROP' \
+		'FA @ CLOSE-FILE DROP' \
+		'S" TS1351WO.TXT" R/O OPEN-FILE DROP FA !' \
+		'S" T47A=" TYPE FA @ FILE-SIZE DROP D. CR' \
+		'S" T47B=" TYPE B47 5 FA @ READ-FILE DROP DROP B47 5 TYPE CR' \
+		'FA @ CLOSE-FILE DROP S" TS1351WO.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T47A=128 ' && echo "$$OUTPUT" | grep -q 'T47B=XYZAB'; then \
+		echo "PASS: REPL test 947 — Story 13.5.1 (p4) TD-4 W/O REPOSITION auto-flush coverage (T-S1351-P4-WO-AUTOFLUSH)"; \
+	else echo "FAIL: REPL test 947 — expected 'T47A=128 ' (file size) and 'T47B=XYZAB' (first 5 bytes preserved across REPOSITION)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p5) Test 948: defence-in-depth R/O REPOSITION no-op ===
+	@# Verifies the Story-13.5 has-written gate still wins over the new
+	@# dirty gate when both are 0/0 — independent gates, R/O case stays
+	@# no-op. This is the regression boundary against any future
+	@# regression of file_flush's R/O guard introduced by the new
+	@# REPOSITION auto-flush in Story 13.5.1.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA' \
+		'S" TS1351RO.TXT" R/W CREATE-FILE DROP FA !' \
+		'S" Hello" FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TS1351RO.TXT" R/O OPEN-FILE DROP FA !' \
+		'HERE 3 FA @ READ-FILE DROP DROP' \
+		'0 0 FA @ REPOSITION-FILE DROP' \
+		'S" T48=" TYPE FA @ FILE-POSITION . . . CR' \
+		'FA @ CLOSE-FILE DROP' \
+		'S" TS1351RO.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T48=0 0 0 '; then \
+		echo "PASS: REPL test 948 — Story 13.5.1 (p5) defence-in-depth R/O REPOSITION no-op (T-S1351-P5-RO-DEFENCE)"; \
+	else echo "FAIL: REPL test 948 — expected 'T48=0 0 0 ' (R/O REPOSITION 0 → FILE-POSITION returns 0 0 0; Story 13.5 has-written gate intact)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm

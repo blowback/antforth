@@ -135,6 +135,31 @@ fcb_fam:            DS FCB_POOL_COUNT
 ; hardening (mirror of fcb_fam reset at line 280-282).
 fcb_has_written:    DS FCB_POOL_COUNT
 
+; Story 13.5.1 — per-FCB "dirty" bit; consulted by file_flush + by
+; w_FILE_POSITION_cf (TD-1, mid-read accuracy on R/W FIDs). Encoding:
+;   0 = clean (DMA holds no uncommitted bytes — read-loaded after a
+;       refill, freshly-flushed, freshly-acquired)
+;   non-zero = dirty (DMA holds at least one byte from a file_byte_write
+;       that has not yet been committed via bdos_write_seq).
+; Differs from fcb_has_written semantically:
+;   has-written is sticky (set forever after first F_WRITE; gates
+;     "should this FCB ever flush?" wholesale).
+;   dirty is transient (set on byte-write; cleared on read-refill,
+;     successful flush, pool_acquire, pool_release; gates "does DMA
+;     hold pending writes RIGHT NOW?" inside the flushable-FCB path).
+; The two bits coexist; file_flush gates conjunctively (must be flushable
+; AND dirty for flush to fire). Closes TD-1 (R/W mid-read FILE-POSITION
+; accuracy), TD-2 (REPOSITION-FILE auto-flush vs Story 13.3 silent
+; discard), TD-4 (W/O auto-flush probe coverage gap).
+;
+; Set sites:   file_byte_write entry (covers u1<128 byte writes).
+; Clear sites: pool_acquire (fresh FCB), pool_release (stale-FID
+;              hardening), file_byte_read post-refill (DMA replaced by
+;              read data), file_flush success path (writes committed),
+;              bdos_write_seq A==0 success (covers all F_WRITE callers
+;              in one place — same site that sets has-written).
+fcb_dirty:          DS FCB_POOL_COUNT
+
 ; -----------------------------------------------
 ; pool_init — Cold-start initialiser; called from cold_start.
 ;   Resets fcb_pool_bitmap to 0xFF (all free), zeroes fcb_pool and
@@ -200,6 +225,16 @@ pool_init:
         LD      (HL), A
         INC     HL
         DJNZ    .pi_hw_loop
+        ; Story 13.5.1 — zero fcb_dirty[*] so freshly-acquired slots
+        ; start clean (DMA contents semantically empty/clean). Mirror
+        ; of the .pi_hw_loop above.
+        LD      HL, fcb_dirty
+        LD      B, FCB_POOL_COUNT
+        XOR     A
+.pi_dirty_loop:
+        LD      (HL), A
+        INC     HL
+        DJNZ    .pi_dirty_loop
         RET
 
 ; -----------------------------------------------
@@ -240,11 +275,19 @@ pool_acquire:
         ; Story 13.5 — clear fcb_has_written[B]: a fresh FCB starts as
         ; never-written. PUSH/POP HL across the index→address compute so
         ; the caller still sees HL = FCB ptr at exit.
+        ; Story 13.5.1 — also clear fcb_dirty[B]: a fresh FCB's DMA is
+        ; semantically clean (no uncommitted bytes). Both clears live
+        ; inside the same PUSH/POP envelope.
         PUSH    HL
         PUSH    BC
         LD      H, 0
         LD      L, B
         LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 0
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_dirty
         ADD     HL, DE
         LD      (HL), 0
         POP     BC
@@ -324,6 +367,15 @@ pool_release:
         LD      H, 0
         LD      L, B
         LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 0
+        ; Story 13.5.1 — also reset fcb_dirty[index] to 0 (parallel
+        ; reset to fcb_has_written above). A released FCB's DMA is
+        ; semantically clean — pool_acquire will re-clear too, but the
+        ; release-time zero is stale-FID hardening.
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_dirty
         ADD     HL, DE
         LD      (HL), 0
         ; Zero the FCB record (36 bytes starting at the FCB ptr).
@@ -540,6 +592,17 @@ bdos_write_seq:
         LD      DE, fcb_has_written
         ADD     HL, DE
         LD      (HL), 1
+        ; Story 13.5.1 — bdos_write_seq A==0 success commits DMA to
+        ; disk; clear fcb_dirty[idx] := 0 (DMA contents are no longer
+        ; "uncommitted"). Same call site sets has-written (sticky 1)
+        ; and clears dirty (transient 0) — opposite writes correct
+        ; semantically. Reuse A = idx (still in 0..FCB_POOL_COUNT-1
+        ; from the OOR-guard CP above).
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_dirty
+        ADD     HL, DE
+        LD      (HL), 0
 .bws_oor:
         POP     DE
         POP     BC
@@ -647,6 +710,18 @@ file_byte_read:
         CALL    bdos_read_seq
         OR      A
         JR      NZ, .fbr_eof            ; A non-zero → EOF / error
+        ; Story 13.5.1 — refill OK: DMA contents are now read-loaded.
+        ; Clear fcb_dirty[index] := 0 so a subsequent file_flush sees
+        ; "no pending writes" (closes TD-1: R/W mid-read FILE-POSITION
+        ; and TD-2: REPOSITION-FILE auto-flush against read-loaded
+        ; DMA). The .fbr_idx scratch already holds the index from
+        ; entry; reuse it.
+        LD      A, (.fbr_idx)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_dirty
+        ADD     HL, DE
+        LD      (HL), 0
         ; Refill OK; pos := old_pos - 128.
         ;   Story 13.2 baseline behaviour: old_pos was always 128 (the
         ;   refill sentinel) so post-refill pos = 0.
@@ -724,6 +799,18 @@ file_byte_write:
         LD      H, 0
         LD      L, A
         LD      DE, fcb_has_written
+        ADD     HL, DE
+        LD      (HL), 1
+        ; Story 13.5.1 — also set fcb_dirty[index] := 1: this byte-write
+        ; commits an uncommitted byte into DMA. The bit clears at
+        ; bdos_write_seq A==0 success, file_byte_read refill, file_flush
+        ; success, pool_acquire, pool_release. Closes TD-1/TD-2 by
+        ; giving file_flush + FILE-POSITION a transient "DMA holds
+        ; pending writes RIGHT NOW" signal independent of has-written's
+        ; sticky "FCB ever written" signal.
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_dirty
         ADD     HL, DE
         LD      (HL), 1
         ; HL = &fcb_byte_pos[index]
@@ -845,6 +932,25 @@ file_flush:
         LD      A, (HL)
         OR      A
         JR      Z, .ff_empty            ; never written → skip flush
+        ; Story 13.5.1 — dirty guard. Skip flush if DMA holds no
+        ; uncommitted bytes (cleared by bdos_write_seq A==0 success,
+        ; file_byte_read refill, pool_acquire, pool_release; set by
+        ; file_byte_write entry). Conjunctive with the has-written gate
+        ; above: must be flushable AND have pending writes for flush
+        ; to fire. Closes TD-2 (REPOSITION-FILE auto-flush against
+        ; read-loaded DMA: dirty=0 → no-op, the t13-probe corruption
+        ; mechanism is structurally impossible).
+        ; Reload idx — the has-written gate above clobbered A with the
+        ; has-written byte value (per the OR A; JR Z chain). .ff_idx
+        ; is the canonical scratch holding the FCB index.
+        LD      A, (.ff_idx)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_dirty
+        ADD     HL, DE
+        LD      A, (HL)
+        OR      A
+        JR      Z, .ff_empty            ; clean (no pending writes) → skip flush
         LD      A, (.ff_idx)
         LD      H, 0
         LD      L, A
@@ -1854,22 +1960,27 @@ w_WRITE_FILE_cf:
 ;   Cursor synthesis:
 ;     record_count_seq = (S2 << 12) | (EX << 7) | CR    ; sequential cursor
 ;     pos              = fcb_byte_pos[index]            ; byte-stream cursor
-;     fam_masked       = fcb_fam[index] & 3             ; R/O = 0
+;     dirty            = fcb_dirty[index]               ; 0=clean, !0=pending
 ;     bp = (record_count_seq * 128) + (pos & 0x7F),
-;       record_count_seq -= 1 if pos < 128 AND fam_masked == 0
-;       (R/O buffer-loaded — file_byte_read's F_READ_SEQ has auto-
-;        advanced CR by 1 past the loaded record).
+;       record_count_seq -= 1 if pos < 128 AND dirty == 0 AND
+;                              record_count_seq > 0
+;       (DMA holds READ-loaded bytes — file_byte_read's F_READ_SEQ has
+;        auto-advanced CR by 1 past the loaded record. Story 13.5.1
+;        replaced the Story-13.3 fam_masked==0 check with dirty==0:
+;        universal across R/O, R/W, W/O FAM modes; correct on R/W
+;        mid-read where fam_masked==1 but DMA contents are read data.
+;        The record_count_seq>0 guard prevents the SUB 1 borrow chain
+;        from underflowing to 0xFFFFFFFF for fresh-OPEN FCBs).
 ;
 ;   AC #2 anchors:
-;     (a) fresh OPEN-FILE (any fam) → 0 0 0
+;     (a) fresh OPEN-FILE (any fam) → 0 0 0   (record_count_seq=0 guard)
 ;     (b) after reading 200 bytes of a 256-byte file → 200 0 0
 ;
-;   Note on R/W mode: Story 13.3 first cut uses the R/O formula path
-;   only when fam_masked == 0; for R/W (fam_masked == 1), the W/O-shape
-;   formula is used (no decrement). This is correct after a WRITE-FILE
-;   sequence and after REPOSITION-FILE; it returns +128 too high after
-;   a READ-FILE on an R/W FID. Mixed read/write FILE-POSITION accuracy
-;   on R/W FIDs is deferred to Story 13.5 per AC #11.
+;   TD-1 closure (Story 13.5.1 2026-05-05): R/W mid-read FILE-POSITION
+;   now reports the byte cursor accurately. Pre-13.5.1 the formula
+;   gated on fam_masked==0 (R/O only) and reported +128 too high for
+;   R/W mid-read; the dirty-bit replacement closes the gap because
+;   file_byte_read clears dirty on every successful refill.
 ; -----------------------------------------------
 w_FILE_POSITION:
         DEFCODE "FILE-POSITION", 0
@@ -1893,11 +2004,10 @@ w_FILE_POSITION_cf:
         LD      A, (fac_u)
         LD      H, 0
         LD      L, A
-        LD      DE, fcb_fam
+        LD      DE, fcb_dirty           ; Story 13.5.1 — was fcb_fam (TD-1)
         ADD     HL, DE
         LD      A, (HL)
-        AND     3
-        LD      (fac_bp + 1), A         ; bp+1 = fam_masked
+        LD      (fac_bp + 1), A         ; bp+1 = dirty (0=clean, !0=pending)
         LD      HL, (fac_fcb)
         LD      DE, FCB_CR
         ADD     HL, DE
@@ -1912,7 +2022,19 @@ w_FILE_POSITION_cf:
         LD      DE, FCB_S2
         ADD     HL, DE
         LD      A, (HL)
-        LD      (fac_count), A          ; fac_count[0] = S2 (scratch reuse)
+        ; CR-010 (hardware-smoke 2026-05-05): mask CP/M 2.2 §5.4 reserved
+        ; bits 6..7. Real BDOS sets S2 bit 7 (modified-extent flag) after
+        ; F_OPEN / F_READ_SEQ on real hardware; iz-cpm zeros it. Without
+        ; the mask, the formula folds the flag bit into byte 2 of
+        ; record_count_seq → byte_position off by 0x4000000 (= 64 MB)
+        ; on every R/O / R/W mid-read post-refill on real hardware.
+        ; CP/M 2.2 max file size is 8 MB, so meaningful S2 is bits 0..3
+        ; (CP/M 3 extends to bit 5 for 32 MB); masking 0x3F keeps the
+        ; conservative meaningful range and clears the system-reserved
+        ; bits without disturbing BDOS's directory-update flag (which
+        ; lives in the FCB and is consumed by F_CLOSE at FCB write-back).
+        AND     0x3F
+        LD      (fac_count), A          ; fac_count[0] = S2 masked (scratch reuse)
         ; --- Build record_count_seq into L=byte0, H=byte1, B=byte2 ---
         LD      A, (fac_bp + 2)         ; A = CR (0..127, bit 7 = 0)
         LD      L, A                    ; L = byte 0
@@ -1922,7 +2044,7 @@ w_FILE_POSITION_cf:
         SET     7, L                    ; byte 0 bit 7 := EX & 1
 .fp_no_ex_lsb:
         LD      H, A                    ; H = EX>>1 (low nibble of byte 1)
-        LD      A, (fac_count)          ; A = S2 (0..63)
+        LD      A, (fac_count)          ; A = S2 masked (0..63)
         LD      C, A                    ; C = S2 (preserve)
         AND     0x0F
         RLCA
@@ -1937,13 +2059,23 @@ w_FILE_POSITION_cf:
         SRL     A
         SRL     A                       ; A = S2 >> 4 (0..3)
         LD      B, A                    ; B = byte 2
-        ; --- Adjust: if pos<128 AND fam_masked==0, decrement (L,H,B) by 1 ---
+        ; --- Adjust: if pos<128 AND dirty==0 AND record_count_seq>0,
+        ;     decrement (L,H,B) by 1 (Story 13.5.1 — was fam_masked==0)
         LD      A, (fac_bp)             ; A = pos
         CP      128
         JR      NC, .fp_no_dec
-        LD      A, (fac_bp + 1)         ; A = fam_masked
+        LD      A, (fac_bp + 1)         ; A = dirty
         OR      A
-        JR      NZ, .fp_no_dec
+        JR      NZ, .fp_no_dec          ; dirty → DMA holds writes, no decrement
+        ; Story 13.5.1 — underflow guard. record_count_seq is in (L, H, B).
+        ; If all three bytes are zero (fresh-OPEN FCB at byte 0), the SUB
+        ; 1 chain below would borrow from B beyond zero, producing
+        ; 0xFFFFFFFF. Skip the decrement when record_count_seq == 0 so
+        ; fresh-OPEN reports 0 0 0, not 0xFFFFFFFF.
+        LD      A, L
+        OR      H
+        OR      B
+        JR      Z, .fp_no_dec
         LD      A, L
         SUB     1
         LD      L, A
@@ -1993,22 +2125,15 @@ w_FILE_POSITION_cf:
 ;   TOS per §3.1.4.1.
 ;
 ;   Implementation:
+;     - Auto-flush (Story 13.5.1, TD-2 closure): file_flush is called
+;       on the FCB before any cursor mutation. The new dirty-gate makes
+;       this safe — flush only fires when DMA holds uncommitted bytes
+;       (a real partial-record write); flush is a no-op when DMA holds
+;       read-loaded bytes (the post-Story-13.3 (t13)-probe corruption
+;       mechanism is structurally impossible). Flush failure → ior = 6;
+;       cursor untouched.
 ;     - 24-bit overflow check: ud-high upper byte != 0 → ior = 5
 ;       (CP/M 2.2 random-record byte address space is 24 bits = 16 MB).
-;     - Discard discipline (Task 1.9 pick (ii) per AC #3): pending
-;       partial-record writes are silently discarded. We DO NOT
-;       auto-flush; this matches CP/M's low-level random-access model
-;       (user manages flush via CLOSE-FILE) and avoids the R/W mixed-
-;       mode corruption hazard where a post-read REPOSITION would
-;       trigger file_flush on a buffer-of-read-data, sending stale
-;       read bytes back to disk. Pick (i) auto-flush was rejected
-;       during dev-pass after the (t13) probe surfaced this corruption
-;       on R/W FIDs (no per-FCB dirty-bit infrastructure to safely
-;       distinguish read-loaded from write-loaded buffer state in
-;       Story 13.1's helper layer; adding it is escalation-gated per
-;       AC #19, deferred to Story 13.5 follow-up). Users wanting
-;       guaranteed write durability across a REPOSITION must CLOSE-
-;       FILE and re-OPEN-FILE between the write and the reposition.
 ;     - Compute N = ud >> 7 (24-bit record number); B = ud & 0x7F.
 ;     - Set FCB[R0..R2] = N (low 24 bits, little-endian) AND mirror
 ;       CR = N & 0x7F, EX = (N>>7) & 0x1F, S2 = (N>>12) & 0x3F so
@@ -2021,14 +2146,14 @@ w_FILE_POSITION_cf:
 ;     - Set fcb_byte_pos[index] = 128 + B (encoded sentinel; consumed
 ;       by file_byte_read / file_byte_write modifications).
 ;
-;   Returns ior = 0 on success.
+;   Returns ior = 0 on success, 5 on overflow, 6 on flush-fail.
 ;
-;   Note on mixed mode (AC #11): mid-record write after REPOSITION on
-;   an R/W FID followed by a write at a different mid-record byte may
-;   stale-read DMA across the second reposition. Story 13.3 supports
-;   the canonical R/W case "write whole file → CLOSE → re-open R/W →
-;   REPOSITION → READ" (the (t13) round-trip). Pathological mixed-mode
-;   sequencing is the Story 13.5 follow-up.
+;   Story 13.5.1 closure (TD-2): the Story-13.3 discard discipline is
+;   removed. Partial writes survive REPOSITION on R/W and W/O FIDs.
+;   The mixed-mode pathological sequencing note (mid-record write,
+;   reposition, mid-record write at a different offset) is closed by
+;   the dirty gate in file_flush — the flush correctly commits the
+;   first partial write before the second mid-record write begins.
 ; -----------------------------------------------
 w_REPOSITION_FILE:
         DEFCODE "REPOSITION-FILE", 0
@@ -2048,8 +2173,18 @@ w_REPOSITION_FILE_cf:
         LD      A, (fac_buf + 1)        ; A = ud-high upper byte (bits 24..31)
         OR      A
         JP      NZ, .rf_overflow
-        ; --- Discard discipline (Task 1.9 pick (ii)): no auto-flush ---
-        ;   See header comment. Pending writes are silently discarded.
+        ; --- Story 13.5.1 — auto-flush (TD-2 closure). Replaces the
+        ;     Story-13.3 discard discipline. file_flush is gated by
+        ;     fcb_has_written + fcb_dirty (Story 13.5 + 13.5.1) so
+        ;     the flush is a no-op on R/O FCBs, never-written R/W
+        ;     FCBs, or R/W FCBs whose DMA holds read-loaded bytes.
+        ;     The flush only fires when DMA holds uncommitted writes
+        ;     — closing TD-2 silent partial-write loss. Flush failure
+        ;     → ior = 6, cursor untouched. ---
+        LD      DE, (fac_fcb)           ; DE = FCB ptr
+        CALL    file_flush
+        OR      A
+        JP      NZ, .rf_flush_err       ; flush failed → ior = 6
         ; --- Compute N = (ud >> 7) into FCB[R0..R2] ---
         ; ud (24-bit, low byte = fac_count[0], mid = fac_count[1], hi = fac_buf[0])
         ; N = ud >> 7 → 17-bit value in N0/N1/N2:
@@ -2199,6 +2334,30 @@ w_REPOSITION_FILE_cf:
 .rf_overflow:
         ; ud-high upper byte != 0 → target ≥ 16 MB. ior = 5; no FCB mutation.
         LD      BC, 5
+        LD      DE, (fac_ip)
+        NEXT
+.rf_flush_err:
+        ; Story 13.5.1 — file_flush failed (bdos_write_seq returned non-
+        ; zero). Return ior = 6 (the slot Story 13.3 Task 1.10
+        ; pre-allocated for "REPOSITION-FILE flush-fail" and never used
+        ; while the discard discipline was in force).
+        ;
+        ; CURSOR STATE on flush failure (CR-004 documentation):
+        ;   R0..R2 / CR / EX / S2 — UNCHANGED (REPOSITION had not yet
+        ;     reached the cursor-mirror block when file_flush ran, so
+        ;     the record cursor stays at its pre-REPOSITION value).
+        ;   fcb_byte_pos — RESET TO 0 by file_flush.ff_err (review F2,
+        ;     Story 13.5). Caller's pre-REPOSITION pos value (e.g. the
+        ;     5 bytes the user had pending) is clobbered.
+        ; The byte_pos reset is a pre-existing behaviour of file_flush
+        ; (it predates Story 13.5.1 by way of the original Story 13.5
+        ; F2 hardening) but only became reachable via REPOSITION-FILE
+        ; with the auto-flush in this story — pre-13.5.1 the discard
+        ; discipline never invoked file_flush from REPOSITION, so the
+        ; .ff_err pos-reset never bit a REPOSITION caller. Users
+        ; receiving ior=6 should treat byte_pos as undefined and
+        ; CLOSE-FILE / re-OPEN-FILE before relying on FILE-POSITION.
+        LD      BC, 6
         LD      DE, (fac_ip)
         NEXT
 
@@ -2524,10 +2683,11 @@ w_PAREN_CLOSE_CURRENT_FID_cf:
         ; the call). INCLUDE always opens R/O so the byte-stream layer
         ; never invokes file_byte_write and the per-FCB
         ; `fcb_has_written` bit stays 0 — file_flush is now mode-aware
-        ; via that bit (Story 13.5) and would itself skip even if
-        ; called. Omitting the call is documented intent + defence-in-
-        ; depth (clarity at the INCLUDE close-site + regression
-        ; protection per Story 13.5 AC #5).
+        ; via that bit (Story 13.5) plus the per-FCB `fcb_dirty` bit
+        ; (Story 13.5.1, transient counterpart) and would itself skip
+        ; even if called. Omitting the call is documented intent +
+        ; defence-in-depth (clarity at the INCLUDE close-site +
+        ; regression protection per Story 13.5 AC #5).
         EX      DE, HL                  ; DE = FID
         CALL    bdos_close_file         ; A discarded
         EX      DE, HL                  ; HL = FID for pool_release

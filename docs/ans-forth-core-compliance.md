@@ -414,7 +414,7 @@ file-positioning words; Story 13.4 wires source-input nesting.
 | `READ-FILE` | 11.6.1.2080 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- u2 ior )` |
 | `WRITE-FILE` | 11.6.1.2480 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- ior )` — R/O guard via fcb_fam |
 | `FILE-POSITION` | 11.6.1.1520 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — high cell on TOS per §3.1.4.1 |
-| `REPOSITION-FILE` | 11.6.1.2142 | `file_access.asm` (Story 13.3) | `( ud fileid -- ior )` — discard discipline (no auto-flush); ior=5 if ≥ 16 MB |
+| `REPOSITION-FILE` | 11.6.1.2142 | `file_access.asm` (Story 13.3 + 13.5.1) | `( ud fileid -- ior )` — auto-flush via dirty gate (Story 13.5.1); ior=5 if ≥ 16 MB; ior=6 if flush fails |
 | `FILE-SIZE` | 11.6.1.1522 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — record-rounded (see Story 13.3 caveat below) |
 | `INCLUDED` | 11.6.1.1718 | `file_access.asm` (Story 13.4 v2) | `( i*x c-addr u -- j*x )` — load source from file; CCD-1 INCLUDE-TOP framed; -38 if not found |
 | `INCLUDE-FILE` | 11.6.1.1717 | `file_access.asm` (Story 13.4 v2) | `( i*x fileid -- j*x )` — load source from open FID; caller retains FID on clean EOF; FID closed on THROW path (deviation) |
@@ -423,7 +423,8 @@ file-positioning words; Story 13.4 wires source-input nesting.
 
 **Story 13.2 + 13.3 + 13.4 ior/THROW split:**
 - ior (recoverable): file not found, malformed filename, R/O write
-  attempt, disk-full, EOF mid-read, REPOSITION-FILE 24-bit overflow.
+  attempt, disk-full, EOF mid-read, REPOSITION-FILE 24-bit overflow
+  (ior=5), REPOSITION-FILE flush-fail (ior=6, Story 13.5.1).
 - THROW (unrecoverable): `-37 THROW_FILE_IO` (file I/O error — currently
   latent; allocated for forward use by `(file-refill)`'s F_READ error
   path, Story 13.4 v2), `-38 THROW_FILE_NOT_FOUND` (raised by INCLUDED
@@ -437,17 +438,55 @@ file-positioning words; Story 13.4 wires source-input nesting.
   partial-record files are padded with `0x1A` on close). A 100-byte
   file reports as 128. ANS §11.6.1.1522 says "the size, in characters,
   of the file"; on CP/M 2.2 this is the record-rounded equivalent.
-- `REPOSITION-FILE` does NOT auto-flush. Pending partial-record writes
-  are silently discarded. Users wanting durability across REPOSITION
-  must `CLOSE-FILE` and re-`OPEN-FILE` the file. (Auto-flush was
-  rejected during Story 13.3 dev-pass after a R/W mixed-mode buffer-
-  corruption hazard surfaced; safe auto-flush requires per-FCB dirty-
-  flag infrastructure deferred to Story 13.5.)
-- `FILE-POSITION` on R/W FIDs is correct after WRITE sequences and
-  after REPOSITION but reports +128 too high after a READ on R/W FIDs
-  (the formula uses W/O-shape "no decrement" for fam_masked != 0;
-  R/O FIDs are correct in all states). Mid-read R/W FILE-POSITION
-  accuracy is deferred to Story 13.5 alongside the dirty-flag work.
+- `REPOSITION-FILE` auto-flushes pending partial-record writes as of
+  Story 13.5.1 (TD-2 closure). The Story-13.3 silent-discard discipline
+  is removed. `file_flush` is gated by a per-FCB `fcb_dirty` bit (set
+  in `file_byte_write` entry; cleared at `pool_acquire` / `pool_release`
+  / `file_byte_read` refill / `bdos_write_seq` A==0 success), so the
+  flush is a no-op when DMA holds read-loaded bytes — closing the
+  Story-13.3 (t13)-probe corruption mechanism that originally retracted
+  the auto-flush attempt. Flush failure → ior=6; cursor untouched.
+- `FILE-POSITION` on R/W FIDs reports the byte cursor accurately in
+  all states as of Story 13.5.1 (TD-1 closure). The formula's
+  buffer-loaded decrement now consults `fcb_dirty == 0` (universal
+  across FAM modes — closing the +128 mid-read miss on R/W FIDs)
+  rather than the Story-13.3 `fam_masked == 0` (R/O-only). An
+  underflow guard prevents the SUB 1 chain from underflowing for
+  fresh-OPEN FCBs (record_count_seq = 0, pos = 0, dirty = 0 →
+  reports `0 0 0` correctly). FCB.S2 is masked with `0x3F` before
+  use in `record_count_seq` build (Story 13.5.1 hardware smoke,
+  CR-010): real CP/M 2.2 BDOS sets §5.4-reserved S2 bit 7
+  (modified-extent flag) after F_OPEN / F_READ_SEQ; iz-cpm zeros
+  it. Without the mask, FILE-POSITION reported byte-position +64 MB
+  on real hardware after every refill. CP/M 2.2 max-file extent
+  fits in S2 bits 0..3; the mask is permissive (clears only bits
+  6..7, leaving bits 4..5 for CP/M 3 32 MB extension if anyone
+  ever runs antforth there).
+- **Known Story 13.5.1 latent (CR-006, R/W mid-stream-mid-record
+  dirty-DMA loss):** if a user writes < 128 bytes at the start of a
+  record and then reads past the record boundary on the same FID
+  without an intervening `REPOSITION-FILE` or `CLOSE-FILE`,
+  `file_byte_read`'s refill arm overwrites the dirty DMA with the
+  next record's contents and clears `fcb_dirty`. The user's pending
+  partial-record write is silently lost. AC #6 (Story 13.5.1) flagged
+  this as accepted-out-of-scope: the canonical mixed-mode path lands
+  via REPOSITION-FILE (which now auto-flushes via the dirty gate).
+  Programs that interleave R/W reads and writes without REPOSITION
+  are pathological; the probe matrix (944..948) does not cover this
+  path. Forward-pointed for a future TD-N if it turns up in the
+  field. Workaround: REPOSITION-FILE between a write and a subsequent
+  read that crosses the record boundary, which forces auto-flush.
+- **Known Story 13.5.1 latent (CR-004, REPOSITION-FILE flush-fail
+  byte-cursor reset):** when `REPOSITION-FILE`'s auto-flush fails
+  (returns ior = 6), `file_flush.ff_err` (review F2 hardening)
+  resets `fcb_byte_pos` to 0 even though the user's logical cursor
+  was elsewhere. The record cursor (R0..R2 / CR / EX / S2) stays at
+  its pre-REPOSITION value, but `fcb_byte_pos` is clobbered. Users
+  receiving ior = 6 should treat byte_pos as undefined and
+  CLOSE-FILE / re-OPEN-FILE before relying on FILE-POSITION.
+  Pre-13.5.1 the discard discipline never invoked file_flush from
+  REPOSITION, so the .ff_err pos-reset never bit a REPOSITION
+  caller; the auto-flush in this story made it reachable.
 
 **Story 13.4 v2 caveats:**
 - Source-line truncation at TIB_SIZE = 128 bytes is silent: lines
@@ -473,14 +512,21 @@ file-positioning words; Story 13.4 wires source-input nesting.
   `bdos_write_seq` A==0 success; cleared at `pool_acquire` /
   `pool_release`). R/O reads never touch `file_byte_write`, so the bit
   stays 0 and `file_flush` skips the destructive pad-and-F_WRITE path.
-  R/W FCBs that have not been written likewise skip. The user-facing
+  R/W FCBs that have not been written likewise skip. Story 13.5.1
+  added a second per-FCB `fcb_dirty` bit (transient counterpart) that
+  conjunctively gates `file_flush`: the flush only fires when DMA holds
+  pending writes AND the FCB has ever been written. The `fcb_dirty`
+  bit clears on read refill — closing TD-2's R/W mid-read REPOSITION
+  silent-discard hazard — and clears on `bdos_write_seq` A==0 success
+  — closing the post-flush double-flush edge. The user-facing
   `CLOSE-FILE` (Story 13.2) is now safe on R/O FIDs in all states.
   Audit anchor: Makefile test 938 flipped 2026-05-04 from expects-bug
   (SZ ≠ 128 — first observed `SZ=1507456`, an artefact of the F2 BC-
   clobber and F1 stale-FCB pollution in the original probe; the actual
   host-side delta is +128 per cycle, so a single uncorrected cycle
   records `SZ=256`) to expects-fix (`SZ=128` — the source-file size
-  before the partial-read close cycle).
+  before the partial-read close cycle). Tests 944..948 (Story 13.5.1)
+  pin TD-1/TD-2/TD-4 closures.
 - EVALUATE-absorb explicitly out-of-scope (PD-11): EVALUATE keeps its
   private `(SAVE-INPUT)` / `(RESTORE-INPUT)` plumbing in
   `outer_interpreter.asm:395-460`. Future absorption into the INCLUDE-
