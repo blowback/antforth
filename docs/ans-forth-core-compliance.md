@@ -51,7 +51,7 @@ Pre-Story-13.0 the dot-marker form was missing from Epic 10's word-counted §6.1
 
 | Core Extension bonus | Count |
 |----------------------|-------|
-| Core Extension words implemented (§6.2) | 11 of 46 |
+| Core Extension words implemented (§6.2) | 12 of 46 |
 
 ### Epic-10 closure plan
 
@@ -341,7 +341,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | Word | Story | Complexity | Notes |
 |------|-------|-----------|-------|
 | `EVALUATE` | 10.9 ✓ | Moderate | DPANS94 §6.1.1360. Save/restore input source via 4-cell R-stack frame across INTERPRET. |
-| `ENVIRONMENT?` | 10.9 ✓ | Low | DPANS94 §6.1.1345. 14-entry static query table per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`). |
+| `ENVIRONMENT?` | 10.9 ✓ | Low | DPANS94 §6.1.1345. 14-entry static query table per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`). Story 13.5.4 (TD-6 closure 2026-05-06): the `/PAD` query (returning `( 84 -1 )`) is now backed by a real `PAD` word at `memory.asm` per §6.2.2000 — see Core Extension Bonus Coverage table and Story 13.5.4 caveats below. |
 
 ### (c) Partially Implemented — 0 words (empty after Story 10.3)
 
@@ -351,7 +351,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ## Core Extension Bonus Coverage
 
-11 of 46 DPANS94 §6.2 Core Extension words are implemented. (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
+12 of 46 DPANS94 §6.2 Core Extension words are implemented (PAD added by Story 13.5.4 — TD-6 closure 2026-05-06). (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
 
 | Word | Stack Effect | Source | Notes |
 |------|-------------|--------|-------|
@@ -360,6 +360,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | `HEX` | `( -- )` | `formatting.asm:370` | Set BASE to 16 |
 | `HOLDS` | `( c-addr u -- )` | `pictured.asm` (Story 10.7) | Forth-2014 addition; inserts counted string into pictured buffer |
 | `MARKER` | `( "<spaces>name" -- )` | `system.asm:22` | Snapshot/restore dictionary state |
+| `PAD` | `( -- c-addr )` | `memory.asm` (Story 13.5.4) | DPANS94 §6.2.2000. Returns transient region address at HERE+`PAD_OFFSET` (84 bytes). Survives parsing of one space-delimited name per §3.3.3.6 (WORD writes ≤32 bytes at HERE+1, leaving HERE+33..+84+ untouched). TD-6 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.4 caveats below. |
 | `PICK` | `( xu...x0 u -- xu...x0 xu )` | `stack_ops.asm:94` | |
 | `ROLL` | `( xu...x0 u -- xu-1...x0 xu )` | `stack_ops.asm:112` | |
 | `\` | `( "ccc" -- )` | `strings.asm:806` | Line comment; F_IMMEDIATE |
@@ -593,6 +594,96 @@ file-positioning words; Story 13.4 wires source-input nesting.
   2026-05-05 (Tag-Blocking Slate row 13.5.3) under
   `feedback_no_preexisting_discharge.md` Lesson 13-B — the worked example
   cited in the project-lead reframe codifying the standing commitment.
+
+**Story 13.5.4 caveats (TD-6 closure 2026-05-06):**
+- ANS §6.2.2000 `PAD ( -- c-addr )` returns the address of a transient
+  region for intermediate processing; per §3.3.3.6 the contents are
+  unaffected by the application's parsing of any one space-delimited
+  name. Pre-13.5.4 antforth shipped `/PAD ENVIRONMENT?` returning
+  `( 84 -1 )` (claiming an 84-byte PAD region per §3.2.6) but **no
+  `PAD` word existed** — calling `PAD` at the REPL threw -13 (undefined).
+  The compliance claim diverged from the delivered surface. Story 13.5.4
+  closes that gap by adding a real `PAD` word that returns
+  `HERE + PAD_OFFSET` (84). The pad-at-HERE+84 location structurally
+  satisfies the §3.3.3.6 single-parse survival guarantee because `WORD`
+  stages its counted-string output at `HERE+0..HERE+u` (count byte at
+  `HERE+0`, ≤31 chars at `HERE+1..HERE+u` per `F_LENMASK`; see
+  `src/strings.asm:145` storing count and `:85` `INC HL` before char
+  emission), leaving `HERE+32..HERE+84+` untouched by any single parse
+  step. The 84-byte buffer at `[PAD, PAD+84)` is guaranteed stable
+  across one WORD parse.
+- **Canonical cross-line transient-buffer guidance** (added with
+  Story 13.5.4, applies project-wide):
+    - **`PAD`** = single-line transient region, up to 84 bytes,
+      survives one WORD parse per §3.3.3.6. Use for short scratch
+      buffers that need to survive across REPL lines.
+    - **`CREATE BUF N ALLOT` named buffers** = permanent (until
+      `MARKER` rollback or program exit), survive arbitrary parse /
+      compile / `,` / `ALLOT` operations. Use for buffers larger than
+      84 bytes or that need to survive across multiple parse steps,
+      colon-definition compilation, or dictionary mutation.
+    - **`HERE`** = volatile dictionary-boundary cursor; every `WORD`
+      parse writes the counted-string output at `HERE+0..HERE+u`
+      (count byte at `HERE+0`, ≤31 chars at `HERE+1..HERE+u` per
+      F_LENMASK). HERE-as-buffer is **wrong for cross-line use** —
+      the data at `HERE+0..HERE+31` is destroyed on the next REPL
+      line's first parsed token. Same-line use (store
+      and consume on one source line) is correct and idiomatic; the
+      WORD/S" inner-interpreter consumers rely on this.
+- **Pre-fix bug shape was dormant under regression tests:** no probe
+  exercised (i) `PAD`-the-word directly (would have caught the missing
+  word — would throw -13) or (ii) cross-line transient-buffer survival
+  (the F-9 hardware-finding shape: line N stores READ-FILE output at
+  HERE; line N+1 reads it back, gets the next-line WORD's counted
+  string instead of file content). All Makefile and `tests/*.fth`
+  HERE-as-buffer probes use HERE same-line — store, consume, discard
+  on one source line — which is correct usage. Story 13.5.4 closes the
+  regression-coverage gap with REPL tests 956..959, each
+  verdict-modulated to assert post-fix behaviour: (p1) `PAD` returns a
+  valid c-addr (pre-fix throws -13); (p2) PAD survives three
+  intervening WORD parses across four REPL lines per §3.3.3.6;
+  (p3) PAD across READ-FILE consume cycle pins the F-9 hardware-finding
+  shape against the post-fix surface (`Hello!` from disk fixture survives
+  the line-N+1 WORD parse for `PAD 6 TYPE`); (p4) HERE-vs-PAD
+  volatility distinguishability — orthogonal regression sentinel that
+  fails if either HERE somehow starts surviving parsing or PAD becomes
+  volatile.
+- **F-9 hardware reproducer fixed-on-hardware:** Story 13.6 hardware
+  run-1 surfaced a smoke-batch probe shape `READ-FILE` at HERE on line
+  N + `." SZ="` (counted-string TYPE) on line N+1 that emitted
+  `\x04type\x1A` on real CP/M 2.2 (MicroBeast SD) instead of the file
+  content — the line-N+1 parsed `." SZ="` had clobbered HERE+1..HERE+5
+  with its counted-string output. Same shape latent on iz-cpm but
+  no test caught it. Probe (p3) re-runs the F-9 reproducer shape against
+  the post-fix `PAD` surface; AC #11 hardware smoke confirms the fix
+  takes on real CP/M.
+- **Origin lineage:** TD-6 was surfaced first as Story 13.5 adversarial
+  review F3 (catalogue at
+  `_bmad-output/implementation-artifacts/13-5-r-o-close-file-destructive-flush-audit-and-fix.md:217`,
+  disposition row at `:306`: "LOW (out-of-scope, documented): F3 (PAD
+  undefined). … Recommend separate stories for F2 (proper `."` fix)
+  and F3 (add PAD per ANS Forth §6.2.2000)."), and again as Story 13.6
+  hardware-finding F-9 at
+  `_bmad-output/implementation-artifacts/13-6-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4.md:1192`
+  (downgraded from HIGH-CANDIDATE to LOW after `src/strings.asm:85`
+  inspection; revised diagnosis: "antforth's `WORD` writes counted-string
+  output at HERE+1, clobbering whatever READ-FILE wrote there on the
+  previous line. **HERE is volatile across REPL lines.**"). Both
+  dispositions ("LOW out-of-scope" and "LOW NOT-a-kernel-defect") were
+  retroactively re-classified upward at the Epic 13 retrospective
+  2026-05-05 (Tag-Blocking Slate row 13.5.4) under
+  `feedback_no_preexisting_discharge.md` Lesson 13-B — TD-6 was the
+  second worked example (alongside TD-5) cited in the project-lead
+  reframe codifying the "pre-existing is not a discharge for correctness"
+  standing commitment.
+- **Fix shape pick (c) chosen over (a) and (b)** because the catalogue
+  evidence showed zero production-code cross-line transient-buffer needs
+  but the `/PAD ENVIRONMENT?` compliance claim already presupposes
+  PAD-the-word per §3.2.6. Pick (c) closes the surface gap at minimal
+  byte cost (+26 bytes total: header 6 + body 20 — see Story 13.5.4
+  Completion Notes Task 9) without disturbing UserArea slots (pick (a)
+  HALT trigger) and without regressing the compliance claim by
+  returning `( 0 0 )` from `/PAD ENVIRONMENT?` (pick (b) sub-clause).
 
 ### Non-standard words (not in Core or Core Extension)
 

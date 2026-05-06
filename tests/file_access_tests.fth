@@ -378,8 +378,11 @@ FA @ CLOSE-FILE DROP  S" T16.TXT" DELETE-FILE DROP
 \     extra padded record at the post-read FCB.CR position).
 \
 \ Probe-quality fixes that landed with the verdict-flip:
-\   * `PAD` (undefined in antforth) → `HERE` (free dictionary space
-\     used as a 5-byte scratch buffer for the partial read).
+\   * `PAD` (undefined in antforth at the time Story 13.5 was authored;
+\     PAD-the-word was added by Story 13.5.4 — TD-6 closure) → `HERE`
+\     (free dictionary space used as a 5-byte scratch buffer for the
+\     partial read; same-line use is canonical, so this probe still
+\     correctly uses HERE post-Story-13.5.4).
 \   * `." SZ="` (clobbered BC across the print, garbling D.'s
 \     subsequent FILE-SIZE output) → `S" SZ=" TYPE` (BC-preserving).
 \
@@ -417,8 +420,11 @@ FA @ CLOSE-FILE DROP  S" T16.TXT" DELETE-FILE DROP
 \ Probe-quality forward-port (Story 13.5 findings F2 + F3):
 \   * String labels use S" + TYPE (not ."), since ." clobbers BC
 \     across the print, garbling subsequent value prints.
-\   * Byte buffers use HERE (not PAD), since PAD is undefined in
-\     antforth (separate WISHLIST item).
+\   * Byte buffers use HERE (not PAD), since PAD was undefined in
+\     antforth at the time Story 13.6 was authored. PAD-the-word was
+\     added by Story 13.5.4 (TD-6 closure 2026-05-06); same-line HERE
+\     buffers in these probes remain correct and idiomatic, so no
+\     retrofit was applied per Story 13.5.4 AC #5.
 
 \ (s136-stress-a) Test 939 — pool-exhaust + post-release re-acquire
 \ AC #1(a) re-frame: test 908 already covers pool-exhaust → -69. New

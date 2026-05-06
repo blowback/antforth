@@ -130,6 +130,32 @@ w_HERE_cf:
         NEXT
 
 ; -----------------------------------------------
+; PAD ( -- c-addr )           ANS Forth 1994 §6.2.2000
+;   Push the address of a transient region that survives parsing
+;   of any one space-delimited name (§3.3.3.6). antforth places PAD
+;   at HERE+PAD_OFFSET (PAD_OFFSET = 84, src/constants.asm:44); WORD
+;   stages its counted-string output at HERE+0..HERE+31 (count byte
+;   at HERE+0, ≤31 chars at HERE+1..HERE+u per F_LENMASK; see
+;   src/strings.asm:145 storing count, :85 INC HL before chars), which
+;   leaves HERE+32..HERE+84+ untouched, so PAD survives a single WORD
+;   parse by construction.
+;   Story 13.5.4 / TD-6 closure (Epic 13.5 Tag-Blocking Slate, retro
+;   2026-05-05): adds PAD-the-word so /PAD ENVIRONMENT? ( 84 -1 )
+;   has the surface its compliance claim presupposes per §3.2.6.
+; -----------------------------------------------
+w_PAD:
+        DEFCODE "PAD", 0
+w_PAD_cf:
+        PUSH    BC              ; Save old TOS
+        LD      C, (IY+UserArea.here)
+        LD      B, (IY+UserArea.here+1)   ; BC = HERE
+        LD      HL, PAD_OFFSET             ; HL = 84
+        ADD     HL, BC                     ; HL = HERE + 84 = PAD
+        LD      B, H
+        LD      C, L                       ; BC = PAD (new TOS)
+        NEXT
+
+; -----------------------------------------------
 ; ALLOT ( n -- )
 ;   Advance HERE by n bytes
 ; -----------------------------------------------

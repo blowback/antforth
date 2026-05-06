@@ -8843,6 +8843,77 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 955 — Story 13.5.3 (p4) TD-5 interpret-mode .\" preserves TOS via INCLUDED top-level (T-S1353-P4-DQ-INCLUDED)"; \
 	else echo "FAIL: REPL test 955 — expected 'inside=7 ' (INCLUDED top-level .\" preserves TOS=7)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.5.4 TD-6 closure suite (956..959) ===
+	@# Per AC #8: probe matrix locks the post-fix PAD-the-word surface and
+	@# the cross-line PAD-survival guarantee per ANS §6.2.2000 / §3.3.3.6.
+	@# Verdict-modulated against pick (c) (PAD-the-word at HERE+PAD_OFFSET):
+	@# pre-fix tree FAILs trivially (PAD throws -13); post-fix tree PASSes.
+	@# === (p1) Test 956: PAD-the-word returns a valid c-addr ===
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'PAD HEX U. DECIMAL' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qiE '[0-9a-f][0-9a-f]+ +ok'; then \
+		echo "PASS: REPL test 956 — Story 13.5.4 (p1) TD-6 PAD-the-word returns valid c-addr (T-S1354-P1-PAD-DEFINED)"; \
+	else echo "FAIL: REPL test 956 — expected hex address followed by ' ok' from 'PAD HEX U.'; pre-fix tree throws -13 (PAD undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p2) Test 957: PAD survives single-WORD parsing per ANS §3.3.3.6 ===
+	@# Four REPL lines store 'A'/'B'/'C' at PAD/PAD+1/PAD+2 across three
+	@# parse steps; line 4 reads PAD..PAD+2 via PAD 3 TYPE. The §3.3.3.6
+	@# cross-line survival guarantee is exercised by the three intervening
+	@# WORD parses between the first PAD-store and the final PAD-read.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'65 PAD C!' \
+		'66 PAD 1+ C!' \
+		'67 PAD 2 + C!' \
+		'PAD 3 TYPE' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'ABC'; then \
+		echo "PASS: REPL test 957 — Story 13.5.4 (p2) TD-6 PAD survives cross-line WORD parsing per §3.3.3.6 (T-S1354-P2-PAD-CROSSLINE)"; \
+	else echo "FAIL: REPL test 957 — expected 'ABC' from 4-line PAD store-then-TYPE; pre-fix tree throws -13 on line 1 (PAD undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p3) Test 958: PAD across READ-FILE consume cycle (F-9 reproducer fixed) ===
+	@# Pins Story 13.6 hardware-finding F-9 ("HERE-as-cross-line-buffer")
+	@# against the post-fix PAD surface. Line 2 reads 6 bytes from disk
+	@# fixture into PAD; line 3 (separate REPL line) consumes via PAD 6
+	@# TYPE. Pre-fix: line 2 throws -13 (PAD undefined). Post-fix: PAD
+	@# region survives the line-3 WORD parses (longest token = "CLOSE-FILE"
+	@# = 10 chars + count = 11 bytes at HERE+0..HERE+10, well clear of
+	@# PAD = HERE+84). T1354PAD.TXT is idempotently pre-cleaned on line 1
+	@# (DELETE-FILE DROP — succeeds whether the fixture exists or not),
+	@# created on line 2, and deleted at end on line 5. The leading
+	@# precleaner ensures a verdict-flip run (e.g., on the pre-fix tree
+	@# where line 4 throws -13 before reaching the line-5 DELETE-FILE)
+	@# can be re-run cleanly without manual fixture cleanup.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'S" T1354PAD.TXT" DELETE-FILE DROP' \
+		'VARIABLE FA  S" T1354PAD.TXT" R/W CREATE-FILE THROW DUP S" Hello!" ROT WRITE-FILE THROW CLOSE-FILE THROW' \
+		'S" T1354PAD.TXT" R/O OPEN-FILE THROW FA !' \
+		'PAD 6 FA @ READ-FILE THROW DROP' \
+		'PAD 6 TYPE  FA @ CLOSE-FILE DROP  S" T1354PAD.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'Hello!'; then \
+		echo "PASS: REPL test 958 — Story 13.5.4 (p3) TD-6 PAD across READ-FILE consume cycle (F-9 fixed; T-S1354-P3-PAD-READFILE)"; \
+	else echo "FAIL: REPL test 958 — expected 'Hello!' from cross-line PAD READ-FILE consume; pre-fix tree throws -13 on line 3 (PAD undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p4) Test 959: HERE-vs-PAD volatility distinguishability ===
+	@# Critical regression sentinel for the F-9 mental-model gap.
+	@# Line 1: store 65 at HERE+0 and 66 at PAD+0.
+	@# Line 2: HERE C@ 65 = .  → expects 0 (HERE+0 was clobbered by line 2's
+	@#   first WORD parse — count byte for "HERE" written at HERE+0).
+	@#         PAD C@ 66 = .   → expects -1 (PAD region survives all line-2
+	@#   WORD parses; F_LENMASK ≤ 31 keeps writes at HERE+0..HERE+32, well
+	@#   clear of PAD = HERE+84).
+	@# If a future change makes HERE survive parsing, the first probe FAILs
+	@# (HERE C@ stays 65 → equality holds → -1 instead of 0).
+	@# If a future change makes PAD volatile, the second probe FAILs.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' \
+		'65 HERE C!  66 PAD C!' \
+		'HERE C@ 65 = .  PAD C@ 66 = .' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '0 +-1'; then \
+		echo "PASS: REPL test 959 — Story 13.5.4 (p4) TD-6 HERE-vs-PAD volatility distinguishability (T-S1354-P4-VOLATILITY)"; \
+	else echo "FAIL: REPL test 959 — expected '0 -1' (HERE volatile, PAD stable across REPL lines); pre-fix tree throws -13 on line 1 (PAD undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm

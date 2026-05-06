@@ -464,7 +464,7 @@ env_table:
         ; CORE -> true (post-Story-10.9: 133/133 §6.1 Core words implemented)
         db  4, "CORE", 2
         dw  $FFFF
-        ; CORE-EXT -> false (§6.2 partial: 11/46 implemented; DPANS94 §15.3.5.2 needs full set)
+        ; CORE-EXT -> false (§6.2 partial: 12/46 implemented post-Story-13.5.4; DPANS94 §15.3.5.2 needs full set)
         db  8, "CORE-EXT", 2
         dw  0
         ; FLOORED -> false (antforth's `/` is symmetric per sdivmod, not floored)
