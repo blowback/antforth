@@ -411,7 +411,7 @@ file-positioning words; Story 13.4 wires source-input nesting.
 | `CREATE-FILE` | 11.6.1.1010 | `file_access.asm` (Story 13.2) | `( c-addr u fam -- fileid ior )` — truncates if exists |
 | `CLOSE-FILE` | 11.6.1.0900 | `file_access.asm` (Story 13.2) | `( fileid -- ior )` — flush + close + pool_release |
 | `DELETE-FILE` | 11.6.1.1190 | `file_access.asm` (Story 13.2) | `( c-addr u -- ior )` — F_DELETE via transient FCB |
-| `READ-FILE` | 11.6.1.2080 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- u2 ior )` |
+| `READ-FILE` | 11.6.1.2080 | `file_access.asm` (Story 13.2 + 13.5.2) | `( c-addr u1 fileid -- u2 ior )` — clean EOF returns `ior=0` with `u2 < u1` (Story 13.2); BDOS F_READ I/O error returns non-zero `ior` (Story 13.5.2 — TD-3 closure; helper-layer tri-state signal) |
 | `WRITE-FILE` | 11.6.1.2480 | `file_access.asm` (Story 13.2) | `( c-addr u1 fileid -- ior )` — R/O guard via fcb_fam |
 | `FILE-POSITION` | 11.6.1.1520 | `file_access.asm` (Story 13.3) | `( fileid -- ud ior )` — high cell on TOS per §3.1.4.1 |
 | `REPOSITION-FILE` | 11.6.1.2142 | `file_access.asm` (Story 13.3 + 13.5.1) | `( ud fileid -- ior )` — auto-flush via dirty gate (Story 13.5.1); ior=5 if ≥ 16 MB; ior=6 if flush fails |
@@ -425,12 +425,13 @@ file-positioning words; Story 13.4 wires source-input nesting.
 - ior (recoverable): file not found, malformed filename, R/O write
   attempt, disk-full, EOF mid-read, REPOSITION-FILE 24-bit overflow
   (ior=5), REPOSITION-FILE flush-fail (ior=6, Story 13.5.1).
-- THROW (unrecoverable): `-37 THROW_FILE_IO` (file I/O error — currently
-  latent; allocated for forward use by `(file-refill)`'s F_READ error
-  path, Story 13.4 v2), `-38 THROW_FILE_NOT_FOUND` (raised by INCLUDED
-  when OPEN-FILE returns non-zero ior, Story 13.4 v2), `-69 THROW_FCB_EXHAUSTED`
-  (FCB pool full), `-70 THROW_FILE_INVALID_FID` (closed/stale FID — antforth
-  re-purpose of Forth 2014 §9.3.5 `-70 FREE`; see `docs/throw-codes.md` §b.1).
+- THROW (unrecoverable): `-37 THROW_FILE_IO` (file I/O error — Story 13.5.2
+  TD-3 closure 2026-05-05; raised by `(file-refill)` on BDOS F_READ
+  return `A > 1` via the helper-layer tri-state signal), `-38 THROW_FILE_NOT_FOUND`
+  (raised by INCLUDED when OPEN-FILE returns non-zero ior, Story 13.4 v2),
+  `-69 THROW_FCB_EXHAUSTED` (FCB pool full), `-70 THROW_FILE_INVALID_FID`
+  (closed/stale FID — antforth re-purpose of Forth 2014 §9.3.5 `-70 FREE`;
+  see `docs/throw-codes.md` §b.1).
 
 **Story 13.3 caveats:**
 - `FILE-SIZE` reports size rounded UP to the nearest 128-byte CP/M
@@ -531,6 +532,27 @@ file-positioning words; Story 13.4 wires source-input nesting.
   private `(SAVE-INPUT)` / `(RESTORE-INPUT)` plumbing in
   `outer_interpreter.asm:395-460`. Future absorption into the INCLUDE-
   TOP frame layout is a Story 13.6 candidate, not pursued here.
+
+**Story 13.5.2 caveats (TD-3 closure 2026-05-05):**
+- `READ-FILE` and `(file-refill)` previously collapsed BDOS F_READ EOF
+  (`A=1`) and I/O error (`A>1`) onto a single `CY=1` no-byte signal — the
+  Story 13.2 AC #17(h) deviation. Story 13.5.2 rewrites `file_byte_read`
+  to a tri-state signal: `CY=0,A=byte` (success), `CY=1,A=0` (clean EOF),
+  `CY=1,A!=0` (I/O error, A = BDOS return - 1). `READ-FILE` now reports
+  non-zero `ior` on real I/O error per ANS §11.6.1.2080; `(file-refill)`
+  raises `-37 THROW_FILE_IO` rather than silently truncating the source.
+- The I/O-error path is **dormant in practice** under iz-cpm (host-FS
+  errors surface via process signals, not by-record A>1 returns) and
+  under MicroBeast firmware as-of-2026-05-05 (no Story 13.x hardware run
+  has observed F_READ A>1 on healthy SD media). The Story 13.5.2 fix is
+  structural — the helper signals correctly when the path fires; no
+  hardware reproducer is in scope (impractical without a synthetic
+  media-fault injector).
+- `READ-FILE`'s I/O-error encoder mirrors `WRITE-FILE`'s `.wf_io_err`
+  shape (sign-extend `A=0xFF` to `ior=0xFFFF` per Code Review L5). For
+  READ-FILE, the helper applies `DEC A` so the helper-A range on CY=1 is
+  0..254 — the 0xFF sign-extend is dead code in current call paths but
+  retained for pattern-consistency with WRITE-FILE / CLOSE-FILE.
 
 ### Non-standard words (not in Core or Core Extension)
 

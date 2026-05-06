@@ -681,8 +681,30 @@ bdos_file_size:
 
 ; file_byte_read — Read one byte from FCB.
 ;   Entry: DE = FCB ptr.
-;   Exit:  CY = 0 + A = byte (success) / CY = 1 (EOF or read error).
+;   Exit:  CY = 0, A = byte                (success-with-byte)
+;          CY = 1, A = 0                   (clean EOF — BDOS F_READ returned 1)
+;          CY = 1, A != 0                  (I/O error — A = BDOS F_READ return - 1)
+;          Discriminate the two CY=1 cases with `JR Z, .clean_eof` — the
+;          .fbr_eof tail's `DEC A` sets Z based on A and the trailing SCF
+;          does not touch Z, so callers can branch on Z directly without
+;          a redundant `OR A`.
 ;   Preserves: DE, IX, IY. Clobbers: A, BC, HL, F.
+;   Story 13.5.2 (TD-3 closure 2026-05-05) — helper-layer rewrite per
+;     Story 13.2 AC #17(h) approach (i). The pre-13.5.2 protocol (CY=1
+;     for both EOF and I/O error) was the band-aid the Epic 13 retro
+;     re-classified upward. The new tri-state signal is consumed by
+;     `w_READ_FILE_cf` (clean EOF → ior=0; I/O error → non-zero ior) and
+;     by `(file-refill)` (clean EOF → flag-return; I/O error → -37 THROW).
+;   Dirty-flag policy on the no-byte path (Story 13.5.1 + 13.5.2):
+;     fcb_dirty is cleared ONLY on the success-with-byte refill arm
+;     (BDOS A=0). On clean EOF (A=1) DMA is unchanged so any pending
+;     write bytes remain valid in DMA and fcb_dirty stays set so a
+;     subsequent flush still commits them. On I/O error (A>1) DMA may
+;     be partially clobbered per CP/M F_READ semantics; fcb_dirty is
+;     intentionally NOT cleared (the user's write data may still be
+;     intact, and silently dropping it would mask write loss). The
+;     consumer's contract on -37 / non-zero ior is "this FCB's R/W
+;     state is suspect; close-without-flush is the safe path."
 file_byte_read:
         PUSH    DE                      ; preserve FCB ptr for caller
         ; Compute index → save to scratch
@@ -762,9 +784,13 @@ file_byte_read:
         ; OR A above sets Z if A=0 — caller doesn't read Z, only CY/A.
         RET
 .fbr_eof:
-        ; F_READ returned non-zero → EOF or error. Reset pos to 128
-        ; (sentinel: stay-EOF; subsequent reads keep returning EOF until
-        ; the FCB is re-positioned).
+        ; F_READ returned non-zero → EOF (A=1) or I/O error (A>1).
+        ; Story 13.5.2 — stash the BDOS A return BEFORE the pos-sentinel
+        ; update clobbers A; reload + DEC A at the tail to encode the
+        ; tri-state CY+A signal (clean EOF → A=0; I/O error → A=A_BDOS-1).
+        LD      (.fbr_err), A
+        ; Reset pos to 128 (sentinel: stay-EOF; subsequent reads keep
+        ; returning EOF until the FCB is re-positioned).
         LD      A, (.fbr_idx)
         LD      H, 0
         LD      L, A
@@ -772,9 +798,17 @@ file_byte_read:
         ADD     HL, DE
         LD      (HL), 128
         POP     DE                      ; restore caller's FCB ptr
-        SCF                             ; CY = 1 (EOF)
+        LD      A, (.fbr_err)
+        DEC     A                       ; A=1 (BDOS EOF) → 0; A>1 (BDOS error) → A-1
+        SCF                             ; CY = 1 (no byte; DEC A does not touch CY)
         RET
 .fbr_idx:       DB 0
+.fbr_err:       DB 0                    ; Story 13.5.2 — BDOS F_READ A return stash; the
+                                        ; .fbr_eof tail clobbers A while updating the
+                                        ; pos-sentinel, so the original return is parked
+                                        ; here on entry to the tail and reloaded just
+                                        ; before the DEC A / SCF that encodes the
+                                        ; tri-state signal.
 
 ; file_byte_write — Write one byte to FCB.
 ;   Entry: DE = FCB ptr; A = byte to write.
@@ -1781,14 +1815,15 @@ w_CLOSE_FILE_cf:
 ;   (u2 ≤ u1). On clean EOF, u2 reflects bytes-read-before-EOF and
 ;   ior = 0. On I/O error, ior != 0. Stale-FID raises -70.
 ;
-;   AC #17(h) note: Story 13.1's file_byte_read signals EOF and I/O
-;   error both via CY=1; Story 13.2 disambiguates only "no bytes vs
-;   some bytes" at the user-facing layer. Per the explicit ANS rule
-;   ("If u1 bytes are not available, this is not an exception"), all
-;   CY=1 returns map to clean EOF (ior=0) — the rare distinguishable
-;   I/O error path on CP/M F_READ (BDOS A return >1) is not
-;   surfaced separately here. Recorded as a deviation from approach
-;   (i); helper-layer rewrite deferred per AC #19 escalation gate.
+;   AC #17(h) closure (Story 13.5.2 TD-3 close 2026-05-05): Story 13.1's
+;   file_byte_read now signals tri-state CY+A — clean EOF returns CY=1, A=0
+;   (mapped to ior=0 per ANS §11.6.1.2080's "u1 bytes not available is not
+;   an exception"); BDOS F_READ I/O error returns CY=1, A!=0 (mapped to
+;   non-zero ior, sign-extended to 0xFFFF when A=0xFF, per WRITE-FILE's
+;   .wf_io_err / CLOSE-FILE convention — Code Review L5 in Story 13.2).
+;   The Story 13.2 deviation noted here previously is now closed; the
+;   helper-layer rewrite is the structural fix originally scoped at
+;   AC #17(h) approach (i).
 ; -----------------------------------------------
 w_READ_FILE:
         DEFCODE "READ-FILE", 0
@@ -1815,11 +1850,12 @@ w_READ_FILE_cf:
         LD      HL, (fac_count)
         LD      A, H
         OR      L
-        JR      Z, .rf_done             ; count exhausted
+        JR      Z, .rf_eof_clean        ; count exhausted → ior = 0
         ; Read one byte
         LD      DE, (fac_fcb)
-        CALL    file_byte_read          ; A = byte, CY = 0 success / 1 EOF
-        JR      C, .rf_eof
+        CALL    file_byte_read          ; tri-state: CY=0 A=byte / CY=1 A=0 clean EOF /
+                                        ; CY=1 A!=0 I/O error (Story 13.5.2)
+        JR      C, .rf_no_byte
         ; Store byte at c-addr + u2_so_far
         LD      HL, (fac_buf)
         LD      DE, (fac_done)
@@ -1833,13 +1869,28 @@ w_READ_FILE_cf:
         DEC     HL
         LD      (fac_count), HL
         JR      .rf_loop
-.rf_eof:
-        ; Clean EOF — ior = 0 per §11.6.1.2080.
+.rf_no_byte:
+        ; Helper signalled CY=1; Z (set by helper's DEC A; SCF preserves Z)
+        ; discriminates clean EOF (Z=1, A=0) vs I/O error (Z=0, A!=0).
+        JR      NZ, .rf_io_err
+        ; A = 0 → clean EOF: ior = 0 per §11.6.1.2080. Fall through.
+.rf_eof_clean:
+        LD      BC, 0                   ; ior = 0
+        JR      .rf_done
+.rf_io_err:
+        ; A != 0 → I/O error. A holds (BDOS F_READ return - 1) per the
+        ; helper's tri-state encoding (range 1..254 — BDOS A=0 is success
+        ; and never reaches this tail; BDOS A=1 is clean EOF and routes
+        ; to .rf_eof_clean). The WRITE-FILE / CLOSE-FILE sign-extend of
+        ; A=0xFF → 0xFFFF is structurally unreachable here (would require
+        ; helper-A = 0xFF, i.e. BDOS A = 0x100, impossible in 8-bit) so
+        ; the BC encoding is a single LD B, 0; LD C, A.
+        LD      C, A
+        LD      B, 0
 .rf_done:
-        ; Push u2, set BC = ior = 0.
+        ; BC = ior set by upstream branch; push u2 and exit.
         LD      HL, (fac_done)
         PUSH    HL                      ; u2
-        LD      BC, 0                   ; ior = 0
         LD      DE, (fac_ip)
         NEXT
 
@@ -2715,6 +2766,22 @@ w_PAREN_CLOSE_CURRENT_FID_cf:
 ;   Precondition: USER.source_id > 0 (real FID, not keyboard 0 / not
 ;     EVALUATE -1). Defensive guard: raises -70 THROW_FILE_INVALID_FID
 ;     if the precondition fails (caller misfire defence).
+;
+;   I/O-error handling (Story 13.5.2 — TD-3 closure 2026-05-05): Story 13.1's
+;     file_byte_read now signals tri-state CY+A (helper rewrite). On clean
+;     EOF (CY=1, A=0) (file-refill) preserves its existing flag-return
+;     contract (-1 if any bytes read before EOF, 0 on immediate EOF). On
+;     BDOS F_READ I/O error (CY=1, A!=0) the call sites raise -37
+;     THROW_FILE_IO via the shared .fr_io_error tail rather than silently
+;     truncating the source — closing the latent flagged at constants.asm
+;     for THROW_FILE_IO. Caller stack discipline: .fr_io_error pops the
+;     entry-time PUSH BC before jumping into THROW (mirrors .fr_invalid_src).
+;     Note on input-source frame: (file-refill) mutates UserArea.tib_addr /
+;     tib_in / fr_pos in flight. INCLUDED / INCLUDE-FILE wrap their refill
+;     loop in CATCH and on a caught THROW call (close-current-fid) +
+;     (input-frame-pop) before re-raising (file_access.asm:2947-2949 /
+;     :2997-3000), so the pre-INCLUDE input-source frame is restored;
+;     callers reaching THROW from -37 see the OUTER source unchanged.
 ; antforth internal  (file-refill) — read one line from file source into per-FCB slab
 ; -----------------------------------------------
 w_PAREN_FILE_REFILL:
@@ -2747,8 +2814,9 @@ w_PAREN_FILE_REFILL_cf:
         LD      (IY+UserArea.tib_in+1), 0
 .fr_loop:
         LD      DE, (fr_fid)
-        CALL    file_byte_read          ; A = byte / CY = 1 on EOF
-        JR      C, .fr_eof
+        CALL    file_byte_read          ; tri-state: CY=0 byte / CY=1 A=0 EOF /
+                                        ; CY=1 A!=0 I/O error (Story 13.5.2)
+        JR      C, .fr_loop_no_byte
         CP      0x0A
         JR      Z, .fr_terminator
         CP      0x1A
@@ -2775,12 +2843,22 @@ w_PAREN_FILE_REFILL_cf:
         ; pos >= 128. Consume bytes silently until terminator / EOF.
         LD      DE, (fr_fid)
         CALL    file_byte_read
-        JR      C, .fr_terminator       ; EOF in truncate-consume → return data
+        JR      C, .fr_trunc_no_byte
         CP      0x0A
         JR      Z, .fr_terminator
         CP      0x1A
         JR      Z, .fr_terminator
         JR      .fr_truncate
+.fr_loop_no_byte:
+        ; Helper signalled CY=1; Z (set by helper's DEC A; SCF preserves Z)
+        ; discriminates clean EOF (Z=1, A=0) vs I/O error (Z=0, A!=0).
+        JR      Z, .fr_eof              ; clean EOF → existing flag-return path
+        JR      .fr_io_error            ; A != 0 → BDOS F_READ I/O error → -37 THROW
+.fr_trunc_no_byte:
+        ; Same shape as .fr_loop_no_byte — clean EOF mid-truncate returns the
+        ; data captured so far (already-stored TIB prefix); I/O error THROWs.
+        JR      Z, .fr_terminator       ; clean EOF mid-truncate → return data
+        JR      .fr_io_error            ; A != 0 → BDOS F_READ I/O error → -37 THROW
 .fr_eof:
         ; F_READ returned EOF. Return -1 if any bytes read, else 0.
         LD      A, (fr_pos)
@@ -2802,6 +2880,15 @@ w_PAREN_FILE_REFILL_cf:
         LD      BC, 0                   ; flag = FALSE
         LD      DE, (fac_ip)
         NEXT
+.fr_io_error:
+        ; Story 13.5.2 (TD-3 closure) — BDOS F_READ I/O error path. Shared
+        ; tail for .fr_loop_no_byte / .fr_trunc_no_byte. Discard the saved
+        ; old-TOS and raise -37 THROW_FILE_IO. Stack shape mirrors
+        ; .fr_invalid_src exactly so the recovery contract (caller's CATCH
+        ; frame restores SP) is identical.
+        POP     BC                      ; balance the entry-time PUSH BC
+        LD      BC, THROW_FILE_IO
+        JP      w_THROW_cf.kernel_entry
 .fr_invalid_src:
         ; Discard the saved old-TOS and raise -70.
         POP     BC                      ; balance the PUSH BC
@@ -3150,6 +3237,46 @@ w_FILE_IO_SANITY_cf:
         LD      B, str_fis_readEOF_ok_len
         CALL    fis_print_line
 
+        ; --- Step 7.5 (Story 13.5.2 H1) — synthetic-BDOS-A injection of the
+        ;     .fbr_eof tri-state discriminator. Real BDOS F_READ A>1 is
+        ;     dormant in practice on iz-cpm and MicroBeast firmware (no
+        ;     deterministic injector via real I/O), so this step calls
+        ;     directly into the helper's tail with synthetic A values to
+        ;     exercise the tri-state encoding (CY=1, A=0 for clean EOF;
+        ;     CY=1, A=A_BDOS-1 for I/O error). PASS-line oracle: prints
+        ;     "io-disc ok bdos=1>A0 bdos=2>A1 bdos=ff>Afe" iff all three
+        ;     synthetic returns map through the helper as expected.
+        ; Test (a) — synthetic BDOS A=1 (clean EOF) → helper CY=1, A=0.
+        LD      A, (fis_idx)
+        LD      (file_byte_read.fbr_idx), A
+        LD      DE, (fis_fcb)
+        LD      A, 1                    ; synthetic BDOS A=1
+        CALL    fis_call_fbr_eof
+        JP      NC, fis_fail_io_disc    ; CY must be 1
+        OR      A
+        JP      NZ, fis_fail_io_disc    ; A must be 0 (clean EOF discriminant)
+        ; Test (b) — synthetic BDOS A=2 (I/O error) → helper CY=1, A=1.
+        LD      A, (fis_idx)
+        LD      (file_byte_read.fbr_idx), A
+        LD      DE, (fis_fcb)
+        LD      A, 2                    ; synthetic BDOS A=2
+        CALL    fis_call_fbr_eof
+        JP      NC, fis_fail_io_disc    ; CY must be 1
+        CP      1
+        JP      NZ, fis_fail_io_disc    ; A must be 1 (= BDOS 2 - 1)
+        ; Test (c) — synthetic BDOS A=0xFF → helper CY=1, A=0xFE.
+        LD      A, (fis_idx)
+        LD      (file_byte_read.fbr_idx), A
+        LD      DE, (fis_fcb)
+        LD      A, 0xFF                 ; synthetic BDOS A=0xFF (worst case)
+        CALL    fis_call_fbr_eof
+        JP      NC, fis_fail_io_disc
+        CP      0xFE
+        JP      NZ, fis_fail_io_disc    ; A must be 0xFE (= BDOS 0xFF - 1)
+        LD      HL, str_fis_io_disc_ok
+        LD      B, str_fis_io_disc_ok_len
+        CALL    fis_print_line
+
         ; --- Step 8: F_CLOSE ---
         LD      DE, (fis_fcb)
         CALL    bdos_close_file
@@ -3227,7 +3354,32 @@ fis_fail_close:
 fis_fail_delete:
         LD      HL, str_fis_delete_fail
         LD      C, str_fis_delete_fail_len
-        ; fall through
+        JR      fis_fail_finish_with_a
+fis_fail_io_disc:
+        ; Story 13.5.2 H1 — .fbr_eof discriminator probe failed. A holds
+        ; whatever the helper returned (or 0 if CY was wrong); print it
+        ; via the shared finisher.
+        LD      HL, str_fis_io_disc_fail
+        LD      C, str_fis_io_disc_fail_len
+        JR      fis_fail_finish_with_a
+
+; -----------------------------------------------
+; fis_call_fbr_eof — Story 13.5.2 H1 thunk: enter file_byte_read.fbr_eof
+;   under the same stack shape file_byte_read sets up at its entry, so
+;   the .fbr_eof tail's POP DE recovers the FCB ptr cleanly and its RET
+;   returns to the harness rather than to the FCB ptr.
+;   Entry: A = synthetic BDOS F_READ return value; DE = FCB ptr;
+;          (file_byte_read.fbr_idx) already set to the FCB index.
+;   Exit:  CY+A per the helper's tri-state encoding (clean EOF: CY=1,
+;          A=0; I/O error: CY=1, A=A_BDOS-1). Clobbers: A, BC, DE, HL, F.
+fis_call_fbr_eof:
+        ; Stack at CALL entry: [harness_retaddr (top)]. .fbr_eof's POP DE
+        ; expects the FCB ptr on top of the harness retaddr — exactly the
+        ; shape file_byte_read's entry-time PUSH DE creates. So push DE
+        ; on top of the retaddr and JP into .fbr_eof; its POP DE will
+        ; pull the FCB ptr; its terminal RET will pop the harness retaddr.
+        PUSH    DE                      ; stack: [FCB ptr (top), harness_retaddr]
+        JP      file_byte_read.fbr_eof
 
 fis_fail_finish_with_a:
         ; Save the bdos result A across the print
@@ -3340,6 +3492,8 @@ str_fis_seek0_ok:       DB "seek0 ok"
 str_fis_seek0_ok_len    EQU $ - str_fis_seek0_ok
 str_fis_readEOF_ok:     DB "readEOF ok bytes=0"
 str_fis_readEOF_ok_len  EQU $ - str_fis_readEOF_ok
+str_fis_io_disc_ok:     DB "io-disc ok bdos=1>A0 bdos=2>A1 bdos=ff>Afe"
+str_fis_io_disc_ok_len  EQU $ - str_fis_io_disc_ok
 str_fis_close_ok:       DB "close ok"
 str_fis_close_ok_len    EQU $ - str_fis_close_ok
 str_fis_delete_ok:      DB "delete ok"
@@ -3368,6 +3522,8 @@ str_fis_close_fail:     DB "close FAIL bdos="
 str_fis_close_fail_len  EQU $ - str_fis_close_fail
 str_fis_delete_fail:    DB "delete FAIL bdos="
 str_fis_delete_fail_len EQU $ - str_fis_delete_fail
+str_fis_io_disc_fail:   DB "io-disc FAIL bdos="
+str_fis_io_disc_fail_len EQU $ - str_fis_io_disc_fail
 
 ; -----------------------------------------------
 ; 200-byte HELLO.TXT content per AC #6 / AC #7. First byte = 'A' (0x41),

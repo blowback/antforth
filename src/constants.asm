@@ -85,8 +85,10 @@ THROW_SEARCH_ORDER_OVERFLOW EQU -49  ; ANS Forth 1994 §9.3.5 (search-order over
 THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5
 
 ; --- File-Access codes (ANS Forth 1994 §9.3.5) — Story 13.4 v2 allocation ---
-; -37 raised by (file-refill) on F_READ I/O error (currently latent: the
-;   helper treats F_READ failure as EOF; reserved for forward use).
+; -37 raised by (file-refill) on F_READ I/O error (Story 13.5.2 closure
+;   2026-05-05; previously latent — file_byte_read now signals tri-state
+;   CY+A so the consumer can distinguish clean EOF from real I/O error
+;   and raise -37 on the latter).
 ; -38 raised by INCLUDED when OPEN-FILE returns non-zero ior.
 THROW_FILE_IO           EQU -37  ; ANS Forth 1994 §9.3.5
 THROW_FILE_NOT_FOUND    EQU -38  ; ANS Forth 1994 §9.3.5

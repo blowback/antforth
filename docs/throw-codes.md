@@ -106,7 +106,7 @@ back to the per-file inventory in §d.
 | -34 | block write exception | no | — |
 | -35 | invalid block number | no | — |
 | -36 | invalid file position | no | — |
-| -37 | file I/O exception | **latent** (Story 13.4 v2) | `THROW_FILE_IO EQU -37` (`constants.asm`) — allocated for `(file-refill)`'s F_READ I/O error path; currently the helper treats F_READ failure as EOF |
+| -37 | file I/O exception | **done — Story 13.5.2** | `THROW_FILE_IO EQU -37` (`constants.asm`) — `(file-refill)` `.fr_io_error` raises this on BDOS F_READ I/O error (`A > 1`); `READ-FILE`'s `.rf_io_err` returns the same condition as a non-zero `ior` on the user-facing path. Helper-layer rewrite of `file_byte_read` (Story 13.5.2 — TD-3 close) signals tri-state CY+A so callers can distinguish clean EOF from real I/O error |
 | -38 | non-existent file | yes (Story 13.4 v2) | `THROW_FILE_NOT_FOUND EQU -38` (`constants.asm`) — raised by INCLUDED on OPEN-FILE failure |
 | -39 | unexpected end of file | no | — |
 | -40 | invalid BASE for floating point conversion | no | — |

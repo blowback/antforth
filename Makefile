@@ -8721,6 +8721,74 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 948 — Story 13.5.1 (p5) defence-in-depth R/O REPOSITION no-op (T-S1351-P5-RO-DEFENCE)"; \
 	else echo "FAIL: REPL test 948 — expected 'T48=0 0 0 ' (R/O REPOSITION 0 → FILE-POSITION returns 0 0 0; Story 13.5 has-written gate intact)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.5.2 TD-3 closure suite (949..951) ===
+	@# Per AC #7: helper-layer rewrite of file_byte_read tri-state signal.
+	@# Probes assert post-fix behaviour and serve as the regression boundary;
+	@# pre-fix clean-EOF was already mapped to ior=0 (Story 13.2 deviation),
+	@# so probes (p1)..(p3) lock the post-fix preservation rather than flipping.
+	@# (p4) I/O-error path verdict: structural-only — no deterministic injector
+	@# inside iz-cpm / MicroBeast firmware reaches BDOS F_READ A>1 on a
+	@# well-formed FCB; verdict recorded in the story Completion Notes Task 7
+	@# (no Makefile test number consumed).
+	@# === (p1) Test 949: clean EOF at single-record boundary (READ past EOF → u2=128 ior=0; READ 1 → u2=0 ior=0) ===
+	@# Payload = 128 bytes (one full CP/M record, no partial-record padding)
+	@# so the on-disk file size matches the byte-stream EOF position. Reading
+	@# past the record's last byte exercises the .fbr_eof tri-state tail
+	@# (clean EOF: BDOS F_READ A=1 → helper CY=1, A=0 → consumer ior=0).
+	@# Output convention matches Story 13.2 test 906 (`. .` prints ior u2).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B49 256 ALLOT' \
+		': F49 128 0 DO  I 26 MOD 65 +  B49 I +  C!  LOOP ;' \
+		'F49' \
+		'S" TS1352EF.TXT" R/W CREATE-FILE DROP FA !' \
+		'B49 128 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TS1352EF.TXT" R/O OPEN-FILE DROP FA !' \
+		'S" T49A=" TYPE B49 200 FA @ READ-FILE . . CR' \
+		'S" T49B=" TYPE B49 1 FA @ READ-FILE . . CR' \
+		'FA @ CLOSE-FILE DROP S" TS1352EF.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T49A=0 128 ' && echo "$$OUTPUT" | grep -q 'T49B=0 0 '; then \
+		echo "PASS: REPL test 949 — Story 13.5.2 (p1) TD-3 READ-FILE clean EOF returns ior=0 (T-S1352-P1-EOF-EXHAUST)"; \
+	else echo "FAIL: REPL test 949 — expected 'T49A=0 128 ' (first read ior=0 u2=128) and 'T49B=0 0 ' (idempotent stay-EOF)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p2) Test 950: cross-record clean EOF (256 bytes = 2 full records; READ past EOF) ===
+	@# Verifies the post-fix tail accumulator behaviour preserves clean-EOF
+	@# semantics across record refills. Spot-check first/last bytes confirms
+	@# read content matches the write payload (B50[0]='A'=65, B50[255]='V'=86).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B50 320 ALLOT' \
+		': F50 256 0 DO  I 26 MOD 65 +  B50 I +  C!  LOOP ;' \
+		'F50' \
+		'S" TS1352CR.TXT" R/W CREATE-FILE DROP FA !' \
+		'B50 256 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" TS1352CR.TXT" R/O OPEN-FILE DROP FA !' \
+		'S" T50A=" TYPE B50 300 FA @ READ-FILE . . CR' \
+		'S" T50B=" TYPE B50 1 FA @ READ-FILE . . CR' \
+		'S" T50C=" TYPE B50 C@ . B50 255 + C@ . CR' \
+		'FA @ CLOSE-FILE DROP S" TS1352CR.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T50A=0 256 ' && echo "$$OUTPUT" | grep -q 'T50B=0 0 ' && echo "$$OUTPUT" | grep -q 'T50C=65 86 '; then \
+		echo "PASS: REPL test 950 — Story 13.5.2 (p2) TD-3 READ-FILE cross-record clean EOF (T-S1352-P2-EOF-CROSSREC)"; \
+	else echo "FAIL: REPL test 950 — expected 'T50A=0 256 ' (cross-record read past EOF), 'T50B=0 0 ' (stay-EOF), 'T50C=65 86 ' (content first/last)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p3) Test 951: (file-refill) clean EOF preserved (INCLUDED prints both lines, returns clean) ===
+	@# Verifies the post-fix .fr_loop_no_byte / .fr_trunc_no_byte arms still
+	@# route clean-EOF (CY=1, A=0) to the existing flag-return path. File
+	@# bytes for "123 .\n456 .\n": 49 50 51 32 46 10  52 53 54 32 46 10 = 12 bytes.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B51 32 ALLOT' \
+		': F51 49 B51 C! 50 B51 1+ C! 51 B51 2 + C! 32 B51 3 + C! 46 B51 4 + C! 10 B51 5 + C! ;' \
+		': G51 52 B51 6 + C! 53 B51 7 + C! 54 B51 8 + C! 32 B51 9 + C! 46 B51 10 + C! 10 B51 11 + C! ;' \
+		'F51 G51' \
+		'S" TS1352IN.FTH" R/W CREATE-FILE DROP FA !' \
+		'B51 12 FA @ WRITE-FILE DROP FA @ CLOSE-FILE DROP' \
+		'S" T51=" TYPE  S" TS1352IN.FTH" INCLUDED  S" =END" TYPE CR' \
+		'S" TS1352IN.FTH" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T51=123 456 =END'; then \
+		echo "PASS: REPL test 951 — Story 13.5.2 (p3) TD-3 (file-refill) clean EOF preserved via INCLUDED (T-S1352-P3-INCLUDED-EOF)"; \
+	else echo "FAIL: REPL test 951 — expected 'T51=123 456 =END' (INCLUDED prints both literal lines and returns cleanly past clean EOF)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm
@@ -8740,10 +8808,10 @@ $(FILESANITY): $(SRCS) | $(BUILDDIR)
 test-file-sanity: $(FILESANITY)
 	@echo "Running Story 13.1 file-sanity harness..."
 	@OUTPUT=$$(printf '(FILE-IO-SANITY)\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(FILESANITY) 2>/dev/null || true) && \
-	EXPECTED=$$(printf 'Sanity: HELLO.TXT\ncreate ok\nwrite200 ok bytes=200\nclose-w ok\nopen ok\nread200 ok bytes=200 first=A last=y\nseek0 ok\nreadEOF ok bytes=0\nclose ok\ndelete ok\nDone') && \
+	EXPECTED=$$(printf 'Sanity: HELLO.TXT\ncreate ok\nwrite200 ok bytes=200\nclose-w ok\nopen ok\nread200 ok bytes=200 first=A last=y\nseek0 ok\nreadEOF ok bytes=0\nio-disc ok bdos=1>A0 bdos=2>A1 bdos=ff>Afe\nclose ok\ndelete ok\nDone') && \
 	ACTUAL=$$(printf '%s' "$$OUTPUT" | tr -d '\r' | sed -n '/^Sanity: HELLO\.TXT$$/,/^Done$$/p') && \
 	if [ "$$ACTUAL" = "$$EXPECTED" ]; then \
-		echo "PASS: file-sanity test — 11 expected lines match exactly"; \
+		echo "PASS: file-sanity test — 12 expected lines match exactly (Story 13.5.2 H1: .fbr_eof tri-state discriminator probe)"; \
 	else \
 		echo "FAIL: file-sanity test — harness output does not match expected fixture"; \
 		echo "  Expected:"; printf '%s\n' "$$EXPECTED" | sed 's/^/    /'; \
