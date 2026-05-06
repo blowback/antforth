@@ -249,6 +249,6 @@ development_status:
   13.5-2-td-3-read-file-eof-error-disambiguation: done
   13.5-3-td-5-dot-quote-bc-clobber: done
   13.5-4-td-6-pad-here-cross-line-correctness: done
-  13.5-5-td-7-save-input-restore-input-for-evaluate: backlog
+  13.5-5-td-7-save-input-restore-input-for-evaluate: done
   13.5-6-epic-13-5-close-out-gate-and-antforth-2-0-tag: backlog
   epic-13.5-retrospective: optional

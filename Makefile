@@ -8914,6 +8914,86 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 959 — Story 13.5.4 (p4) TD-6 HERE-vs-PAD volatility distinguishability (T-S1354-P4-VOLATILITY)"; \
 	else echo "FAIL: REPL test 959 — expected '0 -1' (HERE volatile, PAD stable across REPL lines); pre-fix tree throws -13 on line 1 (PAD undefined)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.5.5 TD-7 closure suite (960..963) ===
+	@# Per AC #7: probe matrix locks the post-fix user-facing SAVE-INPUT /
+	@# RESTORE-INPUT surface (DPANS94 §6.2.2182 / §6.2.2148; the original
+	@# story spec swapped these citations — the implementation and probes
+	@# use the correct DPANS94 numbers per `feedback_standards_compliance`).
+	@# Pick (a) uniform-quadruple description shape:
+	@#   ( -- tib_addr tib_len >IN SOURCE-ID 4 ) on save;
+	@#   ( tib_addr tib_len >IN SOURCE-ID 4 -- flag ) on restore.
+	@# Verdict-modulated: pre-fix tree FAILs trivially (SAVE-INPUT and
+	@# RESTORE-INPUT throw -13 — undefined); post-fix tree PASSes.
+	@# === (p1) Test 960: SAVE-INPUT pushes 5 cells with count = 4 on top ===
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'SAVE-INPUT .S 2DROP 2DROP DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '<5>.*4 +ok'; then \
+		echo "PASS: REPL test 960 — Story 13.5.5 (p1) TD-7 SAVE-INPUT pushes 5 cells with count = 4 on top per §6.2.2182 (T-S1355-P1-SAVE-FIVE-CELLS)"; \
+	else echo "FAIL: REPL test 960 — expected '<5>' from .S followed by trailing '4 ok'; pre-fix tree throws -13 (SAVE-INPUT undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p2) Test 961: SAVE-INPUT/RESTORE-INPUT round-trip during EVALUATE ===
+	@# Defines a colon word TEST that calls SAVE-INPUT then RESTORE-INPUT
+	@# back-to-back, then S" TEST" EVALUATE invokes it inside an EVALUATEd
+	@# string (source_id = -1 — the binding TD-7 scope). The compiled body
+	@# avoids the rewind-loop trap because tib_in_at_save = end-of-string
+	@# (since no parsing happens inside TEST's body). RESTORE-INPUT
+	@# succeeds: count == 4, source_id (-1) matches, restores tib_in to
+	@# end-of-string, returns flag = 0. The trailing `.` prints 0.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' \
+		': T1355 SAVE-INPUT RESTORE-INPUT . ;' \
+		'S" T1355" EVALUATE' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^0 +ok'; then \
+		echo "PASS: REPL test 961 — Story 13.5.5 (p2) TD-7 SAVE/RESTORE-INPUT round-trip during EVALUATE returns flag = 0 per §6.2.2148 (T-S1355-P2-EVALUATE-ROUND-TRIP)"; \
+	else echo "FAIL: REPL test 961 — expected line starting '0  ok' from RESTORE-INPUT success-flag print; pre-fix tree throws -13 (SAVE-INPUT undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p3) Test 962: RESTORE-INPUT count-mismatch returns flag = -1 ===
+	@# Stack: 0 0 0 0 99 (four bogus description cells + bogus count = 99).
+	@# RESTORE-INPUT's count check sees BC = 99 != 4 → count_mismatch path:
+	@# returns flag = -1 (and per AC #5 caveat the bogus cells remain on
+	@# the stack — §6.2.2148 ambiguous condition; impl-defined). The
+	@# trailing `.` prints -1; trailing `2DROP 2DROP` cleans up the four
+	@# bogus description cells the impl-defined path left behind so the
+	@# probe is stack-neutral on EVALUATE return.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'S" 0 0 0 0 99 RESTORE-INPUT . 2DROP 2DROP " EVALUATE' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 +ok'; then \
+		echo "PASS: REPL test 962 — Story 13.5.5 (p3) TD-7 RESTORE-INPUT count-mismatch returns flag = -1 per §6.2.2148 ambiguous-condition (T-S1355-P3-COUNT-MISMATCH)"; \
+	else echo "FAIL: REPL test 962 — expected line starting '-1  ok' from RESTORE-INPUT count-mismatch flag print; pre-fix tree throws -13 (RESTORE-INPUT undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p4) Test 963: RESTORE-INPUT SOURCE-ID-mismatch returns flag = -1 ===
+	@# At REPL (source_id = 0). Push -1 (= bogus tib_addr), 0, 0, -1 (=
+	@# saved SOURCE-ID claiming -1 = EVALUATE), 4 (count). RESTORE-INPUT
+	@# count == 4 match → pops saved source_id = -1; current source_id
+	@# = 0; mismatch → src_mismatch path: drops 3 remaining description
+	@# cells, returns flag = -1, leaves UserArea unchanged. Trailing `.`
+	@# prints -1. Simplified shape per AC #7 fallback authority — exercises
+	@# the SOURCE-ID-mismatch path without the leak-via-CREATE complexity.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' \
+		'-1 0 0 -1 4 RESTORE-INPUT .' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 +ok'; then \
+		echo "PASS: REPL test 963 — Story 13.5.5 (p4) TD-7 RESTORE-INPUT SOURCE-ID-mismatch returns flag = -1 per §6.2.2148 ambiguous-condition (T-S1355-P4-SRCID-MISMATCH)"; \
+	else echo "FAIL: REPL test 963 — expected line starting '-1  ok' from RESTORE-INPUT SOURCE-ID-mismatch flag print; pre-fix tree throws -13 (RESTORE-INPUT undefined)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p5) Test 964: SAVE/RESTORE-INPUT round-trip ACTUALLY rewinds >IN ===
+	@# Code-review follow-up to (p2): the back-to-back save→restore in
+	@# (p2) doesn't mutate >IN between save and restore, so a write-back
+	@# bug in RESTORE-INPUT for the tib_in slot is invisible to it. (p5)
+	@# captures pre-SAVE >IN on the R-stack, mutates >IN to 99, calls
+	@# RESTORE-INPUT, and asserts the post-restore >IN equals the
+	@# captured pre-SAVE value. Exercises the binding TD-7 round-trip
+	@# scope (save → mutate-`>IN` → restore) inside an EVALUATEd string.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' \
+		': T1355MUT >IN @ >R SAVE-INPUT 99 >IN ! RESTORE-INPUT DROP >IN @ R> = . ;' \
+		'S" T1355MUT" EVALUATE' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^-1 +ok'; then \
+		echo "PASS: REPL test 964 — Story 13.5.5 (p5) TD-7 SAVE/RESTORE-INPUT actually rewinds >IN inside EVALUATE per §6.2.2148 (T-S1355-P5-IN-REWIND)"; \
+	else echo "FAIL: REPL test 964 — expected line starting '-1  ok' (post-restore >IN = pre-SAVE >IN); pre-fix tree throws -13"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm

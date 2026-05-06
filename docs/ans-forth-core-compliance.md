@@ -298,7 +298,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | `'` | `( "<spaces>name" -- xt )` | Implemented | `compiler.asm:26` | DEFWORD |
 | `>BODY` | `( xt -- a-addr )` | Implemented | `compiler.asm:11` | xt+5 (skips JP + does-addr) |
 | `ABORT"` | `( "ccc" x -- )` | Implemented | `system.asm:139` | F_IMMEDIATE; runtime `(ABORT")` at `system.asm:89` |
-| `EVALUATE` | `( i*x c-addr u -- j*x )` | Implemented | `outer_interpreter.asm:366` | Story 10.9; DEFWORD `(SAVE-INPUT) INTERPRET (RESTORE-INPUT)`; saves four USER source-spec cells (tib_addr, tib_len, tib_in, source_id) on R-stack across INTERPRET; source_id = -1 during EVALUATE per Forth 2014 §6.2.2218 |
+| `EVALUATE` | `( i*x c-addr u -- j*x )` | Implemented | `outer_interpreter.asm:366` | Story 10.9; DEFWORD `(SAVE-INPUT) INTERPRET (RESTORE-INPUT)`; saves four USER source-spec cells (tib_addr, tib_len, tib_in, source_id) on R-stack across INTERPRET; source_id = -1 during EVALUATE per Forth 2014 §6.2.2218. Distinct surfaces: the (paren) helpers here are EVALUATE's R-stack plumbing (install/uninstall semantics); the user-facing CORE-EXT counterparts `SAVE-INPUT` (§6.2.2182) and `RESTORE-INPUT` (§6.2.2148) — added by Story 13.5.5 — are data-stack snapshot/rewind words. See Core Extension table below + Story 13.5.5 caveats. |
 | `ENVIRONMENT?` | `( c-addr u -- false \| i*x true )` | Implemented | `system.asm:277` | Story 10.9; DEFCODE walking a 14-entry static `env_table` of DPANS94 §3.2.6 standard query keys (case-sensitive); supports single, double, and flag value kinds |
 
 ---
@@ -351,7 +351,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ## Core Extension Bonus Coverage
 
-12 of 46 DPANS94 §6.2 Core Extension words are implemented (PAD added by Story 13.5.4 — TD-6 closure 2026-05-06). (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
+**14** of 46 DPANS94 §6.2 Core Extension words are implemented (SAVE-INPUT + RESTORE-INPUT added by Story 13.5.5 — TD-7 closure 2026-05-06; PAD added by Story 13.5.4 — TD-6 closure 2026-05-06). (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
 
 | Word | Stack Effect | Source | Notes |
 |------|-------------|--------|-------|
@@ -362,7 +362,9 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | `MARKER` | `( "<spaces>name" -- )` | `system.asm:22` | Snapshot/restore dictionary state |
 | `PAD` | `( -- c-addr )` | `memory.asm` (Story 13.5.4) | DPANS94 §6.2.2000. Returns transient region address at HERE+`PAD_OFFSET` (84 bytes). Survives parsing of one space-delimited name per §3.3.3.6 (WORD writes ≤32 bytes at HERE+1, leaving HERE+33..+84+ untouched). TD-6 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.4 caveats below. |
 | `PICK` | `( xu...x0 u -- xu...x0 xu )` | `stack_ops.asm:94` | |
+| `RESTORE-INPUT` | `( xn ... x1 n -- flag )` | `outer_interpreter.asm` (Story 13.5.5) | DPANS94 §6.2.2148. User-facing CORE-EXT counterpart of `SAVE-INPUT`. flag = 0 on clean restore (count == 4 AND saved SOURCE-ID matches current); flag = -1 on count or SOURCE-ID mismatch (§6.2.2148 ambiguous condition). TD-7 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.5 caveats below. Distinct from the EVALUATE-private R-stack `(RESTORE-INPUT)` plumbing helper at `outer_interpreter.asm:445-460`. |
 | `ROLL` | `( xu...x0 u -- xu-1...x0 xu )` | `stack_ops.asm:112` | |
+| `SAVE-INPUT` | `( -- xn ... x1 n )` | `outer_interpreter.asm` (Story 13.5.5) | DPANS94 §6.2.2182. Pushes a uniform-quadruple description of the current input source spec: `( -- tib_addr tib_len >IN SOURCE-ID 4 )`. Same shape across all SOURCE-ID classes (0 keyboard / -1 EVALUATE / >0 INCLUDE-FILE). Primary scope: EVALUATE arm round-trip per TD-7 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.5 caveats below. Distinct from the EVALUATE-private R-stack `(SAVE-INPUT)` plumbing helper at `outer_interpreter.asm:395-431`. |
 | `\` | `( "ccc" -- )` | `strings.asm:806` | Line comment; F_IMMEDIATE |
 | `#TIB` | `( -- a-addr )` | `outer_interpreter.asm:56` | Obsolescent in Forth-2012 |
 | `QUERY` | `( -- )` | `outer_interpreter.asm:96` | Obsolescent in Forth-2012 |
@@ -684,6 +686,91 @@ file-positioning words; Story 13.4 wires source-input nesting.
   Completion Notes Task 9) without disturbing UserArea slots (pick (a)
   HALT trigger) and without regressing the compliance claim by
   returning `( 0 0 )` from `/PAD ENVIRONMENT?` (pick (b) sub-clause).
+
+**Story 13.5.5 caveats (TD-7 closure 2026-05-06):**
+- DPANS94 §6.2.2182 `SAVE-INPUT ( -- xn ... x1 n )` and §6.2.2148
+  `RESTORE-INPUT ( xn ... x1 n -- flag )` are user-facing CORE-EXT
+  words for snapshotting and rewinding the input source spec.
+  Pre-13.5.5 antforth shipped EVALUATE on top of private
+  `(SAVE-INPUT)` / `(RESTORE-INPUT)` R-stack plumbing helpers
+  (`outer_interpreter.asm:395-460`) but **no user-facing
+  `SAVE-INPUT` or `RESTORE-INPUT` words existed** — calling either
+  at the REPL threw -13 (undefined). The Core Extension count
+  showed 12 of 46 even though both `EVALUATE` (§6.1.1360) and the
+  underlying R-stack frame mechanism were already in place.
+  Story 13.5.5 closes that gap by adding two new DEFCODE words
+  with data-stack semantics that snapshot and restore the four
+  USER-area source-spec cells (`tib_addr`, `tib_len`, `tib_in`,
+  `source_id`) directly. The (paren) helpers are NOT modified
+  (Story 13.4 v2 PD-11 / AC #14 leave-as-is in force).
+- **Pick (a) uniform-quadruple description shape** (chosen from
+  AC #2's two options): `SAVE-INPUT` pushes 5 cells —
+  `( -- tib_addr tib_len >IN SOURCE-ID 4 )` — regardless of the
+  current SOURCE-ID class. `RESTORE-INPUT` pops 5 cells, validates
+  count == 4 then validates saved SOURCE-ID == current SOURCE-ID,
+  writes back the four UserArea cells atomically, returns flag = 0.
+  On count mismatch returns -1 (and the bogus cells remain on the
+  stack — §6.2.2148 ambiguous condition). On SOURCE-ID mismatch
+  drops the remaining 3 description cells, leaves UserArea
+  unchanged, returns -1.
+- **EVALUATE-arm primary scope** per the Tag-Blocking Slate row:
+  within an EVALUATEd string, save → mutate-`>IN` → restore
+  round-trips cleanly because the EVALUATEd string buffer doesn't
+  rotate during INTERPRET (it's the c-addr / u the user passed;
+  it lives until EVALUATE returns). The keyboard and INCLUDE-FILE
+  arms work structurally with the cross-REFILL caveat below.
+- **Cross-REFILL impl-defined deviation (keyboard / INCLUDE-FILE):**
+  the SOURCE-ID-match check is necessary but NOT sufficient for
+  cross-REFILL correctness. If a user calls `SAVE-INPUT` during
+  keyboard input, `REFILL` rotates the TIB content, then
+  `RESTORE-INPUT`, the SOURCE-ID still matches (0 = 0) but the
+  bytes at `tib_addr` have changed since the SAVE-INPUT call —
+  same shape for INCLUDE-FILE across a record refill. ANS allows
+  this as an ambiguous condition (§6.2.2148: "An ambiguous
+  condition exists if the input source represented by the
+  arguments is not the same as the current input source");
+  antforth's behaviour is honest — the flag mechanism flags the
+  SOURCE-ID delta but cannot detect content rotation.
+- **Story-spec §-citation correction:** the original Story 13.5.5
+  spec (`13.5-5-…md`) cited DPANS94 §6.2.2148 for SAVE-INPUT and
+  §6.2.2125 for RESTORE-INPUT. Both citations are inverted /
+  wrong: per `reference_docs/DPANS94.txt:2747-2763`, §6.2.2148 =
+  RESTORE-INPUT, §6.2.2182 = SAVE-INPUT, and §6.2.2125 = REFILL.
+  The implementation, header comments, and this compliance doc
+  use the correct DPANS94 citations per `feedback_standards_compliance.md`
+  ("investigate the standard before defending code; the DPANS94
+  text is binding"). No code consequence — only the section-number
+  strings in comments and docs were affected.
+- **Byte-budget envelope adjustment (AC #8 verdict-with-rationale):**
+  pick (a) actual cost +134 bytes (production + filesanity binaries
+  both moved by the same delta); above the `epics.md:1828` +50..+100
+  estimate but below the +180 ceiling for pick (b). Project-lead
+  authorisation 2026-05-06 to accept the +34 overshoot —
+  Z80-arithmetic minimums dominate (29-byte DEFCODE headers for
+  the two long names; 3-byte `(IY+d)` accesses; 7-byte NEXT macro
+  shared once between success and fail paths). No scope creep;
+  every byte maps to a §6.2.2148/§6.2.2182-mandated semantic
+  step. Compactions applied: shared NEXT epilogue between the
+  success path and the count-mismatch / src-mismatch fail paths
+  (-5 bytes); count-mismatch path returns flag = -1 without
+  cleaning the bogus description cells (impl-defined per ambiguous
+  condition; -22 bytes vs a counted-drop loop); RESTORE-INPUT
+  success path skips the redundant `(IY+UA.source_id) ← L/H`
+  write-back since the preceding `CP L` / `CP H` comparisons
+  already proved equality (-6 bytes; code-review follow-up
+  2026-05-06).
+- **Origin lineage:** TD-7 surfaced first as Story 13.4 v2 PD-11
+  (`_bmad-output/implementation-artifacts/13-4-source-input-nesting-include-top-chain-discipline-v2.md:194-196`)
+  / AC #14 (`:308-310`) with the disposition "EVALUATE-absorb scope:
+  out of Story 13.4". The disposition was retroactively re-classified
+  upward at the Epic 13 retrospective 2026-05-05 (Tag-Blocking Slate
+  row 13.5.5) under `feedback_no_preexisting_discharge.md` Lesson
+  13-B — the seventh worked example cited in the project-lead
+  reframe codifying the "pre-existing / out-of-scope is not a
+  discharge for compliance defects" standing commitment. Story
+  13.5.5 closes the EVALUATE arm of TD-7; the keyboard /
+  INCLUDE-FILE arms are closed structurally with the cross-REFILL
+  caveat noted above.
 
 ### Non-standard words (not in Core or Core Extension)
 

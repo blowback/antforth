@@ -460,6 +460,138 @@ w_PAREN_RESTORE_INPUT_cf:
         NEXT
 
 ; -----------------------------------------------
+; SAVE-INPUT ( -- xn ... x1 n )                  ANS Forth 1994 §6.2.2182
+;   User-facing CORE-EXT word — Story 13.5.5 / TD-7 closure 2026-05-06.
+;   Pushes a description of the current input source spec for later
+;   use by RESTORE-INPUT. antforth's pick (a) uniform-quadruple shape:
+;   five cells total with count = 4 on top, regardless of SOURCE-ID.
+;
+;   Stack effect (pick a): ( -- tib_addr tib_len >IN SOURCE-ID 4 )
+;
+;   Primary scope: the EVALUATE arm of §6.2.2182 / §6.2.2148 — within
+;   an EVALUATEd string, save → mutate-`>IN` → restore round-trips
+;   cleanly because the EVALUATEd string buffer doesn't rotate during
+;   INTERPRET (it's the c-addr / u the user passed; it lives until
+;   EVALUATE returns). Keyboard (SOURCE-ID = 0) and INCLUDE-FILE
+;   (SOURCE-ID > 0) arms work structurally with the cross-REFILL
+;   impl-defined deviation noted on RESTORE-INPUT.
+;
+;   Relationship to private `(SAVE-INPUT)` at :395-431: different
+;   surfaces. The (paren) helper is EVALUATE's R-stack plumbing
+;   (install-and-uninstall semantics; reads c-addr / u from the data
+;   stack and writes them into UserArea, setting source_id = -1 and
+;   tib_in = 0). The user-facing SAVE-INPUT is snapshot-only: it
+;   does NOT modify UserArea — it pushes a copy of the current spec
+;   onto the data stack. The two co-exist; this story does NOT
+;   modify the (paren) helper (Story 13.4 v2 PD-11 / AC #14 in force).
+; -----------------------------------------------
+w_SAVE_INPUT:
+        DEFCODE "SAVE-INPUT", 0
+w_SAVE_INPUT_cf:
+        ; Story 11.5.2: -3 THROW guard. One CALL covers PUSH BC + 4
+        ; cells (10 bytes); 32-byte margin shrinks to ~22 — same
+        ; envelope discipline as w_GET_ORDER_cf (`wordlists.asm`).
+        CALL    check_overflow
+        PUSH    BC                      ; spill old TOS to memory; new TOS (= count) loaded last
+        LD      L, (IY+UserArea.tib_addr)       ; first pushed = x4 = deepest description cell
+        LD      H, (IY+UserArea.tib_addr+1)
+        PUSH    HL
+        LD      L, (IY+UserArea.tib_len)
+        LD      H, (IY+UserArea.tib_len+1)
+        PUSH    HL
+        LD      L, (IY+UserArea.tib_in)
+        LD      H, (IY+UserArea.tib_in+1)
+        PUSH    HL
+        LD      L, (IY+UserArea.source_id)
+        LD      H, (IY+UserArea.source_id+1)
+        PUSH    HL
+        LD      BC, 4                   ; new TOS = count
+        NEXT
+
+; -----------------------------------------------
+; RESTORE-INPUT ( xn ... x1 n -- flag )          ANS Forth 1994 §6.2.2148
+;   User-facing CORE-EXT word — Story 13.5.5 / TD-7 closure 2026-05-06.
+;   Attempt to restore the input source spec to the state described
+;   by x1..xn. flag is true (-1) if the spec cannot be restored, else
+;   false (0). Per §6.2.2148: "An ambiguous condition exists if the
+;   input source represented by the arguments is not the same as
+;   the current input source."
+;
+;   Stack effect (pick a): ( tib_addr tib_len >IN SOURCE-ID 4 -- flag )
+;
+;   Flag semantics:
+;     flag = 0   — restored cleanly (count == 4 AND saved SOURCE-ID
+;                  matches current SOURCE-ID); the four UserArea
+;                  source-spec cells are written back atomically.
+;     flag = -1  — count != 4 (count_mismatch path; impl-defined:
+;                  the bogus cells remain on the stack — §6.2.2148
+;                  ambiguous condition) OR saved SOURCE-ID does
+;                  not match current SOURCE-ID (src_mismatch path;
+;                  the remaining 3 description cells are dropped
+;                  and UserArea is NOT mutated).
+;
+;   IMPL-DEFINED DEVIATION (cross-REFILL keyboard / INCLUDE-FILE):
+;     antforth's SOURCE-ID-match check is necessary but not
+;     sufficient for cross-REFILL correctness. If a user calls
+;     SAVE-INPUT during keyboard input, then REFILL rotates the TIB
+;     content, then RESTORE-INPUT, the SOURCE-ID still matches
+;     (0 = 0) but the bytes at tib_addr have changed since the
+;     SAVE-INPUT call. Same shape for INCLUDE-FILE across a record
+;     refill. Within a single EVALUATE call (the binding TD-7 scope)
+;     no rotation occurs, so the round-trip is clean.
+;
+;   Relationship to private `(RESTORE-INPUT)` at :445-460: different
+;   surfaces. The (paren) helper pops the four-cell frame saved by
+;   `(SAVE-INPUT)` from the R-stack; this user-facing word pops the
+;   five-cell description from the data stack and validates it
+;   before writing back. (paren) helper is unmodified (PD-11).
+; -----------------------------------------------
+w_RESTORE_INPUT:
+        DEFCODE "RESTORE-INPUT", 0
+w_RESTORE_INPUT_cf:
+        ; BC = n (count cell, TOS). Compare to 4.
+        LD      HL, 4
+        OR      A                       ; clear CY
+        SBC     HL, BC                  ; HL = 4 - BC; Z iff BC = 4
+        JR      NZ, .ri_count_mismatch
+        ; count == 4 — verify 4 description cells available.
+        CALL    check_underflow_4
+        ; Pop x1 = saved SOURCE-ID; validate against current.
+        POP     HL
+        LD      A, (IY+UserArea.source_id)
+        CP      L
+        JR      NZ, .ri_src_mismatch
+        LD      A, (IY+UserArea.source_id+1)
+        CP      H
+        JR      NZ, .ri_src_mismatch
+        ; SOURCE-ID matches current; UA.source_id is already correct,
+        ; so skip the redundant write-back and commit the rest.
+        POP     HL                      ; x2 = saved >IN
+        LD      (IY+UserArea.tib_in), L
+        LD      (IY+UserArea.tib_in+1), H
+        POP     HL                      ; x3 = saved tib_len
+        LD      (IY+UserArea.tib_len), L
+        LD      (IY+UserArea.tib_len+1), H
+        POP     HL                      ; x4 = saved tib_addr
+        LD      (IY+UserArea.tib_addr), L
+        LD      (IY+UserArea.tib_addr+1), H
+        LD      BC, 0                   ; flag = 0 (restored)
+        JR      .ri_done
+.ri_src_mismatch:
+        ; SOURCE-ID mismatch; drop the remaining 3 description cells,
+        ; then fall through to .ri_count_mismatch's flag-load + NEXT.
+        POP     HL
+        POP     HL
+        POP     HL
+.ri_count_mismatch:
+        ; Reached directly on count != 4 (bogus cells stay on stack —
+        ; §6.2.2148 ambiguous condition; impl-defined) or via fall-
+        ; through from .ri_src_mismatch (3 cells already dropped).
+        LD      BC, $FFFF               ; flag = -1 (cannot restore)
+.ri_done:
+        NEXT
+
+; -----------------------------------------------
 ; EVALUATE ( i*x c-addr u -- j*x )
 ;   Save the current input source spec, install c-addr/u as the
 ;   active input source with source_id = -1, run INTERPRET, then
