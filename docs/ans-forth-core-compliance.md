@@ -216,7 +216,7 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 | Word | Stack Effect | Status | Source / Story | Notes |
 |------|-------------|--------|----------------|-------|
 | `.` | `( n -- )` | Implemented | `formatting.asm:133` | Story 10.8 will rewrite atop pictured-output primitives, preserving observable behaviour |
-| `."` | `( "ccc" -- )` | Implemented | `strings.asm:701` | IMMEDIATE |
+| `."` | `( "ccc" -- )` | Implemented | `strings.asm:829` | IMMEDIATE — Story 13.5.3 (TD-5 closure 2026-05-06): interpret-mode tail now preserves caller's TOS (PUSH BC at `.dq_interpret`, POP BC at `.dq_i_end`), see Story 13.5.3 caveats below |
 | `U.` | `( u -- )` | Implemented | `formatting.asm:154` | Story 10.8 rewrite (as `.`) |
 | `DECIMAL` | `( -- )` | Implemented | `formatting.asm:383` | DEFWORD |
 | `<#` | `( -- )` | Implemented | `pictured.asm` (Story 10.7) | Resets HLD to pic_buf sentinel |
@@ -553,6 +553,46 @@ file-positioning words; Story 13.4 wires source-input nesting.
   READ-FILE, the helper applies `DEC A` so the helper-A range on CY=1 is
   0..254 — the 0xFF sign-extend is dead code in current call paths but
   retained for pattern-consistency with WRITE-FILE / CLOSE-FILE.
+
+**Story 13.5.3 caveats (TD-5 closure 2026-05-06):**
+- ANS §6.2.0190 `."` requires net stack effect `( -- )`. Pre-13.5.3 the
+  interpret-mode tail of `w_DOT_QUOTE_cf` (at `src/strings.asm`'s
+  `.dq_interpret` block) loaded the loop counter `C` with the
+  remaining-TIB byte-count and decremented it on every iteration —
+  destroying BC (the TOS-in-register cell per
+  `docs/register-conventions.md`) without saving and restoring it. The
+  defect was reachable from any interpret-mode invocation: REPL input,
+  top level of an `INCLUDED` source file, or `EVALUATE`d strings outside
+  a colon body. Compile-mode invocations (the `."` inside a `:` body
+  case) were always TOS-safe — the compile-mode tail at
+  `strings.asm:817/828` already wraps `compile_string` with
+  `PUSH BC / POP BC`, and the runtime form `(S")` + inline string +
+  `TYPE` net to `( -- )` correctly.
+- Story 13.5.3 lands a `PUSH BC / POP BC` envelope around the
+  interpret-mode work — `PUSH BC` at `.dq_interpret` entry, `POP BC` at
+  `.dq_i_end` (single-exit, serves both the loop-exhaust path and the
+  terminator-found path). Mirrors the existing compile-mode tail of the
+  same word (`:817/828`) and the interpret-mode tail of `S"` at
+  `src/strings.asm:715`. Code delta +2 bytes (1 × PUSH BC + 1 × POP BC),
+  data delta 0 — at the floor of the Epic 13.5 +50..+200 envelope.
+- The bug was **silent under all pre-13.5.3 regression probes**: every
+  existing `."` test in the Makefile (REPL tests 69, 74, 75, plus the
+  file-access harness use of `."` inside `:` definitions) either
+  exercised compile mode (TOS-safe via the compile-mode tail's existing
+  envelope) or did not assert TOS preservation across the interpret-mode
+  call. Story 13.5.3 closes the regression-coverage gap with REPL tests
+  952..955 (single-cell, multi-cell with intervening operations,
+  empty-string, INCLUDED-file top-level interpret-mode), each
+  verdict-modulated to assert post-fix behaviour. The pre-fix tree fails
+  every one of (p1)..(p4); the post-fix tree passes all four.
+- Origin lineage: surfaced as Story 13.5 adversarial review F2 (catalogue
+  at
+  `_bmad-output/implementation-artifacts/13-5-r-o-close-file-destructive-flush-audit-and-fix.md:217`),
+  re-classified upward from "MED, accepted-with-rationale: pre-existing"
+  to a tag-blocking correctness defect by the Epic 13 retrospective
+  2026-05-05 (Tag-Blocking Slate row 13.5.3) under
+  `feedback_no_preexisting_discharge.md` Lesson 13-B — the worked example
+  cited in the project-lead reframe codifying the standing commitment.
 
 ### Non-standard words (not in Core or Core Extension)
 

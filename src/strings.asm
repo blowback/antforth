@@ -801,6 +801,30 @@ s_quote_buf:    DS 258          ; transient buffer for interpret mode (256 chars
 ; ." ( -- ) IMMEDIATE
 ;   Compile mode: compile (S") + inline string + TYPE
 ;   Interpret mode: parse and print string immediately
+;
+; Story 13.5.3 / TD-5 closure:
+;   Interpret-mode tail at .dq_interpret now saves the caller's TOS
+;   across the parse-and-print work via PUSH BC at entry / POP BC at
+;   .dq_i_end exit. Pre-13.5.3 the loop counter `C` was loaded with
+;   the remaining-TIB byte-count (LD C, A at .dq_i_rem_ok) and
+;   decremented on every iteration (DEC C inside .dq_i_loop), which
+;   destroyed BC (the TOS-in-register cell per docs/register-conventions.md)
+;   without saving it — violating ANS §6.2.0190 ( -- ) net stack
+;   effect for any interpret-mode invocation (REPL, INCLUDED top-level,
+;   EVALUATE outside a colon body). Originally surfaced as Story 13.5
+;   adversarial review F2 (catalogue at
+;   _bmad-output/implementation-artifacts/13-5-r-o-close-file-destructive-flush-audit-and-fix.md:217)
+;   and re-classified to a tag-blocker by the Epic 13 retro
+;   2026-05-05 (Tag-Blocking Slate row 13.5.3) under feedback_no_preexisting_discharge.md
+;   (Lesson 13-B). The fix mirrors the compile-mode tail of this same
+;   word at lines 841/852 (PUSH BC / POP BC around compile_string)
+;   and the interpret-mode tail of S" at line 715 (PUSH BC at entry).
+;
+;   The in-loop PUSH BC / POP BC envelopes at lines 902/908 (>IN
+;   advance) and 915/918 (bdos_putchar) are unrelated: they save the
+;   loop COUNTER state of BC across helper-clobbering inner code; the
+;   function-level outer envelope saves the original-TOS state at a
+;   strictly outer scope. Two scopes, one register pair, no conflict.
 ; -----------------------------------------------
 w_DOT_QUOTE:
         DEFCODE '."', F_IMMEDIATE
@@ -833,6 +857,7 @@ w_DOT_QUOTE_cf:
 
 .dq_interpret:
         ; === Interpret mode: parse string and print directly ===
+        PUSH    BC              ; save TOS across interpret-mode work (Story 13.5.3 / TD-5)
         ; Compute source: TIB + >IN
         LD      E, (IY+UserArea.tib_in)
         LD      D, (IY+UserArea.tib_in+1)
@@ -895,6 +920,7 @@ w_DOT_QUOTE_cf:
         JR      .dq_i_loop
 
 .dq_i_end:
+        POP     BC              ; restore TOS (Story 13.5.3 / TD-5)
         ; Restore IP
         LD      DE, (dq_saved_ip)
         NEXT

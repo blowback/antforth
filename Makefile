@@ -8789,6 +8789,60 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 951 — Story 13.5.2 (p3) TD-3 (file-refill) clean EOF preserved via INCLUDED (T-S1352-P3-INCLUDED-EOF)"; \
 	else echo "FAIL: REPL test 951 — expected 'T51=123 456 =END' (INCLUDED prints both literal lines and returns cleanly past clean EOF)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 13.5.3 (TD-5) — interpret-mode `."` TOS-preservation probes ===
+	@# Verifies the post-fix PUSH BC / POP BC envelope around the interpret-mode
+	@# tail of w_DOT_QUOTE_cf at src/strings.asm preserves the caller's TOS
+	@# (BC = TOS per docs/register-conventions.md) across the parse-and-print
+	@# work. Pre-fix, the loop counter loaded into C destroyed BC; the four
+	@# probes below cover single-cell, multi-cell, empty-string, and
+	@# INCLUDED-file-top-level invocations.
+	@# === (p1) Test 952: single-cell TOS preservation ===
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '42 ." x=" .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'x=42 '; then \
+		echo "PASS: REPL test 952 — Story 13.5.3 (p1) TD-5 interpret-mode .\" preserves single-cell TOS (T-S1353-P1-DQ-SINGLE)"; \
+	else echo "FAIL: REPL test 952 — expected 'x=42 ' (string printed, then preserved TOS=42 printed)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p2) Test 953: multi-cell stack with intervening operations ===
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '1 2 3 ." sum=" + + .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'sum=6 '; then \
+		echo "PASS: REPL test 953 — Story 13.5.3 (p2) TD-5 interpret-mode .\" preserves multi-cell stack across .\" (T-S1353-P2-DQ-MULTI)"; \
+	else echo "FAIL: REPL test 953 — expected 'sum=6 ' (1+2+3=6 printed via preserved stack)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p3) Test 954: empty-string TOS preservation ===
+	@# NOTE (Story 13.5.3 code-review fix): assert against `99  ok` (two
+	@# spaces) — `.` prints `99 ` (trailing space), then iz-cpm's prompt
+	@# emits ` ok`, yielding the double-space signature only on the
+	@# execution path. The naive pattern `99 ` would also match the input
+	@# echo line `99 ." " .`, making the probe a false positive (verified
+	@# pre-fix-binary by stashing src/strings.asm and re-running).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n' '99 ." " .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '99  ok'; then \
+		echo "PASS: REPL test 954 — Story 13.5.3 (p3) TD-5 interpret-mode .\" empty-string preserves TOS (T-S1353-P3-DQ-EMPTY)"; \
+	else echo "FAIL: REPL test 954 — expected '99  ok' (empty .\" preserves TOS=99 across the execution path, not just the input echo)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (p4) Test 955: INCLUDED-file top-level interpret-mode .\" preserves TOS ===
+	@# Creates TS1353IN.FTH containing `7 ." inside=" .` plus CRLF (17
+	@# bytes) on the iz-cpm A: disk by writing it in S"-quoted chunks (each
+	@# chunk well under the TIB-128 ceiling, with single-byte `"` and CR/LF
+	@# inserted via direct byte stores so the source line itself contains
+	@# no literal `."` token). INCLUDEs the fixture, then deletes it. Per
+	@# Story 13.3 finding (j) discipline: probe is delete-clean.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'VARIABLE FA  CREATE B53 4 ALLOT' \
+		'S" TS1353IN.FTH" R/W CREATE-FILE DROP FA !' \
+		'S" 7 ." FA @ WRITE-FILE DROP' \
+		'34 B53 C!  32 B53 1+ C!  B53 2 FA @ WRITE-FILE DROP' \
+		'S" inside=" FA @ WRITE-FILE DROP' \
+		'34 B53 C!  32 B53 1+ C!  B53 2 FA @ WRITE-FILE DROP' \
+		'S" ." FA @ WRITE-FILE DROP' \
+		'13 B53 C!  10 B53 1+ C!  B53 2 FA @ WRITE-FILE DROP' \
+		'FA @ CLOSE-FILE DROP' \
+		'S" TS1353IN.FTH" INCLUDED  S" TS1353IN.FTH" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'inside=7 '; then \
+		echo "PASS: REPL test 955 — Story 13.5.3 (p4) TD-5 interpret-mode .\" preserves TOS via INCLUDED top-level (T-S1353-P4-DQ-INCLUDED)"; \
+	else echo "FAIL: REPL test 955 — expected 'inside=7 ' (INCLUDED top-level .\" preserves TOS=7)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm
