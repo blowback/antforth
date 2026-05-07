@@ -742,10 +742,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v1.12.0'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v1.12.0'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v2.0.0'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v2.0.0'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v1.12.0' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v2.0.0' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \

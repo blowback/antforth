@@ -6,22 +6,75 @@ A modern Forth for the [Feersum Technology MicroBeast](https://feersumbeasts.com
 
 ![AntForth Logo](images/ant_forth2.png)
 
+
 Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-We've got most of the CORE words from the standard, but it 
-won't be genuinely useful until we've got some BDOS integration 
-working so you can load save files on the 'Beast itself. 
+## Version 2.0.0
 
-Small barebones systems often suffer from not having easy to 
-use development tools, particularly during their genesis, and 
-this is the niche that Forth was born for!
+The 1.x series releases were a bit bare-bones, but 2.0 adds 
+some genuinely useful capabilities, such as a full Z80 assembler,
+custom wordlists, and CP/M file support.
 
-And if you're thinking "there's not much modern about a 56 year 
+V2.0.0 supports the following ANS Forth standard words:
+
+| § | Module | antforth | Coverage |
+|---|--------|----------|----------|
+| **6.1** | Core | 133 / 133 | **100%** |
+| **6.2** | Core Extensions | 14 / 46 | ~30% |
+| **7.6** | Block | 0 | 0% (deferred) |
+| **8.6** | Double-Number | 13 / 14 | ~93% |
+| **9.6** | Exception | 4 / 4 | **100%** |
+| **10.6** | Facility | 1 / ~9 | ~10% |
+| **11.6** | File-Access | 17 / 17 | **~95%** (FILE-STATUS missing) |
+| **12.6** | Floating-Point | 0 | 0% (deferred) |
+| **13.6** | Locals | 0 | 0% (deferred) |
+| **14.6** | Memory-Allocation | 0 | 0% (deferred) |
+| **15.6** | Programming-Tools | 2 / 5 | ~40% (.S, WORDS — no SEE/DUMP/?) |
+| **16.6** | Search-Order | 6 / 6 | **100%** + ext |
+| **17.6** | String | 1 / ~9 | low (MOVE only) |
+
+
+In addition we have some words outside the standard:
+
+
+| Word | Source | Origin / role |
+|------|--------|---------------|
+| `SP@` `SP!` `RP@` `RP!` | `stack_ops.asm` | fig-Forth-era stack-pointer access; common extension |
+| `DPL` | `outer_interpreter.asm` | fig-Forth-era double-precision parse state |
+| `NUMBER?` | `outer_interpreter.asm` | parsing helper |
+| `CATCH-TOP` | `exception.asm` | antforth ext — exception-frame chain head (CCD-2) |
+| `INCLUDE-TOP` | `exception.asm` | antforth ext — INCLUDE source-frame chain head (CCD-1) |
+| `HLD` | `pictured.asm` | pictured-output cursor USER variable (de-facto Forth) |
+| `0x` numeric prefix | parser | C-style hex literal — antforth ext alongside Forth 2014 `$` / `#` / `%` |
+
+
+And a whopping 81 words in the assembler, which are a mix of opcode mnemonics with trailing comma 
+(`LD,` `ADD,` `JP,` `CALL,` `RET,` `INC,` `DEC,` `RLC,` etc.), structural words (`CODE` / `END-CODE`, `LABEL` / `FIX`), 
+pseudo-ops (`DB`, `DW`, `DS`, `EQU`), addressing-mode helpers (`()`, `#`, `+D`), and stack/flow 
+primitives (`PUSH`, `POP`, `JR`, `NEXT,`).
+
+## Coming up in the next version 
+
+- Banked memory support, and other {Micro,Nano}Beast hardware specific words 
+- Co-operative multi-tasking and event handlers
+- Local variable support 
+
+## Bluesky wishlist 
+
+- VideoBeast / AudioBeast support
+- Exception Extensions
+- Floating Point wordset
+- Turnkey compiler
+- Object Oriented extensions (I have tracked down a copy of Dick Pountain's extremely rare book, but have yet to absorb it)
+- non-Beastly targets
+
+## Built by robots
+
+If you're thinking "there's not much modern about a 56 year 
 old language on a 50 year old processor" then [wait til you see 
 how I implemented it](https://blowback.github.io/antforth/) using state-of-the-art agentic LLMs...
-
 
 ![antforth venn diagram](images/venn.svg)
 
