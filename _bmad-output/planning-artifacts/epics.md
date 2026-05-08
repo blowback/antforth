@@ -3,1838 +3,618 @@ stepsCompleted:
   - step-01-validate-prerequisites
   - step-02-design-epics
   - step-03-create-stories
-partyModeNotes:
-  - 'Epic 11: Add a "migration inventory + ordering" story at the front so the ABORT→THROW crawl scope is visible before word-by-word commits begin (E11-D3).'
-  - 'Sprint change 2026-04-20: Retained built-in Z80 assembler; removed ASSEMBLER.FTH authorship and lazy-load capstone (FR45–49, NFR3, NFR22, E13-D4/D5). See sprint-change-proposal-2026-04-20.md.'
 inputDocuments:
-  - prd.md
-  - architecture.md
-  - prd-phase1-epics-1-8.md
-  - architecture-phase1-epics-1-8.md
-  - epics-phase1-epics-1-8.md
-  - product-brief-antforth-2026-04-14.md
-phase: 2
-phaseScope: 'Epics 9-13 — antforth 2.0 release'
+  - _bmad-output/planning-artifacts/prd.md
+  - _bmad-output/planning-artifacts/architecture.md
+  - _bmad-output/planning-artifacts/product-brief-antforth-2026-05-08.md
+  - _bmad-output/planning-artifacts/prd-phase2-epics-9-13.5.md
+  - _bmad-output/planning-artifacts/architecture-phase2-epics-9-13.5.md
+  - _bmad-output/planning-artifacts/epics-phase2-epics-9-13.5.md
+  - _bmad-output/planning-artifacts/epics-phase1-epics-1-8.md
+  - docs/PHASE-3-CARRY-FORWARD.md
+  - _bmad-output/implementation-artifacts/epic-13.5-retro-2026-05-07.md
+phase: 3
+phaseScope: 'Phase 3 — debt-cleanup interlude (carry-forward catalogue P1 close-out + §-by-§ ANS Core/Core-Extension audit)'
 ---
 
-# antforth - Epic Breakdown (Phase 2: Epics 9–13)
+# antforth — Epic Breakdown (Phase 3)
 
 ## Overview
 
-This document provides the epic and story breakdown for **antforth 2.0** (Phase 2), decomposing the PRD and Architecture into implementable stories for Epics 9 through 13. Phase 1 (Epics 1–8) is complete and preserved in `epics-phase1-epics-1-8.md`; its kernel, REPL, language-extension compiler, built-in Z80 assembler, MARKER, and shadow-register optimisations are the foundation on which Phase 2 builds.
+This document provides the epic and story breakdown for **antforth Phase 3** — a debt-cleanup interlude on top of the shipped v2.0 baseline (commit `6599d73`, tagged `v2.0.0` 2026-05-07, 24,996 bytes, 973 PASS / 0 FAIL on real CP/M 2.2 / MicroBeast). Phase 1 (Epics 1–8) is preserved in `epics-phase1-epics-1-8.md`; Phase 2 (Epics 9–13.5) is preserved in `epics-phase2-epics-9-13.5.md`.
 
-The phase delivers two mutually reinforcing goals — **100% ANS Forth Core compliance** and **on-device source development via the CP/M filesystem**. The built-in Z80 assembler is retained **unchanged and hard-coded** — no ASSEMBLER.FTH, no ASSEMBLER wordlist, no auto-activation (per project lead 2026-04-20 + 2026-04-27). Epic 12 delivers the user-facing Search-Order wordset. The 2.0 release is tagged when the Epic 13 regression gate passes against a real MicroBeast.
+The phase is structured as one or more "debt-cleanup" epics drawn from `docs/PHASE-3-CARRY-FORWARD.md` (12 P1 items: A.1–A.3 standards/compliance + B.1–B.9 stabilisation/process debt). Intermediate releases tag as **antforth 2.x**. The phase concludes when all P1 items close and the §-by-§ ANS Forth Core + Core-Extension audit completes.
+
+The two phase-defining goals are mutually reinforcing:
+
+1. **§-level standards-compliance defensibility** — replace word-counted compliance claims with §-by-§ verified ones (the framework that caught two §-level blindspots mid-Epic-13 applied systematically across DPANS94 + Forth 2014)
+2. **Story-template / process-discipline cleanup landed before the next feature epic** — B.1–B.5 lead-in shapes every subsequent dev-pass; Phase 4 inherits improved discipline rather than re-discovering Epic 13.5's six lessons
+
+Zero new feature scope. No new user-facing words (except possibly back-fills surfaced by the §-by-§ audit). All effort directed at making the v2.0 foundation production-defensible at the §-level.
 
 ## Requirements Inventory
 
 ### Functional Requirements
 
-**Numeric Literal Input (Epic 9)**
-- FR1: Users can enter decimal integer literals using the `#` prefix, regardless of the current `BASE`
-- FR2: Users can enter hexadecimal integer literals using the `$` prefix, regardless of the current `BASE`
-- FR3: Users can enter binary integer literals using the `%` prefix, regardless of the current `BASE`
-- FR4: Users can enter character literals using the `'c'` syntax, yielding the character's numeric value
-- FR5: Users can enter hexadecimal literals using the `0x` prefix as an antforth-specific alternative to `$`
-- FR6: All prefixed numeric literals accept an optional leading `-` sign
-- FR7: All numeric literal prefixes (`#`, `$`, `%`, `0x`) and their hex digits (a–f) are case-insensitive
-- FR8: The interpreter recognises numeric-literal prefixes everywhere ordinary numbers are parsed — interactive REPL, compiled colon definitions, and the built-in Z80 assembler source
-- FR9: Entering a prefixed literal does not mutate the value of the `BASE` variable
+**Standards-Compliance Documentation (A.1)**
+- FR-P3-1: A reader of `docs/ans-forth-core-compliance.md` can find a §-level row for every mandatory rule in DPANS94 §6.1 (Core wordset) — verdict (Implemented / Implemented-with-caveat / Accepted-with-rationale-N-A), source `file:line` for the implementation, story-number for the closure (or "v2.0 baseline" for pre-Phase-3 closures), and any caveats.
+- FR-P3-2: A reader of `docs/ans-forth-core-compliance.md` can find a §-level row for every implemented word in DPANS94 §6.2 (Core Extension wordset) — same row-format as FR-P3-1.
+- FR-P3-3: A reader of `docs/ans-forth-core-compliance.md` can find a §-level row for every structural §-rule that applies to antforth (e.g., §3.1.4.1 double-cell stack-layout, §3.4.1.3 numeric-literal parser rule, plus any other structural rules surfaced by the A.1 audit walk).
+- FR-P3-4: A reader can confirm — for any DPANS94 §6.1 / §6.2 rule that is *not* implemented in antforth — an explicit "Accepted-with-rationale: N-A" or "Deliberately-omitted: rationale" row, never a silent gap (per `feedback_no_preexisting_discharge.md`).
+- FR-P3-5: Any §-level structural-rule gap surfaced by the A.1 audit is either back-filled with a focused story (the Stories 13.0 / 13.0.1 / 13.5 template — implementation + new compliance-doc row + REPL probes + hardware smoke) or explicitly accepted-with-rationale per project-lead approval.
+- FR-P3-6: Every word touched by an A.1 back-fill story carries a one-line standards-citation comment in its assembly source per CCD-3 (`; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` / `; antforth extension`).
 
-**Core Arithmetic & Numeric Output (Epic 10)**
-- FR10: Users can perform double-precision signed and unsigned integer arithmetic using the ANS Core double-cell word set (`D+`, `D-`, `D*`, `DNEGATE`, `DABS`, `D<`, `D=`, `DMAX`, `DMIN`, `M*`, `UM*`, `M+`, `SM/REM`, `FM/MOD`, `UM/MOD`)
-- FR11: Users can store, fetch, and manipulate double-cell values on the parameter stack using `2@`, `2!`, `2DUP`, `2DROP`, `2SWAP`, `2OVER`
-- FR12: Users can convert between single-cell and double-cell representations using `>D`, `S>D`, `D>S`
-- FR13: Users can construct formatted numeric output using the ANS pictured numeric output wordset (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`)
-- FR14: Users can output numbers using the Core display words (`.`, `U.`, `D.`, `.R`, `U.R`, `D.R`), which are implemented on top of the pictured output system
-- FR15: Users can rely on 100% of the ANS Forth 1994 Core wordset being implemented and behaving per the standard
+**Asm-Error THROW Catchability (A.2)**
+- FR-P3-7: Users can wrap any antforth assembler-error-raising operation in a `CATCH` frame and receive the corresponding asm-error THROW code (any of `-258` through `-269`, plus `-270` through `-272`) on the data stack, exactly as they receive ANS-standard codes (e.g. `-4`, `-13`).
+- FR-P3-8: The `tests/throw_migration_tests.fth` (or equivalent harness) exercises the caught-form path (`' WORD CATCH . CR` idiom) for each asm-error THROW code in the `-258..-272` block; each test asserts that the expected code lands on the data stack.
 
-**Exception Handling (Epic 11)**
-- FR16: Users can wrap the execution of a word in a `CATCH` frame and receive a THROW code in the event of an error
-- FR17: Users can raise an exception using `THROW` with an arbitrary non-zero integer code
-- FR18: The system defines and honours the ANS standard THROW codes for common errors (stack underflow, undefined word, division by zero, etc.)
-- FR19: Every internal error path in the interpreter, compiler, and primitive words routes through the `THROW` mechanism rather than through `ABORT`
-- FR20: `ABORT` and `ABORT"` behave as wrappers for `-1 THROW` and `-2 THROW` respectively, per the ANS standard
-- FR21: An uncaught THROW returns control to the REPL top level with a diagnostic message that includes the THROW code and (where applicable) a human-readable description
-- FR22: The REPL itself survives any THROW — the user's session, dictionary, and definitions are preserved across errors
+**Base-Aware Numeric-Literal Parsing (A.3)**
+- FR-P3-9: When the user has set `BASE` to an explicit value (via `HEX`, `DECIMAL`, or direct `BASE !`), unprefixed numeric literals parse per that BASE consistently — at the REPL, in compiled colon definitions, and in the built-in Z80 assembler source.
+- FR-P3-10: Forth-2014 §3.4.1.3 prefixed numeric literals (`#`/`$`/`%`/`'c'`/`0x`) continue to parse in their declared base regardless of `BASE` (FR9 from the Phase-2 PRD continues to hold; A.3 adds nothing to prefixed parsing).
 
-**Vocabulary & Namespace Management (Epic 12)**
-- FR23: Users can create a new wordlist with `WORDLIST`, receiving a wordlist identifier on the stack
-- FR24: Users can query the current search order with `GET-ORDER` and set it with `SET-ORDER`
-- FR25: Users can query and change the current compilation wordlist with `GET-CURRENT` and `SET-CURRENT`
-- FR26: Users can direct subsequent definitions into the top-of-search-order wordlist using `DEFINITIONS`
-- FR27: Users can reduce the search order to a minimal set with `ONLY`
-- FR28: Users can reference the built-in Forth wordlist with `FORTH-WORDLIST`
-- FR29: Users can search a specific wordlist for a word with `SEARCH-WORDLIST`
-- ~~FR30~~: ~~The `ASSEMBLER` wordlist is automatically activated on entry to `CODE` and deactivated on exit from `END-CODE`~~ — **withdrawn 2026-04-27** per project-lead direction (no ASSEMBLER wordlist, no auto-activation; hard-coded assembler stays as-is). FR30 is a deliberate gap.
-- FR31: Users with existing CODE-word source files authored against pre-phase antforth can assemble those files unchanged
+**Test-Author Documentation (B.1)**
+- FR-P3-11: A test author can find documented guidance — in `tests/README.md` or an inline comment block in `Makefile`'s test section — establishing `PAD` (per ANS §6.2.2000) as the canonical transient-buffer word for use in REPL-piped Forth probes that need a scratch buffer surviving one space-delimited parse. The guidance acknowledges the historic alternatives (`HERE` and `S"` allocation) and explains why `PAD` is preferred.
 
-**Source File I/O (Epic 13)**
-- FR32: Users can load a source file from the CP/M filesystem using `INCLUDE <filename>`
-- FR33: Users can load a source file by explicit file identifier using `INCLUDE-FILE`
-- FR34: Users can load a named source file using `INCLUDED`
-- FR35: Users can open a file with `OPEN-FILE`, specifying an access mode (`R/O`, `R/W`, `W/O`, `BIN`)
-- FR36: Users can create a file with `CREATE-FILE`, specifying an access mode
-- FR37: Users can delete a file with `DELETE-FILE`
-- FR38: Users can read bytes from a file with `READ-FILE`
-- FR39: Users can write bytes to a file with `WRITE-FILE`
-- FR40: Users can query and set the current file position with `FILE-POSITION` and `REPOSITION-FILE`
-- FR41: Users can query the size of a file with `FILE-SIZE`
-- FR42: Users can close a file with `CLOSE-FILE`
-- FR43: File operations raise a THROW (not ABORT) on errors such as file-not-found, permission-denied, or disk-full
-- FR44: Users can load source files from either drive A: (ROM filesystem) or B: (ramdisk) without syntactic distinction
+**Story-Template / Drafting Discipline (B.2 + B.3 + B.4)**
+- FR-P3-12: A story drafter using the project's story-template encounters a HALT-signal lint when the byte-budget rationale contains "mirrors", "same shape as", or equivalent language referencing a prior arm; the lint requires the drafter to itemise the new arm's parts independently before the byte-budget rationale is accepted (B.2 — extends Lesson 13-C as Lesson 13.5-C).
+- FR-P3-13: A story drafter using the project's story-template encounters, in the "Pre-edit baseline" task, an explicit instruction to capture `wc -c` of the current binary itself rather than inheriting the prior story's reported number (B.3 — closes the 6-byte 13.5.5-close-out doc-drift gap).
+- FR-P3-14: A story drafter using the project's story-template encounters figure-drift discipline (PD-2): figures, tables, and code blocks are validated against the source-of-truth at draft time, not inherited from an earlier story or retro (B.4).
+- FR-P3-15: The story-template's discipline edits (B.2–B.4) carry their own verdict criteria in the lead-in stories that introduce them — each B.2/B.3/B.4 story tests that the new template would have caught the prior-incident pattern that motivated it (e.g. B.2 verifies the lint catches a synthesised "mirror" phrase; B.3 verifies the `wc -c` task captures the actual binary).
+
+**Build-Tool Sync & Hygiene (B.5 + B.6 + B.8)**
+- FR-P3-16: A maintainer running the project's build can invoke a sync target (Makefile rule, doc-build script, or equivalent) that detects PRD-vs-architecture transcription drift between this PRD and the next-revised architecture document; the target produces a drift report or a clean-pass verdict (B.5 — closes PD-3).
+- FR-P3-17: A contributor running `make check-tools` (or equivalent target) can confirm the iz-cpm version installed on the host matches the version the project's test baseline is calibrated against; mismatches produce a clear advisory (B.6 — closes PD-6).
+- FR-P3-18: The Makefile's `make test-repl` target uses unique numeric IDs across all probes; duplicate test numbers (the Story 11.3 cosmetic gap) are renumbered on the first Makefile-touching Phase-3 story (B.8).
+
+**Filesystem Stress Coverage (B.7 + B.9)**
+- FR-P3-19: Probe coverage for directory-full failure mode (writing past the maximum-files-per-directory CP/M 2.2 limit) exists in `tests/file_access_tests.fth` (or equivalent harness), exercising both the failed-write `ior` return path and the FCB-pool / filesystem-state consistency post-failure (B.7 — conditional on hardware-revealed need; otherwise B.7 evaluation suffices).
+- FR-P3-20: Probe coverage for zero-byte `READ-FILE` exists in `tests/file_access_tests.fth` (or equivalent harness), exercising the `( c-addr 0 fileid -- 0 0 )` no-op path (B.7 — conditional, same disposition as FR-P3-19).
+- FR-P3-21: Disk-full handling (writing past the B: ramdisk capacity) is verified clean on real CP/M 2.2 / MicroBeast hardware via a hardware-typed probe; the probe asserts a non-zero `ior` return, FCB-pool consistency, and filesystem consistency post-failure (B.9).
 
 **Backward Compatibility & Regression (phase-wide constraint)**
-- FR45: All functional behaviour delivered in Epics 1–8 continues to work identically in antforth 2.0 — REPL, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, and existing word semantics
-- FR46: All existing REPL-piped test scripts from Epics 1–8 continue to pass against the antforth 2.0 binary
-- FR47: The unprefixed numeric literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE`, identically to pre-phase antforth
+- FR-P3-22: All functional behaviour delivered in Phase 1 (Epics 1–8) and Phase 2 (Epics 9–13.5) — the full Phase-2 FR1–FR47 set, including REPL behaviour, colon definitions, variables, constants, `CREATE`/`DOES>`, control flow, error reporting, `MARKER`, `CATCH`/`THROW`, multi-vocabulary Search-Order, File-Access wordset, Forth-2014 §3.4.1.3 numeric-literal prefixes including `0x`, double-precision arithmetic, pictured numeric output, the unchanged hard-coded inline assembler, and all existing word semantics — continues to work identically in every Phase-3 antforth 2.x point-release.
+- FR-P3-23: All existing REPL-piped test scripts (the 1..952 baseline plus the 944..964 Epic-13.5 cleanup-slate probes) continue to pass against every Phase-3 antforth 2.x point-release. Zero regressions on either set is a release blocker (per Phase-2 NFR9, carried forward).
+- FR-P3-24: All existing CODE-word source files written against pre-Phase-3 antforth assemble correctly and produce byte-identical output under every Phase-3 antforth 2.x point-release (extends Phase-2 FR31, NFR14).
+- FR-P3-25: The unprefixed numeric-literal form (`<BASEnum>`) continues to be parsed per the current value of `BASE` identically to pre-Phase-3 antforth, *except* for the A.3 enhancement covered by FR-P3-9 (which is itself a refinement of the pre-Phase-3 behaviour to be more strictly base-aware in edge cases the pre-Phase-3 implementation handled inconsistently).
 
 ### NonFunctional Requirements
 
 **Performance**
-- NFR1: Numeric literal prefix parsing overhead — recognition of a prefixed literal adds no more than ~20 Z80 cycles over the unprefixed parse path for the 99th-percentile literal
-- NFR2: Word lookup across multiple vocabularies — with a search order of up to 8 wordlists, lookup shall not regress by more than 10% of cycle count versus the pre-phase single-vocabulary baseline
-- NFR3: CATCH/THROW overhead — an uncaught `CATCH` frame adds no more than ~15 Z80 cycles; successful THROW unwind completes in bounded time proportional to return-stack depth at THROW time
-- NFR4: Kernel ROM footprint budget — each Phase-2 epic logs its kernel-size delta and justifies any increase against the capability delivered; net-of-Phase-2 delta is expected to be positive; size-reduction opportunities spawned as dedicated follow-up stories
-- NFR5: Double-precision arithmetic performance — Core double-precision primitives execute within ~20% of hand-rolled Z80 equivalents
+- NFR-P3-1 (carries Phase-2 NFR1–NFR5): All performance envelopes from the Phase-2 PRD continue to hold across every Phase-3 antforth 2.x point-release. Specifically: numeric-literal prefix parse overhead ≤ ~20 Z80 cycles over unprefixed (NFR1); multi-vocabulary lookup regression ≤ 10% vs single-vocabulary baseline (NFR2); uncaught CATCH frame overhead ≤ ~15 Z80 cycles (NFR3); per-epic ROM-footprint budget logged and justified (NFR4); double-precision primitives within ~20% of hand-rolled Z80 equivalents (NFR5). No Phase-3 work measurably regresses any of these envelopes; if any back-fill story would, sprint-change-proposal evaluation is triggered.
+- NFR-P3-2 (Phase-3-specific cumulative ROM budget): Phase-3 cumulative binary growth is capped at +200 bytes (24,996 → ≤ 25,200). Per-story envelopes: B.1–B.5 ≈ 0; A.1 audit story ≈ 0; A.1 back-fill stories ~+10..+50 each (Story 13.0 / 13.0.1 / 13.5 precedent); A.2/A.3 ~+0..+30 each; B.6 ~0; B.7 conditional; B.8 ~0; B.9 ~0. Per-story envelopes are checked against the cumulative target; any single story that would push cumulative over the cap triggers a HALT signal and project-lead-approval before proceeding.
 
 **Reliability**
-- NFR6: REPL shall survive any THROW, including stack overflow, division by zero, and undefined-word invocation; dictionary and in-session definitions are preserved
-- NFR7: State integrity after error — no internal data structure (dictionary, wordlists, input buffer, pad, return stack) may be left corrupted after a THROW
-- NFR8: Filesystem error recovery — failures during file operations raise THROW with a specific code and leave the filesystem consistent; no partial writes that corrupt CP/M directory entries; no orphaned file handles
-- NFR9: Regression guarantee — the complete Epic 1–8 test suite shall pass on every antforth 2.0 candidate release; a single regression is a release blocker
+- NFR-P3-3 (carries Phase-2 NFR6 — REPL survivability): The REPL survives any THROW, including stack overflow, division by zero, undefined-word invocation, and the asm-error THROW codes (-258..-272). User's dictionary, in-session definitions, and working state are preserved across errors.
+- NFR-P3-4 (carries Phase-2 NFR7 — state integrity after error): No internal data structure (dictionary, wordlists, input buffer, pad, return stack, FCB pool, INCLUDE source frames) may be left in a corrupted or inconsistent state after a THROW. Standard ANS catch-frame cleanup semantics apply.
+- NFR-P3-5 (carries Phase-2 NFR8 — filesystem error recovery): Failures during file operations (disk full, file locked, I/O error from BDOS, directory full, zero-byte read) raise a THROW or return an `ior` per the Story-13.2/13.5.1/13.5.2 split, leaving the filesystem in a consistent state — no partial writes that corrupt CP/M directory entries, no orphaned file handles. Phase-3 delta: B.7 + B.9 close the directory-full / zero-byte READ-FILE / disk-full coverage gaps.
+- NFR-P3-6 (Phase-3 test-baseline regression guarantee — extends Phase-2 NFR9): The complete Phase-1 + Phase-2 + Epic-13.5 test suite (1..952 baseline plus 944..964 cleanup-slate probes = 973 PASS / 0 FAIL) passes on every Phase-3 antforth 2.x point-release candidate. A single regression on any of the 973 tests is a release blocker. Additional Phase-3 probes are welcome but additive — they do not replace the baseline.
+- NFR-P3-7 (mid-epic hardware-smoke cadence per story — codifies S9): Every binary-delta Phase-3 story runs its own hardware-smoke task on real CP/M 2.2 / MicroBeast with a PASS verdict before the story is considered done. Zero-binary-delta stories (e.g. B.1–B.5 doc/template-only stories) document their S9 exemption explicitly. The cadence prevents Epic-13's "only the close-out story ran hardware smoke" anti-pattern.
 
 **Compatibility & Standards Conformance**
-- NFR10: ANS Forth 1994 Core wordset implemented to 100% coverage with behaviour matching the ANS specification (baseline 86% → 100% target)
-- NFR11: Numeric literal prefix syntax implemented verbatim as Forth 2014 §3.4.1.3
-- NFR12: Extension discipline — only non-standard addition this phase is the `0x` hex prefix; clearly flagged as an antforth extension; no silent divergence from standards
-- NFR13: CP/M 2.2 BDOS integration — antforth uses only CP/M 2.2 standard BDOS functions (0, 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40)
-- NFR14: CODE-word source file backward compatibility — pre-phase source files assemble correctly and produce byte-identical output under antforth 2.0
+- NFR-P3-8 (carries Phase-2 NFR10 — ANS Forth 1994 Core compliance): The Core wordset (DPANS94 §6.1) is implemented to 100% coverage with behaviour matching the ANS specification. Phase-3 delta: the compliance measurement is upgraded from word-counted to §-level — a §-by-§ audit walks every mandatory rule (not just every word), backed by per-rule rows. This is the A.1 strategic body.
+- NFR-P3-9 (carries Phase-2 NFR11 — Forth 2014 §3.4.1.3 conformance): Numeric-literal prefix syntax is implemented verbatim per Forth 2014 §3.4.1.3 (carries forward from v2.0 baseline). Phase-3 delta: A.3 unprefixed `NUMBER?` base-specialization closes the residual edge case where the pre-Phase-3 implementation handled unprefixed parsing inconsistently against the BASE setting.
+- NFR-P3-10 (carries Phase-2 NFR12 — extension discipline): The only non-standard additions to date are the `0x` hex-literal prefix (Epic 9), the `INCLUDE-TOP` / `CATCH-TOP` USER-variable extensions (Epic 11/13), and the asm-error THROW codes `-258..-272`. All clearly flagged in source per CCD-3. Phase 3 introduces no new extensions.
+- NFR-P3-11 (carries Phase-2 NFR13 — CP/M 2.2 BDOS integration): antforth uses only CP/M 2.2 standard BDOS functions (the existing Phase-2 allow-list: 0, 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40). No CP/M Plus, MP/M, or extended BIOS-level calls. Phase 3 does not add any new BDOS functions to the allow-list.
+- NFR-P3-12 (carries Phase-2 NFR14 — CODE-word source file backward compatibility): CODE-word source files written against pre-Phase-3 antforth assemble correctly and produce byte-identical output under every Phase-3 antforth 2.x point-release.
+- NFR-P3-13 (Phase-3 §-level compliance auditability): `docs/ans-forth-core-compliance.md` carries enough information per row (§-number, source `file:line`, story-number for closure, caveats) that an external Forth implementor can verify any single row against the standard text and the source code in under 10 minutes.
 
 **Maintainability**
-- NFR15: Z80 assembly source favours readability over micro-optimisation except where an epic explicitly targets performance; comments on non-obvious logic required; comments re-stating obvious assembly forbidden
-- NFR16: Test-first discipline — every new word in Epics 9–13 has REPL-piped Forth test coverage before being declared done
-- NFR17: Single-source-of-truth for standards references — word behaviours derived from a standard cite the standard section in the source comment
-- NFR18: Epic-level decoupling — each of Epics 9–13 delivers an independently-shippable `antforth 1.x` increment
+- NFR-P3-14 (carries Phase-2 NFR15 — code density and readability): Z80 assembly source favours readability over micro-optimisation, except where the epic explicitly targets performance. Comments on non-obvious logic are required; comments re-stating what assembly already says are forbidden. Phase 3 specifically: A.1 back-fill stories follow the Story 13.0 / 13.0.1 / 13.5 commenting style — every back-filled word carries its standards-citation comment per CCD-3.
+- NFR-P3-15 (carries Phase-2 NFR16 — test-first discipline): Every new word, every behaviour change, and every defect closure introduced in Phase 3 has REPL-piped Forth test coverage before being declared done (per established project convention since Epic 3, codified by S2). Test scripts are the canonical regression surface.
+- NFR-P3-16 (carries Phase-2 NFR17 — single-source-of-truth for standards references): Word behaviours that derive from a standard cite the standard section in the source comment per CCD-3 (`; ANS Forth 1994 §<sec>` etc.). Phase-3 delta: the A.1 audit walk re-verifies every existing citation against `docs/ans-forth-core-compliance.md`'s §-level rows; mismatches are surfaced and corrected as part of the audit story.
+- NFR-P3-17 (carries Phase-2 NFR18 — epic-level decoupling): Each Phase-3 epic delivers an independently-shippable antforth 2.x point-release. Intermediate releases are legitimate release artifacts, not internal milestones. The Phase-3 close-out tag is the final 2.x version.
+- NFR-P3-18 (Phase-3 story-template discipline as quality attribute): The story-template lints / HALT signals / pre-edit task additions established by B.1–B.5 fire automatically when triggered (lint catches "mirrors" phrase, `wc -c` task captures actual binary, figure-drift discipline applies at draft time, PRD-vs-architecture sync runs at doc-build time). A story drafter does not need to remember to invoke them; they are baked into the workflow.
 
-**Integration (CP/M and Platform)**
-- NFR19: Terminal I/O portability — antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9); no ANSI escape codes, cursor positioning, or colour
-- NFR20: File path conventions — `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename); no wildcards; no Unix-style paths
-- NFR21: MicroBeast hardware dependency isolation — no MicroBeast-specific hardware word enters the kernel during this phase
+**Integration (CP/M and Platform — Phase 2 carry-forward)**
+- NFR-P3-19 (carries Phase-2 NFR19 — terminal I/O portability): antforth uses only character-based BDOS console I/O (functions 1, 2, 6, 9). No assumption of ANSI escape codes, cursor positioning, line-mode vs raw-mode toggles, or colour support.
+- NFR-P3-20 (carries Phase-2 NFR20 — file path conventions): `INCLUDE` and related words accept CP/M 2.2 file path syntax (optional drive letter + `:` + 8.3 filename) exactly. No wildcards in scope; no Unix-style paths.
+- NFR-P3-21 (carries Phase-2 NFR21 — MicroBeast hardware dependency isolation): No MicroBeast-specific hardware word enters the kernel during Phase 3. The MicroBeast hardware vocabulary is a Phase-4+ epic and must be loadable as pure Forth source from disk, not kernel-resident.
+
+**Process Discipline (NEW for Phase 3 — codifies S1–S12 standing commitments)**
+- NFR-P3-22 (S1 — adversarial review fresh-context external): Code reviews are conducted via the `/CR` command (fresh-context external) per the post-PD-1 structural close, not in-pass within the dev-pass. Every Phase-3 retro confirms eleven-plus consecutive epics with structurally-fresh-context CR location.
+- NFR-P3-23 (S2 — REPL-piped tests as default): New tests in Phase 3 are REPL-piped Forth scripts, not assembly test thread extensions. Probes follow S12 hardware-typed authoring discipline.
+- NFR-P3-24 (S3 — real-byte-count estimation + capstone-aware drafting): Story byte-budget rationale is itemised per-part, not asserted via "mirrors prior arm" shorthand (extended by B.2 / Lesson 13.5-C). The story-template lint (FR-P3-12) catches the shorthand pattern.
+- NFR-P3-25 (S4 — AC-composition validation): Story acceptance criteria are validated for composability — each AC stands alone or in composition with its named antecedents; no AC silently depends on another's side-effects.
+- NFR-P3-26 (S5 — PARTIAL → HALT): PARTIAL verdicts (any AC not fully PASS) trigger a HALT signal at the dev-pass; root-cause is handled in-pass or the story spawns a sibling, with no carry-forward as tech debt.
+- NFR-P3-27 (S6 — inventory grep covers helpers, not just leaves): Story inventory grep walks the helper layer (e.g. `asm_die` callers, `file_byte_read` callers, `check_underflow` callers) not just the user-facing word, ensuring fan-in completeness.
+- NFR-P3-28 (S7 — EXX-hygiene per kernel-internal raise site): Kernel sites that raise THROW (the `-258..-272` block, the standard codes) preserve EXX state per the established §3 leaf-level rule and §7 EXX-using inventory in `docs/register-conventions.md`.
+- NFR-P3-29 (S8 — "pre-existing" cannot discharge correctness defects): Per `feedback_no_preexisting_discharge.md`, correctness defects (clobbers, lost writes, silent error swallowing) cannot be marked "accepted-with-rationale: pre-existing" — they must be surfaced, filed, fixed (or explicitly re-prioritised down with project-lead approval).
+- NFR-P3-30 (S9 — mid-epic hardware-smoke cadence per story): Codified as NFR-P3-7 above (binary-delta stories run their own S9 hardware-smoke).
+- NFR-P3-31 (S10 — workflow > memory > prompt): Process / discipline fixes land in workflow files (BMAD step files, story templates, agent definitions) and codified-discipline files (memory entries, `feedback_*.md`), not in conversational prompts. The Phase-3 lead-in stories (B.1–B.5) themselves are workflow-file edits, not prompt edits.
+- NFR-P3-32 (S11 — user-visible version surface audit row at tag-applicable epic close-out): Every Phase-3 antforth 2.x point-release tag passes the user-visible version surface audit (banner string in binary, README version reference, memory-file `description` fields). Mismatches against the tag being applied are HALT signals.
+- NFR-P3-33 (S12 — hardware-typed probe authoring discipline): Every smoke-batch destined for human typing on real hardware passes (a) word-existence pre-flight (every word resolves in antforth's dictionary or is documented as a planned new word) and (b) TIB-128 line-length lint (every line ≤ 128 chars). The `tests/README.md` (or equivalent) per FR-P3-11 documents these conventions for test authors.
 
 ### Additional Requirements
 
-**Starter template (Architecture §Starter Template Evaluation):**
-- Not applicable — the existing Phase 1 kernel is the "starter." All phase-2 architectural decisions build on the Epic 1–8 foundation without replacing any part of it. No new scaffolding, no new toolchain.
+These are technical and process requirements drawn from the Phase-3 Architecture document, the carry-forward catalogue, and the Epic-13.5 retrospective standing commitments. They shape epic and story decomposition without being raised to FR/NFR-level capability statements.
 
-**Inherited register conventions (Architecture §Technical Constraints):**
-- BC = TOS; SP = parameter stack pointer; IX = return stack pointer; IY = user area pointer; DE = IP; HL = working register (W)
-- Shadow registers used per Epic 7/8 conventions
-- Direct threading (JP-based) preserved; DEFWORD cf label via `EQU body-3` pointing to `JP DOCOL`
+**Architectural decisions (CCD layer):**
+- CCD-1, CCD-2, CCD-3, CCD-4 (Phase-2 carry-forward, unchanged): dual-chain return-stack frame discipline; THROW code allocation across `-1..-58` / `-59..-255` / `-256..-32767`; standards-citation discipline; per-epic benchmark/close-out gate. Phase-3 reaffirms CCD-2 with the asm-error block extended to `-258..-272` post-Story-11.5.6 (15 codes; A.2 closes caught-form for the full block).
+- **CCD-P3-1** (NEW): every row in `docs/ans-forth-core-compliance.md` follows a 6-column schema — `§ | Rule | Verdict | Source (file:line) | Closure (story-number) | Notes`. Verdict values: `Implemented` / `Implemented-with-caveat` / `Accepted-with-rationale-N-A` / `Deliberately-omitted`. Structural rules satisfied behaviourally use `Source: N-A` with explanatory Notes (per finding F1).
+- **CCD-P3-2** (NEW): Process discipline lives in workflow files (`_bmad/bmm/workflows/4-implementation/create-story/instructions.xml`, `template.md`, `checklist.md`; agent definitions; Makefile sync targets; `tests/README.md`), not in conversational prompts or memory entries. Lints fire structurally (artifact-existence; grep-able verdict criteria), not aspirationally. Memory entries / `feedback_*.md` document *why*, workflow files enforce *how*.
 
-**Cross-cutting architectural decisions (Architecture §CCD-1 through CCD-4):**
-- CCD-1: Return-stack frame taxonomy with dual chain discipline — `CATCH-TOP` and `INCLUDE-TOP` USER variables; exception frames 8 bytes, INCLUDE source frames 10 bytes
-- CCD-2: THROW code allocation — `-1` to `-58` reserved for ANS standard codes; `-59` to `-255` reserved for future ANS extensions; `-256` to `-32767` for antforth-specific extensions; `+n` reserved for user codes
-- CCD-3: Standards-citation discipline — every standard-derived word carries a one-line comment citing the spec section (e.g., `; Forth 2014 §6.2.2270 CATCH`)
-- CCD-4: Per-epic benchmark gate — each epic includes a final "benchmarks + size delta" story gating completion on NFR envelopes
+**Per-item architectural decisions:**
+- A.1-D2: One §-by-§ audit story produces all rows for §6.1 + §6.2 + structural rules; back-fill stories (0–2 expected) spawn from the audit's verdict per gap. If the audit surfaces > 5 gaps, propose sprint-change with re-prioritised cut.
+- A.1-D3: Each back-fill story includes (1) implementation in `src/*.asm` or `tests/*.fth`, (2) standards-citation comment per CCD-3, (3) new row in `docs/ans-forth-core-compliance.md` per CCD-P3-1, (4) REPL probes (positive path + edge case), (5) S9 hardware smoke, (6) **pre-fix negative-result confirmation** — pre-fix code fails the new probe; diff captured in Dev Notes.
+- A.2-D1: caught-form tests extend `tests/throw_migration_tests.fth`; one probe per asm-error code in `-258..-272`.
+- A.3-D1: change lands in `w_NUMBER_Q_cf` in `src/strings.asm` — site is binding (per finding F5); behaviour-spec deferred to story-author.
+- B.1-D1: `tests/README.md` (NEW) is the single source of truth; Makefile test section gets one-line pointer comment.
+- B.2-D1: "Mirrors prior arm" HALT lands in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` as a `<critical>` block (PD-1 precedent). Triggers on "mirrors", "same shape as", "this is the X arm", or any "Story Y" reference in byte-budget rationale.
+- B.3-D1: re-`wc -c` task lands in `_bmad/bmm/workflows/4-implementation/create-story/template.md` "Pre-edit baseline" section; explicit "do not inherit prior story's number".
+- B.4-D1: PD-2 figure-drift lands in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` as a `<critical>` block (sibling of B.2).
+- B.5-D1: new `make check-doc-sync` target, invoking project-local script in `tools/check-doc-sync/` (NEW). Drift checks: FR-P3-N / NFR-P3-N labels resolve PRD↔arch; Story X.Y citations resolve in epics docs; §X.Y.Z references match `ans-forth-core-compliance.md` rows; section-name parity. Advisory-only on `make test-repl`; expected clean before tag close-out.
+- B.6-D1: new `make check-tools` target reading `.tool-versions` (NEW). Compares iz-cpm + sjasmplus versions. Advisory by default; opt-in `STRICT=1` exits 1. B.6 story includes introspection sub-task to populate `.tool-versions` (per finding F4).
+- B.7-D1: conditional. Disposition (a) "Evaluation suffices" closes via hardware-smoke run with no surprises; disposition (b) "Probe story spawned" fires on hardware-revealed signal (wrong ior, orphaned FCB, directory corruption, FCB-pool recovery failure).
+- B.7+B.9 combined: one S9 hardware-smoke task on one Phase-3 story exercises both. **Disk-full and directory-full are different failure modes** (block-storage vs directory-entry exhaustion; per finding F2) — B.9's procedure is split into sub-step (a) disk-full (one large file) and sub-step (b) directory-full (many small files); both assert FCB-pool + filesystem consistency. Zero-byte READ-FILE single-call adds trivially.
+- B.9-D1: extend `tests/file_access_tests.fth` with disk-full stress block; same procedure resolves B.7 disposition.
+- B.8: mechanical Makefile renumber on next Makefile-touching Phase-3 story (most likely B.5 or B.6).
 
-**Source-file layout (Architecture §Source file organisation):**
-- `src/number_prefixes.asm` (Epic 9); `src/double.asm`, `src/pictured.asm` (Epic 10); `src/exception.asm` (Epic 11); `src/wordlists.asm` (Epic 12); `src/file_access.asm` (Epic 13)
-- Existing `src/*.asm` edited in-place for ABORT→THROW migration and multi-vocabulary changes (`src/assembler.asm` itself is **unchanged** in Phase 2 — no ASSEMBLER wordlist registration, no auto-activation hooks, per 2026-04-27 rollback)
-- New tests under `tests/*.fth` (REPL-piped Forth); no new assembly test threads
-- New docs: `docs/throw-codes.md` (Epic 11); `docs/ans-forth-core-compliance.md` revised (Epic 10)
+**Sequencing constraint (locked by carry-forward catalogue):**
+- **Lead-in (must land first):** B.1 + B.2 + B.3 + B.4 + B.5. Story-template / process-discipline edits that shape every subsequent dev-pass.
+- **Strategic body:** A.1 audit story → 0–2 back-fill stories per §-level structural-rule gap surfaced.
+- **Hitch-hikers (fold opportunistically):** A.2 (any THROW-test sprint), A.3 (any number-parsing sprint), B.6 (any tooling sprint), B.8 (next Makefile-touching story), B.9 (any hardware-touching story).
+- **Conditional:** B.7 if hardware-revealed need from B.9 / S9 cadence; otherwise 2.x maintenance.
 
-**Platform constraints (PRD §Target Platform):**
-- Z80 instruction set only — no Z80N, eZ80, or Z180 extensions
-- CP/M 2.2 TPA (`0100h`–`FFFFh` minus BDOS/CCP); kernel lives in bank 0
-- Real-hardware validation required for every epic's final story; no release tag without a pass on real MicroBeast
+**Standing commitments (S1–S12) — codified as NFR-P3-22..33, must hold across every Phase-3 epic close-out:** S1 adversarial CR fresh-context; S2 REPL-piped tests; S3 real byte-count estimation (extended by Lesson 13.5-C); S4 AC-composition validation; S5 PARTIAL→HALT; S6 inventory grep covers helpers; S7 EXX-hygiene per raise site; S8 no "pre-existing" discharge for correctness defects; S9 per-story hardware smoke; S10 workflow > memory > prompt; S11 version-surface audit at tag close-out; S12 hardware-typed probe discipline.
 
-**Process conventions (Architecture §Process Patterns; inherited memory):**
-- All new error sites use `THROW`, not `ABORT`; existing `ABORT` call sites migrate during Epic 11 (one per commit, each with its own REPL test)
-- REPL-piped Forth scripts are the canonical test format; no new assembly test-thread extensions in phase 2
-- Standards compliance: investigate the standard before defending existing code; never rationalise divergence silently
-- Adversarial review: reviews MUST find things; zero findings is itself suspect
+**Findings F1–F7 from architecture validation, actionable in owning stories:**
+- F1: CCD-P3-1 satisfied-behaviourally case → A.1 audit story carries example row pattern (`Source: N-A` + Implemented).
+- F2: B.7+B.9 disk-full vs directory-full distinct failure modes → B.9 story splits procedure into two sub-steps.
+- F3: CCD-P3-2 "structural" = artifact-existence (grep-able), not automated-CI; agent obedience is the residual softer discipline that adversarial review (`/CR`) catches.
+- F4: B.6 `.tool-versions` initial content unknown → B.6 story includes introspection sub-task; fallback to current host's versions if v2.0 baseline can't be retraced.
+- F5: A.3 site decision is binding; story-author discretion is over the behaviour delta, not the site.
+- F6: A.1 citation-cleanup overflow → if audit surfaces > 20 mismatches, spawn follow-up "citation cleanup" hitch-hiker story; audit-story diff bounded to doc rows + ≤ 20 in-pass citation fixes.
+- F7: A.1 row grain — produce rows for both word definitions AND structural §-rules; some §-numbers appear in multiple rows; audit-story spec lists worked example.
 
-**Implementation sequence (locked by dependencies, Architecture §Decision Impact):**
-- Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13
-- CCD-1 prerequisite to Epic 11 and Epic 13
-- E11-D1 (exception frame) prerequisite to E13-D2 (INCLUDE source frame)
+**File-touch surface for Phase 3 (from architecture):**
+
+NEW files: `tests/README.md` (B.1); `tools/check-doc-sync/` script + README (B.5); `.tool-versions` (B.6); `_bmad-output/implementation-artifacts/phase3-a1-<§-rule>-<slug>.md` per back-fill (A.1 conditional); `_bmad-output/implementation-artifacts/<epic>-retro-<date>.md` per epic close.
+
+MODIFIED files: `Makefile` (B.5 / B.6 / B.8 / B.1 pointer); `_bmad/bmm/workflows/4-implementation/create-story/{instructions.xml,template.md,checklist.md}` (B.2 / B.3 / B.4); `docs/ans-forth-core-compliance.md` (A.1); `docs/PHASE-3-CARRY-FORWARD.md` (status column per item); `tests/throw_migration_tests.fth` (A.2); `tests/file_access_tests.fth` (B.9 + B.7 conditional); `src/strings.asm` (A.3); `src/antforth.asm` banner + `README.md` + `memory/project_phase2_scope.md` `description` fields per Phase-3 tag (S11); `_bmad-output/implementation-artifacts/sprint-status.yaml` per story.
+
+NOT touched: `src/assembler.asm`; `src/inner_interpreter.asm`; `src/outer_interpreter.asm`; `src/exception.asm`; `src/file_access.asm` (test-only B.7/B.9 unless hardware reveals defects); `src/wordlists.asm`, `src/compiler.asm`, `src/dictionary.asm`, `src/hash.asm`, `src/control_flow.asm`; `src/structures.asm` (UserArea); `disk/`, `build/`, `examples/`, `blog/`, `images/`, `reference_docs/`.
+
+**Per-story binary delta envelopes (NFR-P3-2 cumulative cap +200 bytes):**
+
+| Item | Expected delta (bytes) |
+|---|---|
+| B.1 | 0 (doc only) |
+| B.2 / B.3 / B.4 | 0 (workflow-file only) |
+| B.5 | 0 (Makefile + script only) |
+| B.6 | 0 (Makefile + `.tool-versions` only) |
+| B.7 | 0..+30 if probe story spawned; 0 if (a) |
+| B.8 | 0 (Makefile renumber) |
+| B.9 | 0 (probe-only) |
+| A.1 audit story | 0 (doc only) |
+| A.1 back-fill story (per gap) | +10..+50 (Story 13.0 / 13.0.1 / 13.5 precedent) |
+| A.2 | 0 (test-only) |
+| A.3 | +0..+30 (small surgery in `w_NUMBER_Q_cf`) |
 
 ### FR Coverage Map
 
-| FR | Epic | Description |
-|---|---|---|
-| FR1 | Epic 9 | `#` decimal prefix |
-| FR2 | Epic 9 | `$` hex prefix |
-| FR3 | Epic 9 | `%` binary prefix |
-| FR4 | Epic 9 | `'c'` character literal |
-| FR5 | Epic 9 | `0x` hex prefix (antforth extension) |
-| FR6 | Epic 9 | Leading `-` sign on prefixed literals |
-| FR7 | Epic 9 | Case-insensitive prefixes and hex digits |
-| FR8 | Epic 9 | Prefixes recognised in REPL, colon bodies, and assembler source |
-| FR9 | Epic 9 | `BASE` not mutated by parsing |
-| FR10 | Epic 10 | Double-cell arithmetic primitives (`D+`, `D-`, `D*`, etc.) |
-| FR11 | Epic 10 | Double-cell stack manipulation (`2@`/`2!`/`2DUP`/`2DROP`/`2SWAP`/`2OVER`) |
-| FR12 | Epic 10 | Single/double conversions (`>D`/`S>D`/`D>S`) |
-| FR13 | Epic 10 | Pictured numeric output wordset (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`) |
-| FR14 | Epic 10 | `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` reimplemented on top of pictured output |
-| FR15 | Epic 10 | 100% ANS Forth 1994 Core compliance |
-| FR16 | Epic 11 | `CATCH` frame execution |
-| FR17 | Epic 11 | `THROW` with arbitrary non-zero code |
-| FR18 | Epic 11 | Standard ANS THROW codes honoured |
-| FR19 | Epic 11 | Internal errors routed through THROW (full migration) |
-| FR20 | Epic 11 | `ABORT`/`ABORT"` as `-1 THROW`/`-2 THROW` wrappers |
-| FR21 | Epic 11 | Uncaught THROW returns to REPL with diagnostic |
-| FR22 | Epic 11 | REPL survives any THROW |
-| FR23 | Epic 12 | `WORDLIST` creates a new wordlist |
-| FR24 | Epic 12 | `GET-ORDER`/`SET-ORDER` |
-| FR25 | Epic 12 | `GET-CURRENT`/`SET-CURRENT` |
-| FR26 | Epic 12 | `DEFINITIONS` |
-| FR27 | Epic 12 | `ONLY` |
-| FR28 | Epic 12 | `FORTH-WORDLIST` |
-| FR29 | Epic 12 | `SEARCH-WORDLIST` |
-| ~~FR30~~ | ~~Epic 12~~ | ~~`ASSEMBLER` wordlist auto-activation~~ — **withdrawn 2026-04-27** per project-lead direction (no ASSEMBLER wordlist, no auto-activation; hard-coded assembler stays as-is). Surrounding FR numbering left intact; FR30 is a deliberate gap. |
-| FR31 | Epic 12 | Pre-phase CODE-word source files assemble unchanged |
-| FR32 | Epic 13 | `INCLUDE <filename>` |
-| FR33 | Epic 13 | `INCLUDE-FILE` |
-| FR34 | Epic 13 | `INCLUDED` |
-| FR35 | Epic 13 | `OPEN-FILE` with access-mode argument |
-| FR36 | Epic 13 | `CREATE-FILE` |
-| FR37 | Epic 13 | `DELETE-FILE` |
-| FR38 | Epic 13 | `READ-FILE` |
-| FR39 | Epic 13 | `WRITE-FILE` |
-| FR40 | Epic 13 | `FILE-POSITION`/`REPOSITION-FILE` |
-| FR41 | Epic 13 | `FILE-SIZE` |
-| FR42 | Epic 13 | `CLOSE-FILE` |
-| FR43 | Epic 13 | File-operation errors raise THROW |
-| FR44 | Epic 13 | Drives A: and B: are equivalent to `INCLUDE`/file ops |
-| FR45 | Cross-epic regression AC | Phase-1 behavioural compatibility (enforced on every epic's regression story) |
-| FR46 | Cross-epic regression AC | Phase-1 REPL-piped test scripts continue to pass |
-| FR47 | Cross-epic regression AC | Unprefixed `<BASEnum>` numeric-literal form preserved |
+| FR-P3-N | Epic | Carry-forward item | Brief description |
+|---|---|---|---|
+| FR-P3-1 | Epic 15 | A.1 | DPANS94 §6.1 Core per-rule rows in `docs/ans-forth-core-compliance.md` |
+| FR-P3-2 | Epic 15 | A.1 | DPANS94 §6.2 Core Extension per-rule rows |
+| FR-P3-3 | Epic 15 | A.1 | Structural §-rule rows (§3.1.4.1, §3.4.1.3, plus any surfaced) |
+| FR-P3-4 | Epic 15 | A.1 | "Accepted-with-rationale-N-A" / "Deliberately-omitted" rows for non-implemented rules — no silent gaps |
+| FR-P3-5 | Epic 15 | A.1 | §-level structural-rule gaps back-filled (per A.1-D3 six-step shape) or explicitly accepted-with-rationale |
+| FR-P3-6 | Epic 15 | A.1 | CCD-3 standards-citation comment on every back-filled word |
+| FR-P3-7 | Epic 15 | A.2 | Caught-form CATCH path returns asm-error code (-258..-272) on data stack |
+| FR-P3-8 | Epic 15 | A.2 | `tests/throw_migration_tests.fth` exercises caught-form for each of the 15 asm-error codes |
+| FR-P3-9 | Epic 15 | A.3 | Unprefixed numerals parse per explicit BASE consistently |
+| FR-P3-10 | Epic 15 | A.3 | Forth-2014 §3.4.1.3 prefixed literals continue to ignore BASE (regression-only) |
+| FR-P3-11 | Epic 14 | B.1 | `tests/README.md` documents PAD as canonical transient-buffer per ANS §6.2.2000 |
+| FR-P3-12 | Epic 14 | B.2 | Story-template "mirrors prior arm" HALT-signal lint |
+| FR-P3-13 | Epic 14 | B.3 | Story-template "Pre-edit baseline" re-`wc -c` task |
+| FR-P3-14 | Epic 14 | B.4 | Story-template figure-drift discipline (`<critical>` block) |
+| FR-P3-15 | Epic 14 | B.2/B.3/B.4 | Verdict-criterion meta-pattern — each lead-in story tests its own enforcement |
+| FR-P3-16 | Epic 14 | B.5 | `make check-doc-sync` PRD↔architecture transcription-drift target |
+| FR-P3-17 | Epic 15 | B.6 | `make check-tools` iz-cpm version stability advisory |
+| FR-P3-18 | Epic 15 | B.8 | Makefile test-numbering hygiene (renumber duplicates from Story 11.3) |
+| FR-P3-19 | Epic 15 | B.7 conditional | Directory-full failure-mode probe coverage |
+| FR-P3-20 | Epic 15 | B.7 conditional | Zero-byte READ-FILE probe coverage |
+| FR-P3-21 | Epic 15 | B.9 | Disk-full hardware re-verification on real CP/M 2.2 / MicroBeast |
+| FR-P3-22 | Both | Phase-wide regression | Phase-1 + Phase-2 + Epic-13.5 functional behaviour preserved |
+| FR-P3-23 | Both | Phase-wide regression | 973 PASS / 0 FAIL test baseline maintained on every 2.x release candidate |
+| FR-P3-24 | Both | Phase-wide regression | Pre-Phase-3 CODE-source byte-identical assembly under every 2.x |
+| FR-P3-25 | Both | Phase-wide regression | Unprefixed numeric-literal form preserved (with A.3 base-aware refinement) |
+
+**Coverage check:** all 25 FR-P3-N requirements mapped. All 12 P1 carry-forward items (A.1, A.2, A.3, B.1–B.9) covered. Phase-wide regression constraint (FR-P3-22..25 + NFR-P3-6) holds across every story in both epics. Standing commitments S1–S12 (codified as NFR-P3-22..33) held across both epic close-outs.
 
 ## Epic List
 
-### Epic 9: Numeric Literal Prefixes
-Users can enter decimal / hex / binary / character literals using Forth 2014 §3.4.1.3 prefixes (`#`, `$`, `%`, `'c'`) plus the antforth `0x` extension — everywhere numbers are parsed (REPL, colon bodies, assembler source), case-insensitive, with optional sign, without mutating `BASE`. Delivers Raj's first-hour "0xFF just works" moment. Standalone release as antforth 1.9.
-**FRs covered:** FR1, FR2, FR3, FR4, FR5, FR6, FR7, FR8, FR9
+### Epic 14: Phase-3 Process Foundation
 
-### Epic 10: Double-Cell Arithmetic, Pictured Output & 100% Core Compliance
-Users can do double-precision signed/unsigned arithmetic, manipulate double-cell stack values, build formatted numeric output via the pictured-output wordset, and rely on 100% of the ANS Forth 1994 Core wordset behaving per the standard (baseline 86% → 100%). `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` reimplemented on pictured-output foundation. Drives the headline "100% ANS Core compliant" release claim. Standalone release as antforth 1.10.
-**FRs covered:** FR10, FR11, FR12, FR13, FR14, FR15
+**Goal:** Land the story-template / drafting-discipline / build-tool sync cluster (B.1–B.5) before any non-lead-in Phase-3 story drafting begins. Establishes the structural lints + Makefile sync targets that shape every subsequent Phase-3 dev-pass and that Phase 4 inherits cleanly.
 
-### Epic 11: Exception Subsystem & Internal Error Migration
-Users can catch errors with `CATCH`/`THROW`, receive standard ANS THROW codes, and keep their REPL session alive across any error; every internal error path in the interpreter, compiler, and primitives is migrated from `ABORT` to `THROW` (word-by-word per E11-D3); `ABORT`/`ABORT"` become standard wrappers for `-1 THROW`/`-2 THROW`. A migration-inventory story at the front of the epic makes the crawl scope visible before the word-by-word work begins. Delivers Mo's "catch a bug without losing the session" moment. Standalone release as antforth 1.11.
-**FRs covered:** FR16, FR17, FR18, FR19, FR20, FR21, FR22
+**User value delivered:**
+- **Ant (project lead, internal user):** authoring Phase-3+ stories is structurally protected against the four traps Epic 13.5 surfaced — "mirrors prior arm" byte-budget shorthand (Lesson 13.5-C), inheriting prior story's `wc -c` (Lesson 13.5-F), figure drift (PD-2), and PRD-vs-architecture transcription drift (PD-3). Lints fire structurally per CCD-P3-2, not aspirationally.
+- **Test authors (the OG and the Newb authoring their first probe):** PAD documented as canonical transient-buffer in `tests/README.md`; the Story-13.5.1 HERE-collision class is documented and avoidable.
+- **Phase 4 (downstream):** improved discipline inherited from day one rather than re-discovered in another retro.
 
-### Epic 12: Multi-Vocabulary Search-Order
-Users can create and manage multiple wordlists, control the search order, and direct definitions into specific wordlists — all while existing CODE source files assemble unchanged against the unchanged hard-coded assembler subsystem in `src/assembler.asm`. No `ASSEMBLER` wordlist, no `ASSEMBLER.FTH`, no `CODE`/`END-CODE` auto-activation (per project lead 2026-04-20 + 2026-04-27). Standalone release as antforth 1.12.
-**FRs covered:** FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR31 (FR30 withdrawn 2026-04-27 — see `:195`)
+**FRs covered:** FR-P3-11 (B.1), FR-P3-12 (B.2), FR-P3-13 (B.3), FR-P3-14 (B.4), FR-P3-15 (verdict-criterion meta-pattern), FR-P3-16 (B.5). Phase-wide regression constraint (FR-P3-22..25) holds across every Epic-14 story.
 
-### Epic 13: File-Access
-Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Closes with the Phase-2 release gate — full regression of Epics 1–12, BDOS-function-allow-list audit, filesystem-error stress suite, kernel ROM-delta accounting, and MicroBeast hardware validation. Passing the gate tags **antforth 2.0**.
-**FRs covered:** FR32, FR33, FR34, FR35, FR36, FR37, FR38, FR39, FR40, FR41, FR42, FR43, FR44
+**NFRs delivered:** NFR-P3-18 (story-template discipline as quality attribute); NFR-P3-31 (S10 workflow > memory > prompt — codified at architectural level via CCD-P3-2). All 33 NFR-P3-N continue to hold.
 
-### Phase-wide regression constraint (not a standalone epic)
-FR45, FR46, FR47 — enforced as cross-cutting acceptance criteria on every epic's regression story per NFR9 and the per-epic benchmark gate (CCD-4). No dedicated "regression epic" — each epic owns its own regression passage.
+**Carry-forward items closed:** B.1, B.2, B.3, B.4, B.5 (5 of 12 P1 items).
 
-### Implementation Sequence (locked)
-Epic 9 → Epic 10 → Epic 11 → Epic 12 → Epic 13, per Architecture §Decision Impact Analysis. Dependencies: CCD-1 prerequisite to Epic 11 and Epic 13; E11-D1 prerequisite to E13-D2. Each epic independently shippable as an `antforth 1.x` release per NFR18.
+**Shape:** 5 stories, all workflow-file / Makefile / `tests/README.md` edits. Per-story binary delta ≈ 0 (lead-in cluster is doc/template-only). Tag-applicable close-out (S11 audit) on Ant's call — banner-only point-release valid but optional. Files touched: `_bmad/bmm/workflows/4-implementation/create-story/{instructions.xml,template.md,checklist.md}`, `Makefile`, `tools/check-doc-sync/` (NEW), `tests/README.md` (NEW).
 
-## Epic 9: Numeric Literal Prefixes
+**Standalone:** complete on its own — process-foundation infrastructure landed; Epic 15 builds on it but doesn't require it to function (Epic 15 stories *would* execute without it, just without the lints catching drafting drift).
 
-Users can enter decimal / hex / binary / character literals using Forth 2014 §3.4.1.3 prefixes (`#`, `$`, `%`, `'c'`) plus the antforth `0x` extension — everywhere numbers are parsed (REPL, colon bodies, assembler source), case-insensitive, with optional sign, without mutating `BASE`. Delivers Raj's first-hour "0xFF just works" moment. Shippable as antforth 1.9.
+**Risk/dependencies:** Epic-14 lead-in stories carry their own verdict criteria — each B.2/B.3/B.4 story tests that the new template would have caught the prior incident pattern (synthesised "mirror" phrase surfaces HALT signal; pre-edit task references `wc -c` directly grep-able from template; figure-drift `<critical>` block exists). If a lead-in fails its own verdict, it doesn't ship. Discipline-as-deliverable, not aspiration.
 
-### Story 9.1: Numeric-prefix recogniser scaffold + `#` decimal prefix
+---
 
-As a Forth user,
-I want to enter decimal integer literals using the `#` prefix regardless of the current `BASE`,
-So that I can write decimal constants in source or at the REPL without a `DECIMAL` mode toggle.
+### Epic 15: Phase-3 Standards Close-Out
 
-**Acceptance Criteria:**
+**Goal:** Complete the §-by-§ ANS Forth Core + Core-Extension audit (the strategic body), close all standards/compliance gaps (A.2 caught-form THROW; A.3 base-aware NUMBER?), and fold in the remaining hitch-hikers (B.6 check-tools; B.7 conditional; B.8 test-numbering hygiene; B.9 disk-full hardware re-verification). Phase-3 close-out tag (final antforth 2.x version) applied at end after the verdict-table walk + S11 user-visible version surface audit.
 
-**Given** a fresh antforth REPL in any `BASE`
-**When** I type `#42 .`
-**Then** the output is `42 ok` and `BASE` is unchanged after the operation.
+**User value delivered:**
+- **Hana the Forth auditor (Phase-3-specific external persona):** `docs/ans-forth-core-compliance.md` carries §-level rows for every mandatory rule in DPANS94 §6.1 + §6.2 + structural §-rules per CCD-P3-1's 6-column schema. Compliance claim becomes checkable rule-by-rule against the standard text in under 10 minutes per row (Journey 5; NFR-P3-13).
+- **Mo the OG (caught-form closure):** asm-error THROW codes -258..-272 catchable via `' WORD CATCH . CR` exactly as ANS-standard codes; defensive harnesses around experimental CODE words work without asym (Journey 2).
+- **Raj the Newb (base-aware HEX):** unprefixed numerals parse per explicit BASE consistently across REPL / colon body / assembler source; the "wait, why is decimal showing as hex?" gotcha doesn't happen (Journey 3).
+- **Pete the hardware/peripheral dev:** disk-full / directory-full / zero-byte READ-FILE failure modes documented and FCB-pool-consistent on real CP/M 2.2 (Journey 4).
+- **Mo (non-regression baseline holder):** v2.0 behaviour identical; 973 PASS / 0 FAIL maintained or extended; per-story S9 hardware smoke for every binary-delta story (Journey 1).
+- **Contributors (Pete-adjacent):** `make check-tools` confirms iz-cpm + sjasmplus versions against the certified baseline.
 
-**Given** the outer interpreter's unknown-token handler
-**When** a token beginning with `#` reaches the number path
-**Then** control is dispatched through a new `src/number_prefixes.asm` recogniser that strips the prefix and accumulates digits in a working register without writing to `BASE`.
+**FRs covered:** FR-P3-1..6 (A.1 §-level docs + back-fills), FR-P3-7..8 (A.2 caught-form), FR-P3-9..10 (A.3 base-aware NUMBER?), FR-P3-17 (B.6), FR-P3-18 (B.8), FR-P3-19..20 (B.7 conditional), FR-P3-21 (B.9). Phase-wide regression constraint (FR-P3-22..25) holds across every Epic-15 story.
 
-**Given** an unprefixed numeric literal (e.g., `42`)
-**When** it is parsed at the REPL
-**Then** the prefix recogniser is bypassed and parsing proceeds exactly as in the pre-Epic-9 code path (FR47 preserved).
+**NFRs delivered:** NFR-P3-2 (cumulative ROM cap +200 bytes enforced per-story); NFR-P3-7 / S9 (hardware smoke per binary-delta story); NFR-P3-8 (§-level Core compliance, upgraded from word-counted); NFR-P3-9 (A.3 strict base-aware refinement); NFR-P3-13 (compliance-doc row checkability under 10 minutes); NFR-P3-32 / S11 (version-surface audit at Phase-3 close-out tag). All 33 NFR-P3-N continue to hold.
 
-**Given** the kernel source
-**When** the `#` prefix is implemented
-**Then** the `w_` word-implementation carries a standards-citation comment referencing Forth 2014 §3.4.1.3 (per NFR17/CCD-3).
+**Carry-forward items closed:** A.1, A.2, A.3, B.6, B.7 (conditional), B.8, B.9 (7 of 12 P1 items; combined with Epic-14's 5 → 12 of 12 at Phase-3 close-out).
 
-**Given** the new file `src/number_prefixes.asm`
-**When** the epic proceeds to stories 9.2+
-**Then** the file contains the extensible prefix-dispatch table ready for additional prefix entries.
+**Shape:** ≥7 stories — A.1 audit story + 0–2 conditional A.1 back-fill stories + A.2 + A.3 + B.6 + B.8 + B.9 + B.7 conditional + Phase-3 close-out gate (verdict-table walk per Story-13.5.6 precedent). Cumulative binary delta ≤ +200 bytes (dominated by 0–2 expected A.1 back-fills @ +10..+50 each + A.3 @ +0..+30). Files touched: `docs/ans-forth-core-compliance.md` (A.1 — the strategic doc), `tests/throw_migration_tests.fth` (A.2), `src/strings.asm:w_NUMBER_Q_cf` (A.3), `Makefile` + `.tool-versions` (B.6), `Makefile` (B.8), `tests/file_access_tests.fth` (B.9 + B.7 conditional), `docs/PHASE-3-CARRY-FORWARD.md` status column (every item), `src/antforth.asm` banner + `README.md` + memory `description` fields per Phase-3 close-out tag (S11). Conditional: `src/*.asm` for any A.1 back-fill (one `cf:` label per gap surfaced).
 
-### Story 9.2: Hex prefixes — `$` (standard) and `0x` (antforth extension)
+**Standalone:** Epic 15 builds on Epic 14's discipline lints but functions independently — A.1 / A.2 / A.3 / B.6 / B.7 / B.8 / B.9 each have their own kernel/test/doc surface and don't depend on Epic 14's outputs to execute. Epic 14 simply makes Epic 15's drafting smoother (lints fire when drafter writes "mirrors", `wc -c` task captures actual binary, `make check-doc-sync` flags PRD↔arch drift before tag).
 
-As a Forth user,
-I want to enter hexadecimal integer literals using either `$` (standard Forth 2014) or `0x` (antforth C-family-friendly extension),
-So that I can match my muscle memory from other languages without mode-toggling to `HEX`.
+**Risk/dependencies:**
+- A.1 audit may surface > 5 gaps → sprint-change-proposal evaluation (some accepted-with-rationale; some Phase-3-deferred to Phase-3.5 micro-phase).
+- A.1 may surface > 20 citation-comment mismatches → spawn follow-up "citation cleanup" hitch-hiker story (per finding F6); audit-story diff bounded to doc rows + ≤ 20 in-pass citation fixes.
+- B.7 conditional disposition (a) "Evaluation suffices" closes via hardware-smoke run with no surprises; disposition (b) "Probe story spawned" fires on hardware-revealed signal per finding F2.
+- B.9's hardware procedure splits into sub-step (a) disk-full (one large file) + sub-step (b) directory-full (many small files) — per finding F2; both assert FCB-pool + filesystem consistency post-failure.
+- Per-story binary delta envelope checked at every dev-pass; HALT signal if any single story would push cumulative over +200-byte cap (NFR-P3-2).
+- Every binary-delta Epic-15 story runs its own S9 hardware smoke before being declared done (NFR-P3-7); zero-binary-delta stories document S9 exemption explicitly.
 
-**Acceptance Criteria:**
+---
 
-**Given** any current `BASE`
-**When** I type `$ff .` or `$FF .`
-**Then** the output is `255 ok` and `BASE` is unchanged.
+**Cross-epic invariants:**
 
-**Given** any current `BASE`
-**When** I type `0xff .` or `0xFF .` or `0XFF .`
-**Then** the output is `255 ok` and `BASE` is unchanged.
+- **Phase-wide regression constraint** (FR-P3-22..25 + NFR-P3-6): every story in both epics maintains the 973 PASS / 0 FAIL baseline; zero regressions on 1..952 + 944..964 sets is a release blocker.
+- **Standing commitments S1–S12** (codified as NFR-P3-22..33): hold across every story, every retro, every tag close-out in both epics. The verdict-criterion meta-pattern from Epic 14's lead-in cluster makes the S1..S12 hold structurally visible.
+- **Cumulative ROM budget** (NFR-P3-2): +200 bytes phase-wide; per-story envelope table in PRD §"MVP Feature Set" + architecture §"Decision Impact Analysis"; checked at every dev-pass.
+- **Hardware-smoke discipline** (S9 / NFR-P3-7): per-story for binary-delta stories; documented exemption for zero-binary-delta stories.
+- **Tag-applicable close-out audit** (S11 / NFR-P3-32): banner / README / memory `description` fields aligned at every Phase-3 antforth 2.x point-release tag.
+- **Findings F1–F7** from architecture validation are owned by specific stories — A.1's audit story carries F1 (satisfied-behaviourally case), F6 (citation-cleanup overflow), F7 (row grain word vs structural-rule); B.9's story carries F2 (disk-full vs directory-full distinction); A.3's story acknowledges F5 (site is binding); B.6's story carries F4 (.tool-versions introspection sub-task); F3 (CCD-P3-2 "structural" wording clarification) is read inline with this section.
 
-**Given** the kernel source
-**When** the `0x` prefix is implemented
-**Then** its source comment explicitly flags it as `; antforth extension — C-style hex prefix` per NFR12/CCD-3; the `$` prefix cites Forth 2014 §3.4.1.3.
 
-**Given** the prefix dispatch table
-**When** a two-character prefix (`0x`) is recognised
-**Then** the dispatch correctly distinguishes `0x` from a raw digit `0` followed by a token `x…` — no ambiguity regression against the unprefixed path.
+## Epic 14: Phase-3 Process Foundation
 
-**Given** the REPL-piped test script `tests/number_prefixes_tests.fth`
-**When** it runs
-**Then** it covers `$0`, `$FF`, `$ff`, `$1234`, `0x0`, `0xFF`, `0xFFFF` with expected outputs, and verifies `BASE` integrity before/after each case.
+Land the 5-item B.x lead-in cluster (B.1 + B.2 + B.3 + B.4 + B.5) before any non-lead-in Phase-3 story drafting begins. Establishes the structural lints + Makefile sync targets that shape every subsequent Phase-3 dev-pass and that Phase 4 inherits cleanly.
 
-### Story 9.3: Binary `%` and character `'c'` prefixes
+**User outcomes at epic close-out:**
+- Ant (project lead) authoring Phase-3+ stories is structurally protected against the four traps Epic 13.5 surfaced — "mirrors prior arm" byte-budget shorthand (Lesson 13.5-C), inheriting prior story's `wc -c` (Lesson 13.5-F), figure drift (PD-2), and PRD-vs-architecture transcription drift (PD-3). Lints fire structurally per CCD-P3-2.
+- Test authors find canonical PAD-as-transient-buffer guidance in `tests/README.md`; Story-13.5.1 HERE-collision class is documented and avoidable.
+- Phase 4 (downstream) inherits improved discipline rather than re-discovering it.
 
-As a Forth user,
-I want to enter binary literals via `%` and character-code literals via `'c'` using Forth 2014 syntax,
-So that I can express bit patterns and ASCII codes directly without helper words.
+**FRs covered:** FR-P3-11, FR-P3-12, FR-P3-13, FR-P3-14, FR-P3-15, FR-P3-16. Phase-wide regression constraint (FR-P3-22..25) holds across every Epic-14 story.
+
+**NFRs delivered:** NFR-P3-18 (story-template discipline as quality attribute); NFR-P3-31 (S10 workflow > memory > prompt — codified at architectural level via CCD-P3-2). All 33 NFR-P3-N continue to hold.
+
+**Carry-forward items closed at epic close-out:** B.1, B.2, B.3, B.4, B.5 (5 of 12 P1 items).
+
+### Story 14.1: PAD documented as canonical transient-buffer for test authors
+
+As a test author writing a REPL-piped Forth probe,
+I want clear documented guidance on which transient-buffer word to use,
+So that I avoid the Story-13.5.1 HERE-collision class and don't have to re-discover the convention every time.
 
 **Acceptance Criteria:**
 
-**Given** any current `BASE`
-**When** I type `%1010 .`
-**Then** the output is `10 ok` and `BASE` is unchanged.
+**Given** Phase-3 starts with no `tests/README.md`,
+**When** Story 14.1 is dev-passed,
+**Then** `tests/README.md` exists at the project root's `tests/` directory.
+**And** AC2 — `tests/README.md` contains a section establishing PAD (per ANS §6.2.2000) as the canonical transient-buffer word for one-shot scratch surviving a single space-delimited parse.
+**And** AC3 — the doc acknowledges that `HERE` and `S"`-near-HERE writes were used historically and explains *why* they're avoided post-Story-13.5.1 (the transient-buffer-collision incident — `S"` allocates near HERE; `HERE C@` post-`READ-FILE` returns the residual `S"` byte rather than the read byte).
+**And** AC4 — the doc gives clear guidance for the three buffer classes — PAD for one-shot transient, `ALLOTed` named buffers (`B45`, `B46`, …) for buffers that must survive across multiple parses, and never write near HERE.
+**And** AC5 — `Makefile`'s test section gains a one-line pointer comment to `tests/README.md` for discoverability (`# See tests/README.md for probe-authoring conventions`).
+**And** AC6 — the doc references S12 (word-existence pre-flight + TIB-128 line-length lint) so probe authors find the full discipline in one place; FR-P3-33 / NFR-P3-33 captured.
+**And** AC7 (FR-P3-15 verdict-criterion meta-pattern) — a grep of `tests/README.md` for `PAD` returns at least one occurrence in the canonical-buffer section; `Makefile` test section grep returns the pointer comment.
+**And** AC8 — `wc -c build/antforth.com` unchanged from the post-Epic-13.5 baseline (24,996 bytes); S9 hardware-smoke documented as exempt (zero binary delta).
+**And** AC9 — `make test-repl` reports ≥ 973 PASS / 0 FAIL; zero regressions.
 
-**Given** any current `BASE`
-**When** I type `'A' .`
-**Then** the output is `65 ok` and `BASE` is unchanged.
+**FRs covered:** FR-P3-11, FR-P3-15. **Carry-forward closed:** B.1.
 
-**Given** a binary literal containing non-binary digits (e.g., `%102`)
-**When** it is parsed
-**Then** it fails the number path and is reported as an undefined word via the existing error path (unchanged behaviour).
+### Story 14.2: "Mirrors prior arm" HALT-signal lint in story-template
 
-**Given** a character literal with an unterminated or overly long sequence (e.g., `'ab'`)
-**When** it is parsed
-**Then** it fails the number path and is reported as an undefined word.
-
-**Given** the kernel source
-**When** `%` and `'c'` are implemented
-**Then** both carry Forth 2014 §3.4.1.3 citation comments per NFR17/CCD-3.
-
-**Given** the REPL test script
-**When** it runs
-**Then** it covers `%0`, `%1`, `%1010`, `%11111111`, `'A'`, `'0'`, `' '`, and a failure case per prefix.
-
-### Story 9.4: Leading `-` sign and full case-insensitivity
-
-As a Forth user,
-I want optional leading `-` sign support on all prefixed numeric literals and full case-insensitivity of prefixes and hex digits,
-So that negative constants and typographic casing don't trip up my source.
+As a story drafter (project lead Ant) authoring a Phase-3+ story,
+I want the story-template to surface a HALT signal when my byte-budget rationale leans on "this mirrors arm X from Story Y" shorthand,
+So that I count the parts of the new arm independently — preventing the Lesson-13.5-C calibration miss (TD-7 / Story 13.5.5 overshot pick (a) +50..+100 by 40 bytes via this exact shorthand).
 
 **Acceptance Criteria:**
 
-**Given** any current `BASE`
-**When** I type `-#42 .`, `-$ff .`, `-%1010 .`, or `-0xFF .`
-**Then** the outputs are `-42 ok`, `-255 ok`, `-10 ok`, and `-255 ok` respectively.
+**Given** the v2.0 baseline `instructions.xml` lacks a "mirrors prior arm" lint,
+**When** Story 14.2 is dev-passed,
+**Then** a new `<critical>` block lands in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` (the established PD-1 enforcement-surface file).
+**And** AC2 — the block enumerates trigger phrases — "mirrors", "same shape as", "this is the X arm of Story Y", any "Story Y" reference in byte-budget rationale paragraphs (pattern: "Story" + capital-letter or digit + cardinal/ordinal).
+**And** AC3 — the block requires the drafter to itemise the new arm's parts independently — listing each component (load, store, branch, return-stack manipulation, etc.) with its byte cost — before the byte-budget rationale is accepted.
+**And** AC4 — the block cites Lesson 13.5-C as its motivating lesson and TD-7 / Story 13.5.5 as the concrete prior incident it prevents.
+**And** AC5 (FR-P3-15 verdict-criterion meta-pattern) — a synthesised drafting attempt (e.g., "this story's byte budget mirrors arm A from Story 13.5.6") fed into the drafting workflow surfaces the HALT signal at the byte-budget-rationale review step.
+**And** AC6 (verdict-criterion grep-able) — `grep -n 'mirrors prior arm' _bmad/bmm/workflows/4-implementation/create-story/instructions.xml` returns at least one match (or the equivalent canonical phrase the block uses; verdict tested with explicit phrase list).
+**And** AC7 — the structural edit is recorded in the BMAD installer's expected-files list so subsequent installer re-runs preserve it (per CCD-P3-2's installer-manifest discipline).
+**And** AC8 — `wc -c build/antforth.com` unchanged; S9 hardware-smoke documented as exempt.
+**And** AC9 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
 
-**Given** the `'c'` syntax
-**When** I type `-'A' .`
-**Then** the result is `-65 ok` (sign applies to the character code per FR6).
+**FRs covered:** FR-P3-12, FR-P3-15. **NFR codified:** NFR-P3-24 (S3 — real-byte-count estimation, extended by Lesson 13.5-C). **Carry-forward closed:** B.2.
 
-**Given** a hex literal in either style (`$` or `0x`)
-**When** the digits include any mix of upper- and lower-case (e.g., `$aBcD`, `0xAbCd`)
-**Then** parsing succeeds and the value is identical regardless of case.
+### Story 14.3: Story-to-story binary handoff — re-`wc -c` at dev-pass start
 
-**Given** prefix characters themselves
-**When** upper-case variants are used (`0X`, uppercase sensitivity on prefix letters)
-**Then** parsing succeeds identically to the lower-case form; non-letter prefixes (`#`, `$`, `%`) are already case-free.
-
-**Given** the REPL test script
-**When** it runs
-**Then** it covers every prefix with negative variants and mixed-case variants for `$` / `0x` hex.
-
-### Story 9.5: Prefix reach — REPL, colon bodies, and assembler source
-
-As a Forth user,
-I want numeric literal prefixes to be recognised everywhere ordinary numbers are parsed — interactive REPL, compiled colon definitions, and inside `CODE` / `END-CODE` blocks,
-So that the prefix grammar is consistent across the whole system (FR8) and my session's `BASE` is never silently mutated (FR9).
+As a story drafter starting a new Phase-3+ dev-pass,
+I want the story-template's "Pre-edit baseline" task to require me to re-`wc -c` the actual current build artefact,
+So that I don't inherit the prior story's reported binary size — preventing the 6-byte 13.5.5-close-out doc-drift gap that surfaced as Lesson 13.5-F.
 
 **Acceptance Criteria:**
 
-**Given** an interactive REPL session in `HEX` mode
-**When** I type `: DECNUM #100 . ; DECNUM`
-**Then** the output is `100 ok` (decimal 100), and `BASE` remains `HEX` before and after the definition and call.
+**Given** the v2.0 baseline `template.md`'s "Pre-edit baseline" section lacks a re-`wc -c` task,
+**When** Story 14.3 is dev-passed,
+**Then** `_bmad/bmm/workflows/4-implementation/create-story/template.md` "Pre-edit baseline" section gains an explicit task: "Capture current binary size: `wc -c build/antforth.com` → record in story Dev Notes".
+**And** AC2 — the task entry includes the explicit instruction "**Do not** inherit the prior story's reported number — re-`wc -c` from the actual current build artefact (B.3 / Lesson 13.5-F)".
+**And** AC3 — the task lands at the top of the "Pre-edit baseline" section (or whichever position the drafter encounters first when filling out the template).
+**And** AC4 — the task cites Lesson 13.5-F / Story 13.5.5 close-out as its motivating incident.
+**And** AC5 (FR-P3-15 verdict-criterion meta-pattern) — `grep -n 'wc -c' _bmad/bmm/workflows/4-implementation/create-story/template.md` returns at least one match in the Pre-edit baseline section; the line referencing "Do not inherit the prior story's reported number" is grep-able from the same file.
+**And** AC6 — the structural edit is recorded in the BMAD installer's expected-files list so subsequent installer re-runs preserve it (per CCD-P3-2's installer-manifest discipline).
+**And** AC7 — `wc -c build/antforth.com` unchanged; S9 hardware-smoke documented as exempt.
+**And** AC8 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
 
-**Given** an interactive REPL session in `DECIMAL` mode
-**When** I type `: HEXNUM $ff . ; HEXNUM`
-**Then** the output is `255 ok`, and `BASE` remains `DECIMAL`.
+**FRs covered:** FR-P3-13, FR-P3-15. **Carry-forward closed:** B.3.
 
-**Given** a `CODE` / `END-CODE` block
-**When** a prefixed literal appears in the assembler source (e.g., a byte constant `0xFF C,`)
-**Then** the prefix is recognised by the assembler source's number-parse path identically to the REPL path.
+### Story 14.4: PD-2 figure-drift discipline `<critical>` block
 
-**Given** any prefix parse in either interpret or compile state
-**When** the parse completes (success or failure)
-**Then** `BASE` holds the same value it held immediately before the parse began (FR9, NFR2-adjacent integrity check).
-
-**Given** the REPL test script
-**When** it runs
-**Then** it includes cases for each parse context (interactive, colon body, `CODE` block) with before/after `BASE` snapshots asserted equal.
-
-### Story 9.6: Epic 9 benchmark, standards citation audit, and regression gate (CCD-4)
-
-As an antforth maintainer,
-I want Epic 9 to close with explicit benchmark measurements, a standards-citation audit, and a full regression pass on the Phase-1 test suite,
-So that NFR1 (prefix overhead), NFR4 (ROM delta), NFR9 (regression guarantee), NFR11 (spec conformance), NFR17 (citation discipline), and FR45–47 (backward compatibility) are verified before the epic is marked done and `antforth 1.9` can be tagged.
+As a story drafter quoting figures, tables, or code blocks from a prior story or retrospective,
+I want the story-template to require me to validate those artefacts against their source-of-truth at draft time,
+So that I don't inherit drift that has accumulated since the original artefact was authored — closing PD-2 (Epic 13 retro #1).
 
 **Acceptance Criteria:**
 
-**Given** the pre-Epic-9 baseline cycle counts for the unprefixed parse path
-**When** the Epic-9 benchmark thread runs on the emulator against the same inputs
-**Then** the unprefixed parse path's cycle count is unchanged within noise (≤ ~1% drift) — unprefixed hot path untouched per E9-D1.
+**Given** the v2.0 baseline `instructions.xml` lacks a figure-drift discipline `<critical>` block,
+**When** Story 14.4 is dev-passed,
+**Then** a new `<critical>` block lands in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` (sibling of B.2's "mirrors" block from Story 14.2).
+**And** AC2 — the block applies to figures, tables, and code blocks; trigger pattern: any quoted/copied artefact from a prior story or retro that the new story relies on for its rationale.
+**And** AC3 — the block requires the drafter to validate the artefact against the source-of-truth at draft time (e.g., re-read the cited file:line, re-run the cited command, re-extract the cited table from the cited document) before quoting.
+**And** AC4 — the block cites PD-2 (Epic 13 retro #1) as its motivating PD item.
+**And** AC5 (FR-P3-15 verdict-criterion meta-pattern) — `grep -n -E '(figure[- ]drift|PD-2)' _bmad/bmm/workflows/4-implementation/create-story/instructions.xml` returns at least one match in the new `<critical>` block.
+**And** AC6 — the B.4 block lands adjacent to (immediately before or after) the B.2 "mirrors" block in `instructions.xml` so the discipline cluster is visually grouped — a future drafter encountering one encounters both. (B.2 / B.4 sibling sequencing per architecture's "Recommended sequencing within the lead-in: B.2 + B.4 together".)
+**And** AC7 — the structural edit is recorded in the BMAD installer's expected-files list per CCD-P3-2.
+**And** AC8 — `wc -c build/antforth.com` unchanged; S9 hardware-smoke documented as exempt.
+**And** AC9 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
 
-**Given** the prefixed parse path cycle measurement
-**When** a representative prefix (e.g., `#42`) is benchmarked against an equivalent unprefixed literal
-**Then** the delta is **≤ 20 Z80 cycles** per NFR1 — recorded in the epic's benchmark notes.
+**FRs covered:** FR-P3-14, FR-P3-15. **Carry-forward closed:** B.4.
 
-**Given** the Epic-9 kernel ROM size
-**When** measured against the post-Epic-8 baseline
-**Then** the delta is recorded (contribution toward NFR5 net-negative target; an *increase* is permitted for a single epic as long as later epics can recover it).
+### Story 14.5: PRD↔architecture transcription-drift sync target — `make check-doc-sync`
 
-**Given** the full Phase-1 REPL-piped test suite (`tests/core_tests.fth` + all Epic 1–8 tests)
-**When** run against the Epic-9 binary
-**Then** every test passes — zero regressions per NFR9 / FR46.
-
-**Given** an unprefixed numeric literal like `42` in any `BASE`
-**When** parsed under the Epic-9 binary
-**Then** behaviour is bit-identical to the post-Epic-8 baseline — FR47 verified by dedicated regression test.
-
-**Given** every word added in `src/number_prefixes.asm`
-**When** audited by a reviewer
-**Then** each standard-derived word carries a Forth 2014 §3.4.1.3 citation; the `0x` extension carries the `; antforth extension` flag — NFR17 / CCD-3 compliance verified.
-
-**Given** a real-MicroBeast-hardware smoke test
-**When** `tests/number_prefixes_tests.fth` is piped into the `.COM` on real hardware
-**Then** it passes — PRD MVP rule satisfied; `antforth 1.9` release can be tagged.
-
-## Epic 10: Double-Cell Arithmetic, Pictured Output & 100% Core Compliance
-
-Users can do double-precision signed/unsigned arithmetic, manipulate double-cell stack values, build formatted numeric output via the pictured-output wordset, and rely on 100% of the ANS Forth 1994 Core wordset behaving per the standard (baseline 86% → 100%). `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` are reimplemented on the pictured-output foundation. Drives the headline "100% ANS Core compliant" release claim. Shippable as antforth 1.10.
-
-### Story 10.1: ANS Core compliance gap survey + implementation plan
-
-As an antforth maintainer,
-I want a systematic survey of the remaining ~14% of the ANS Forth 1994 Core wordset not yet implemented,
-So that Epic 10's implementation stories are driven by an authoritative, cross-referenced inventory rather than partial memory (per `feedback_systematic_reference_check`).
+As a maintainer (project lead Ant) about to apply a Phase-3 antforth 2.x point-release tag,
+I want a Makefile target that detects PRD-vs-architecture transcription drift,
+So that the docs ship aligned at every tag close-out (S11 sibling) — closing PD-3 (Epic 13 retro #2).
 
 **Acceptance Criteria:**
 
-**Given** the current `docs/ans-forth-core-compliance.md`
-**When** the surveyor cross-references every Core word against the current antforth dictionary
-**Then** a categorised inventory is produced — (a) double-cell family, (b) pictured-output family, (c) other single-cell gaps — with every missing Core word named, specified to its ANS §, and assigned an implementation story (10.2–10.9).
+**Given** the v2.0 baseline lacks a `tools/check-doc-sync/` directory and a `make check-doc-sync` target,
+**When** Story 14.5 is dev-passed,
+**Then** a new self-contained tool subdirectory exists at `tools/check-doc-sync/` (per `tools/bdos_probe/` precedent — Story 11.5.1.2's firmware reproducer).
+**And** AC2 — a project-local Bash script at `tools/check-doc-sync/check-doc-sync.sh` implements the drift checks; tool documentation at `tools/check-doc-sync/README.md` (drift-check rules, exit codes, intended cadence).
+**And** AC3 — drift checks implemented (4 categories): (a) every `FR-P3-N` / `NFR-P3-N` reference in `architecture.md` exists as a label in `prd.md` and vice versa; (b) every `Story X.Y` citation in `architecture.md` resolves to an actual story header in the current `epics.md` or its predecessor `epics-phase1-epics-1-8.md` / `epics-phase2-epics-9-13.5.md` if the citation is historical; (c) every `§X.Y.Z` reference in `architecture.md`'s compliance-related sections has a matching row in `docs/ans-forth-core-compliance.md` (post-A.1 invariant — verdict criterion: clean before any tag close-out); (d) section-name parity check — both PRD and architecture share the agreed-on top-level sections.
+**And** AC4 — clean-pass produces `[ok] doc-sync: 0 drift` to stdout and exits 0; failure prints one line per drift item to stderr and exits 1.
+**And** AC5 — `Makefile` gains a `check-doc-sync` PHONY target invoking the script; target is **advisory-only** on `make test-repl` (does not block test runs); expected clean before any tag-applicable close-out (S11 sibling).
+**And** AC6 (FR-P3-15 verdict-criterion meta-pattern) — running `make check-doc-sync` against the current Phase-3 PRD + architecture pair (commit at story start) produces a known-state verdict (clean-pass or a small enumerable drift list); the verdict is documented in the story's Dev Notes.
+**And** AC7 — `tools/check-doc-sync/README.md` enumerates the four drift checks (AC3), exit codes, and intended cadence ("run before any antforth 2.x tag close-out; advisory at any other time").
+**And** AC8 — `wc -c build/antforth.com` unchanged (Makefile + script edits, no kernel touch); S9 hardware-smoke documented as exempt.
+**And** AC9 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
 
-**Given** the inventory
-**When** reviewed
-**Then** every Core word is either marked "present" (with its source location) or "gap — assigned to Story 10.x"; nothing is left as "unsure."
+**FRs covered:** FR-P3-16. **Carry-forward closed:** B.5.
 
-**Given** the refreshed `docs/ans-forth-core-compliance.md`
-**When** the epic starts
-**Then** the file records the pre-Epic-10 baseline coverage percentage (expected ≈ 86%) and the per-story coverage increments that will take it to 100%.
 
-### Story 10.2: Double-cell stack foundation (`2@`, `2!`, `2DUP`, `2DROP`, `2SWAP`, `2OVER`)
+## Epic 15: Phase-3 Standards Close-Out
 
-As a Forth user,
-I want to push, drop, duplicate, swap, and copy double-cell values on the parameter stack using the standard `2*` wordset,
-So that I have a working stack foundation for all subsequent double-precision work.
+Complete the §-by-§ ANS Forth Core + Core-Extension audit (the strategic body), close all standards/compliance gaps (A.2 caught-form THROW; A.3 base-aware NUMBER?), and fold in the remaining hitch-hikers (B.6 check-tools; B.7 conditional; B.8 test-numbering hygiene; B.9 disk-full hardware re-verification). Phase-3 close-out tag (final antforth 2.x version) applied at end after the verdict-table walk + S11 user-visible version surface audit.
 
-**Acceptance Criteria:**
+**User outcomes at epic close-out:**
+- Hana the Forth auditor finds `docs/ans-forth-core-compliance.md` with §-level rows for every mandatory rule in DPANS94 §6.1 + §6.2 + structural §-rules; compliance claim becomes checkable rule-by-rule against the standard text in under 10 minutes per row (Journey 5; NFR-P3-13).
+- Mo the OG can wrap any asm-error operation in `' WORD CATCH . CR` and receive the asm-error code on the data stack exactly as ANS-standard codes; defensive harnesses around experimental CODE words work without asym (Journey 2).
+- Raj the Newb sees unprefixed numerals parse per the explicit BASE consistently; the "wait, why is decimal showing as hex?" gotcha doesn't happen (Journey 3).
+- Pete the hardware/peripheral developer finds disk-full / directory-full / zero-byte READ-FILE failure modes documented and FCB-pool-consistent on real CP/M 2.2 (Journey 4).
+- Mo (non-regression baseline holder) sees v2.0 behaviour identical; 973 PASS / 0 FAIL maintained or extended; S9 hardware smoke per binary-delta story (Journey 1).
+- Contributors find `make check-tools` confirms iz-cpm + sjasmplus versions against the certified baseline.
 
-**Given** E10-D1's byte-order decision (low cell on TOS, high cell below — *Superseded 2026-05-01 by Story 13.0.1; the live convention is high-on-TOS / high-at-low-address per ANS Forth 1994 §3.1.4.1 + §6.1.0350. See `architecture.md:248` E10-D1 decision history. The original wording is preserved here for the Story 10.2 historical AC.*)
-**When** `2@` fetches a 32-bit value from an address
-**Then** the low cell is on top of stack and the high cell is second on stack — ANS Forth 1994 §6.1.0350 behaviour. *(Superseded by Story 13.0.1: post-flip the high cell is on TOS, low cell second-on-stack.)*
+**FRs covered:** FR-P3-1..10, FR-P3-17, FR-P3-18, FR-P3-19..21, FR-P3-22..25.
 
-**Given** `2DUP`, `2DROP`, `2SWAP`, `2OVER`
-**When** executed against a two-cell pair
-**Then** each produces the standard ANS-specified result, preserving double-cell order integrity.
+**NFRs delivered:** NFR-P3-2 (cumulative ROM cap +200 bytes enforced per-story); NFR-P3-7 / S9 (hardware smoke per binary-delta story); NFR-P3-8 (§-level Core compliance, upgraded from word-counted); NFR-P3-9 (A.3 strict base-aware refinement); NFR-P3-13 (compliance-doc row checkability under 10 minutes); NFR-P3-32 / S11 (version-surface audit at Phase-3 close-out tag). All 33 NFR-P3-N continue to hold.
 
-**Given** the new `src/double.asm` or modified `src/stack_ops.asm`
-**When** each word is implemented
-**Then** its source carries an ANS Forth 1994 §<section> citation per NFR17/CCD-3, and a stack-effect comment on its DEFCODE line.
+**Carry-forward items closed at epic close-out:** A.1, A.2, A.3, B.6, B.7 (conditional), B.8, B.9 (7 of 12 P1 items; combined with Epic-14's 5 → 12 of 12 at Phase-3 close-out).
 
-**Given** `tests/double_tests.fth`
-**When** run
-**Then** it verifies every double-cell stack op with known-value round-trip tests (write via `2!`, read via `2@`, confirm both cells via `2SWAP`/`2DROP` patterns).
+### Story 15.1: §-by-§ ANS Forth Core + Core-Extension audit (A.1 strategic body)
 
-### Story 10.3: Single ↔ double conversions (`S>D`, `D>S`, `>D` if applicable)
-
-As a Forth user,
-I want to convert cleanly between single-cell and double-cell representations,
-So that I can feed single-cell inputs into double-precision arithmetic and extract single-cell results out.
+As a Forth implementor or external auditor (Hana persona, Journey 5),
+I want `docs/ans-forth-core-compliance.md` to carry a §-level row for every mandatory rule in DPANS94 §6.1, §6.2, and the structural §-rules,
+So that I can verify antforth's compliance claim against the standard text in under 10 minutes per row — the framework that caught Stories 13.0 / 13.0.1's §-level blindspots applied systematically.
 
 **Acceptance Criteria:**
 
-**Given** a single-cell signed value `n` on TOS
-**When** I execute `S>D`
-**Then** the result is the sign-extended double-cell value (low cell = original, high cell = 0 if `n ≥ 0` else `-1`) per ANS §6.1.2170 (`S>D`) behaviour.
+**Given** the v2.0 baseline `docs/ans-forth-core-compliance.md` carries word-by-word rows for §6.1 plus ad-hoc §-level coverage at §3.1.4.1, §3.4.1.3, §6.1.0310, §6.1.0350, §6.1.0090,
+**When** Story 15.1 is dev-passed,
+**Then** AC1 — the audit walk is completed across 3 surfaces: every mandatory rule in DPANS94 §6.1 (Core wordset, ~133 rules), every implemented word in §6.2 (Core Extension), and every structural §-rule that applies to antforth (§3.1.4.1 high-on-TOS double-cell layout, §3.4.1.3 numeric-literal parser rule, plus any others surfaced by the walk).
+**And** AC2 — every new row follows the CCD-P3-1 6-column schema `§ | Rule | Verdict | Source (file:line) | Closure (story-number) | Notes`; verdict values restricted to `Implemented` / `Implemented-with-caveat` / `Accepted-with-rationale-N-A` / `Deliberately-omitted`.
+**And** AC3 (F1 satisfied-behaviourally case) — at least one row uses `Source: N-A` with `Verdict: Implemented` and an explanatory Notes entry, establishing the canonical pattern for §-rules satisfied by construction (e.g., alignment-not-assumed structural rule).
+**And** AC4 (F7 word-vs-structural-rule grain) — at least one §-number appears in multiple rows (e.g., §6.1.0350 produces both a row for the `2@` word's stack-effect + standard reference AND a row for the §3.1.4.1 high-on-TOS structural constraint that applies to it; the two rows linked via Notes column).
+**And** AC5 (F4 deliberately-omitted rationale) — any §6.1 / §6.2 rule not implemented carries an explicit `Deliberately-omitted` row with rationale in Notes (per `feedback_no_preexisting_discharge.md` — no silent gaps).
+**And** AC6 — every existing `; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` citation comment in `src/*.asm` is cross-checked against the new §-level rows; mismatches surfaced.
+**And** AC7 (F6 citation-cleanup overflow guard) — if > 20 citation-comment mismatches surface, mismatches beyond 20 spawn a follow-up "citation cleanup" hitch-hiker story rather than landing in this audit story; audit-story diff bounded to doc rows added + ≤ 20 in-pass citation fixes.
+**And** AC8 — any §-level structural-rule gap surfaced is either back-filled with a focused sub-story (Story 15.1.1, 15.1.2, …) per the A.1-D3 six-step shape, or explicitly accepted-with-rationale per project-lead approval. If > 5 gaps surface, sprint-change-proposal is filed.
+**And** AC9 — `docs/PHASE-3-CARRY-FORWARD.md` A.1 row marked `🔄 In progress` at story start, `✅ Done` at story close-out (with audit-verdict summary and back-fill-spawn list as closure note).
+**And** AC10 — `wc -c build/antforth.com` unchanged (audit story is doc-only); S9 hardware-smoke documented as exempt.
+**And** AC11 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
 
-**Given** a double-cell value whose high cell is a pure sign extension of the low cell
-**When** I execute `D>S`
-**Then** the result is the original signed single cell; when the high cell does not represent a pure sign extension, behaviour matches ANS semantics (implementation-defined truncation — documented in source).
+**FRs covered:** FR-P3-1, FR-P3-2, FR-P3-3, FR-P3-4. **NFRs delivered:** NFR-P3-8, NFR-P3-13, NFR-P3-16. **Findings addressed:** F1, F6, F7. **Carry-forward (partial):** A.1 audit-walk component closed; back-fill closures via 15.1.X if surfaced.
 
-**Given** `tests/double_tests.fth`
-**When** it runs
-**Then** it covers positive, negative, and zero boundary values for every conversion; round-trip `S>D D>S` preserves value.
+### Story 15.1.X: A.1 back-fill — gap N (CONDITIONAL; 0–2 expected, spawned from Story 15.1's verdict)
 
-### Story 10.4: Double-precision arithmetic — additive, sign, compare, mixed (`D+`, `D-`, `DNEGATE`, `DABS`, `D=`, `D<`, `DMAX`, `DMIN`, `M+`)
+Each back-fill story conditionally exists if Story 15.1 surfaces a §-level structural-rule gap that warrants implementation rather than accepted-with-rationale. Each follows the A.1-D3 six-step canonical shape; the actual title and AC body depend on the specific §-rule being back-filled. Story file naming: `_bmad-output/implementation-artifacts/phase3-a1-§<rule>-<slug>.md`.
 
-As a Forth user,
-I want the full additive/comparison suite of ANS double-precision arithmetic words,
-So that I can do 32-bit signed and unsigned math using the standard vocabulary.
+As a Forth user expecting full DPANS94 / Forth 2014 §-level compliance,
+I want the §-level structural-rule gap N (surfaced by Story 15.1's audit) closed,
+So that antforth's compliance claim is §-level defensible at this rule, not just word-counted around it.
 
-**Acceptance Criteria:**
+**Acceptance Criteria (canonical A.1-D3 six-step shape):**
 
-**Given** each implemented word
-**When** invoked against boundary inputs (zero, max positive, max negative, equal-magnitude pair)
-**Then** results match the ANS §6.1.* spec exactly; `D=` returns standard true/false flag convention.
+**Given** Story 15.1's audit surfaced gap N as a §-level structural-rule gap requiring implementation,
+**When** Story 15.1.X is dev-passed,
+**Then** AC1 — the §-rule is implemented in the appropriate `src/*.asm` (or `tests/*.fth` for test-only closures) at a specific `cf:` label.
+**And** AC2 (CCD-3 standards-citation comment) — the affected DEFCODE carries `; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` / `; antforth extension`.
+**And** AC3 — a new row in `docs/ans-forth-core-compliance.md` per CCD-P3-1 6-column schema; story-number references this back-fill story.
+**And** AC4 — REPL probes (positive path + at least one edge case) added in the appropriate `tests/*.fth` harness.
+**And** AC5 (S9) — hardware smoke runs on real CP/M 2.2 / MicroBeast — PASS verdict; transcript filed.
+**And** AC6 (pre-fix negative-result confirmation) — pre-fix binary fails the new probe (build pre-fix HEAD, run new probe, capture failure); post-fix binary passes; diff captured in Dev Notes.
+**And** AC7 — ROM delta within +0..+50 bytes (Story 13.0 / 13.0.1 / 13.5 precedent); HALT signal if outside envelope.
+**And** AC8 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
+**And** AC9 — `docs/PHASE-3-CARRY-FORWARD.md` A.1 row's closure note appended with the gap-N back-fill summary.
 
-**Given** `M+` (mixed single + double → double)
-**When** the single is added to the double
-**Then** the result matches the ANS §8.6.1.1830 spec including sign-extended carry propagation.
+**FRs covered:** FR-P3-5, FR-P3-6 (one row per back-fill closure).
 
-**Given** the source
-**When** each word is implemented
-**Then** ANS Forth 1994 §<section> citations per NFR17/CCD-3 appear; stack-effect comments appear on every DEFCODE.
+### Story 15.2: Caught-form THROW coverage for asm-error block −258..−272 (A.2)
 
-**Given** `tests/double_tests.fth`
-**When** it runs
-**Then** every additive/compare/sign word has a table-driven test with at least 6 inputs covering positive/negative/zero/overflow/equality/inequality.
-
-### Story 10.5: Double multiplication (`D*`, `M*`, `UM*`)
-
-As a Forth user,
-I want standard Core multiplication primitives for double-cell and mixed-precision values,
-So that I can compute 32-bit products from single- and double-cell inputs per ANS semantics.
-
-**Acceptance Criteria:**
-
-**Given** `M*` (signed single × signed single → signed double)
-**When** invoked
-**Then** ANS §6.1.1810 behaviour is satisfied including correct sign of the double result.
-
-**Given** `UM*` (unsigned single × unsigned single → unsigned double)
-**When** invoked
-**Then** ANS §6.1.2360 behaviour is satisfied.
-
-**Given** `D*` (signed double × signed double → signed double, truncating to 32 bits)
-**When** invoked
-**Then** ANS §8.6.1.1140 behaviour is satisfied.
-
-**Given** the source
-**When** the implementations are written
-**Then** they use the existing Z80 register conventions (BC-TOS discipline preserved; EXX convention followed per Epic 7/8 memory entries); citations + stack-effect comments present.
-
-**Given** `tests/double_tests.fth`
-**When** it runs
-**Then** multiplications are verified by `M*` `UM*` `D*` with pairs whose expected results span: zero, one-operand zero, signed-positive, signed-negative, unsigned overflow crossing the single-cell boundary.
-
-### Story 10.6: Double/mixed-precision division (`SM/REM`, `FM/MOD`, `UM/MOD`)
-
-As a Forth user,
-I want the ANS Core division primitives for double-cell dividends,
-So that I can do 32/16 → 16 remainder+quotient math in both signed (symmetric and floored) and unsigned forms.
+As Mo the OG (Journey 2),
+I want to wrap any antforth assembler-error-raising operation in a `CATCH` frame and receive the asm-error code on the data stack exactly as I receive ANS-standard codes,
+So that I can write defensive harnesses around experimental CODE words without the THROW system having a known asym between asm-error codes (-258..-272) and standard codes (e.g. -4, -13).
 
 **Acceptance Criteria:**
 
-**Given** `SM/REM` (symmetric division: signed double ÷ signed single → signed remainder, signed quotient)
-**When** invoked against a mixed-sign dividend/divisor pair
-**Then** ANS §6.1.2214 symmetric-division rules are satisfied (quotient rounded toward zero; remainder's sign matches dividend).
+**Given** the v2.0 `tests/throw_migration_tests.fth` lacks caught-form coverage for the full asm-error block,
+**When** Story 15.2 is dev-passed,
+**Then** AC1 — `tests/throw_migration_tests.fth` gains one `' WORD CATCH . CR` probe per asm-error THROW code in the `-258..-272` block (15 probes total — codes -258, -259, -260, -261, -262, -263, -264, -265, -266, -267, -268, -269, -270, -271, -272). Each probe asserts the expected code lands on the data stack.
+**And** AC2 — every probe uses the canonical `' WORD CATCH . CR` form (CCD-1 standard CATCH frame layout; no new frame fields, no new escape mechanism).
+**And** AC3 — the per-code `WORD` chosen is documented (e.g., for `-271 THROW_ASM_DISP_RANGE` an `(IX) +D` invocation without displacement byte). Where a single `WORD` cannot raise a specific code, a synthetic test sequence is constructed and documented.
+**And** AC4 — probes for `-270` / `-271` / `-272` (the post-Story-11.5.6 split codes) explicitly demonstrate the post-split block extension (per architecture's Phase-3 reaffirmation of CCD-2).
+**And** AC5 — new probes registered in the Makefile's `test-repl` recipe with unique numeric IDs (no duplicates with the 1..952 baseline or 944..964 cleanup-slate range; B.8 renumber arrives via Story 15.4).
+**And** AC6 — `wc -c build/antforth.com` unchanged (test-only story); S9 hardware-smoke documented as exempt.
+**And** AC7 — `make test-repl` reports ≥ 973 + 15 = 988 PASS / 0 FAIL (or higher if other Phase-3 stories also added probes by story start; the +15 from this story is additive).
+**And** AC8 — `docs/PHASE-3-CARRY-FORWARD.md` A.2 row marked `✅ Done` with closure note.
 
-**Given** `FM/MOD` (floored division: same signature)
-**When** invoked against a mixed-sign pair
-**Then** ANS §6.1.1561 floored-division rules are satisfied (quotient rounded toward negative infinity; remainder's sign matches divisor).
+**FRs covered:** FR-P3-7, FR-P3-8. **NFR delivered:** NFR-P3-3 (REPL survives THROW for the full asm-error block — caught-form path is the proof-positive). **Carry-forward closed:** A.2.
 
-**Given** `UM/MOD` (unsigned double ÷ unsigned single → unsigned remainder, unsigned quotient)
-**When** invoked
-**Then** ANS §6.1.2370 is satisfied.
+### Story 15.3: Unprefixed `NUMBER?` base-specialization (A.3)
 
-**Given** division by zero on any of these primitives
-**When** invoked
-**Then** the behaviour matches the Epic-1–8 baseline (ABORT pre-Epic-11; Epic 11 will migrate this path to `THROW -10` per ANS §9.3.5).
-
-**Given** `tests/double_tests.fth`
-**When** it runs
-**Then** division cases cover: positive/positive, positive/negative, negative/positive, negative/negative, boundary-magnitude dividends, plus the symmetric-vs-floored discrimination case required by the standard.
-
-### Story 10.7: Pictured numeric output primitives (`<#`, `#`, `#S`, `#>`, `HOLD`, `SIGN`, `HOLDS`)
-
-As a Forth user,
-I want the ANS pictured-numeric-output wordset so I can build formatted number strings,
-So that I can author custom display formats and so the Core `.`/`U.`/`D.`/`.R` family can be rebuilt on a standards-compliant foundation.
+As Raj the Newb (Journey 3),
+I want unprefixed numerals to parse per my explicit `BASE` setting consistently,
+So that the "wait, why is decimal showing as hex?" gotcha doesn't derail my first programs — while Forth-2014 §3.4.1.3 prefixed literals continue to ignore `BASE` per FR9.
 
 **Acceptance Criteria:**
 
-**Given** E10-D2's design (40-byte buffer in user area, USER variable `HLD`, IY-relative addressing)
-**When** `<#` is invoked
-**Then** `HLD` is reset to the buffer's high end; subsequent `#` / `#S` / `HOLD` / `SIGN` / `HOLDS` calls build leftward into the buffer.
+**Given** the v2.0 baseline `w_NUMBER_Q_cf` in `src/strings.asm` parses unprefixed numerals inconsistently against the `BASE` setting in edge cases,
+**When** Story 15.3 is dev-passed,
+**Then** AC1 (F5 site is binding) — the change lands in `w_NUMBER_Q_cf` in `src/strings.asm` — the existing `NUMBER?` implementation (post-Story-13.0 baseline). Alternative-site proposals require sprint-change-proposal evaluation, not story-level discretion.
+**And** AC2 — the dev-pass author reads the current `w_NUMBER_Q_cf` code and the standard text (DPANS94 §6.1.0570 + Forth 2014 §3.4.1.3), then specifies the precise pre-/post-behaviour delta in the story's Dev Notes before implementing.
+**And** AC3 — `w_NUMBER_Q_cf` continues to satisfy the established stack-effect `( c-addr u -- n true | c-addr u false )` and the established register-clobbering envelope; only the BASE-aware-parsing branch logic changes.
+**And** AC4 (positive REPL probes) — new probes in `tests/number_prefixes_tests.fth` (or `tests/core_tests.fth`) verify HEX + unprefixed `FF .` → `255 ok`; DECIMAL + unprefixed `255 .` → `255 ok`; non-default base (`8 BASE !` then unprefixed `17 .` → `15 ok`).
+**And** AC5 (FR-P3-10 / FR9 regression invariant) — `HEX` then `#100 .` → `100 ok` (Forth-2014 prefixed-overrides-BASE) — must continue to hold post-A.3.
+**And** AC6 (FR-P3-25 regression invariant) — unprefixed numeric-literal parsing in colon definitions and built-in Z80 assembler source continues to honour the current `BASE` (FR47 invariant + A.3 enhancement; pre-existing baseline tests in `tests/*.fth` continue to pass).
+**And** AC7 (pre-fix negative-result confirmation, A.1-D3 discipline applied to non-back-fill kernel-surgery story) — pre-fix binary's response to the non-default-base probe (`8 BASE !` then unprefixed `17 .`) is captured and shown to differ from the expected `15 ok`; post-fix passes; diff captured in Dev Notes.
+**And** AC8 (CCD-3 citation) — `w_NUMBER_Q_cf` source comment cites `; ANS Forth 1994 §6.1.0570 NUMBER? — BASE-aware unprefixed parse per A.3 (Forth 2014 §3.4.1.3 prefixed literals continue to ignore BASE)`.
+**And** AC9 — the §6.1.0570 row in `docs/ans-forth-core-compliance.md` reflects A.3's refinement; closure column references Story 15.3; rule text on the row clarifies the BASE-aware unprefixed parse rule.
+**And** AC10 — `wc -c build/antforth.com` increase ≤ +30 bytes (per architecture per-story envelope for A.3); S9 hardware smoke runs on real CP/M 2.2 / MicroBeast — PASS verdict; transcript filed.
+**And** AC11 — `make test-repl` reports ≥ baseline + new Phase-3 probes / 0 FAIL.
+**And** AC12 — `docs/PHASE-3-CARRY-FORWARD.md` A.3 row marked `✅ Done` with closure note + per-base verdict summary.
 
-**Given** a number of any supported type (single or double) on the stack
-**When** `<# #S #>` is invoked
-**Then** a `(c-addr u)` pair is returned pointing to the formatted digit string per ANS §6.1.0490 / §6.1.0030 / §6.1.2210 / §6.1.0750 / §6.1.0040.
+**FRs covered:** FR-P3-9, FR-P3-10. **NFR delivered:** NFR-P3-9 (Forth 2014 §3.4.1.3 conformance with A.3 strict refinement). **Findings addressed:** F5. **Carry-forward closed:** A.3.
 
-**Given** the 40-byte buffer size
-**When** the longest double-precision decimal output (20 digits + sign + radix) is formatted
-**Then** no overflow occurs; a test case exercises a 20-digit worst-case.
+### Story 15.4: Makefile tooling sprint — `make check-tools` + test-numbering hygiene (B.6 + B.8)
 
-**Given** new file `src/pictured.asm`
-**When** each word is implemented
-**Then** ANS citations + stack-effect comments per NFR17/CCD-3; Forth 2014's `HOLDS` carries a Forth 2014 §6.2.1625 citation (it is a 2014 addition to the standard).
-
-**Given** `tests/pictured_tests.fth`
-**When** it runs
-**Then** it covers single and double values, positive/negative, base-2/-10/-16 output, custom format patterns, and the 20-digit worst case.
-
-### Story 10.8: Number-output words on pictured foundation (`.`, `U.`, `D.`, `.R`, `U.R`, `D.R`)
-
-As a Forth user,
-I want the Core number-display words reimplemented on top of the new pictured-output primitives,
-So that the whole display family behaves consistently with user-defined pictured formatters, and so Epic 10 removes the pre-phase hand-rolled decimal/hex-specific output paths.
+As a contributor (or Ant himself on a freshly-cloned host),
+I want the build to confirm the iz-cpm + sjasmplus versions match the certified baseline AND the Makefile's test-repl recipe to use unique numeric IDs across all probes,
+So that test-result divergence from version drift is surfaced before debugging time is spent AND the test-numbering gap from Story 11.3 is closed cosmetically.
 
 **Acceptance Criteria:**
 
-**Given** the pictured-output primitives from Story 10.7
-**When** `.`, `U.`, `D.`, `.R`, `U.R`, `D.R` are rewritten atop `<# ... #>`
-**Then** they produce byte-for-byte identical output to the pre-Epic-10 implementations for all input cases covered by the Epic 1–8 regression tests (zero regression per NFR9).
+**Given** the v2.0 baseline lacks a `.tool-versions` file, lacks a `make check-tools` target, and carries duplicate test numbers in `Makefile`'s `test-repl` recipe (originating from Story 11.3),
+**When** Story 15.4 is dev-passed,
+**Then** AC1 (B.6) — new project-root file `.tool-versions` lists pinned tool versions, one per line in `<tool> <version>` format. Initial content per F4 introspection sub-task: capture `iz-cpm --version` and `sjasmplus --version` on the host that produced the certified `make test-repl` 973 PASS / 0 FAIL run (commit `6599d73`); fallback to current host's versions if v2.0 baseline can't be retraced (and document the fallback in Dev Notes).
+**And** AC2 (B.6) — `Makefile` gains a `check-tools` PHONY target that reads `.tool-versions`, queries `iz-cpm --version` + `sjasmplus --version`, and reports advisory mismatches.
+**And** AC3 (B.6) — advisory by default (exit 0 with stderr advisory on mismatch); `make check-tools STRICT=1` exits 1 on mismatch. Hard-failing every minor version drift would create friction for contributors on slightly different hosts; advisory + opt-in strict is the right tradeoff per architecture B.6-D1.
+**And** AC4 (B.6, F4) — the story's Dev Notes document the introspection process and any fallback-to-current-host decisions.
+**And** AC5 (B.6) — `docs/PHASE-3-CARRY-FORWARD.md` B.6 row marked `✅ Done` with closure note (incl. version advisory recorded).
+**And** AC6 (B.8) — the dev-pass enumerates all duplicate numeric IDs in `Makefile`'s `test-repl` recipe (originating from Story 11.3 onward).
+**And** AC7 (B.8) — duplicate test numbers are renumbered preserving test-case content and identity — only the leading numeric ID changes. No new architectural surface; cosmetic close-out.
+**And** AC8 (B.8) — the old-→-new ID mapping is documented in the story's Dev Notes (so any external test-harness referencing old IDs can be updated).
+**And** AC9 (B.8) — `docs/PHASE-3-CARRY-FORWARD.md` B.8 row marked `✅ Done` with closure note.
+**And** AC10 — `wc -c build/antforth.com` unchanged (Makefile + `.tool-versions` edits, no kernel touch); S9 hardware-smoke documented as exempt.
+**And** AC11 — `make test-repl` reports ≥ 973 PASS / 0 FAIL; renumbered probes pass under their new IDs.
 
-**Given** `src/formatting.asm`
-**When** edited to redirect these words onto pictured output
-**Then** the pre-Epic-10 hand-rolled paths are removed (ROM size contribution toward NFR5 negative target).
+**FRs covered:** FR-P3-17 (B.6), FR-P3-18 (B.8). **Findings addressed:** F4. **Carry-forward closed:** B.6, B.8.
 
-**Given** ANS Core semantics
-**When** `.R n` is called with `n < string-width`
-**Then** the output is not truncated; `u < n` widths are left-padded with spaces per §6.1.0310.
+### Story 15.5: Filesystem stress hardware sprint — disk-full + directory-full + zero-byte READ-FILE (B.7 + B.9)
 
-**Given** `tests/core_gap_tests.fth` (or extended `tests/core_tests.fth`)
-**When** it runs
-**Then** every display word has a regression suite that was green pre-Epic-10 and stays green post-Epic-10; new cases exercise the pictured-output path explicitly (e.g., redefine `HOLD` in a user wordlist and see `.` unaffected — standard-compliance check).
-
-### Story 10.9: Remaining Core gap words (inventory-driven from Story 10.1)
-
-As a Forth user,
-I want the remaining single-cell Core gap words identified by Story 10.1's survey (outside the double-cell and pictured-output families) implemented — specifically `*/`, `*/MOD`, `EVALUATE`, and `ENVIRONMENT?` —
-So that the §6.1 Core wordset reaches 100% coverage (133 of 133 words) with behaviour matching ANS Forth 1994, with no deliberate omissions.
-
-**Scope (set by Story 10.1 + party-mode decision 2026-04-20):**
-
-- `*/` (§6.1.0100) — mixed-precision multiply-divide; depends on Stories 10.5 (`M*`) and 10.6 (`SM/REM`).
-- `*/MOD` (§6.1.0110) — mixed-precision multiply-divide-modulo; same dependency.
-- `EVALUATE` (§6.1.1360) — interpret from a string; save/restore input source.
-- `ENVIRONMENT?` (§6.1.1345) — query implementation-defined limits. Previously classified "deliberately omitted" by Story 5.3 and upheld by Story 10.1; **reclassified as an in-scope Story 10.9 deliverable on 2026-04-20** (party-mode decision) so that FR15 / NFR10's "100% of the ANS Forth 1994 Core wordset" claim holds without deliberate-omission asterisks.
+As Pete the hardware/peripheral developer (Journey 4),
+I want disk-full / directory-full / zero-byte READ-FILE failure modes to be verified clean on real CP/M 2.2 / MicroBeast hardware with FCB-pool consistency post-failure,
+So that I can rely on documented failure-mode behaviour when bench-testing hardware variants — closing B.9 disk-full re-verification + B.7 disposition (a) "evaluation suffices" or spawning B.7 disposition (b) probe story (Story 15.5.1) if hardware reveals a defect.
 
 **Acceptance Criteria:**
 
-**Given** the inventory produced by Story 10.1 (four words: `*/`, `*/MOD`, `EVALUATE`, `ENVIRONMENT?`)
-**When** this story begins
-**Then** each of the four gap words is implemented in the epic-appropriate source file per Architecture §Source-file organisation; each carries an ANS §<section> citation and stack-effect comment per NFR17/CCD-3.
+**Given** the v2.0 baseline lacks dedicated probe coverage for disk-full, directory-full, and zero-byte READ-FILE failure modes (B.7 / B.9 carry-forward gaps),
+**When** Story 15.5 is dev-passed,
+**Then** AC1 (B.9 disk-full sub-step (a)) — procedure fills B: ramdisk to capacity with one large file written until `WRITE-FILE` returns disk-full `ior`. Asserts: non-zero `ior` returned; FCB-pool consistency (no orphaned handles); filesystem consistency (clean `CLOSE-FILE` / re-`OPEN-FILE` round-trip on an existing file succeeds post-failure).
+**And** AC2 (F2 directory-full sub-step (b)) — procedure fills B: ramdisk's directory entries with many small files until `CREATE-FILE` returns directory-full `ior` (or the equivalent CP/M ior code). Same FCB-pool + filesystem consistency assertions as AC1. Sub-steps (a) and (b) are distinct failure modes (block-storage exhaustion vs directory-entry exhaustion) per architecture finding F2.
+**And** AC3 (zero-byte READ-FILE single-call) — the same probe block adds the trivial `( c-addr 0 fileid -- 0 0 )` no-op path verification; assertion: returns `0 0` on the stack with no FCB-pool or filesystem state mutation.
+**And** AC4 — new probe block lands in `tests/file_access_tests.fth` (B.9 disk-full block added permanently; AC2/AC3 probes added if disposition (b) fires per AC6, otherwise B.7 evaluation suffices and the B.7 row marks `✅ Evaluated, none required`).
+**And** AC5 (S9) — the combined probe runs on real CP/M 2.2 / MicroBeast hardware (not just iz-cpm); transcript captured under the established `~/Downloads/bestialitty-<date>.bin` naming.
+**And** AC6 (B.7 disposition fork) — if hardware reveals a defect — wrong `ior`, orphaned FCB, corrupted CP/M directory entry, or FCB-pool recovery failure — B.7 disposition (b) "Probe story spawned" fires; a Story 15.5.1 sub-story is spawned per `feedback_verdict_only_audit.md` ("verdict-only audit + standalone reproducer + fix-story" pattern). If hardware reveals no defect, B.7 disposition (a) "Evaluation suffices" closes the row with a closure note citing this hardware run.
+**And** AC7 — `docs/PHASE-3-CARRY-FORWARD.md` B.7 + B.9 rows updated with closure notes (B.9 = `✅ Done`; B.7 = `✅ Evaluated, none required` OR `🔄 Story 15.5.1 spawned`).
+**And** AC8 — typical binary delta = 0 bytes (probe-only); +0..+30 if any probe-driven kernel surgery surfaces (would itself spawn Story 15.5.1 per AC6). S9 hardware smoke runs and transcript filed regardless.
+**And** AC9 — `make test-repl` reports ≥ baseline + new probes / 0 FAIL.
 
-**Given** each newly implemented word
-**When** exercised against the behaviour specified in its ANS clause
-**Then** a REPL-piped test case in `tests/core_gap_tests.fth` passes, asserting the standard-specified behaviour (happy path + at least one edge case).
+**FRs covered:** FR-P3-19, FR-P3-20, FR-P3-21. **NFR delivered:** NFR-P3-5 (filesystem error recovery — directory-full / zero-byte READ-FILE coverage closes the carry-forward gaps); NFR-P3-7 (S9 hardware smoke). **Findings addressed:** F2. **Carry-forward closed:** B.9; B.7 (disposition (a) or spawns Story 15.5.1 disposition (b)).
 
-**Given** `ENVIRONMENT?` specifically
-**When** queried against the DPANS94 §3.2.6 standard query keys — `/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS` —
-**Then** each known key returns the correct implementation-defined value and `true`; any unknown key returns `false`; the query-key table lives alongside the word and is citable in the compliance doc.
+### Story 15.5.1: B.7 conditional probe story (CONDITIONAL — only if Story 15.5 disposition (b) fires)
 
-**Given** `docs/ans-forth-core-compliance.md`
-**When** updated at the end of this story
-**Then** every previously-"gap" word is marked "present" with its source location; the `ENVIRONMENT?` row is moved from Gap Analysis (a) to the implemented list; Gap Analysis (a) (deliberate omissions) is deleted entirely; the post-Epic-10 count is 133 / 133 (100.0%).
+This story conditionally exists only if Story 15.5's hardware run surfaces a defect that requires probe-driven kernel surgery beyond the disk-full / directory-full / zero-byte READ-FILE coverage already in 15.5. Follows `feedback_verdict_only_audit.md` shape: verdict-only audit (the 15.5 hardware-smoke transcript is the audit) + standalone reproducer (probe block) + fix-story (this story).
 
-**Given** the story scope is bounded at four words
-**When** development proceeds
-**Then** sharding is not anticipated; if complexity surfaces a larger scope, the story may be sharded into 10.9a / 10.9b by capability sub-family (each independently completable; shard boundaries recorded in sprint-status tracking).
+As Pete the hardware/peripheral developer,
+I want the specific filesystem defect Story 15.5 surfaced on real hardware closed,
+So that disk-full / directory-full / zero-byte READ-FILE coverage is not just probe-deep but kernel-surgery-deep where hardware revealed the gap.
 
-### Story 10.10: Epic 10 compliance audit, benchmark + regression gate (CCD-4)
+**Acceptance Criteria (canonical template):**
 
-As an antforth maintainer,
-I want Epic 10 to close with a verified 100% Core compliance measurement, a double-precision benchmark, and a full Phase-1 + Epic-9 regression pass,
-So that NFR5 (double-precision performance), NFR9 (regression), NFR10 (100% Core), NFR4 (ROM delta), and FR15 are demonstrably satisfied and `antforth 1.10` can be tagged as the "100% ANS Core" release.
+**Given** Story 15.5's hardware run surfaced a specific defect requiring kernel surgery,
+**When** Story 15.5.1 is dev-passed,
+**Then** AC1 — a standalone Forth probe block is authored that exhibits the defect on real hardware (the reproducer).
+**And** AC2 — the defect is characterised: wrong `ior` value, orphaned FCB, directory corruption, or FCB-pool recovery failure (per AC6 of Story 15.5).
+**And** AC3 — the fix is implemented in the appropriate `src/*.asm` (likely `src/file_access.asm` or DMA-pool handler).
+**And** AC4 (pre-fix negative-result confirmation) — pre-fix binary fails the reproducer; post-fix passes; diff captured in Dev Notes.
+**And** AC5 (CCD-3 citation) — if the fix touches a standard-derived word, citation comment added per CCD-3.
+**And** AC6 — the probe is added permanently to `tests/file_access_tests.fth`.
+**And** AC7 (S9) — hardware smoke runs on real CP/M 2.2 / MicroBeast — PASS verdict; transcript filed.
+**And** AC8 — binary delta envelope: ≤ +30 bytes (per architecture per-story envelope for B.7 conditional).
+**And** AC9 — `docs/PHASE-3-CARRY-FORWARD.md` B.7 row marked `✅ Done` with closure note + reproducer + fix description.
 
-**Acceptance Criteria:**
+**FRs covered (conditionally):** FR-P3-19, FR-P3-20 (kernel-surgery-backed coverage if hardware reveals defect).
 
-**Given** the updated `docs/ans-forth-core-compliance.md`
-**When** the compliance methodology is re-run
-**Then** coverage is **100%** of the ANS Forth 1994 Core wordset — the headline FR15/NFR10 deliverable.
+### Story 15.6: Phase-3 close-out gate
 
-**Given** representative double-precision primitives (`D+`, `D-`, `M*`, `UM/MOD`)
-**When** benchmarked against hand-rolled Z80 equivalents
-**Then** the measured cycle counts are within ~20% of the hand-rolled baselines per NFR6; results recorded in the epic's benchmark notes.
-
-**Given** the kernel ROM size after Epic 10
-**When** compared against the post-Epic-9 baseline
-**Then** the delta is recorded; Epic 10 adds net functionality, so a temporary increase is acceptable (Epics 12 and 13 are the planned ROM-shrinking epics).
-
-**Given** the full Phase-1 + Epic-9 REPL-piped test suites
-**When** run against the Epic-10 binary
-**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
-
-**Given** the `.`/`U.`/`D.`/`.R`/`U.R`/`D.R` family reimplemented on pictured output
-**When** run against the Epic 1–8 display-output test cases
-**Then** output is byte-identical to the pre-Epic-10 baseline — FR45 verified.
-
-**Given** a real-MicroBeast-hardware smoke test
-**When** the full Epic-10 test suite is piped into the `.COM` on hardware
-**Then** it passes — PRD MVP rule satisfied; `antforth 1.10` release can be tagged.
-
-## Epic 11: Exception Subsystem & Internal Error Migration
-
-Users can catch errors with `CATCH`/`THROW`, receive standard ANS THROW codes, and keep their REPL session alive across any error; every internal error path in the interpreter, compiler, and primitives is migrated from `ABORT` to `THROW` (word-by-word per E11-D3); `ABORT`/`ABORT"` become standard wrappers for `-1 THROW`/`-2 THROW`. A migration-inventory story at the front of the epic makes the crawl scope visible before the word-by-word work begins. Delivers Mo's "catch a bug without losing the session" moment. Shippable as antforth 1.11.
-
-### Story 11.1: ABORT-site migration inventory + THROW code table + code EQUs
-
-As an antforth maintainer,
-I want the full inventory of every existing `ABORT` call site across all `*.asm` files, a complete ANS + antforth THROW code table, and the THROW code EQUs pre-populated in `src/constants.asm`,
-So that the word-by-word migration in stories 11.4–11.6 has clear, non-colliding numerical references and predictable ordering, and so Epic 11's scope is visible before the crawl begins (party-mode note).
+As Ant (the project lead) at Phase-3 completion,
+I want a verdict-table walk + S11 user-visible version surface audit + final 2.x tag application,
+So that Phase-3 close-out follows the Story 13.5.6 close-out-gate precedent and the antforth 2.x point-release ships with all standing commitments holding.
 
 **Acceptance Criteria:**
 
-**Given** every file under `src/*.asm`
-**When** surveyed for `ABORT`, `ABORT"`, or equivalent error-emission paths
-**Then** each call site is catalogued by file, word, error condition, and proposed ANS THROW code (or antforth extension code); the inventory is recorded in `docs/throw-codes.md`.
-
-**Given** the ANS Forth 2014 §9.3.5 THROW code table
-**When** transcribed into `docs/throw-codes.md`
-**Then** all 58 standard codes (`-1` through `-58`) appear with their human-readable names and brief descriptions per CCD-2.
-
-**Given** any antforth-specific THROW code identified by the survey
-**When** allocated
-**Then** it lands in the `-256` to `-32767` antforth extension range per CCD-2 with a one-line rationale in `docs/throw-codes.md`.
-
-**Given** `src/constants.asm`
-**When** updated
-**Then** it contains EQU symbols for every THROW code used in the codebase (e.g., `THROW_STACK_UNDERFLOW EQU -4`, each with a citation comment per NFR17/CCD-3).
-
-**Given** the inventory
-**When** complete
-**Then** it proposes a migration ordering (leaf primitives → compiler/dictionary → REPL → `ABORT`/`ABORT"` last per E11-D3 rationale) that is consumed by Stories 11.4–11.7.
-
-### Story 11.2: Exception frame infrastructure + `CATCH` word
-
-As a Forth user,
-I want to wrap the execution of any execution token in a `CATCH` frame and receive `0` when the word exits normally,
-So that I have a safety harness around user code — the foundation for every subsequent error-handling workflow.
-
-**Acceptance Criteria:**
-
-**Given** CCD-1's dual-chain discipline
-**When** the kernel boots
-**Then** a new USER variable `CATCH-TOP` exists, initialised to `0`.
-
-**Given** E11-D1's 8-byte exception frame layout (saved SP, saved BC = i*x's TOS-cell value per Story 11.4.1, catching-IP, previous-CATCH-TOP)
-**When** `CATCH` is invoked with an xt on TOS
-**Then** it pushes an 8-byte frame onto the IX return stack in that layout, sets `CATCH-TOP` to the new frame's address, and executes the xt.
-
-**Given** the xt returns normally (no THROW)
-**When** `CATCH` resumes
-**Then** it restores `CATCH-TOP` from the frame's prev-link, pops the 8-byte frame, and pushes `0` onto the parameter stack per ANS §6.1.0875 / Forth 2014 §9.6.1.0875.
-
-**Given** new file `src/exception.asm`
-**When** `CATCH` is implemented
-**Then** its source carries a Forth 2014 §9.6.1.0875 / §6.1.0875 citation per NFR17/CCD-3; stack-effect comment `( xt -- exception-code | 0 )` on its DEFCODE.
-
-**Given** `tests/exception_tests.fth`
-**When** it runs
-**Then** `CATCH` is tested with normal-return xts of varying stack effects (pure, producing, consuming), nested CATCH frames (inner then outer both normal-return), and empty-body xts — all must return 0 and leave `CATCH-TOP` at its entry-time value.
-
-### Story 11.3: `THROW` word + uncaught-THROW REPL handler
-
-As a Forth user,
-I want to raise a non-zero THROW code and have it caught by the nearest enclosing `CATCH` — or, if uncaught, see a clean diagnostic and return to a live REPL with my session and dictionary intact,
-So that error handling is composable and the REPL survives any error (FR22, NFR7).
-
-**Acceptance Criteria:**
-
-**Given** E11-D2's THROW algorithm (O(1) `CATCH-TOP` access; `INCLUDE-TOP` chain walk — empty at this epic, per CCD-1 designed-for-future)
-**When** `THROW` is invoked with a non-zero code and `CATCH-TOP` ≠ 0
-**Then** the algorithm walks the (currently empty) `INCLUDE-TOP` chain to the target frame (a no-op), restores SP and IX from the target frame, pushes the THROW code, restores `CATCH-TOP` from the frame's prev-link, pops the exception frame, and resumes at the frame's catching-IP.
-
-**Given** `CATCH-TOP = 0`
-**When** `THROW` is invoked with a non-zero code
-**Then** the uncaught-THROW handler: (a) prints a diagnostic of the form `error N: <description>` using `docs/throw-codes.md` table entries; (b) resets the parameter stack to empty, return stack to empty, input buffer to fresh state; (c) prints the REPL prompt; (d) dictionary and in-session definitions remain intact (NFR7, NFR8).
-
-**Given** `THROW 0`
-**When** invoked
-**Then** nothing happens (ANS §9.6.1.2275 no-op for zero).
-
-**Given** `src/exception.asm`
-**When** `THROW` is implemented
-**Then** Forth 2014 §9.6.1.2275 citation per NFR17/CCD-3; stack-effect `( n -- )`.
-
-**Given** `tests/exception_tests.fth`
-**When** it runs
-**Then** it covers: (a) `' word CATCH THROW` round-trip returning the code on stack; (b) nested `CATCH`es where the inner catches and the outer doesn't see anything; (c) nested `CATCH`es where only the outer catches; (d) uncaught THROW re-enters the REPL with session state verified intact by subsequent `WORDS` / constant-value checks.
-
-### Story 11.4: Internal error migration — stack, arithmetic, memory primitives
-
-As a Forth user,
-I want the error paths in stack, arithmetic, and memory primitives to raise standard ANS THROW codes rather than `ABORT`,
-So that I can catch these errors with `CATCH` and handle them programmatically (partial FR19 delivery).
-
-**Acceptance Criteria:**
-
-**Given** every stack primitive (`DUP`, `DROP`, `SWAP`, `OVER`, `ROT`, etc.) in `src/stack_ops.asm`
-**When** invoked with insufficient stack depth
-**Then** the word raises `-4 THROW` (stack underflow, ANS §9.3.5); `CATCH`-ing it yields `-4` on stack.
-
-**Given** arithmetic primitives in `src/arithmetic.asm` (division, mod, and any division-producing-word)
-**When** invoked with a zero divisor
-**Then** the word raises `-10 THROW` (division by zero, ANS §9.3.5); `CATCH`-ing it yields `-10`.
-
-**Given** memory primitives in `src/memory.asm` (`@`, `!`, `C@`, `C!`, `+!`, `FILL`, `MOVE`) where stack-underflow is possible
-**When** invoked with insufficient arguments
-**Then** `-4 THROW` is raised consistently.
-
-**Given** each migrated primitive (per E11-D3 one-commit-per-migration discipline)
-**When** the migration commit lands
-**Then** `tests/throw_migration_tests.fth` gains a new case asserting the correct THROW code via `CATCH`; all prior tests continue to pass.
-
-**Given** the `TOS-in-register & DEPTH` discipline (project memory)
-**When** a stack-underflow THROW fires from BC=TOS territory
-**Then** the post-THROW state satisfies the DEPTH invariant (BC may be phantom; `DEPTH = 0` semantics preserved).
-
-### Story 11.5: Internal error migration — dictionary, compiler, control flow
-
-As a Forth user,
-I want error paths in dictionary lookup, the compiler, and control-flow constructs to raise standard ANS THROW codes,
-So that compile-time errors and lookup failures compose with `CATCH` (partial FR19 delivery).
-
-**Acceptance Criteria:**
-
-**Given** an undefined word at the outer interpreter
-**When** encountered during INTERPRET
-**Then** `-13 THROW` (undefined word, ANS §9.3.5) is raised; `CATCH`-ing around `EVALUATE` or `INTERPRET` yields `-13`.
-
-**Given** compile-state violations in `src/compiler.asm` (attempt to compile outside a definition, `;` without matching `:`, etc.)
-**When** encountered
-**Then** appropriate ANS THROW codes are raised (e.g., `-14` interpreting a compile-only word, `-22` control structure mismatched, etc., per `docs/throw-codes.md`).
-
-**Given** control-flow words in `src/control_flow.asm` (`IF`/`ELSE`/`THEN`, `BEGIN`/`UNTIL`, `DO`/`LOOP` at compile time)
-**When** mismatched (e.g., `ELSE` without `IF`, `LOOP` without `DO`)
-**Then** `-22 THROW` (control structure mismatched) is raised; `CATCH`-ing it in a compilation test yields `-22`.
-
-**Given** each migrated site
-**When** the migration commit lands
-**Then** `tests/throw_migration_tests.fth` gains cases asserting the correct code; all prior tests continue to pass.
-
-### Story 11.6: Internal error migration — strings, I/O, remaining error sites
-
-As a Forth user,
-I want the remaining error paths (string operations, I/O, any uncovered sites) to raise standard ANS THROW codes,
-So that all kernel error emission is uniformly THROW-based before `ABORT` is retargeted in Story 11.7 (completes FR19 pre-`ABORT`-retarget).
-
-**Acceptance Criteria:**
-
-**Given** the inventory from Story 11.1 filtered to remaining unmigrated sites
-**When** the survey is re-run after Stories 11.4 and 11.5
-**Then** only string-ops, I/O, and miscellaneous sites remain; this story migrates each.
-
-**Given** string-op primitives in `src/strings.asm` where bounds violations are possible
-**When** a bounds violation occurs
-**Then** the appropriate ANS THROW code is raised (e.g., `-18` parse-string range error).
-
-**Given** I/O paths in `src/io.asm`, `src/formatting.asm` that raise errors (e.g., invalid radix in `BASE`)
-**When** an error condition arises
-**Then** a documented THROW code is raised.
-
-**Given** `tests/throw_migration_tests.fth`
-**When** Story 11.6 is complete
-**Then** every site in Story 11.1's inventory (except `ABORT` and `ABORT"` themselves — Story 11.7) is represented by a catch-and-assert test case.
-
-**Given** Story 11.1's inventory
-**When** re-checked after this story
-**Then** zero ABORT sites remain outside of `ABORT` and `ABORT"` themselves — the migration is complete except for the last step.
-
-### Story 11.7: `ABORT` and `ABORT"` retargeted as THROW wrappers (capstone)
-
-As a Forth user,
-I want `ABORT` and `ABORT"` to become standard ANS wrappers for `-1 THROW` and `-2 THROW` respectively,
-So that all kernel error emission, including the two legacy user-facing error words, is fully unified under the exception mechanism (FR20).
-
-**Acceptance Criteria:**
-
-**Given** `src/system.asm`
-**When** `ABORT` is reimplemented
-**Then** it is equivalent to `-1 THROW` per ANS §6.1.0670 / Forth 2014 §9.6.2.0670; any prior ad-hoc stack/state resets embedded in `ABORT` are gone (now handled by the uncaught-THROW REPL handler from Story 11.3).
-
-**Given** `ABORT"` at runtime
-**When** invoked with a truthy flag
-**Then** it emits the stored message and raises `-2 THROW` per ANS §6.1.0680 / Forth 2014 §9.6.2.0680.
-
-**Given** the full regression suite (Phase-1 + Epic-9 + Epic-10 + Epic-11 prior stories)
-**When** run
-**Then** every test passes — previously-ABORT-emitting code paths now go through `-1 THROW` / `-2 THROW` and end up in the same REPL-reset behaviour.
-
-**Given** `CATCH`-ing `ABORT`
-**When** invoked (`' some-word-that-ABORTs CATCH`)
-**Then** `-1` is returned on stack — caught-ABORT now just works per ANS.
-
-**Given** this story being explicitly *last* in the migration sequence per E11-D3
-**When** it lands
-**Then** no path in the kernel double-throws (no `ABORT` → `-1 THROW` → second `ABORT`).
-
-### Story 11.8: Epic 11 benchmark, survivability stress + regression gate (CCD-4)
-
-As an antforth maintainer,
-I want Epic 11 to close with an NFR4 overhead measurement, a REPL-survivability stress suite (NFR7), a state-integrity verification (NFR8), and a full regression pass,
-So that the exception subsystem's performance, correctness, and safety envelopes are verified before `antforth 1.11` is tagged.
-
-**Acceptance Criteria:**
-
-**Given** an empty-body xt wrapped in `CATCH` with normal return
-**When** the NFR4 benchmark thread runs against it on the emulator
-**Then** the measured CATCH-frame push + pop + `CATCH-TOP` update overhead is **≤ ~15 Z80 cycles** per NFR4; recorded in the epic's benchmark notes.
-
-**Given** a `THROW` triggered from nested depth N
-**When** the unwind completes
-**Then** the cycle count is bounded and proportional to N (no hidden exponential paths per NFR4 bounded-time requirement).
-
-**Given** a REPL survivability stress test (`tests/exception_tests.fth` extended)
-**When** each of the following errors is induced: stack underflow, stack overflow, division by zero, undefined word, compile-state mismatch, `ABORT"` with truthy flag
-**Then** every error returns the REPL to a live prompt; `WORDS` still lists user definitions; `MARKER`-saved state is recoverable; `BASE` is unchanged (FR22 / NFR7 / NFR8).
-
-**Given** the post-THROW integrity audit
-**When** checked after each induced error
-**Then** input buffer, dictionary HERE, parameter stack, return stack, `CATCH-TOP`, and USER-area invariants are all in consistent states (NFR8).
-
-**Given** the kernel ROM size
-**When** compared against post-Epic-10 baseline
-**Then** delta recorded; Epic 11 is expected to add some ROM (exception subsystem); Epics 12/13 plan to recover it per NFR5 phase-wide negative target.
-
-**Given** the full Phase-1 + Epic-9 + Epic-10 test suites
-**When** run against the Epic-11 binary
-**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
-
-**Given** a real-MicroBeast-hardware smoke test
-**When** the full Epic-11 test suite (including the stress suite) is piped into the `.COM` on hardware
-**Then** it passes — PRD MVP rule satisfied; `antforth 1.11` release can be tagged.
-
-## Epic 11.5: Stabilisation, Hardware Audit, Debt Cleanup, Epic-12 Redraft Prep
-
-The Epic 11 retrospective (2026-04-27) surfaced two epic-update signals — a hardware-only crash class on real MicroBeast affecting print operations, and Epic 12's auto-activation plan invalidated by the wider 2026-04-20 ASSEMBLER rollback — plus six accumulated technical-debt items from Epics 10 and 11 that risk snowballing into Epic 12. Inserted as a stabilisation interlude before Epic 12 starts (sprint-change-proposal-2026-04-27.md). One audit story (verdict-only deliverable; fix-stories spawn from the verdict), four hardening / debt-retirement stories, one document-surgery story redrafting Epic 12 to match the rollback decisions, plus a CCD-4-equivalent close-out gate. Shippable as `antforth 1.11.5` (or carried implicitly into Epic 12's tag).
-
-### Story 11.5.1: Real-MicroBeast hardware crash audit
-
-As the antforth maintainer,
-I want a thorough audit of every BDOS-call register-preservation assumption, every shadow-register / IX / IY / stack interaction with print paths, and a hardware reproduction of the 2026-04-27-observed crashes,
-So that we produce a verdict (antforth defect / firmware bug / shared-fault) with reproducer for each path before approaching the MicroBeast firmware maintainer. **This story is verdict-only — fix-stories spawn from the verdict; small in-pass fixes are not authorised.**
-
-**Acceptance Criteria:**
-
-**Given** the 2026-04-27 hardware smoke transcript (`~/Downloads/bestialitty-20260427-120911.bin`)
-**When** each of the two reproducible incidents is reproduced on real MicroBeast hardware (incident #1: `1 2 3 ' ABORT CATCH . . . .` printed `-1 ` then soft-rebooted mid-line; incident #2: `error -3085` followed by `Bdos Err On B: Bad Sector` chain)
-**Then** the trigger sequence is documented byte-for-byte and the failure mode (hard reboot, BDOS error, hang) is recorded with timing and any pre-state.
-
-**Given** every BDOS call site in `src/*.asm`
-**When** audited
-**Then** the per-site shadow-register / IX / IY / stack-discipline assumption is documented and cross-referenced against the CP/M 2.2 BDOS contract (function-by-function — the contract is per-function and implementation-defined for many functions).
-
-**Given** Story 11.4.1's i*x preservation path (the `1 2 3 ' ABORT CATCH . . . .` form is exactly the path it redesigned)
-**When** the audit checks whether the Story-11.4.1 redesign is implicated in incident #1
-**Then** the verdict is recorded — either ruled out (with evidence) or implicated (with reproducer).
-
-**Given** the audit findings
-**When** synthesised
-**Then** a verdict is produced for each incident: **(a) antforth defect** — produce a fix-story spec with reproducer, expected fix scope, and risk assessment; **(b) firmware bug** — produce a minimal reproducer the MicroBeast maintainer can use, with antforth-side defensive options noted; **(c) shared-fault** — document the boundary, the antforth-side mitigation, and the firmware-side concern.
-
-**Given** the verdict for each incident
-**When** the audit lands
-**Then** the project lead reviews and approves the next-step plan (fix-stories, escalation, or both); approved fix-stories are added to Epic 11.5 sprint-status as new backlog rows.
-
-**Given** the verdict-only scope
-**When** the dev agent encounters a small in-pass fix temptation
-**Then** the temptation is recorded as a finding in the verdict, NOT applied — even one-line fixes spawn their own story so the audit's "this is the defect" claim remains independently verifiable.
-
-**Given** the close-out gate Story 11.5.7
-**When** Epic 11.5 is being measured
-**Then** the audit's verdict-with-reproducers stands as Story 11.5.1's deliverable; the absence of a kernel diff is the expected outcome.
-
-### Story 11.5.2: Stack-overflow `-3 THROW` guard
-
-As a Forth user,
-I want data-stack growth past `s0` to raise `-3 THROW` cleanly rather than corrupt whatever lives below,
-So that catastrophic stack-overflow becomes a recoverable error like every other migrated raise site (closes Story 11.8 NFR6 documented gap).
-
-**Acceptance Criteria:**
-
-**Given** `THROW_STACK_OVERFLOW EQU -3` (already reserved per `docs/throw-codes.md:74` row)
-**When** declared in `src/constants.asm`
-**Then** it carries the `; ANS Forth 1994 §9.3.5` citation per CCD-3.
-
-**Given** the existing `check_underflow{,_2,_3,_4}` infrastructure pattern
-**When** a symmetric guard is wired against `s0`
-**Then** any data-stack push past the limit raises `-3 THROW` via `JP w_THROW_cf.kernel_entry` (kernel-internal entry pattern from Story 11.4); the guard is invoked at every site that pushes onto the data stack from a depth-unaware caller.
-
-**Given** `tests/throw_migration_tests.fth`
-**When** Section 5 (or extension of Section 1) is added
-**Then** caught + uncaught -3 cases are exercised; uncaught case asserts `error -3: stack overflow.*<recovery-marker>`.
-
-**Given** Story 11.8 NFR6 verdict
-**When** the guard lands
-**Then** the verdict updates from "PASS-with-documented-gap" to "PASS"; test 766 gains its overflow corollary.
-
-**Given** Story 11.5.1's audit verdict
-**When** it identifies stack-overflow as the proximate cause of incident #1
-**Then** Story 11.5.2 is marked as closing that finding too; otherwise the guard stands as defensive hardening.
-
-### Story 11.5.3: `(` / EVALUATE source-frame fix
-
-As a Forth user,
-I want `(` to respect `EVALUATE`'s source-frame boundary,
-So that an unterminated `(` inside `EVALUATE` raises `-58 THROW` against EVALUATE's frame rather than walking past the EVALUATE source into outer REPL input — closes Story 11.6 F8 deferral.
-
-**Acceptance Criteria:**
-
-**Given** the pre-fix defect (Story 11.6 F8)
-**When** the reproducer `: T58 S" ( unterminated " EVALUATE ; ' T58 CATCH . CR DEPTH .` is run pre-fix
-**Then** subsequent REPL lines are consumed by the runaway parse (documented baseline).
-
-**Given** the fix landed in `src/strings.asm` `w_PAREN_cf` (parameterised on `EVALUATE`'s source-frame state)
-**When** the reproducer is re-run
-**Then** the output is `-58 0  ok` (caught the unexpected-end-of-input THROW; depth correct; subsequent REPL lines unaffected).
-
-**Given** asm-error THROW codes (-258..-271) carrying caught-form deferrals from Story 11.5 D2 / Story 11.6 F6
-**When** the EVALUATE source-frame is correctly bounded
-**Then** an EVALUATE-based caught-test harness becomes feasible; at least one caught-form test is added per asm-error THROW code (or covered by a parameterised test harness).
-
-**Given** the existing 787 PASS baseline
-**When** the fix lands
-**Then** zero regressions; new tests numbered from the post-Epic-11 high-water mark.
-
-### Story 11.5.4: `print_throw_description` table-walk hardening
-
-As an antforth maintainer,
-I want the description-table walk in `print_throw_description` to use 16-bit `ADD HL, A` rather than 8-bit `ADD A, L / INC H`,
-So that the walk does not wrap if the kernel grows past 32 KB and the table relocates near the top of memory — closes Story 11.5 F9 / Story 11.6 R-L6 carry.
-
-**Acceptance Criteria:**
-
-**Given** the current 8-bit walk in `src/exception.asm` `print_throw_description`
-**When** replaced with the 16-bit `ADD HL, A` form
-**Then** the walk is wrap-safe across the full 16-bit address space.
-
-**Given** all uncaught-THROW REPL tests (685–693, 716–717, 750–753, 762–764, 768–770)
-**When** re-run post-fix
-**Then** all PASS byte-identically.
-
-**Given** the binary-size delta
-**When** measured
-**Then** recorded in Completion Notes; expected near-zero (one form swap).
-
-### Story 11.5.5: Epic 12 redraft — drop ASSEMBLER wordlist entirely
-
-As an antforth maintainer,
-I want Epic 12 sections in `epics.md` and `sprint-status.yaml` updated so that no ASSEMBLER wordlist, no ASSEMBLER.FTH, and no auto-activation appear anywhere in the Epic 12 plan,
-So that Epic 12 reflects the project lead's 2026-04-27 direction (the existing hard-coded assembler implementation in `src/assembler.asm` is what we keep going forwards) and no Epic 12 story is started against a stale spec.
-
-**Acceptance Criteria:**
-
-**Given** the project lead's 2026-04-27 direction (no ASSEMBLER.FTH, no ASSEMBLER wordlist, no auto-activation, hard-coded assembler stays as-is)
-**When** Epic 12 sections in `_bmad-output/planning-artifacts/epics.md` are redrafted
-**Then** the Epic 12 title is renamed (drop the "& ASSEMBLER Wordlist" suffix — proposed: "Multi-Vocabulary Search-Order"); the Epic 12 intro paragraph removes every mention of ASSEMBLER wordlist activation, opcode-word registration, and `CODE`/`END-CODE` auto-activation.
-
-**Given** Story 12.1 (`FORTH-WORDLIST` bootstrap)
-**When** redrafted
-**Then** any ACs that pre-allocate an `ASSEMBLER` bucket slot or assume an ASSEMBLER wordlist will follow are stripped; the bucket-array layout is sized solely for the user-facing search-order wordsets.
-
-**Given** Story 12.6 ("ASSEMBLER wordlist + auto-activation in `CODE`/`END-CODE`")
-**When** the redraft lands
-**Then** the entire story is **deleted** from `epics.md`. The Story-10.7 asm-`#` dispatch hack is **permanent** (no retirement vehicle planned); `project_asm_hash_dispatch_hack.md` already reflects this 2026-04-27 update.
-
-**Given** Story 12.7 (Epic 12 close-out gate)
-**When** the redraft lands
-**Then** it is renumbered to **Story 12.6** (filling the gap left by the deleted story); ACs are pruned to drop the CODE-source-file backward-compat suite that referenced ASSEMBLER opcode-relocation (FR31 / NFR14 backward-compat is still verified — but framed against the unchanged hard-coded assembler subsystem, not against any opcode migration); ROM-delta accounting recalibrated.
-
-**Given** `sprint-status.yaml` Epic 12 rows
-**When** the redraft lands
-**Then** `12-6-assembler-wordlist-and-auto-activation-in-code-end-code: backlog` is removed; `12-7-epic-12-benchmark-code-backward-compat-suite-and-regression-gate-ccd-4: backlog` is renamed to `12-6-...` (matching the renumbered story slug).
-
-**Given** the affected memories
-**When** the redraft lands
-**Then** `project_phase2_scope.md` Epic 12 entry is current (already updated 2026-04-27); `project_epic12_redraft_required.md` is replaced with a brief closure note or deleted; `project_assembler_keep_assembly.md` is current (already updated 2026-04-27); `project_asm_hash_dispatch_hack.md` is current (already marked permanent 2026-04-27); `project_epic_11_5_scope.md` is updated to show Story 11.5.5 closed.
-
-**Given** the PRD (`_bmad-output/planning-artifacts/prd.md`) and architecture spec (`_bmad-output/planning-artifacts/architecture.md`)
-**When** the redraft lands
-**Then** every residual ASSEMBLER-wordlist / auto-activation reference is scrubbed to match the post-2026-04-27 reality; the in-flight high-impact edits already made on 2026-04-27 (FR30 deletion, Executive Summary, MVP rule, vocabulary-model table, Mo's journey, runtime-model boot-flow, post-MVP first-consumer wording, requirements-summary table) are verified intact; any remaining narrative drift is reconciled. `grep -nE 'ASSEMBLER wordlist|ASSEMBLER\.FTH|auto-activat' _bmad-output/planning-artifacts/*.md` returns only historical / superseded-tagged hits, no forward-looking promises.
-
-**Given** the redraft is document-only
-**When** the changes land
-**Then** zero binary delta; zero test-count delta; `make test-repl` regression baseline preserved.
-
-### Story 11.5.6: `-271` semantic split
-
-As a Forth user,
-I want `THROW_ASM_RANGE = -271` to be split into `-271 +D` displacement and `-272 BIT,` bit-number out-of-range,
-So that the diagnostic gives instruction-locality rather than collapsing two distinct conditions onto one code (closes Story 11.6 F4 deferral).
-
-**Acceptance Criteria:**
-
-**Given** `THROW_ASM_RANGE EQU -271` (existing)
-**When** the split lands
-**Then** `THROW_ASM_RANGE` (or renamed `THROW_ASM_DISP_RANGE`) is retained for the `+D` displacement out-of-range raise; new `THROW_ASM_BIT_RANGE EQU -272` is allocated with the `; antforth extension — see docs/throw-codes.md` marker per CCD-3.
-
-**Given** the two raise sites in `src/assembler.asm` (`+D` displacement guard and `BIT,` bit-number guard, per Story 11.6 R-F1's corrected line numbers `:1135/:1138/:1143` and `:3076/:3113/:3145`)
-**When** split
-**Then** each raises its own code; `docs/throw-codes.md` §c gains the `-272` row with rationale; `src/exception.asm` `throw_desc_table` gains the `-272 "bit range"` (or equivalent) entry.
-
-**Given** existing tests that exercise the `-271` path
-**When** they run post-split
-**Then** they assert against the correct of `-271` / `-272` per the actual condition raised; no PASS-by-coincidence.
-
-**Given** the binary-size delta
-**When** measured
-**Then** recorded in Completion Notes; expected small positive (new EQU + table entry + per-site code routing).
-
-### Story 11.5.7: Epic 11.5 close-out gate (CCD-4 equivalent)
-
-As the antforth maintainer,
-I want Epic 11.5 to close with a CCD-4-equivalent gate covering full regression + ROM-delta accounting + hardware re-smoke,
-So that the audit verdict is silicon-validated, the debt cleanup is verified zero-regression, and Epic 12 starts from a known-clean baseline.
-
-**Acceptance Criteria:**
-
-**Given** the post-Story-11.5.6 binary
-**When** `make test-repl` and `make test` run
-**Then** zero regressions; PASS count = post-Story-11.7 baseline (787) + Epic 11.5 net additions; recorded in Completion Notes.
-
-**Given** the cumulative ROM delta from Stories 11.5.1–11.5.6
-**When** measured against post-Story-11.7 baseline (17,425 bytes)
-**Then** the delta is recorded and justified per NFR4 (per-epic budget); near-zero is the expected envelope, with any non-trivial delta tied to the audit verdict.
-
-**Given** the audit verdict from Story 11.5.1
-**When** Epic 11.5 close-out runs
-**Then** the verdict's reproducers are re-run on real MicroBeast hardware to confirm the antforth-side fixes (if any) hold and the firmware-escalation reproducers (if any) still trigger predictably.
-
-**Given** the Epic 12 redraft from Story 11.5.5
-**When** verified
-**Then** the post-redraft Epic 12 sprint-status rows match the redrafted epic-spec stories; the asm-`#` hack memory is consistent with the picked retirement path; no orphan memory references the pre-redraft plan.
-
-**Given** the full Phase-1 + Epic-9/10/11 + Epic-11.5 test suites
-**When** run on the close-out binary
-**Then** every test passes; hardware re-smoke (subset of the Story 11.8 12-line batch, plus any new audit-verdict reproducers) PASSes on real MicroBeast.
-
-**Given** Epic 11.5 closure
-**When** the gate verdict lands
-**Then** Epic 12 is unblocked to start from a known-clean baseline; sprint-status flips `epic-11.5: backlog → in-progress → done` per normal convention.
-
-## Epic 12: Multi-Vocabulary Search-Order
-
-> Redrafted 2026-04-27..2026-04-28 by Story 11.5.5 to match the 2026-04-20 + 2026-04-27 ASSEMBLER rollback decisions; see `_bmad-output/implementation-artifacts/11.5-5-epic-12-redraft.md`.
-
-Users can create and manage multiple wordlists, control the search order, and direct definitions into specific wordlists — all while existing CODE source files assemble unchanged against the unchanged hard-coded assembler subsystem. Shippable as antforth 1.12.
-
-### Story 12.1: Wordlist struct + hash parameterisation + `FORTH-WORDLIST` bootstrap
-
-As an antforth maintainer,
-I want the per-wordlist 130-byte struct defined, the dictionary hash lookup parameterised on a wordlist-struct address, and the existing flat dictionary migrated to live inside a canonical `FORTH-WORDLIST`,
-So that the kernel has a working multi-vocabulary infrastructure before any user-facing wordlist words are introduced (FR28 delivered; FR23–FR29, FR31 unblocked — FR30 withdrawn 2026-04-27).
-
-**Acceptance Criteria:**
-
-**Given** E12-D1's layout (2-byte next-wordlist chain pointer + 64-entry × 2-byte hash-bucket array)
-**When** the kernel boots
-**Then** a pre-built `FORTH-WORDLIST` struct exists in known-address kernel memory, populated with all existing kernel primitives' dictionary entries across its 64 buckets.
-
-**Given** `src/hash.asm`
-**When** the XOR-rotate 64-bucket lookup is refactored
-**Then** it takes a wordlist-struct address as a parameter (HL or equivalent per register conventions) and hashes into *that* struct's bucket array — no global fixed bucket table remaining.
-
-**Given** `src/dictionary.asm`
-**When** word insertion runs
-**Then** it inserts into a caller-supplied wordlist struct (by default `FORTH-WORDLIST`); no more hard-wired single-table assumptions.
-
-**Given** the kernel at boot
-**When** FORTH-WORDLIST is the only wordlist in the initial search order
-**Then** every pre-Epic-12 word is findable exactly as before — zero lookup regression for the single-wordlist case (NFR2 tested as a per-story gate, full envelope in Story 12.8).
-
-**Given** new file `src/wordlists.asm`
-**When** the struct and supporting macros are defined
-**Then** `WORDLIST_SIZE EQU 130`, `WORDLIST_BUCKETS EQU 64`, and layout-offset constants are defined for use by subsequent stories; each has a citation comment per NFR17/CCD-3 where applicable.
-
-**Given** `tests/wordlist_tests.fth`
-**When** it runs at this story's completion
-**Then** it confirms `FORTH-WORDLIST` (implemented in Story 12.3 as a user-facing word — for now accessed via its known address) is the current compilation and search wordlist; every Phase-1 + Epic-9/10/11 test still passes (NFR9).
-
-### Story 12.2: `WORDLIST` and `SEARCH-WORDLIST`
-
-As a Forth user,
-I want to create new empty wordlists at runtime and search any specific wordlist by identifier,
-So that I can partition my definitions into named namespaces (FR23) and perform targeted lookups (FR29).
-
-**Acceptance Criteria:**
-
-**Given** `WORDLIST` per ANS §16.6.1.2460
-**When** I invoke `WORDLIST`
-**Then** it `ALLOT`s 130 bytes at `HERE`, initialises all 64 bucket entries to `$0000` and the next-wordlist chain pointer to `0`, and returns the struct's address on TOS as the wordlist identifier (`wid`).
-
-**Given** `SEARCH-WORDLIST` per ANS §16.6.1.2192
-**When** I invoke `c-addr u wid SEARCH-WORDLIST`
-**Then** it searches only the specified wordlist (not the search order) and returns either `(xt 1 | -1 | 0)` per the standard's stack effect.
-
-**Given** a freshly created wordlist
-**When** it is searched before any definitions are added to it
-**Then** `SEARCH-WORDLIST` returns `0` (not found).
-
-**Given** the source
-**When** both words are implemented
-**Then** ANS §16.6.1.2460 and §16.6.1.2192 citations appear per NFR17/CCD-3; stack-effect comments on DEFCODE lines.
-
-**Given** `tests/wordlist_tests.fth`
-**When** it runs
-**Then** it covers: creating a wordlist, attempting lookup (miss), adding a definition (via SET-CURRENT + `:` — Story 12.4) or via low-level primitive, re-lookup (hit, returns correct xt), and lookup collision-chain behaviour.
-
-### Story 12.3: Search-order infrastructure — `GET-ORDER`, `SET-ORDER`, `FORTH-WORDLIST`
-
-As a Forth user,
-I want to read and write the current search order and reference the built-in Forth wordlist by name,
-So that I can compose multi-wordlist lookup strategies (FR24, FR28).
-
-**Acceptance Criteria:**
-
-**Given** E12-D2's design (16-slot array in user area + `SEARCH-ORDER-DEPTH` USER variable)
-**When** the kernel boots
-**Then** the array holds `FORTH-WORDLIST` at slot 0 and `SEARCH-ORDER-DEPTH` = 1.
-
-**Given** `GET-ORDER` per ANS §16.6.1.1647
-**When** invoked
-**Then** it pushes the wordlists onto the parameter stack top-of-search-order-first followed by the depth (count): `( -- widn ... wid1 n )`.
-
-**Given** `SET-ORDER` per ANS §16.6.1.2195
-**When** invoked with `( widn ... wid1 n -- )`
-**Then** it writes those wordlists back into the search-order array in the same order and updates `SEARCH-ORDER-DEPTH`; a depth > 16 raises `-49 THROW` (search-order overflow, ANS §9.3.5).
-
-**Given** `SET-ORDER -1`
-**When** invoked
-**Then** the implementation-defined minimum search order is installed — for antforth, this is `FORTH-WORDLIST` at slot 0, depth 1 per ANS option.
-
-**Given** `FORTH-WORDLIST` per ANS §16.6.1.1595
-**When** invoked
-**Then** it pushes the canonical Forth wordlist's struct address onto TOS.
-
-**Given** the outer interpreter's word-lookup path
-**When** a token is parsed
-**Then** the lookup walks the search order from top (slot 0) down, hashing into each wordlist's bucket array and stopping at the first hit; NFR2's 10% regression budget is measured in Story 12.8 against this path.
-
-**Given** `tests/wordlist_tests.fth`
-**When** extended
-**Then** it covers: `GET-ORDER` initial state; `SET-ORDER` round-trip; search with 2+ wordlists where the same word name lives in multiple and top-of-order wins; attempt to set depth > 16 catches `-49`.
-
-### Story 12.4: Compilation wordlist control — `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`
-
-As a Forth user,
-I want to control which wordlist new definitions are added to,
-So that I can partition my definitions by subsystem without polluting the default `FORTH-WORDLIST` (FR25, FR26).
-
-**Acceptance Criteria:**
-
-**Given** a USER variable `CURRENT-WORDLIST` (or equivalent) that tracks the compilation wordlist
-**When** the kernel boots
-**Then** it is set to `FORTH-WORDLIST`.
-
-**Given** `GET-CURRENT` per ANS §16.6.1.1643
-**When** invoked
-**Then** it returns the current compilation wordlist's wid on TOS.
-
-**Given** `SET-CURRENT` per ANS §16.6.1.2193
-**When** invoked with a wid on TOS
-**Then** subsequent definitions (`:`, `CODE`, `CREATE`, `VARIABLE`, `CONSTANT`, `MARKER`, etc.) are placed into that wordlist's hash table.
-
-**Given** `DEFINITIONS` per ANS §16.6.1.1180
-**When** invoked
-**Then** `SET-CURRENT` is called with the wid at slot 0 of the search order — i.e., "direct subsequent definitions into the top wordlist."
-
-**Given** a freshly created wordlist `W` and sequence `W SET-CURRENT : FOO ; FORTH-WORDLIST SET-CURRENT`
-**When** `FOO` is looked up with only `FORTH-WORDLIST` in the search order
-**Then** lookup fails; when `W` is added to the search order, lookup succeeds — confirming the definition landed in `W` rather than `FORTH-WORDLIST`.
-
-**Given** `tests/wordlist_tests.fth`
-**When** extended
-**Then** it covers the round-trip above, `DEFINITIONS`-driven partitioning with 2+ wordlists, and that standard word definitions (e.g., `VARIABLE`, `CONSTANT`) all honour the current compilation wordlist.
-
-### Story 12.5: `ONLY`
-
-As a Forth user,
-I want to reduce my search order to a minimal standards-specified set,
-So that I can clear out accumulated cruft and reset namespace visibility (FR27).
-
-**Acceptance Criteria:**
-
-**Given** `ONLY` per ANS §16.6.2.1965
-**When** invoked
-**Then** it sets the search order to the implementation-defined minimal set; for antforth, this is `FORTH-WORDLIST` at slot 0 with depth 1 (per ANS option).
-
-**Given** `ONLY` is in the ANS Search-Order Extension wordset (§16.6.2)
-**When** the source is authored
-**Then** its citation comment is `; ANS Forth 1994 §16.6.2.1965 ONLY` per NFR17/CCD-3.
-
-**Given** `tests/wordlist_tests.fth`
-**When** extended
-**Then** it confirms `SET-ORDER` to a 5-wordlist state followed by `ONLY` yields a depth of 1 with `FORTH-WORDLIST` at slot 0.
-
-### Story 12.6: Epic 12 benchmark, CODE backward-compat suite + regression gate (CCD-4)
-
-As an antforth maintainer,
-I want Epic 12 to close with NFR2 measurement, an exhaustive CODE-source-file backward-compat suite, ROM delta accounting, and a full regression pass,
-So that multi-vocabulary lookup performance, byte-identical CODE assembly, and overall correctness are verified before `antforth 1.12` is tagged.
-
-**Acceptance Criteria:**
-
-**Given** a benchmark with the search order populated to 8 wordlists (most lookups missing the top wordlists and falling through to `FORTH-WORDLIST`)
-**When** the word-lookup cycle count is measured
-**Then** the regression vs the pre-Epic-12 single-vocabulary baseline is **≤ 10%** per NFR2; results recorded in the epic's benchmark notes.
-
-**Given** a benchmark with a hit at slot 0 of the search order
-**When** measured
-**Then** the regression vs the pre-Epic-12 baseline is near-zero (the common case should not suffer).
-
-**Given** every pre-phase-2 CODE source file in the project's test corpus
-**When** assembled against the Epic-12 binary (against the unchanged hard-coded assembler subsystem in `src/assembler.asm` — no opcode migration occurred)
-**Then** output is byte-identical to the pre-phase-2 reference — FR31, NFR14 verified comprehensively.
-
-**Given** the kernel ROM size
-**When** measured against the post-Epic-11 baseline
-**Then** the Epic-12 kernel-size delta is recorded; the additions (Search-Order machinery, per-wordlist hash layout) are expected to grow the kernel, and the growth is justified line-by-line against NFR4 (per-epic budget, not a net-negative gate).
-
-**Given** the full Phase-1 + Epics 9/10/11 test suites
-**When** run against the Epic-12 binary
-**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
-
-**Given** a real-MicroBeast-hardware smoke test
-**When** the full Epic-12 test suite runs on hardware
-**Then** it passes — PRD MVP rule satisfied; `antforth 1.12` release can be tagged.
-
-## Epic 13: File-Access
-
-Users can load and save source files against the CP/M 2.2 filesystem (`INCLUDE`/`INCLUDED`/`INCLUDE-FILE`/`OPEN-FILE`/`CREATE-FILE`/`READ-FILE`/`WRITE-FILE`/`FILE-POSITION`/`REPOSITION-FILE`/`FILE-SIZE`/`CLOSE-FILE`/`DELETE-FILE`). File errors raise `THROW`. Closes with the Phase-2 release gate — full regression of Epics 1–12, BDOS-function-allow-list audit, filesystem-error stress suite, kernel ROM-delta accounting, and MicroBeast hardware validation. Passing the gate tags **antforth 2.0**.
-
-### Story 13.0: Double-cell literal recogniser — ANS §3.4.1.3 dot-anywhere (Epic 10 back-fill)
-
-As a Forth user,
-I want digit strings containing a single `.` (e.g., `1000000.`, `-1.`, `1.000`, `.5`, `$FFFF.`, `#1000.`, `%1010.`) to be parsed as double-cell integer literals per ANS Forth 1994 §3.4.1.3,
-So that I can enter double-precision values directly at the REPL and in source — closing the parser-level gap missed by Epic 10's "100% Core compliance" word-counted survey (caught post-Epic-12 retro 2026-05-01).
-
-**Context (back-fill rationale):** Epic 10's compliance-doc claim of "100% ANS Forth 1994 Core" was assembled from a word-coverage survey (DEFCODE/DEFWORD enumeration). §3.4.1.3 is a *parser rule*, not a word, and was not on the survey list. Every existing double-cell test in `tests/double_tests.fth` hand-stacks two single cells (`0 5 0 7 D+`) — proving the operators work given pre-stacked cells, but **never exercising the literal-input → operator pipeline**. Real users type `1000000.`, not `15 -7616`. This story closes the gap before Epic 13's user-facing file-access words land, and before the v2.0 release tag. Per project lead 2026-05-01: dot-anywhere scope (no corner-cutting); simple one-line correction in `docs/ans-forth-core-compliance.md`.
-
-**Acceptance Criteria:**
-
-**Given** ANS Forth 1994 §3.4.1.3 ("Conversion of digit strings")
-**When** the outer interpreter encounters a digit string containing **exactly one** `.` anywhere in the digit portion (after the optional leading sign and any Epic-9 numeric prefix)
-**Then** the string is parsed as a double-cell integer; the dot is a marker (not a place-holder), ignored for value; present/absent toggles single-cell vs double-cell interpretation.
-
-**Given** the trailing-dot form `1000000.`
-**When** entered at the REPL or compiled in a colon body
-**Then** it pushes (or compiles) the double-cell value `1000000` (low cell `16960` = `0x4240`, high cell `15` = `0x000F`); `D.` displays `1000000`.
-
-**Given** the leading-dot form `.5` and the embedded-dot form `1.000`
-**When** parsed
-**Then** both are valid double-cell integers; `.5` → `5`; `1.000` → `1000` (digit-positions accumulated as one integer, dot ignored).
-
-**Given** an optional leading `-` sign per §3.4.1.3
-**When** combined with any dot position (`-1000000.`, `-1.000`, `-.5`)
-**Then** the result is the negated double-cell value.
-
-**Given** Epic 9's numeric prefixes (`#`, `$`, `%`, `0x`)
-**When** combined with a dot-bearing digit string (`#1000000.`, `$FFFF.`, `%1010.`, `0xDEAD.`)
-**Then** the prefix selects the radix per FR1-FR9 *and* the dot triggers double-cell parsing; `BASE` is unmutated per FR9.
-
-**Given** a digit string with **more than one** `.` (e.g., `1.2.3`) or a dot in the prefix region (e.g., `.#100`)
-**When** parsed
-**Then** the string is not a valid number; control falls through to the undefined-word path raising `-13 THROW`.
-
-**Given** compile-state (inside a colon definition)
-**When** a dot-bearing literal appears
-**Then** it is compiled as `(DLIT)` + 4 bytes of inline data (low cell, then high cell — matching the existing `2!`/`2@` cell ordering); the runtime word `(DLIT)` pushes both cells onto the stack at execution time.
-
-**Given** the unprefixed dot-bearing form parsed against the current `BASE`
-**When** `BASE` ≠ 10 (e.g., `HEX 1000.`)
-**Then** the digits are interpreted in the current `BASE` per FR47 — `HEX 1000.` yields `0x00001000` = 4096 as a double-cell.
-
-**Given** `tests/double_tests.fth`
-**When** it runs after Story 13.0
-**Then** every existing operator test (D+, D-, D*, DNEGATE, DABS, D=, D<, DMAX, DMIN, M+, M*, UM*, UM/MOD, SM/REM, FM/MOD, D., D.R) gains a parallel literal-input variant exercising at least one dot-bearing literal in its setup; **plus** dedicated literal-recogniser tests covering trailing-dot, leading-dot, embedded-dot, signed forms, all four Epic-9 prefix combinations, BASE-relative parsing, multi-dot rejection, and compile-state behaviour. Conservative new test count: **+12 to +20 tests** (numbered 853..872 per Story 12.6's last test 852).
-
-**Given** `docs/ans-forth-core-compliance.md` claimed coverage on §3.4.1.3 prior to this story
-**When** Story 13.0 lands
-**Then** the §3.4.1.3 row is corrected (one-line edit) to reflect the previously-shipped state and the post-13.0 fixed state. No broader re-audit pass is in scope per project lead 2026-05-01 (recorded as a post-2.0 carry-forward opportunity).
-
-**Given** the byte-count delta budget per `architecture.md:158`
-**When** the build closes
-**Then** the post-edit `wc -c build/antforth.com` is recorded against the post-Story-12.6 baseline (**18,230 bytes**); expected envelope is **+60 to +120 bytes** for the recogniser extension, `(DLIT)` runtime, and compile-state path.
-
-**Given** the post-Story-12.6 regression baseline (**852 PASS / 0 FAIL** per `make test-repl`)
-**When** Story 13.0's edits land
-**Then** all 852 existing tests continue to PASS; the post-edit count is `852 + N` where `N` is the new test count above (12-20).
-
-**Given** the adversarial-review discipline
-**When** Story 13.0's review runs
-**Then** at least 1-2 LOW/MEDIUM findings are expected; likely probes: BASE-mutation safety under prefix×dot combinations; sign-handling edge cases (`-.` alone — not a number); empty-digit edge cases (`.` alone — not a number); `(DLIT)` cell ordering correctness; compile-state vs interpret-state path symmetry.
-
-**Given** Story 13.0 is the back-fill predecessor to Story 13.1
-**When** sprint sequencing runs
-**Then** 13.0 lands and goes to `done` *before* 13.1 dev-pass starts; 13.1 stays `ready-for-dev` (already authored) and inherits the new literal recogniser as test infrastructure for any future double-cell file-position math.
-
-### Story 13.0.1: Flip double-cell stack convention to ANS-compliant high-on-TOS — ANS §3.1.4.1 (Epic 10 back-fill)
-
-As a Forth user,
-I want a double-cell value on the stack to put the **most-significant (high) cell on TOS** with the least-significant (low) cell below — and the in-memory `2!`/`2@`/`(DLIT)` layout to put the **high cell at the lower address** — exactly as ANS Forth 1994 §3.1.4.1 and §6.1.0350 mandate,
-So that double-cell idioms portable from any other ANS-compliant Forth work as written, the v2.0 release tag can credibly claim §-level Core compliance, and Story 13.1's file-position double-cell math (per §11.3.5) is built atop the correct convention from day one.
-
-**Context (back-fill rationale):** Epic 10's "100% Core" claim was assembled from a word-coverage survey. §3.1.4.1 ("Double-cell integers") is a *stack-layout rule* that applies uniformly across ~25 Core+CoreExt+Double-Number words; it is not itself a word and so was invisible to the survey. Architecture decision E10-D1 (`architecture.md:248-252`) committed the *inverted* convention while citing the standard. Story 13.0's §3.4.1.3 retro caught a sibling gap (parser-level rule); Story 13.0.1 closes the stack-layout sibling. Symptom that exposed it: `1024. .S → <2> 0 1024  ok` (low on TOS) where the standard requires `<2> 1024 0  ok` (high on TOS). Per project lead 2026-05-01: not a verdict-only audit — the deviation is documented, the fix is mandatory, and the work lands inside this single story before Story 13.1's file-access dev-pass starts.
-
-**Acceptance Criteria:**
-
-**Given** ANS Forth 1994 §3.1.4.1 ("Double-cell integers") and §6.1.0350 (`2@ ( a-addr -- x1 x2 )`)
-**When** any double-cell value lives on the parameter stack
-**Then** the high cell is on TOS and the low cell is second-on-stack; in memory at `a-addr`, the high cell is at `a-addr` and the low cell is at `a-addr+2` (each cell little-endian within itself per Z80 native; the cell-pair is "big-endian"). `1024. .S → <2> 1024 0  ok`.
-
-**Given** every double-cell-touching word in the kernel
-**When** Story 13.0.1 lands
-**Then** each word's stack-effect-comment AND the runtime push/pop order are flipped to the new convention. Words to touch: 24 in `src/double.asm` (D+, D-, D*, DNEGATE, DABS, D=, D<, DMAX, DMIN, M+, M*, UM*, UM/MOD, SM/REM, FM/MOD, S>D, D>S, 2DUP, 2DROP, 2SWAP, 2OVER, 2@, 2!, (DLIT)); 2 in `src/formatting.asm` (D., D.R); 4 in `src/pictured.asm` (<#, #, #S, #>); plus `pref_finish_value` in `src/number_prefixes.asm`, `.numq_double` in `src/strings.asm`, and `.got_value`'s double-emit in `src/outer_interpreter.asm`.
-
-**Given** the architecture-decision register E10-D1 (`architecture.md:248-252`) and the project memory `project_tos_in_register.md`
-**When** Story 13.0.1 lands
-**Then** both load-bearing knowledge artifacts are rewritten in place to the new direction with §3.1.4.1 + §6.1.0350 citations. The pre-13.0.1 wording is preserved in E10-D1 as a "Superseded 2026-05-01" footnote so future readers see the decision history. The MEMORY.md index line for the project memory is updated alongside.
-
-**Given** the test corpus in `tests/double_tests.fth` and the Makefile REPL tests
-**When** Story 13.0.1 lands
-**Then** every hand-stacked double in the test corpus is reviewed and every test that inspects on-stack cell layout (`.S`-style assertions) has its expected output flipped. Story 13.0's literal-input tests (Makefile 853-902) are mostly unchanged because the recogniser produces cells in the right order for the active convention. New probes added: `2!`/`2@` byte-pattern audit (verify high cell at low address) and `(DLIT)` body byte-pattern audit (verify high cell at lower IP-offset).
-
-**Given** the regression baseline at Story-13.0-close (902 tests / 0 FAIL, 18,665 bytes)
-**When** Story 13.0.1's edits land
-**Then** zero regression on the 1..902 baseline (with expected outputs flipped where AC applies); byte-count delta envelope is **−10 to +30 bytes** (push/pop reordering is byte-symmetric on Z80); any delta beyond ±50 bytes warrants explicit justification.
-
-**Given** `docs/ans-forth-core-compliance.md` already gained a §3.4.1.3 row in Story 13.0
-**When** Story 13.0.1 lands
-**Then** a new §3.1.4.1 row is added at the same level, citing this story; plus a top-of-doc note: two §-level structural-rule gaps closed by Epic 13 back-fills (§3.4.1.3 + §3.1.4.1); full §-by-§ pre-2.0 audit pass remains a wishlist item.
-
-**Given** Story 13.1 sits at `ready-for-dev` and inherits the double-cell convention for file-position math
-**When** Story 13.0.1 reaches `done`
-**Then** Story 13.1's dev-pass is unblocked. 13.1's spec does not need re-editing — file positions are doubles and the FCB-pool design is independent of the cell-order convention; 13.1 inherits the new convention transparently.
-
-**Given** the adversarial-review discipline
-**When** Story 13.0.1's review runs
-**Then** at least 1-3 LOW/MEDIUM findings are expected; likely probes: orphaned old-convention sites in non-double words; `M*`/`UM*` mixed-cell-width edges; `SM/REM`/`FM/MOD` cell-pop order; `2@`/`2!` byte-pattern audit; `(DLIT)` runtime + emit symmetry; pictured-output `# / #S / #>` re-derivation; stale memory or stale E10-D1 wording verification.
-
-### Story 13.1: File I/O sanity — FCB pool + BDOS wrapper layer (PRD risk mitigation)
-
-As an antforth maintainer,
-I want the 288-byte FCB pool and the internal BDOS wrapper layer implemented and exercised against a known-good CP/M image *before* any user-facing file-access words are introduced,
-So that CP/M 128-byte record boundaries, EOF handling, and BDOS call conventions are validated on their own terms — avoiding mid-epic surprises called out in the PRD risk table.
-
-**Acceptance Criteria:**
-
-**Given** E13-D1's decision (kernel-resident static array)
-**When** new file `src/file_access.asm` is built
-**Then** it contains `fcb_pool: ds 288` (8 × 36-byte FCBs) as a labelled byte region, linked into the `.COM` binary at build time, accessed by absolute address; `FCB_SIZE EQU 36` and `FCB_POOL_COUNT EQU 8` are defined.
-
-**Given** E13-D3's BDOS wrapper layer
-**When** `src/file_access.asm` is authored
-**Then** it exposes private helpers for: open (BDOS 15), close (16), delete (19), create (22), read sequential record (20), write sequential record (21), read random record (33), write random record (34), compute file size (35), get current drive (25); plus a byte-oriented read/write layer that handles the 128-byte record impedance using an in-FCB buffer.
-
-**Given** NFR13 (BDOS allow-list)
-**When** the wrapper layer is authored
-**Then** every BDOS call uses a function number from the NFR13 allow-list; a source-level comment at each call site cites the BDOS function number and its purpose.
-
-**Given** the pool-acquire primitive
-**When** invoked with all 8 FCBs in use
-**Then** it raises `-69 THROW` (ANS §9.3.5 "file access method") with citation per CCD-2 / NFR17.
-
-**Given** a known-good CP/M 2.2 disk image in the project's `disk/` directory
-**When** an internal test thread exercises: open, read 200 bytes (spans a record boundary), seek via internal primitive, read across EOF, close, delete
-**Then** every step behaves exactly as the CP/M 2.2 BDOS spec documents; the test thread's output matches a pre-recorded reference trace.
-
-**Given** any wrapper that holds an FCB across a BDOS call
-**When** the call returns
-**Then** the FCB state is well-defined — either fully opened, fully closed, or returned to the pool's free list; no intermediate leaks.
-
-**Given** `tests/file_access_tests.fth` stub
-**When** it runs at this story's completion
-**Then** user-facing file-access words are not yet present (those are Story 13.2+), but the story's own internal-primitive test harness prints a pass summary and halts.
-
-### Story 13.2: Core File-Access wordset — `OPEN-FILE`, `CREATE-FILE`, `CLOSE-FILE`, `DELETE-FILE`, `READ-FILE`, `WRITE-FILE`
-
-As a Forth user,
-I want the core ANS File-Access wordset for opening, closing, creating, deleting, and byte-oriented reading/writing of files against the CP/M 2.2 filesystem,
-So that I can read and write source files and data files from my antforth session (FR35–FR39, FR42).
-
-**Acceptance Criteria:**
-
-**Given** `OPEN-FILE` per ANS §11.6.1.1970 with stack effect `( c-addr u fam -- fileid ior )`
-**When** I open an existing file with mode `R/O`, `R/W`, `W/O`, or `BIN`
-**Then** a FID is returned with `ior = 0` on success, or `0 <error>` with an ANS-standard `ior` code on failure.
-
-**Given** `CREATE-FILE` per ANS §11.6.1.1010
-**When** invoked with a non-existent filename and an access mode
-**Then** the file is created (or truncated if it exists) and a valid FID is returned.
-
-**Given** `DELETE-FILE` per ANS §11.6.1.1190
-**When** invoked with a filename
-**Then** the file is deleted if present; the appropriate `ior` is returned per the standard.
-
-**Given** `READ-FILE` per ANS §11.6.1.2080 `( c-addr u1 fileid -- u2 ior )`
-**When** reading `u1` bytes across a 128-byte record boundary
-**Then** `u2` bytes (≤ `u1`) are returned in the user buffer with `ior = 0`; on EOF, `u2` reflects the number actually read (may be zero) with `ior = 0`.
-
-**Given** `WRITE-FILE` per ANS §11.6.1.2480
-**When** writing into a R/W or W/O file
-**Then** bytes are buffered through the wrapper layer's in-FCB buffer, flushed on record boundaries, and on `CLOSE-FILE`; a subsequent read of the same file returns the written bytes verbatim.
-
-**Given** `CLOSE-FILE` per ANS §11.6.1.0900
-**When** invoked on a FID
-**Then** buffered writes (if any) are flushed, the FCB is returned to the pool, and the FID becomes invalid; subsequent operations on that FID raise `-70 THROW` (file access method).
-
-**Given** FR43 (file-op errors use THROW, not ABORT)
-**When** a lower-level BDOS error occurs during any File-Access word
-**Then** the word raises a THROW with an ANS-standard code from `docs/throw-codes.md`; `ior` return values are non-zero only for recoverable-by-design cases (not for catastrophic errors which throw).
-
-**Given** `tests/file_access_tests.fth`
-**When** it runs
-**Then** it covers: create + write + close + reopen + read-back (round-trip integrity); delete + reopen (confirm gone); read across record boundary; read across EOF; pool-exhaustion (open 9 files → 9th catches `-69`); R/O-write-attempt (catches standard ior).
-
-### Story 13.3: File positioning — `FILE-POSITION`, `REPOSITION-FILE`, `FILE-SIZE`
-
-As a Forth user,
-I want to query and set the current byte position in a file and query a file's size,
-So that I can do random-access reads/writes and progress-bar-style file consumption (FR40, FR41).
-
-**Acceptance Criteria:**
-
-**Given** `FILE-POSITION` per ANS §11.6.1.1520 `( fileid -- ud ior )`
-**When** invoked on an open FID
-**Then** it returns the current byte position as a double-cell unsigned value.
-
-**Given** `REPOSITION-FILE` per ANS §11.6.1.2142 `( ud fileid -- ior )`
-**When** invoked with a byte position within the file
-**Then** subsequent `READ-FILE` / `WRITE-FILE` operate starting at that position.
-
-**Given** `FILE-SIZE` per ANS §11.6.1.1522 `( fileid -- ud ior )`
-**When** invoked
-**Then** it returns the file's size in bytes as a double-cell unsigned value.
-
-**Given** CP/M's 128-byte record model
-**When** `REPOSITION-FILE` crosses a record boundary
-**Then** the in-FCB buffer is correctly invalidated/reloaded so the subsequent byte-oriented read returns the correct byte.
-
-**Given** `tests/file_access_tests.fth` extended
-**When** it runs
-**Then** it covers: write known bytes at known offsets, `REPOSITION-FILE` + `READ-FILE` round-trip, `FILE-SIZE` matches the total bytes written, boundary positions at record edges (127/128/129 bytes).
-
-### Story 13.4: Source-input nesting — `INCLUDED` / `INCLUDE-FILE` / `INCLUDE` with INCLUDE-TOP chain discipline
-
-As a Forth user,
-I want to load Forth source from a file into my running session — with nested `INCLUDE` support, correct EOF handling, and guaranteed file-handle cleanup on any THROW (no orphaned FIDs),
-So that I can build sessions from multiple source files and recover cleanly from errors (FR32, FR33, FR34, NFR9).
-
-**Acceptance Criteria:**
-
-**Given** E13-D2's 10-byte INCLUDE source frame layout (prev-link + saved SOURCE-ID + saved input-buffer-addr + saved input-buffer-length + saved `>IN`)
-**When** `INCLUDED` per ANS §11.6.1.1718 is invoked with `c-addr u` (filename)
-**Then** it opens the file, pushes the 10-byte frame, links via `INCLUDE-TOP`, switches SOURCE-ID to the new FID, and returns control to the outer interpreter which now parses from the file.
-
-**Given** EOF during `INCLUDED`
-**When** the outer interpreter hits end-of-file
-**Then** the current FID is closed, parent input state is restored from the frame, `INCLUDE-TOP` is set to the frame's prev-link, the 10-byte frame is popped, and parsing resumes on the parent source.
-
-**Given** `INCLUDE-FILE` per ANS §11.6.1.1717
-**When** invoked with an already-open FID
-**Then** the same frame-push sequence happens but without an initial `OPEN-FILE`; the caller retains ownership of the FID for ongoing file operations but the outer interpreter reads it as SOURCE.
-
-**Given** `INCLUDE` per ANS §11.6.2.1717 (Forth 2014 extension)
-**When** invoked with a filename token (parsed from the input stream)
-**Then** it behaves as `BL WORD COUNT INCLUDED`.
-
-**Given** a THROW occurring mid-INCLUDE
-**When** Story 11.3's THROW algorithm walks the `INCLUDE-TOP` chain to the target exception frame
-**Then** each INCLUDE source frame above the target is cleaned up: FID closed, frame popped, `INCLUDE-TOP` chain relinked — satisfying NFR9 (no orphaned FIDs after THROW).
-
-**Given** FR44 (drive equivalence)
-**When** the filename argument contains a CP/M drive letter (`A:FOO.FTH`, `B:FOO.FTH`) or no drive letter
-**Then** `INCLUDE` / `INCLUDED` work identically across drives with no syntactic distinction.
-
-**Given** NFR21 (CP/M path syntax)
-**When** filenames are passed
-**Then** CP/M 2.2 8.3 syntax + optional drive letter is accepted; wildcards and Unix-style paths are not supported; malformed paths raise an appropriate THROW.
-
-**Given** `tests/file_access_tests.fth` extended
-**When** it runs
-**Then** it covers: single `INCLUDE` of a known file; nested `INCLUDE` (A includes B includes C); `INCLUDE` that runs a THROW mid-file → FID closed, REPL live, state intact; `INCLUDED` with a bad filename → `-38 THROW` (file not found); pool stress — deep nesting up to 8 FIDs.
-
-### Story 13.5: R/O `CLOSE-FILE` destructive-flush — verdict-only audit + structural fix
-
-**Origin:** Surfaced during Story 13.4 v2 dev-pass (party-mode session 2026-05-04 post-13.4-v2-review). Story 13.4 v2's `(close-current-fid)` had to drop `file_flush` because flushing R/O FCBs after partial-record reads is destructive — `file_flush` (`src/file_access.asm:711-779`) pads DMA[pos..127] with 0x1A and F_WRITEs the record, which on an R/O source file corrupts the on-disk content. Story 13.4 dodged it by skipping flush in the INCLUDE close path; the user-facing Story-13.2 `CLOSE-FILE` (`src/file_access.asm:1489-1544`) still calls `file_flush` unconditionally and therefore inherits the latent.
-
-**Verdict-only audit-anchor probe (test 938) landed 2026-05-04** ahead of this story's create-story to demonstrate reproducibility against the unpatched source. Probe sequence: `CREATE-FILE` R/W, write 13 bytes, `CLOSE-FILE` clean (correct), reopen R/O, partial-read 5 bytes via `READ-FILE`, `CLOSE-FILE`, reopen R/O, query `FILE-SIZE`. Wired into `Makefile:8454-8488` as test 938 (T-S135-AUDIT-RO-FLUSH); descriptive header in `tests/file_access_tests.fth:344-378`. Probe asserts `SZ != 128` (expects-bug); FLIPS to assert `SZ = 128` (expects-fix) when this story's structural fix lands.
-
-**Observed bug magnitude — substantially worse than initial hypothesis:** the audit-anchor probe records **`SZ=1507456`** — ~1.47 MB on disk for a 13-byte source file, after a single open → partial-read-5-bytes → close cycle. The "+128 per close" hypothesis from the party-mode discussion is wrong: the actual blast radius is ~1.4 MB **per cycle**, not per-record. Likely mechanism: the byte-stream layer (`file_byte_read` at `src/file_access.asm:475-`) advances the FCB's record-position fields (CR / EX / S2 — see `src/structures.asm` FCB layout) when reading sequentially, so by the time `file_flush` runs, the FCB's sequential pointer has advanced. `F_WRITE_SEQ` writes at that position; CP/M's F_FILE_SIZE (function 35) reports the highest-allocated-record's byte count, and the kernel's "sparse" extent allocation pads up to the new high-water mark. **A single R/O open-partial-read-close therefore extends the source file by ~1.4 MB.** This is a filesystem-level corruption with blast radius far exceeding the `fcb_byte_pos in 1..127` variable that the party-mode investigation initially focused on — the investigation must trace the *full* FCB record-position state, not just `fcb_byte_pos`.
-
-**Severity escalation:** previously framed as "annoying source-corruption latent." Audit-anchor probe magnitude flips classification to **filesystem-blast-radius release blocker**. Single-cycle 1.4 MB extension means: (a) any user who opens an R/O file, partial-reads, and closes will silently corrupt that file by orders of magnitude; (b) repeated cycles compound; (c) on a real CP/M 2.2 disk (~241 KB per side on standard 5.25" SD), one cycle exhausts the entire disk. The `antforth 2.0` release MUST NOT ship with this latent live.
-
-The `fcb_byte_pos` variable carries dual meaning ("next byte to read" vs "next byte to write") and `file_flush` cannot tell which without external information. The Story-13.2 mitigation (bump pos to 128 after reads as a "skip flush" sentinel — see `src/file_access.asm:730-736`) is a per-read-site discipline contract, not structural separation; any read site that leaves pos in 1..127 recreates the latent. Given the audit-anchor probe magnitude, the fix shape must address both (i) the read/write disambiguation in `file_flush` AND (ii) the FCB record-position-advance side-effect of read-walking.
-
-**Why this lands before the release gate:** R/O `CLOSE-FILE` extending source files by ~1.4 MB per cycle is a release blocker for `antforth 2.0`. The original Epic-13 release-gate scope is renumbered to **Story 13.6** (no scope change there).
-
-**Anti-pattern non-recurrence:** This is NOT a sibling-story-spawn of 13.4 (the v1 anti-pattern explicitly forbidden by Story 13.4 v2 AC #26). The latent originated in Story 13.2 and was *surfaced by* Story 13.4 v2's dev-pass. It is an epic-scope-discovered defect, owned by its own story.
-
-As an antforth user reading source files,
-I want `CLOSE-FILE` on a read-only FID to leave the source file's bytes untouched after a partial-record read,
-So that opening, partial-reading, and closing a file does not silently corrupt its contents.
-
-**Acceptance Criteria:**
-
-**Given** the latent reproducer pattern (write known content; close clean; reopen R/O; partial-record read; CLOSE-FILE; verify FILE-SIZE) and the audit-anchor probe **already landed as Makefile test 938** on 2026-05-04
-**When** Story 13.5's create-story workflow runs
-**Then** the AC #1 probe is **already in the tree** (`Makefile:8454-8488` + `tests/file_access_tests.fth:344-378`); Story 13.5 verifies that the probe still PASSes in expects-bug mode at story start (`make test-repl` → 947 PASS / 0 FAIL with test 938 reporting `SZ=1507456`). At story close, the probe's assertion is FLIPPED in-place from `if SZ=128 then FAIL` to `if SZ=128 then PASS` — same probe, same trigger sequence, opposite verdict. **No second probe authored** (the verdict-only discipline keeps the regression boundary pinned at one source-of-truth assertion). Probe flip is part of the AC #4 fix-landing diff.
-
-**Given** the substantial bug-magnitude observed (`SZ=1507456` from a 13-byte source file after one open-partial-read-close cycle — per the audit-anchor probe) which proves the latent is not merely an `fcb_byte_pos in 1..127` issue but involves the FCB's record-position fields (CR, EX, S2) being advanced by `file_byte_read`'s sequential-walk before `file_flush` issues `F_WRITE_SEQ` at that advanced position
-**When** an investigation pass traces the full FCB-state evolution across the bug-trigger sequence
-**Then** the investigation catalogues, per FCB-state field per code site:
-- **`fcb_byte_pos`** evolution across `READ-FILE`, `READ-LINE`, `(file-refill)`, `file_byte_read`, `file_byte_write`, `bdos_read_seq` / `bdos_write_seq`, `REPOSITION-FILE`'s pos arithmetic, the partial-record paths. Which sites leave pos in 1..127 (latent-recreation risk), which bump to 0 (clean post-record-boundary), which bump to 128 (sentinel "DMA exhausted; refill on next read").
-- **FCB record-position fields (CR / EX / S2)** evolution across the same sites. Where does sequential reading advance these fields? Where does sequential writing advance them? Where do they get reset / repositioned? The 1.4 MB blast radius implies these fields advance pathologically far during the partial-read sequence — the catalogue must explain *why* and identify the correctable site.
-- **DMA buffer state** at `file_flush` entry — what bytes are in the DMA when flush runs after a partial read? The audit-anchor probe's source content is 13 bytes; the post-bug file size is 1.5 MB; either F_WRITE_SEQ is writing far-advanced records OR CP/M is sparse-allocating extents up to a high-water mark.
-
-The catalogue is recorded in the story's Completion Notes and informs AC #3's fix-shape pick. **Investigation HALTS** if the catalogue reveals additional structural defects (e.g., a Story-13.2 read-site that's *also* corrupting state on writes); HALT discipline per Story 13.4 v2 AC #26.
-
-**Given** the catalogue from AC #2 and the architectural options on the table (option 2 — `file_flush` consults FAM via `fcb_fam_get`; option 1 — discriminator bit `fcb_last_op` parallel array; hybrid — FAM gates R/O wholesale, plus a "has-written" bit on R/W FCBs)
-**When** the fix shape is committed
-**Then** the chosen approach is structurally correct for all FAM modes: R/O skips flush unconditionally (option 2 alone suffices); W/O flushes per current logic; **R/W requires that flush only fires if at least one F_WRITE has been issued on this FCB** — a partial READ followed by CLOSE on an R/W FCB must not destructively pad. Provisional pick: **option 2 + a per-FCB "has-written" bit** (the hybrid). Investigation may revise. **HALT signal** if no option satisfies all three FAM modes without compensation logic.
-
-**Given** the structural fix from AC #3
-**When** it lands in `src/file_access.asm`
-**Then** `file_flush` becomes mode-aware: R/O FCBs are no-op; W/O FCBs flush as before; R/W FCBs flush only if the per-FCB "has-written" bit is set. The bit is cleared at `pool_acquire` (Story 13.1) and set by every successful `bdos_write_seq` call. The `fcb_byte_pos == 128` sentinel from Story 13.2 is preserved as defence-in-depth (no regression of existing read-site contracts). The verdict-only probe from AC #1 flips from "expects bug" to "expects fix" — `FILE-SIZE` unchanged across reopen-partial-read-close.
-
-**Given** Story 13.4 v2's `(close-current-fid)` and `chain_walk_close_current_fid` flush-skip code (`src/file_access.asm:2396-2400` cite)
-**When** AC #4's fix lands
-**Then** the explicit flush-skip remains in place as defence-in-depth (commented as such); it becomes a no-op once `file_flush` itself is mode-aware, but the explicit skip documents intent at the INCLUDE close site and protects against future `file_flush` regressions.
-
-**Given** the new "has-written" bit on each FCB
-**When** the existing CLOSE-FILE / WRITE-FILE / FILE-SIZE / REPOSITION-FILE / DELETE-FILE flows are re-tested
-**Then** all 946 existing REPL tests pass — zero regression. Story 13.1's `(FILE-IO-SANITY)` harness still passes. The Story-13.2 R/W mode probes (REPL tests covering OPEN-FILE / WRITE-FILE / READ-FILE / CLOSE-FILE round-trip) still pass with byte-identical file content.
-
-**Given** the byte-budget discipline (per Story 13.4 v2 retrospective: PD-13 envelope under-counted; calibrate from 13.4 v2 actuals + margin)
-**When** Story 13.5 closes
-**Then** the byte-count delta is reported as TWO numbers (data delta + code delta) per Story 13.4 v2 PD-13 idiom. Expected envelope: data +8..+16 bytes (an 8-byte parallel array `fcb_has_written` for the pool), code +50..+100 bytes (the FAM-consult in `file_flush` + the bit-set in `bdos_write_seq` callers + the bit-clear in `pool_acquire`). Either gate exceeded → HALT per the 13.4 v2 discipline.
-
-**Given** the Story 13.4 v2 caveat in `docs/ans-forth-core-compliance.md` documenting the R/O destructive-flush latent as out-of-scope-for-13.4
-**When** Story 13.5 closes
-**Then** the caveat is updated to record the fix landing in Story 13.5 with the chosen approach (mode-aware `file_flush` + has-written bit) and the AC #1 verdict-only probe's bug→fix flip date. `docs/throw-codes.md` requires no edits (no new THROW codes).
-
-**Given** Story 13.5 is a release-blocker for `antforth 2.0`
-**When** Story 13.5 closes
-**Then** Story 13.6 (originally Story 13.5 — Epic 13 FS stress, BDOS audit, antforth 2.0 release gate) is unblocked and can begin. Sprint-status flips: `13-5-r-o-close-file-destructive-flush-audit-and-fix: backlog → ready-for-dev → in-progress → review → done`. Story 13.6 sequencing unchanged (gates the 2.0 release tag).
-
-### Story 13.6: Epic 13 FS stress, BDOS audit, ROM delta + antforth 2.0 release gate (CCD-4)
-
-**Renumbered from Story 13.5 on 2026-05-04** (party-mode session post-13.4-v2-review). Scope unchanged; only the story number moved to make room for Story 13.5 (R/O destructive-flush audit-and-fix), which is a release-blocker for `antforth 2.0`. Forward references in `_bmad-output/implementation-artifacts/sprint-status.yaml` and any cross-story citations updated accordingly.
-
-As an antforth maintainer,
-I want Epic 13 to close with a filesystem-error stress suite (NFR8), a BDOS-function-allow-list audit (NFR13), ROM delta accounting for the phase as a whole (NFR4), and a full Phase-1 + Epics 9–12 regression pass on real MicroBeast hardware,
-So that every quantitative envelope set by the PRD is verified and `antforth 2.0` can be tagged — completing the phase.
-
-**Acceptance Criteria:**
-
-**Given** a filesystem-error stress suite (`tests/file_access_tests.fth` extended)
-**When** each of the following is induced: disk-full during `WRITE-FILE`; attempt to open 9th file (pool exhausted, `-69`); read from a closed FID (`-70`); `WRITE-FILE` to an `R/O` file; `DELETE-FILE` on a non-existent file
-**Then** each error raises a descriptive THROW, the filesystem remains consistent (no corrupted directory entries), and no FID is orphaned in the FCB pool (NFR8).
-
-**Given** an `INCLUDE`-mid-THROW stress test
-**When** a THROW fires inside a file being `INCLUDED` from inside another file being `INCLUDED`
-**Then** the `INCLUDE-TOP` chain walk closes both FIDs in order, the FCB pool returns to its pre-INCLUDE state, and the REPL is live with state intact (E11+E13 coordination verified).
-
-**Given** NFR13's BDOS function allow-list (0, 1, 2, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 33, 34, 35, 36, 40)
-**When** the final binary is audited for BDOS call sites
-**Then** every call uses a function number from the allow-list; any call outside the list is a blocker.
-
-**Given** the kernel ROM size
-**When** compared against the pre-phase (post-Epic-8) baseline
-**Then** the Phase-2 kernel-size delta is recorded; it is expected to be positive (the additions — double-cell + pictured output, exception wordset, Search-Order, File-Access — all add code with no offsetting migration). Per-epic deltas are summed and justified against NFR4 (per-epic budget discipline, not a net-negative gate).
-
-**Given** the full Phase-1 + Epics 9–12 REPL-piped test suites
-**When** run against the Epic-13 binary
-**Then** every test passes — zero regressions per NFR9 / FR45 / FR46.
-
-**Given** a "define / save-source / INCLUDE-back" round-trip on real hardware
-**When** the user defines words, saves source to B: via `WRITE-FILE`, reboots, and `INCLUDE`s the saved file
-**Then** the words are restored identically — the on-device edit/test/persist loop is demonstrated working (Journey 1 PRD success criterion).
-
-**Given** a phase-wide compliance re-audit
-**When** `docs/ans-forth-core-compliance.md` is re-run
-**Then** coverage remains 100% — no Epic-13 change regressed Core compliance.
-
-**Given** a real-MicroBeast hardware smoke test
-**When** the full Epic-13 test suite runs on hardware (Phase-1 regressions + Epics 9–12 regressions + new Epic-13 file-access tests + FS stress suite)
-**Then** every test passes — PRD MVP rule satisfied.
-
-**Given** all the above AC met
-**When** the release is tagged
-**Then** the project is **antforth 2.0** — the five-epic phase is complete.
-
-## Epic 13.5: Phase-2 Cleanup Slate — gates `antforth 2.0` release tag
-
-**Origin (binding):** Epic 13 retrospective 2026-05-05 (`_bmad-output/implementation-artifacts/epic-13-retro-2026-05-05.md`). Project lead direction at retro: **all of TD-1..TD-7 land before the v2.0.0 tag**, plus the retro-discovered process foundation **PD-1**. The original plan had Story 13.6 close out the phase with TD items as carry-forward; the retro re-classified TD-5 (`."` BC-clobber) and TD-6 (PAD / HERE-cross-line correctness) upward from "accepted-with-rationale: pre-existing" to **tag-blocking correctness defects** (codified in `feedback_no_preexisting_discharge.md` per Lesson 13-B). The remaining TDs (1, 2, 3, 4, 7) were already named tag-blockers in the Story 13.6 verdict table; the retro made TD-5 and TD-6 join them.
-
-**Epic 13.5 is the process-recovery vehicle.** It carries forward zero new feature scope; every story is a discharge of debt named in the Epic 13 retro's "Tag-Blocking Slate" table. Project-lead reframe at retro: *"a clobber like that should never have been passed off as 'pre-existing, so I'll ignore it'."* — applies retroactively to the whole TD-1..TD-7 slate.
-
-**Story slate (canonical):**
-
-| # | TD ref | Title | Source |
-|---|---|---|---|
-| 13.5.0 | **PD-1** | Workflow + create-story-AC alignment (in-pass adversarial review removal) | F-Retro-1 |
-| 13.5.1 | TD-1 + TD-2 + TD-4 | R/W per-FCB dirty-flag (FILE-POSITION accuracy + mixed-mode + W/O probe) | `13-3-…md:90,142,475`, `13-2-…md` (W/O coverage gap) |
-| 13.5.2 | TD-3 | READ-FILE EOF/error disambiguation (helper-layer rewrite of `file_byte_read`) | `13-2-…md` AC #17(h) deviation, `13-3-…md:475` cross-ref |
-| 13.5.3 | TD-5 | `."` BC-clobber (re-classified upward at retro from MEDIUM-pre-existing to tag-blocking) | `13-5-…md:305` |
-| 13.5.4 | TD-6 | PAD / HERE-cross-line correctness (re-classified upward at retro from doc-only to correctness) | `13-5-…md:306` + `13-6-…md:1192` F-9 |
-| 13.5.5 | TD-7 | `(SAVE-INPUT)` / `(RESTORE-INPUT)` for `EVALUATE` (compliance close-out) | `13-4-…md:654-655` |
-| 13.5.6 | — | Epic 13.5 close-out gate — verdict table for TD-1..TD-7 + PD-1; hardware re-run; **v2.0.0 tag applied** | This retro |
-
-**Sequencing:** 13.5.0 lands FIRST (process foundation gates every subsequent dev-pass — workflow-vs-codified-intent fix per Lesson 13-A). 13.5.1..13.5.5 may run in any order within the slate (no inter-story dependencies — leaf stories with one focused thing each per Lesson 13-C drafting discipline). 13.5.6 lands LAST (mirror of Story 13.6 close-out gate; tag applies at story close).
-
-**Standing process commitments (from Epic 13 retro, applied to every 13.5.x story):**
-- **S1** — Adversarial review continues, but **fresh-context external pass via `CR` command, not in-pass**. Story 13.5.x dev-passes do NOT contain an "adversarial review pass" task (PD-1 lands first to make this structural).
-- **S5** — PARTIAL verdicts require independent verification — HALT on PARTIAL ship attempts. No 13.4-v1-style ship-N/M + spawn-substory pattern.
-- **S8** — "Pre-existing" / "out-of-scope" cannot discharge correctness defects (`feedback_no_preexisting_discharge.md`). Review disposition tables flag clobbers / lost writes / silent error swallowing as in-pass-fix or HALT, never accepted-with-rationale: pre-existing.
-- **S9** — Mid-epic hardware-smoke cadence is mandatory. Each 13.5.x story has its own hardware-smoke task; no "deferred to project lead at cadence" pattern.
-- **S10** — Workflow > memory > prompt when intent is in conflict. Codified intent must live in workflow files + templates, not in memory or instructions alone (Lesson 13-A applied).
-
-**Byte-budget gate:** Epic 13.5 is debt discharge, not feature work. Net-positive byte delta for the epic should be small (estimate +50..+200 bytes for TD-3 + TD-5 + TD-6 fixes; TD-1+2+4 dirty-flag adds ~30 bytes per Story 13.3 Task 11 forward-pointer; TD-7 SAVE-INPUT/RESTORE-INPUT adds ~50..+100 bytes; PD-1 is doc-only / workflow-only zero-binary). Two-number byte gate per Story 13.4 v2 PD-13 idiom applies per story.
-
-**v2.0.0 tag application:** at Story 13.5.6 close, NOT before. This is a hard gate — the retro is explicit: *"v2.0.0 tag DEFERRED post-retro pending Epic 13.5 cleanup slate (project-lead direction 2026-05-05)."*
-
-### Story 13.5.0: PD-1 — workflow + create-story-AC alignment (in-pass adversarial review removal)
-
-**Origin (binding):** F-Retro-1 from Epic 13 retro 2026-05-05. Codified intent (`feedback_adversarial_review.md` + dev-agent definition `_bmad/bmm/agents/dev.md:64`) says fresh-context external review only, via the `CR` command. Workflow tree (`_bmad/bmm/workflows/bmad-quick-flow/quick-dev/steps/step-05-adversarial-review.md`) mandates in-pass review as Step 5 with no skip branch and a hard-coded `nextStepFile`. Story templates (every Story 13.x AC) include "trigger an adversarial review pass per `feedback_adversarial_review.md`". Three layers in conflict; workflow-as-runtime won throughout Epic 13. **Lesson 13-A: codified intent loses to workflow-as-runtime when they conflict.**
-
-**Why this lands first:** PD-1 is the process foundation that gates every subsequent 13.5.x dev-pass. If 13.5.1..13.5.6 dev-passes run against the existing workflow + AC pattern, they will repeat the eleventh-consecutive-epic anti-pattern of in-pass adversarial review. The fix lives in workflow files + templates, not in memory or prompts (per S10). Project lead direction at retro: PD-1 explicitly *before* the cleanup stories' dev-passes start.
-
-**Severity:** Process / structural. Zero binary delta. Doc-only and workflow-config-only edits. The story's risk profile is the opposite of Story 13.5: not filesystem corruption, but workflow-vs-intent drift compounding across future epics if not closed now.
-
-As a BMad Method workflow author and dev agent operator,
-I want the in-pass adversarial review step removed (or skip-branched) from the quick-dev workflow tree, the create-story AC pattern, and the story-template prompts; reconciled with the `CR` command's fresh-context external-review semantics; documented in retro and memory,
-So that future story dev-passes structurally cannot re-introduce the in-pass review anti-pattern that surfaced as F-Retro-1 across all eleven post-Epic-2 epics.
-
-**Acceptance Criteria:**
-
-**Given** the workflow file `_bmad/bmm/workflows/bmad-quick-flow/quick-dev/steps/step-05-adversarial-review.md` (the in-pass review step) and its hard-coded `nextStepFile: './step-06-resolve-findings.md'` (line 5)
-**When** the PD-1 fix lands
-**Then** Step 5 is **either removed entirely** (Step 4 advances directly to Step 6) **or** carries a documented skip-branch that is the default path. The dev-pass picks the cleaner option per AC #11 HALT discipline. The pick is recorded in Completion Notes Task 1 with rationale. **Constraint:** Step 6 (`step-06-resolve-findings.md`) must remain reachable for the cases where a dev-pass legitimately surfaces findings during implementation (not the codified-intent in-pass review, but ad-hoc dev-internal "I noticed this" findings) — Step 6 may need a renaming or a minor preamble edit to reflect that its trigger is now optional/conditional, not the post-Step-5 default.
-
-**Given** Step 4's `nextStepFile` (currently pointing to `step-05-adversarial-review.md`) and the workflow tree's expected linearity
-**When** Step 5 is removed or skip-branched
-**Then** Step 4's `nextStepFile` is updated to point to whichever step is now the post-implementation default (Step 6 if Step 5 is removed, Step 6 with optional Step 5 skip if branched). Workflow integrity (a clean linear path from Step 1 → Done) is verified by manual walk-through and recorded in Completion Notes Task 2.
-
-**Given** every Story 13.x AC pattern that says "trigger an adversarial review pass per `feedback_adversarial_review.md`"
-**When** the create-story AC pattern is updated
-**Then** the phrase is **removed** from any story-drafting template or workflow prompt that still emits it. The replacement guidance (per S1 standing commitment) is: "Adversarial review is run separately via the `CR` command in fresh context after dev-pass close — story ACs do not enumerate it." If the story-drafting template lives in `_bmad/bmm/workflows/4-implementation/create-story/` (template.md / instructions.xml / any prompt fragments), edits land there. If the pattern is convention-only (re-emitted by the SM agent's prompt), the SM agent definition at `_bmad/bmm/agents/sm.md` (or the equivalent) is updated to omit the phrase.
-
-**Given** the `CR` command guidance (the fresh-context external review entry-point)
-**When** PD-1's reconciliation pass runs
-**Then** the `CR` command's documentation / agent definition is verified to be the canonical "where does adversarial review live now" entry-point. If the documentation is silent on when to run `CR` (after each story-close vs. epic-close), an explicit "after each story-close" line is added per S1 standing commitment. The reconciliation is recorded in Completion Notes Task 4.
-
-**Given** `feedback_adversarial_review.md` (the memory file expressing the codified intent)
-**When** PD-1 lands
-**Then** the memory file is updated with a one-line forward-pointer: "PD-1 (Story 13.5.0) closed the workflow-vs-intent gap by removing in-pass review from the quick-dev tree and the create-story AC pattern. Adversarial review now runs via the `CR` command in fresh context, codified in workflow + agent files (see Story 13.5.0 Completion Notes for citations)." The forward-pointer prevents future agents from re-discovering F-Retro-1 by reading the memory file alone. Memory file edit is logged in Memory Files Touched.
-
-**Given** every story file in `_bmad-output/implementation-artifacts/` for Epic 13 (8 files: 13-0, 13-0-1, 13-1, 13-2, 13-3, 13-4, 13-5, 13-6) that contains the in-pass adversarial review pattern
-**When** PD-1 lands
-**Then** those story files are **not** retroactively edited (they are historical record; the in-pass pattern they document is true-as-of-the-time-of-the-dev-pass). The forward fix is structural (workflow tree + create-story pattern + memory pointer), not retroactive (per S10: workflow > memory > prompt). Story 13.5.x stories drafted *after* PD-1 land will structurally not contain the pattern. This boundary is documented in Completion Notes Task 6.
-
-**Given** the dev-agent definition `_bmad/bmm/agents/dev.md` (which already says "For best results, use a fresh context and a different quality LLM if available" near line 64)
-**When** PD-1's reconciliation pass runs
-**Then** the dev-agent definition is verified to remain consistent with the post-PD-1 workflow tree. If the dev-agent's prompt still references "Step 5 adversarial review" or implies in-pass review, those references are removed. The agent file edits (if any) are recorded in Completion Notes Task 7.
-
-**Given** the Epic 13.5 close-out gate (Story 13.5.6) will run a verdict-table walk over PD-1 + TD-1..TD-7
-**When** PD-1 closes
-**Then** the close-out verdict criteria for PD-1 are explicitly stated in this story's Completion Notes Task 8: (a) `step-05-adversarial-review.md` is removed or skip-branched (verifiable by file inspection); (b) Step 4's `nextStepFile` no longer points to step-05 (verifiable by `grep`); (c) `feedback_adversarial_review.md` carries the forward-pointer (verifiable by `grep`); (d) any 13.5.1..13.5.5 dev-pass drafted *after* this story does NOT contain "trigger an adversarial review pass" in its ACs (verifiable by `grep` over those story files); (e) the `CR` command remains the canonical entry-point with documentation reflecting "after each story-close" cadence.
-
-**Given** the byte-budget discipline (per Story 13.4 v2 retrospective: PD-13 envelope under-counted; calibrate from actuals + margin)
-**When** Story 13.5.0 closes
-**Then** the byte-count delta is reported as TWO numbers (data delta + code delta) per Story 13.4 v2 PD-13 idiom. **Expected envelope: data 0 / code 0 (zero binary delta — this is workflow + doc + memory + agent-definition only).** Either gate exceeded (any binary delta) → HALT and investigate (PD-1 has no implementation in `src/`; any binary delta indicates a misroute).
-
-**Given** `make test-repl` baseline (952 PASS / 0 FAIL at Epic-13 close per `epic-13-retro-2026-05-05.md:255` — the +7 closure tests numbered 939..945 are a SUBSET of the 952, not additive; "959" was an arithmetic error in earlier drafts)
-**When** Story 13.5.0 closes
-**Then** `make test-repl` continues to report 952 PASS / 0 FAIL (zero regression — workflow / memory / agent-definition edits are non-binary and cannot move the test count). Completion Notes Task 9 records the post-edit test count.
-
-**Given** the mid-epic hardware-smoke cadence per S9 standing commitment
-**When** Story 13.5.0 closes
-**Then** a hardware-smoke run is **NOT required** for this story specifically (PD-1 has zero binary delta — there is nothing in the kernel to smoke). The story documents this exemption explicitly in Completion Notes Task 10 with rationale: "S9 applies to stories with binary delta; PD-1 is workflow + doc only." The exemption is the only legitimate exception to S9 anticipated in Epic 13.5; subsequent stories (13.5.1..13.5.6) all have binary delta and run hardware smoke per S9.
-
-**Given** the HALT-on-PARTIAL discipline per S5
-**When** any AC in this story cannot land cleanly (e.g., the workflow tree edit reveals a downstream coupling that needs broader surgery, or the create-story AC pattern fix reveals additional pattern-drift not flagged in the retro)
-**Then** the dev-pass HALTs and surfaces to project lead before any partial ship. No "ship 4/10 ACs + spawn 13.5.0.1" pattern (the 13.4-v1 anti-pattern explicitly forbidden). The HALT trigger and discharge pattern is documented in Completion Notes Task 11.
-
-### Story 13.5.1: TD-1 + TD-2 + TD-4 — per-FCB R/W dirty-flag (FILE-POSITION accuracy + mixed-mode + W/O probe coverage)
-
-**Per-story full-AC drafting deferred to its own `bmad-bmm-create-story` pass** (per Epic 13.5 P7 prep task: "Verify TD-1..TD-7 file:line citations against current HEAD when drafting each 13.5.x story"). Scope is fixed by retro slate; the citation pass landing at draft time prevents stale-line-number drift.
-
-**Scope (binding):** Add a per-FCB dirty-flag (1 byte per FCB pool slot, parallel-array idiom mirroring `fcb_has_written` from Story 13.5). Set in `file_byte_write` after the byte-write commit; cleared in `file_byte_read` on refill (so a read after a partial-write clears the dirty bit appropriately). Gates `file_flush` such that `REPOSITION-FILE` between a READ and a WRITE on the same R/W FID can safely auto-flush (vs the Story-13.3 Task-1.9 "discard discipline" silent-data-loss fallback). Closes:
-- **TD-1** — Story 13.3 R/W mid-read FILE-POSITION accuracy (off-by-2 traced to file_flush at `pos in 1..127 (read state)` writing stale read DMA back to disk at the previously-read CR — see `13-3-…md:434`)
-- **TD-2** — Story 13.2 R/W mixed-mode discipline (per-FCB dirty-flag was the named forward-pointer at `13-3-…md:475`)
-- **TD-4** — Story 13.3's W/O probe coverage gap (no W/O FCB probe currently exercises the auto-flush path; add a probe to round out the matrix)
-
-**Forward citations (verify at draft time):** `13-3-…md:90` (option-(b) defer-to-Story-13.5 framing), `13-3-…md:142` (load-bearing-structural-change escalation gate), `13-3-…md:475` (canonical Task-11 forward-pointer). The R/W mixed-mode follow-up was explicitly deferred from Story 13.3 with the dirty-flag shape pre-scoped (~30 bytes). Story 13.5.1 lands the deferred shape.
-
-**Byte envelope (provisional):** data +8 bytes (`fcb_dirty` parallel array, 1 byte × 8 FCBs); code +30..+50 bytes (set in `file_byte_write`, clear in `file_byte_read` refill, gate in `file_flush`, plus the W/O probe). Two-number byte gate per S3.
-
-### Story 13.5.2: TD-3 — `READ-FILE` EOF/error disambiguation (helper-layer rewrite of `file_byte_read`)
-
-**Per-story full-AC drafting deferred to its own create-story pass.** Citations to be re-verified at draft time.
-
-**Scope (binding):** Story 13.2 documented an AC #17(h) deviation: `READ-FILE` cannot cleanly disambiguate "EOF reached cleanly" from "I/O error mid-read" because the helper layer (`file_byte_read`) returns a single sentinel for both conditions. The proper fix is a helper-layer rewrite (separate return paths for EOF vs error vs success-with-bytes). This was carry-forward at Story 13.2 close (would have been content of a Story 13.2.1 had the sibling-spawn anti-pattern been allowed; per Story 13.4 v2 AC #26 it was not). Story 13.5.2 lands the helper-layer rewrite.
-
-**Compliance impact:** ANS §11.6.1.2080 `READ-FILE` requires distinct error vs EOF semantics (`ior` 0 with `u2 = 0` at EOF; `ior` non-zero on error). Current implementation collapses both onto `ior=0; u2=0`. TD-3 close brings antforth into compliance.
-
-**Byte envelope (provisional):** code +50..+100 bytes (helper-layer rewrite typically grows the helper's case analysis). HALT signal if envelope blown — TD-3 is contained, not capstone-shape; an over-budget surface area suggests a wider problem.
-
-### Story 13.5.3: TD-5 — `."` BC-clobber (re-classified upward at retro from MEDIUM-pre-existing to tag-blocking)
-
-**Per-story full-AC drafting deferred to its own create-story pass.** Citation `13-5-…md:305` to be re-verified at draft time.
-
-**Scope (binding):** Story 13.5's adversarial review surfaced a BC-clobber in `."` — classified MEDIUM, accepted-with-rationale because pre-existing. Project lead at retro: *"a clobber like that should never have been passed off as 'pre-existing, so I'll ignore it'."* Re-classified upward to tag-blocking correctness defect under `feedback_no_preexisting_discharge.md` (S8). TD-5 closes the clobber.
-
-**Investigation pre-requisites (binding):** the dev-pass starts by tracing every `."` invocation site in the kernel + tests, cataloguing what BC carries at the call boundary, and identifying which sites depend on BC-preservation across `."`. The fix shape is committed only after the catalogue completes (verdict-only audit pattern per `feedback_verdict_only_audit.md` if a probe-in-tree is needed before the fix). HALT if the catalogue surfaces dependent sites that themselves carry latent BC-clobber assumptions.
-
-**Byte envelope (provisional):** code +10..+30 bytes (a typical EXX-or-PUSH/POP wrap of the BC-clobbering inner code). Two-number byte gate per S3.
-
-### Story 13.5.4: TD-6 — PAD / HERE-cross-line correctness
-
-**Per-story full-AC drafting deferred to its own create-story pass.** Citations `13-5-…md:306` and `13-6-…md:1192 F-9` to be re-verified at draft time.
-
-**Scope (binding):** Story 13.5's review-fix F3 said "use HERE not PAD" — but Story 13.6's hardware-finding F-9 revealed that's wrong across REPL lines (PAD and HERE both have cross-line volatility under specific REPL scenarios). Two findings against the same incorrect mental model — initially classified as smoke-batch authoring bug, retroactively re-classified at retro as kernel correctness concern. TD-6 closes the underlying volatility and produces the canonical cross-line-safe transient-buffer guidance.
-
-**Compliance impact:** ANS §3.3.3.6 `PAD` and §3.3.3 `HERE` — antforth's behaviour deviates from the standard's transient-region semantics in a way that surfaces at REPL boundaries. The standard is permissive (`PAD` content is unspecified after a definition is created; `HERE` advances on `ALLOT`/word-creation), but the cross-line volatility observed in F-9 is **silent data corruption** for any code that assumes PAD/HERE survive across one REPL line — a real anti-affordance.
-
-**Byte envelope (provisional):** TBD — depends on fix shape. Possible shapes: (a) reserve a dedicated transient buffer separate from PAD and HERE that survives across REPL lines (data ~80..+128 bytes); (b) document the volatility and update kernel call sites to use stable buffers (zero binary delta, doc + tests only); (c) make PAD survive across one line while keeping HERE volatile (small data + small code). The dev-pass picks per AC and HALT discipline.
-
-### Story 13.5.5: TD-7 — `(SAVE-INPUT)` / `(RESTORE-INPUT)` for `EVALUATE` (compliance close-out)
-
-**Per-story full-AC drafting deferred to its own create-story pass.** Citation `13-4-…md:654-655` to be re-verified at draft time.
-
-**Scope (binding):** Story 13.4 v2 left `(SAVE-INPUT)` / `(RESTORE-INPUT)` for `EVALUATE` as compliance close-out — implementing them for `INCLUDE-FILE` source-input nesting was structurally sufficient for the user-facing `INCLUDE` flow, but ANS §6.2.2148 `SAVE-INPUT` and §6.2.2125 `RESTORE-INPUT` require coverage for `EVALUATE` as well (the EVALUATE source-spec is part of the `SOURCE-ID` discrimination). TD-7 closes the EVALUATE arms.
-
-**Compliance impact:** §6.2.2148 / §6.2.2125 are CORE-EXT, not CORE — the wordset claim already gates these as extension-level, and antforth's coverage is partial (INCLUDE-FILE arm landed, EVALUATE arm did not). TD-7 finishes the wordset.
-
-**Byte envelope (provisional):** code +50..+100 bytes (the EVALUATE arm mirrors the INCLUDE-FILE arm shape from Story 13.4 v2; lookup for the EVALUATE source-frame is already established).
-
-### Story 13.5.6: Epic 13.5 close-out gate — verdict table for TD-1..TD-7 + PD-1; on-device round-trip re-run; **antforth 2.0 tag applied**
-
-**Per-story full-AC drafting deferred to its own create-story pass.**
-
-**Scope (binding):** Mirror of Story 13.6 (Epic-13 close-out gate). Verdict-table walk over all of: PD-1 (Story 13.5.0), TD-1+TD-2+TD-4 (Story 13.5.1), TD-3 (Story 13.5.2), TD-5 (Story 13.5.3), TD-6 (Story 13.5.4), TD-7 (Story 13.5.5). On-device round-trip re-run on real MicroBeast hardware (Journey 1 PRD success criterion re-verified post-cleanup-slate). Phase-2 cumulative ROM-delta re-recorded to absorb the Epic 13.5 byte-deltas.
-
-**Tag application:** at this story's close, AND ONLY AT THIS STORY'S CLOSE, the **`antforth 2.0` tag is applied**. This is the binding gate per project-lead direction at the Epic 13 retro 2026-05-05. Before-tag verification: (a) verdict table for PD-1 + TD-1..TD-7 all PASS; (b) hardware re-run passes; (c) Phase-2 cumulative byte-delta reconciles to absolute (zero residual at both per-story sum and per-epic sum levels per Epic 13 retro precedent); (d) `make test-repl` baseline at Epic-13 close (952 PASS) extended by 13.5.x test additions and zero regressions on the 1..952 baseline.
-
-**Byte envelope:** 0 bytes (audit-only / tag-only — this story is verification, not implementation).
-
-**Hardware smoke:** **MANDATORY**. Per S9, this story specifically runs the full Phase-2 hardware smoke (Phase-1 regressions + Epics 9–13 regressions + Epic 13.5 cleanup-slate tests) on real CP/M 2.2 / MicroBeast. Hardware transcript is the binding artefact for tag application.
+**Given** every Phase-3 story (Epic 14 + Epic 15) has been dev-passed,
+**When** Story 15.6 is dev-passed,
+**Then** AC1 (verdict-table walk) — every Phase-3 story has its verdict-table row read; every AC's verdict reviewed; any PARTIAL verdict triggers S5 HALT (root-cause handled in-pass or sibling story spawned). All Phase-3 carry-forward catalogue P1 items (A.1, A.2, A.3, B.1–B.9) verified `✅ Done` in `docs/PHASE-3-CARRY-FORWARD.md` (or explicitly re-prioritised down with project-lead approval per `feedback_no_preexisting_discharge.md`).
+**And** AC2 (S11 user-visible version surface audit) — banner string in `src/antforth.asm` reflects the new 2.x version; `README.md` version reference aligned; memory-file `description` fields citing antforth version (e.g., `project_phase2_scope.md`, `project_phase3_scope.md` if added) read the new 2.x version. Mismatches against the tag being applied are HALT signals.
+**And** AC3 — running Story 14.5's `make check-doc-sync` drift-checker target produces `[ok] doc-sync: 0 drift` on stdout; any drift items resolved before tag application.
+**And** AC4 — full `make test-repl` reports ≥ 973 PASS + Phase-3 additive probes / 0 FAIL on iz-cpm.
+**And** AC5 (S9 final hardware smoke) — final hardware smoke run on real CP/M 2.2 / MicroBeast — PASS; transcript filed.
+**And** AC6 (S1–S12 standing commitments hold) — the close-out story explicitly walks each standing commitment (codified as NFR-P3-22..33) and confirms hold across every Phase-3 epic (Epic 14 + Epic 15). Eleven-plus-N consecutive epic hold confirmed.
+**And** AC7 (NFR-P3-2 cumulative ROM cap held) — `wc -c build/antforth.com` ≤ 25,200 bytes (24,996 baseline + ≤ +200 envelope per NFR-P3-2). Per-story envelope log reviewed; any single story that pushed cumulative would have triggered HALT during its dev-pass.
+**And** AC8 — final Phase-3 antforth 2.x version tagged on the close-out commit; GitHub release published with closure-note summary.
+**And** AC9 — Phase-3 retrospective story file `_bmad-output/implementation-artifacts/phase3-retro-<date>.md` created with skeleton (lessons surfaced, standing-commitment hold, S1–S12 walk, Phase-4 hand-off candidates).
+**And** AC10 — all P1 rows in `docs/PHASE-3-CARRY-FORWARD.md` marked `✅ Done` (or `❌ Re-prioritised down` with explicit rationale + project-lead approval); P2/P3 rows untouched (deferred).
+
+**FRs covered:** FR-P3-22, FR-P3-23, FR-P3-24, FR-P3-25 (phase-wide regression invariants validated at close-out). **NFRs delivered (verification):** NFR-P3-2 (cumulative ROM cap held); NFR-P3-6 (test baseline maintained); NFR-P3-7 (S9 hardware smoke); NFR-P3-32 (S11 version surface audit). **Standing commitments verified:** S1–S12.

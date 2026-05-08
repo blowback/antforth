@@ -99,6 +99,7 @@ test: $(SRCS) | $(BUILDDIR)
 		exit 1; \
 	fi
 
+# See tests/README.md for probe-authoring conventions (PAD-as-canonical-transient-buffer; S12 hardware-typed-probe lints)
 test-repl: $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \

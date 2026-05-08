@@ -1,4 +1,4 @@
-# generated: 2026-04-19
+# generated: 2026-05-08
 # project: antforth
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-04-19
+generated: 2026-05-08
 project: antforth
 project_key: NOKEY
 tracking_system: file-system
@@ -251,4 +251,31 @@ development_status:
   13.5-4-td-6-pad-here-cross-line-correctness: done
   13.5-5-td-7-save-input-restore-input-for-evaluate: done
   13.5-6-epic-13-5-close-out-gate-and-antforth-2-0-tag: done
-  epic-13.5-retrospective: optional
+  epic-13.5-retrospective: done
+
+  # Phase 3 (debt-cleanup interlude on top of v2.0.0; commit 6599d73, tagged
+  # 2026-05-07). Phase scope per planning-artifacts/epics.md: Epic 14
+  # (process foundation B.1-B.5) lead-in, then Epic 15 (standards close-out:
+  # A.1 audit + A.2 + A.3 + B.6 + B.7 cond + B.8 + B.9). Closes 12 of 12 P1
+  # carry-forward items per docs/PHASE-3-CARRY-FORWARD.md. Cumulative ROM
+  # cap +200 bytes (24,996 -> <= 25,200). Conditional sub-stories 15.1.X
+  # (A.1 back-fill, 0-2 expected) and 15.5.1 (B.7 disposition (b)) are
+  # omitted from this plan and will be inserted when spawned, per the
+  # established 11.5.1.1 / 13.4.1 precedent.
+
+  epic-14: in-progress
+  14-1-pad-documented-as-canonical-transient-buffer-for-test-authors: done
+  14-2-mirrors-prior-arm-halt-signal-lint-in-story-template: backlog
+  14-3-story-to-story-binary-handoff-re-wc-c-at-dev-pass-start: backlog
+  14-4-pd-2-figure-drift-discipline-critical-block: backlog
+  14-5-prd-architecture-transcription-drift-sync-target-make-check-doc-sync: backlog
+  epic-14-retrospective: optional
+
+  epic-15: backlog
+  15-1-by-ans-forth-core-core-extension-audit-a-1-strategic-body: backlog
+  15-2-caught-form-throw-coverage-for-asm-error-block-258-272-a-2: backlog
+  15-3-unprefixed-number-base-specialization-a-3: backlog
+  15-4-makefile-tooling-sprint-make-check-tools-test-numbering-hygiene-b-6-b-8: backlog
+  15-5-filesystem-stress-hardware-sprint-disk-full-directory-full-zero-byte-read-file-b-7-b-9: backlog
+  15-6-phase-3-close-out-gate: backlog
+  epic-15-retrospective: optional

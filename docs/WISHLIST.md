@@ -1,116 +1,112 @@
 # Wishlist
 
-Capturing ideas that are not in MVP, or PRD for any future phases.
+Forward-looking feature ideas for Phase 3 and beyond. **Not** a debt / 
+carry-forward list — for the prioritised Phase-3 stabilisation + standards close-out catalogue, see [`docs/PHASE-3-CARRY-FORWARD.md`](PHASE-3-CARRY-FORWARD.md).
 
+# Banked RAM awareness
+
+Available user RAM is getting tight as AntForth grows, but I don't 
+want to sacrifice any of our core wordset, nor our built in assembler.
+Proposal is to use bank swapping to make more memory available to users - 
+see docs/antforth-banking-design.md .
+
+# STARTUP.FTH
+
+File that, if present, is run at startup before interactive REPL.
+Allows loading custom wordlists etc.
 
 # Multitasker
 
 A polyForth/fig-Forth style cooperative multitasking system based
-around tasks yielding with `PAUSE`. 
+around tasks yielding with `PAUSE`.
 
-Task Control Blocks are allocated with `TASK` and given a word to 
+Task Control Blocks are allocated with `TASK` and given a word to
 run with `ACTIVATE`.
 
 Make anything that blocks on I/O (including `KEY`) call `PAUSE`, and
 suddenly our interactive REPL multitasks too!
 
-Could add an event handler for the Beast's system timer interrupt 
-that also calls `PAUSE`. Maybe have it increment a counter, then 
-an event handler task is just any task that wakes up and does 
+Could add an event handler for the Beast's system timer interrupt
+that also calls `PAUSE`. Maybe have it increment a counter, then
+an event handler task is just any task that wakes up and does
 something when it detects an increment of the timer.
 
 # Semaphores
 
-Add simple counting semaphores with `SIGNAL` ( sem -- ) and 
+Add simple counting semaphores with `SIGNAL` ( sem -- ) and
 `WAIT` ( sem -- ) to allow cooperating threads to share resources.
 
-Can also use a mutex to protect a **shared variable**, which can 
+Can also use a mutex to protect a **shared variable**, which can
 then be used as a primitive mailbox between threads.
 
-Since the whole interpreter is single-threaded, our semaphores 
+Since the whole interpreter is single-threaded, our semaphores
 don't need to be *atomic* (except maybe from ISR).
 
-# Hex and binary prefixes for numeric literals
+# Turnkey compilation to .com binary
 
-Prefix hex numbers with 0x and binary numbers with 0b. This will 
-require a change to the fundamental `NUMBER` or `INTERPRET`. 
-If detected, stash the current `BASE`, change it to whatever the 
-prefix identifies, convert the number, restore the old `BASE`.
-
-Implement this system wide, and the assembler can also take 
-advantage of it - hex is more usual in assembler. 
-
-Hex/bin literals will be UNSIGNED, so we don't have to deal with 
-ugly '-0xff' type prefixes.
-
-# Compilation to .com binary
-
-Maybe this is a separate tool, but it's basically the Forth 
-interpreter without the outer-interpreter part, and a default 
-startup thread. We could maybe do some tree-shaking of words to 
+Maybe this is a separate tool, but it's basically the Forth
+interpreter without the outer-interpreter part, and a default
+startup thread. We could maybe do some tree-shaking of words to
 minimize the dictionary size.
 
-In fact without the interpreter, do we even need a dictionary? 
-If compiled forth doesn't create new words, then everything is 
-already linked as CFA addresses...I guess we still need the 
+In fact without the interpreter, do we even need a dictionary?
+If compiled forth doesn't create new words, then everything is
+already linked as CFA addresses...I guess we still need the
 dictionary as a *storage medium* but we don't need any of the
 apparatus for searching it.
 
-# Z80 IO primitives 
+# Z80 IO primitives
 
-IN and OUT. Easy enough to provide as custom code words, but 
+IN and OUT. Easy enough to provide as custom code words, but
 it would be nice to have them built in.
 
-# ANS Forth locals 
+# ANS Forth locals
 
 `{: a b -- c :}` or just `VALUE` and `TO`.
-
-# Exception handling
-
-`CATCH` and `THROW`, extremely useful, huge quality of life 
-improvement.
-
-# Wordlists and vocabularies
-
-`SEARCH-ORDER`, `GET-ORDER`, `SET-ORDER`, `WORDLIST`, and 
-`DEFINITIONS` from ANS. Namespace control!
-Move z80 opcodes into ASSEMBLER word-list and automatically activate/deactivate it.
-Oh, what about keeping different wordlists in different pages?
 
 # SEE decompiler
 
 Disassemble colon definitions back into something human
-readable. 
+readable.
 
-# TRAVERSE-WORDLIST 
+# TRAVERSE-WORDLIST
 
-Makes it possible to write `SEE`, xref tools, and integrity 
+Makes it possible to write `SEE`, xref tools, and integrity
 checkers in Forth itself. An ANS extension.
 
-# OO 
+# OO
 
-Need to get hold of Dick Pountain's book first! 
+~Need to get hold of Dick Pountain's book first!~ Book now acquired! Just need to read it.
 
 NEON/Yerk and FOBJ maybe worth looking at.
 
 Forth Dimensions Volume IX onwards.
 
-## Comments - DONE
+# MicroBeast hardware vocabulary
 
-Argh! We don't support comment words! How have we got this far without me noticing...
-Prolly should comment code more often.
+System timer ISR, GPIO, 24x14 segment LED matrix, beeper, UART,
+I2C, memory banking control, Real-Time Clock anything else board-specific. 
+System timer has strong fit with the multitasker via timer-driven `PAUSE`.
 
-# Phase-3 systematic §-by-§ ANS Forth Core re-audit
+# Bigger input buffer
 
-Epic 10's "100% Core" claim was word-counted, not §-counted. Two §-level structural-rule gaps surfaced
-post-claim and were back-filled inside Epic 13: §3.4.1.3 (dot-anywhere parser rule, closed by Story 13.0)
-and §3.1.4.1 (high-on-TOS double-cell stack-layout, closed by Story 13.0.1). Both were structurally
-invisible to a word-counted survey because they describe behaviour at the parser / stack-convention level
-rather than per-word.
+128 bytes is a bit restrictive.
 
-A systematic §-by-§ pre-audit would walk DPANS94 and Forth 2014 chapter-by-chapter and verify each
-mandatory rule against the implementation. Likely find 0–2 further §-level gaps; framework is the same as
-Stories 13.0 / 13.0.1 / 13.5 (one back-fill story per gap, paired with a compliance-doc row addition).
+# Line editing / command history 
 
-Carry-forward proposed at Story 13.6's Phase-2 release gate (Task 8.5; AC #8). Not 2.0-tag-blocking;
-documented in `docs/ans-forth-core-compliance.md` lines 5-6 + 18 + 29.
+Would be could to have previous line at least, and be able to edit it.
+
+# Small tasks
+
+See docs/dev_journal.mdi
+
+---
+
+## Shipped in v2.0 (formerly wishlist items)
+
+- **Comments** — Epic 5 (`(`, `\`)
+- **Hex / binary prefixes for numeric literals** — Epic 9 (`0x`, `0b`, `$`, `#`, `%`, character literal prefixes)
+- **Exception handling** — Epic 11 (`CATCH` / `THROW`)
+- **Wordlists and vocabularies** — Epic 12 (`WORDLIST`, `SEARCH-WORDLIST`, `GET-ORDER`, `SET-ORDER`, `FORTH-WORDLIST`, `GET-CURRENT`, `SET-CURRENT`, `DEFINITIONS`, `ONLY`)
+
+The "move z80 opcodes into ASSEMBLER word-list and automatically activate/deactivate it" sub-bullet of the wordlists wishlist item was explicitly **rejected** at the 2026-04-20 Epic-12 redraft (see `project_assembler_keep_assembly.md`); `src/assembler.asm` stays kernel-resident, hard-coded.
