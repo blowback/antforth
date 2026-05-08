@@ -100,5 +100,6 @@ Mark items as `✅ Done`, `🔄 In progress`, `❌ Dropped`, or leave default (o
 | # | Status | Closure note |
 |---|--------|--------------|
 | B.1 | ✅ Done | Story 14.1 / 2026-05-08 — `tests/README.md` authored at project root; Makefile test-section pointer comment added; PAD-as-canonical guidance landed (ANS §6.2.2000 + §3.3.3.6); HERE-collision class documented (Story-13.5.1 / 13.6 F-9 / 13.5.4 references); S12 reference inline; verdict criteria 5/5 PASS. |
+| B.2 | ✅ Done | Story 14.2 / 2026-05-08 — second `<critical>` block landed in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` adjacent (after) the PD-1 block; trigger surface enumerates literal "mirrors" + "same shape as Story Y" + "this is the X arm of Story Y" + Story-Y reference pattern + comparison-to-prior-work shorthand; required action: itemise new arm parts independently before byte-budget rationale is accepted; cites Lesson 13.5-C + B.2 closure + TD-7 / Story 13.5.5 +40-byte overshoot. Verdict criteria 4/4 PASS (synthesised mirror phrase surfaces HALT; grep "mirrors" / canonical phrase / lesson cite / `<critical>` count delta +1). Zero binary delta. |
 | (all other P1 + P2 items default to open) | | |
 | (P3 items deferred until trigger fires — see C/D trigger note above) | | |
