@@ -267,7 +267,7 @@ development_status:
   14-1-pad-documented-as-canonical-transient-buffer-for-test-authors: done
   14-2-mirrors-prior-arm-halt-signal-lint-in-story-template: done
   14-3-story-to-story-binary-handoff-re-wc-c-at-dev-pass-start: done
-  14-4-pd-2-figure-drift-discipline-critical-block: backlog
+  14-4-pd-2-figure-drift-discipline-critical-block: done
   14-5-prd-architecture-transcription-drift-sync-target-make-check-doc-sync: backlog
   epic-14-retrospective: optional
 
