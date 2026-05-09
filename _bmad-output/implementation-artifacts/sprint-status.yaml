@@ -263,19 +263,24 @@ development_status:
   # omitted from this plan and will be inserted when spawned, per the
   # established 11.5.1.1 / 13.4.1 precedent.
 
-  epic-14: in-progress
+  epic-14: done
   14-1-pad-documented-as-canonical-transient-buffer-for-test-authors: done
   14-2-mirrors-prior-arm-halt-signal-lint-in-story-template: done
   14-3-story-to-story-binary-handoff-re-wc-c-at-dev-pass-start: done
   14-4-pd-2-figure-drift-discipline-critical-block: done
   14-5-prd-architecture-transcription-drift-sync-target-make-check-doc-sync: done
-  epic-14-retrospective: optional
+  epic-14-retrospective: done
 
+  # Epic 15 scope tightened by Epic 14 retro 2026-05-09 (Lesson 14-F: process
+  # ceremony has run past its useful return). 15.2 (caught-form THROW probes)
+  # + 15.3 (base-aware NUMBER?) demoted to direct-commit work items (no story
+  # file, tracked in PHASE-3-CARRY-FORWARD.md). 15.4 (B.6 make check-tools +
+  # B.8 test-numbering hygiene) DROPPED — tooling-on-tooling cargo; both rows
+  # marked "Deferred indefinitely" in PHASE-3-CARRY-FORWARD.md. 15.6 close-out
+  # gate replaced by a checklist in epics.md (no story file). Remaining
+  # story-shaped work: 15.1 audit (simplified to 5 ACs), 15.1.X conditional
+  # back-fills, 15.5 filesystem hardware sprint, 15.5.1 conditional B.7 fork.
   epic-15: backlog
-  15-1-by-ans-forth-core-core-extension-audit-a-1-strategic-body: backlog
-  15-2-caught-form-throw-coverage-for-asm-error-block-258-272-a-2: backlog
-  15-3-unprefixed-number-base-specialization-a-3: backlog
-  15-4-makefile-tooling-sprint-make-check-tools-test-numbering-hygiene-b-6-b-8: backlog
+  15-1-ans-forth-core-compliance-audit-a-1: ready-for-dev
   15-5-filesystem-stress-hardware-sprint-disk-full-directory-full-zero-byte-read-file-b-7-b-9: backlog
-  15-6-phase-3-close-out-gate: backlog
   epic-15-retrospective: optional

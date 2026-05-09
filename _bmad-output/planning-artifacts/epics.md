@@ -432,29 +432,23 @@ Complete the §-by-§ ANS Forth Core + Core-Extension audit (the strategic body)
 
 **Carry-forward items closed at epic close-out:** A.1, A.2, A.3, B.6, B.7 (conditional), B.8, B.9 (7 of 12 P1 items; combined with Epic-14's 5 → 12 of 12 at Phase-3 close-out).
 
-### Story 15.1: §-by-§ ANS Forth Core + Core-Extension audit (A.1 strategic body)
+### Story 15.1: ANS Forth Core compliance audit (A.1)
 
-As a Forth implementor or external auditor (Hana persona, Journey 5),
-I want `docs/ans-forth-core-compliance.md` to carry a §-level row for every mandatory rule in DPANS94 §6.1, §6.2, and the structural §-rules,
-So that I can verify antforth's compliance claim against the standard text in under 10 minutes per row — the framework that caught Stories 13.0 / 13.0.1's §-level blindspots applied systematically.
+As a Forth implementor verifying antforth's compliance claim,
+I want a per-§-rule pass over DPANS94 §6.1 + §6.2 + the structural §-rules,
+So that "100% Core" is checkable rule-by-rule rather than word-counted — the framework that caught Stories 13.0 / 13.0.1's §-level blindspots applied systematically.
 
 **Acceptance Criteria:**
 
-**Given** the v2.0 baseline `docs/ans-forth-core-compliance.md` carries word-by-word rows for §6.1 plus ad-hoc §-level coverage at §3.1.4.1, §3.4.1.3, §6.1.0310, §6.1.0350, §6.1.0090,
+**Given** the v2.0 baseline `docs/ans-forth-core-compliance.md` carries word-by-word §6.1 rows + ad-hoc §-level coverage,
 **When** Story 15.1 is dev-passed,
-**Then** AC1 — the audit walk is completed across 3 surfaces: every mandatory rule in DPANS94 §6.1 (Core wordset, ~133 rules), every implemented word in §6.2 (Core Extension), and every structural §-rule that applies to antforth (§3.1.4.1 high-on-TOS double-cell layout, §3.4.1.3 numeric-literal parser rule, plus any others surfaced by the walk).
-**And** AC2 — every new row follows the CCD-P3-1 6-column schema `§ | Rule | Verdict | Source (file:line) | Closure (story-number) | Notes`; verdict values restricted to `Implemented` / `Implemented-with-caveat` / `Accepted-with-rationale-N-A` / `Deliberately-omitted`.
-**And** AC3 (F1 satisfied-behaviourally case) — at least one row uses `Source: N-A` with `Verdict: Implemented` and an explanatory Notes entry, establishing the canonical pattern for §-rules satisfied by construction (e.g., alignment-not-assumed structural rule).
-**And** AC4 (F7 word-vs-structural-rule grain) — at least one §-number appears in multiple rows (e.g., §6.1.0350 produces both a row for the `2@` word's stack-effect + standard reference AND a row for the §3.1.4.1 high-on-TOS structural constraint that applies to it; the two rows linked via Notes column).
-**And** AC5 (F4 deliberately-omitted rationale) — any §6.1 / §6.2 rule not implemented carries an explicit `Deliberately-omitted` row with rationale in Notes (per `feedback_no_preexisting_discharge.md` — no silent gaps).
-**And** AC6 — every existing `; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` citation comment in `src/*.asm` is cross-checked against the new §-level rows; mismatches surfaced.
-**And** AC7 (F6 citation-cleanup overflow guard) — if > 20 citation-comment mismatches surface, mismatches beyond 20 spawn a follow-up "citation cleanup" hitch-hiker story rather than landing in this audit story; audit-story diff bounded to doc rows added + ≤ 20 in-pass citation fixes.
-**And** AC8 — any §-level structural-rule gap surfaced is either back-filled with a focused sub-story (Story 15.1.1, 15.1.2, …) per the A.1-D3 six-step shape, or explicitly accepted-with-rationale per project-lead approval. If > 5 gaps surface, sprint-change-proposal is filed.
-**And** AC9 — `docs/PHASE-3-CARRY-FORWARD.md` A.1 row marked `🔄 In progress` at story start, `✅ Done` at story close-out (with audit-verdict summary and back-fill-spawn list as closure note).
-**And** AC10 — `wc -c build/antforth.com` unchanged (audit story is doc-only); S9 hardware-smoke documented as exempt.
-**And** AC11 — `make test-repl` reports ≥ 973 PASS / 0 FAIL.
+**Then** AC1 — every mandatory rule in DPANS94 §6.1 (Core, ~133 rules) and every implemented word in §6.2 (Core Extension) has a row in `docs/ans-forth-core-compliance.md` with verdict: `Implemented` / `Implemented-with-caveat` / `Deliberately-omitted` / `Accepted-with-rationale-N-A`.
+**And** AC2 — known structural §-rules (§3.1.4.1 high-on-TOS double-cell layout, §3.4.1.3 numeric-literal parser rule) are covered as rows; any other structural §-rules surfaced during the walk are added.
+**And** AC3 — every gap (`Implemented-with-caveat` or surfaced-but-not-yet-implemented) is either spawned as a back-fill story (15.1.X) or carries a one-sentence rationale in Notes. No silent gaps.
+**And** AC4 — `wc -c build/antforth.com` unchanged (audit story is doc-only); `make test-repl` reports ≥ 973 PASS / 0 FAIL.
+**And** AC5 — `docs/PHASE-3-CARRY-FORWARD.md` A.1 row updated at story close-out with verdict summary and back-fill spawn list.
 
-**FRs covered:** FR-P3-1, FR-P3-2, FR-P3-3, FR-P3-4. **NFRs delivered:** NFR-P3-8, NFR-P3-13, NFR-P3-16. **Findings addressed:** F1, F6, F7. **Carry-forward (partial):** A.1 audit-walk component closed; back-fill closures via 15.1.X if surfaced.
+**FRs covered:** FR-P3-1, FR-P3-2, FR-P3-3, FR-P3-4. **Carry-forward (partial):** A.1 audit-walk component closed; back-fill closures via 15.1.X if surfaced.
 
 ### Story 15.1.X: A.1 back-fill — gap N (CONDITIONAL; 0–2 expected, spawned from Story 15.1's verdict)
 
@@ -480,141 +474,68 @@ So that antforth's compliance claim is §-level defensible at this rule, not jus
 
 **FRs covered:** FR-P3-5, FR-P3-6 (one row per back-fill closure).
 
-### Story 15.2: Caught-form THROW coverage for asm-error block −258..−272 (A.2)
+### Direct-commit work items (no story file)
 
-As Mo the OG (Journey 2),
-I want to wrap any antforth assembler-error-raising operation in a `CATCH` frame and receive the asm-error code on the data stack exactly as I receive ANS-standard codes,
-So that I can write defensive harnesses around experimental CODE words without the THROW system having a known asym between asm-error codes (-258..-272) and standard codes (e.g. -4, -13).
+Per the Epic 14 retrospective (2026-05-09): items below are tracked in `docs/PHASE-3-CARRY-FORWARD.md` and committed directly without create-story ceremony. Each lands as one or more focused commits with a meaningful message; verdict criterion is the test/probe passing on real CP/M 2.2 / MicroBeast where applicable.
 
-**Acceptance Criteria:**
+**A.2 — caught-form THROW coverage (FR-P3-7, FR-P3-8).** Add 15 `' WORD CATCH . CR` probes to `tests/throw_migration_tests.fth`, one per asm-error code in the −258..−272 block. Each probe asserts the expected code lands on the data stack. Unique numeric IDs across the existing `test-repl` recipe. Run `make test-repl` green. Commit.
 
-**Given** the v2.0 `tests/throw_migration_tests.fth` lacks caught-form coverage for the full asm-error block,
-**When** Story 15.2 is dev-passed,
-**Then** AC1 — `tests/throw_migration_tests.fth` gains one `' WORD CATCH . CR` probe per asm-error THROW code in the `-258..-272` block (15 probes total — codes -258, -259, -260, -261, -262, -263, -264, -265, -266, -267, -268, -269, -270, -271, -272). Each probe asserts the expected code lands on the data stack.
-**And** AC2 — every probe uses the canonical `' WORD CATCH . CR` form (CCD-1 standard CATCH frame layout; no new frame fields, no new escape mechanism).
-**And** AC3 — the per-code `WORD` chosen is documented (e.g., for `-271 THROW_ASM_DISP_RANGE` an `(IX) +D` invocation without displacement byte). Where a single `WORD` cannot raise a specific code, a synthetic test sequence is constructed and documented.
-**And** AC4 — probes for `-270` / `-271` / `-272` (the post-Story-11.5.6 split codes) explicitly demonstrate the post-split block extension (per architecture's Phase-3 reaffirmation of CCD-2).
-**And** AC5 — new probes registered in the Makefile's `test-repl` recipe with unique numeric IDs (no duplicates with the 1..952 baseline or 944..964 cleanup-slate range; B.8 renumber arrives via Story 15.4).
-**And** AC6 — `wc -c build/antforth.com` unchanged (test-only story); S9 hardware-smoke documented as exempt.
-**And** AC7 — `make test-repl` reports ≥ 973 + 15 = 988 PASS / 0 FAIL (or higher if other Phase-3 stories also added probes by story start; the +15 from this story is additive).
-**And** AC8 — `docs/PHASE-3-CARRY-FORWARD.md` A.2 row marked `✅ Done` with closure note.
+**A.3 — base-aware unprefixed `NUMBER?` (FR-P3-9, FR-P3-10).** In `src/strings.asm:w_NUMBER_Q_cf`, fix the unprefixed-numeral parsing branch so it honours the current `BASE` (DPANS94 §6.1.0570 + Forth 2014 §3.4.1.3 prefixed literals continue to ignore `BASE` per FR9). Add positive probes (HEX `FF .` → 255; DECIMAL `255 .` → 255; `8 BASE !` then `17 .` → 15) and a regression probe (HEX `#100 .` → 100). Add `; ANS Forth 1994 §6.1.0570 NUMBER? — BASE-aware unprefixed parse` citation on the affected `cf:` label. Update `docs/ans-forth-core-compliance.md` row for §6.1.0570. ROM delta ≤ +30 bytes; if delta > 0, hardware smoke required.
 
-**FRs covered:** FR-P3-7, FR-P3-8. **NFR delivered:** NFR-P3-3 (REPL survives THROW for the full asm-error block — caught-form path is the proof-positive). **Carry-forward closed:** A.2.
-
-### Story 15.3: Unprefixed `NUMBER?` base-specialization (A.3)
-
-As Raj the Newb (Journey 3),
-I want unprefixed numerals to parse per my explicit `BASE` setting consistently,
-So that the "wait, why is decimal showing as hex?" gotcha doesn't derail my first programs — while Forth-2014 §3.4.1.3 prefixed literals continue to ignore `BASE` per FR9.
-
-**Acceptance Criteria:**
-
-**Given** the v2.0 baseline `w_NUMBER_Q_cf` in `src/strings.asm` parses unprefixed numerals inconsistently against the `BASE` setting in edge cases,
-**When** Story 15.3 is dev-passed,
-**Then** AC1 (F5 site is binding) — the change lands in `w_NUMBER_Q_cf` in `src/strings.asm` — the existing `NUMBER?` implementation (post-Story-13.0 baseline). Alternative-site proposals require sprint-change-proposal evaluation, not story-level discretion.
-**And** AC2 — the dev-pass author reads the current `w_NUMBER_Q_cf` code and the standard text (DPANS94 §6.1.0570 + Forth 2014 §3.4.1.3), then specifies the precise pre-/post-behaviour delta in the story's Dev Notes before implementing.
-**And** AC3 — `w_NUMBER_Q_cf` continues to satisfy the established stack-effect `( c-addr u -- n true | c-addr u false )` and the established register-clobbering envelope; only the BASE-aware-parsing branch logic changes.
-**And** AC4 (positive REPL probes) — new probes in `tests/number_prefixes_tests.fth` (or `tests/core_tests.fth`) verify HEX + unprefixed `FF .` → `255 ok`; DECIMAL + unprefixed `255 .` → `255 ok`; non-default base (`8 BASE !` then unprefixed `17 .` → `15 ok`).
-**And** AC5 (FR-P3-10 / FR9 regression invariant) — `HEX` then `#100 .` → `100 ok` (Forth-2014 prefixed-overrides-BASE) — must continue to hold post-A.3.
-**And** AC6 (FR-P3-25 regression invariant) — unprefixed numeric-literal parsing in colon definitions and built-in Z80 assembler source continues to honour the current `BASE` (FR47 invariant + A.3 enhancement; pre-existing baseline tests in `tests/*.fth` continue to pass).
-**And** AC7 (pre-fix negative-result confirmation, A.1-D3 discipline applied to non-back-fill kernel-surgery story) — pre-fix binary's response to the non-default-base probe (`8 BASE !` then unprefixed `17 .`) is captured and shown to differ from the expected `15 ok`; post-fix passes; diff captured in Dev Notes.
-**And** AC8 (CCD-3 citation) — `w_NUMBER_Q_cf` source comment cites `; ANS Forth 1994 §6.1.0570 NUMBER? — BASE-aware unprefixed parse per A.3 (Forth 2014 §3.4.1.3 prefixed literals continue to ignore BASE)`.
-**And** AC9 — the §6.1.0570 row in `docs/ans-forth-core-compliance.md` reflects A.3's refinement; closure column references Story 15.3; rule text on the row clarifies the BASE-aware unprefixed parse rule.
-**And** AC10 — `wc -c build/antforth.com` increase ≤ +30 bytes (per architecture per-story envelope for A.3); S9 hardware smoke runs on real CP/M 2.2 / MicroBeast — PASS verdict; transcript filed.
-**And** AC11 — `make test-repl` reports ≥ baseline + new Phase-3 probes / 0 FAIL.
-**And** AC12 — `docs/PHASE-3-CARRY-FORWARD.md` A.3 row marked `✅ Done` with closure note + per-base verdict summary.
-
-**FRs covered:** FR-P3-9, FR-P3-10. **NFR delivered:** NFR-P3-9 (Forth 2014 §3.4.1.3 conformance with A.3 strict refinement). **Findings addressed:** F5. **Carry-forward closed:** A.3.
-
-### Story 15.4: Makefile tooling sprint — `make check-tools` + test-numbering hygiene (B.6 + B.8)
-
-As a contributor (or Ant himself on a freshly-cloned host),
-I want the build to confirm the iz-cpm + sjasmplus versions match the certified baseline AND the Makefile's test-repl recipe to use unique numeric IDs across all probes,
-So that test-result divergence from version drift is surfaced before debugging time is spent AND the test-numbering gap from Story 11.3 is closed cosmetically.
-
-**Acceptance Criteria:**
-
-**Given** the v2.0 baseline lacks a `.tool-versions` file, lacks a `make check-tools` target, and carries duplicate test numbers in `Makefile`'s `test-repl` recipe (originating from Story 11.3),
-**When** Story 15.4 is dev-passed,
-**Then** AC1 (B.6) — new project-root file `.tool-versions` lists pinned tool versions, one per line in `<tool> <version>` format. Initial content per F4 introspection sub-task: capture `iz-cpm --version` and `sjasmplus --version` on the host that produced the certified `make test-repl` 973 PASS / 0 FAIL run (commit `6599d73`); fallback to current host's versions if v2.0 baseline can't be retraced (and document the fallback in Dev Notes).
-**And** AC2 (B.6) — `Makefile` gains a `check-tools` PHONY target that reads `.tool-versions`, queries `iz-cpm --version` + `sjasmplus --version`, and reports advisory mismatches.
-**And** AC3 (B.6) — advisory by default (exit 0 with stderr advisory on mismatch); `make check-tools STRICT=1` exits 1 on mismatch. Hard-failing every minor version drift would create friction for contributors on slightly different hosts; advisory + opt-in strict is the right tradeoff per architecture B.6-D1.
-**And** AC4 (B.6, F4) — the story's Dev Notes document the introspection process and any fallback-to-current-host decisions.
-**And** AC5 (B.6) — `docs/PHASE-3-CARRY-FORWARD.md` B.6 row marked `✅ Done` with closure note (incl. version advisory recorded).
-**And** AC6 (B.8) — the dev-pass enumerates all duplicate numeric IDs in `Makefile`'s `test-repl` recipe (originating from Story 11.3 onward).
-**And** AC7 (B.8) — duplicate test numbers are renumbered preserving test-case content and identity — only the leading numeric ID changes. No new architectural surface; cosmetic close-out.
-**And** AC8 (B.8) — the old-→-new ID mapping is documented in the story's Dev Notes (so any external test-harness referencing old IDs can be updated).
-**And** AC9 (B.8) — `docs/PHASE-3-CARRY-FORWARD.md` B.8 row marked `✅ Done` with closure note.
-**And** AC10 — `wc -c build/antforth.com` unchanged (Makefile + `.tool-versions` edits, no kernel touch); S9 hardware-smoke documented as exempt.
-**And** AC11 — `make test-repl` reports ≥ 973 PASS / 0 FAIL; renumbered probes pass under their new IDs.
-
-**FRs covered:** FR-P3-17 (B.6), FR-P3-18 (B.8). **Findings addressed:** F4. **Carry-forward closed:** B.6, B.8.
+**B.6 (`make check-tools`) and B.8 (test-numbering hygiene) — dropped from Phase 3 scope.** Both are tooling-on-tooling; if iz-cpm version drift or duplicate test IDs ever bite, fix them then. `docs/PHASE-3-CARRY-FORWARD.md` rows updated to "Deferred indefinitely — Epic 14 retro 2026-05-09."
 
 ### Story 15.5: Filesystem stress hardware sprint — disk-full + directory-full + zero-byte READ-FILE (B.7 + B.9)
 
 As Pete the hardware/peripheral developer (Journey 4),
-I want disk-full / directory-full / zero-byte READ-FILE failure modes to be verified clean on real CP/M 2.2 / MicroBeast hardware with FCB-pool consistency post-failure,
-So that I can rely on documented failure-mode behaviour when bench-testing hardware variants — closing B.9 disk-full re-verification + B.7 disposition (a) "evaluation suffices" or spawning B.7 disposition (b) probe story (Story 15.5.1) if hardware reveals a defect.
+I want disk-full / directory-full / zero-byte READ-FILE failure modes verified clean on real CP/M 2.2 / MicroBeast hardware,
+So that documented failure-mode behaviour is hardware-real, not just iz-cpm-real.
 
 **Acceptance Criteria:**
 
-**Given** the v2.0 baseline lacks dedicated probe coverage for disk-full, directory-full, and zero-byte READ-FILE failure modes (B.7 / B.9 carry-forward gaps),
+**Given** the v2.0 baseline lacks dedicated probe coverage for disk-full, directory-full, and zero-byte READ-FILE failure modes,
 **When** Story 15.5 is dev-passed,
-**Then** AC1 (B.9 disk-full sub-step (a)) — procedure fills B: ramdisk to capacity with one large file written until `WRITE-FILE` returns disk-full `ior`. Asserts: non-zero `ior` returned; FCB-pool consistency (no orphaned handles); filesystem consistency (clean `CLOSE-FILE` / re-`OPEN-FILE` round-trip on an existing file succeeds post-failure).
-**And** AC2 (F2 directory-full sub-step (b)) — procedure fills B: ramdisk's directory entries with many small files until `CREATE-FILE` returns directory-full `ior` (or the equivalent CP/M ior code). Same FCB-pool + filesystem consistency assertions as AC1. Sub-steps (a) and (b) are distinct failure modes (block-storage exhaustion vs directory-entry exhaustion) per architecture finding F2.
-**And** AC3 (zero-byte READ-FILE single-call) — the same probe block adds the trivial `( c-addr 0 fileid -- 0 0 )` no-op path verification; assertion: returns `0 0` on the stack with no FCB-pool or filesystem state mutation.
-**And** AC4 — new probe block lands in `tests/file_access_tests.fth` (B.9 disk-full block added permanently; AC2/AC3 probes added if disposition (b) fires per AC6, otherwise B.7 evaluation suffices and the B.7 row marks `✅ Evaluated, none required`).
-**And** AC5 (S9) — the combined probe runs on real CP/M 2.2 / MicroBeast hardware (not just iz-cpm); transcript captured under the established `~/Downloads/bestialitty-<date>.bin` naming.
-**And** AC6 (B.7 disposition fork) — if hardware reveals a defect — wrong `ior`, orphaned FCB, corrupted CP/M directory entry, or FCB-pool recovery failure — B.7 disposition (b) "Probe story spawned" fires; a Story 15.5.1 sub-story is spawned per `feedback_verdict_only_audit.md` ("verdict-only audit + standalone reproducer + fix-story" pattern). If hardware reveals no defect, B.7 disposition (a) "Evaluation suffices" closes the row with a closure note citing this hardware run.
-**And** AC7 — `docs/PHASE-3-CARRY-FORWARD.md` B.7 + B.9 rows updated with closure notes (B.9 = `✅ Done`; B.7 = `✅ Evaluated, none required` OR `🔄 Story 15.5.1 spawned`).
-**And** AC8 — typical binary delta = 0 bytes (probe-only); +0..+30 if any probe-driven kernel surgery surfaces (would itself spawn Story 15.5.1 per AC6). S9 hardware smoke runs and transcript filed regardless.
-**And** AC9 — `make test-repl` reports ≥ baseline + new probes / 0 FAIL.
+**Then** AC1 (B.9 disk-full) — fill B: ramdisk to capacity with one large file written until `WRITE-FILE` returns disk-full `ior`. Asserts non-zero `ior`, no orphaned FCB handles, and a clean `CLOSE-FILE` / re-`OPEN-FILE` round-trip on an existing file post-failure.
+**And** AC2 (F2 directory-full) — fill B: directory entries with many small files until `CREATE-FILE` returns directory-full `ior`. Same consistency assertions as AC1. Distinct failure mode (directory-entry exhaustion vs block-storage exhaustion).
+**And** AC3 (zero-byte READ-FILE) — `( c-addr 0 fileid -- 0 0 )` no-op path returns `0 0` with no FCB-pool or filesystem state mutation.
+**And** AC4 — probes added to `tests/file_access_tests.fth`; transcript captured on real hardware under `~/Downloads/bestialitty-<date>.bin`.
+**And** AC5 (B.7 fork) — if hardware reveals a defect (wrong `ior`, orphaned FCB, directory corruption, FCB-pool recovery failure), Story 15.5.1 is spawned per `feedback_verdict_only_audit.md`. Otherwise B.7 closes "evaluation suffices."
+**And** AC6 — `make test-repl` ≥ baseline + new probes / 0 FAIL; binary delta typically 0 (probe-only).
 
-**FRs covered:** FR-P3-19, FR-P3-20, FR-P3-21. **NFR delivered:** NFR-P3-5 (filesystem error recovery — directory-full / zero-byte READ-FILE coverage closes the carry-forward gaps); NFR-P3-7 (S9 hardware smoke). **Findings addressed:** F2. **Carry-forward closed:** B.9; B.7 (disposition (a) or spawns Story 15.5.1 disposition (b)).
+**FRs covered:** FR-P3-19, FR-P3-20, FR-P3-21. **Carry-forward closed:** B.9; B.7 (disposition (a) or spawns Story 15.5.1).
 
-### Story 15.5.1: B.7 conditional probe story (CONDITIONAL — only if Story 15.5 disposition (b) fires)
+### Story 15.5.1: B.7 conditional probe story (CONDITIONAL — only if Story 15.5 reveals a defect)
 
-This story conditionally exists only if Story 15.5's hardware run surfaces a defect that requires probe-driven kernel surgery beyond the disk-full / directory-full / zero-byte READ-FILE coverage already in 15.5. Follows `feedback_verdict_only_audit.md` shape: verdict-only audit (the 15.5 hardware-smoke transcript is the audit) + standalone reproducer (probe block) + fix-story (this story).
-
-As Pete the hardware/peripheral developer,
-I want the specific filesystem defect Story 15.5 surfaced on real hardware closed,
-So that disk-full / directory-full / zero-byte READ-FILE coverage is not just probe-deep but kernel-surgery-deep where hardware revealed the gap.
+Spawned only if Story 15.5's hardware run surfaces a kernel defect requiring surgery. Follows `feedback_verdict_only_audit.md` shape: verdict-only audit (the 15.5 transcript) + standalone reproducer + fix.
 
 **Acceptance Criteria (canonical template):**
 
-**Given** Story 15.5's hardware run surfaced a specific defect requiring kernel surgery,
+**Given** Story 15.5's hardware run surfaced a specific defect,
 **When** Story 15.5.1 is dev-passed,
-**Then** AC1 — a standalone Forth probe block is authored that exhibits the defect on real hardware (the reproducer).
-**And** AC2 — the defect is characterised: wrong `ior` value, orphaned FCB, directory corruption, or FCB-pool recovery failure (per AC6 of Story 15.5).
-**And** AC3 — the fix is implemented in the appropriate `src/*.asm` (likely `src/file_access.asm` or DMA-pool handler).
-**And** AC4 (pre-fix negative-result confirmation) — pre-fix binary fails the reproducer; post-fix passes; diff captured in Dev Notes.
-**And** AC5 (CCD-3 citation) — if the fix touches a standard-derived word, citation comment added per CCD-3.
-**And** AC6 — the probe is added permanently to `tests/file_access_tests.fth`.
-**And** AC7 (S9) — hardware smoke runs on real CP/M 2.2 / MicroBeast — PASS verdict; transcript filed.
-**And** AC8 — binary delta envelope: ≤ +30 bytes (per architecture per-story envelope for B.7 conditional).
-**And** AC9 — `docs/PHASE-3-CARRY-FORWARD.md` B.7 row marked `✅ Done` with closure note + reproducer + fix description.
+**Then** AC1 — standalone Forth reproducer exhibits the defect on real hardware.
+**And** AC2 — fix implemented in the appropriate `src/*.asm`; pre-fix binary fails reproducer, post-fix passes; diff captured.
+**And** AC3 — probe added permanently to `tests/file_access_tests.fth`.
+**And** AC4 — hardware smoke runs on real CP/M 2.2 / MicroBeast — PASS; transcript filed.
+**And** AC5 — binary delta ≤ +30 bytes; `make test-repl` ≥ baseline + probes / 0 FAIL.
 
-**FRs covered (conditionally):** FR-P3-19, FR-P3-20 (kernel-surgery-backed coverage if hardware reveals defect).
+**FRs covered (conditionally):** FR-P3-19, FR-P3-20.
 
-### Story 15.6: Phase-3 close-out gate
+### Phase-3 close-out (replaces Story 15.6 — checklist, no story file)
 
-As Ant (the project lead) at Phase-3 completion,
-I want a verdict-table walk + S11 user-visible version surface audit + final 2.x tag application,
-So that Phase-3 close-out follows the Story 13.5.6 close-out-gate precedent and the antforth 2.x point-release ships with all standing commitments holding.
+When Story 15.1 (and any 15.1.X back-fills) + the A.2 / A.3 direct-commit items + Story 15.5 (and 15.5.1 if spawned) are all landed, close Phase 3 with this checklist as one commit:
 
-**Acceptance Criteria:**
+- `make test-repl` green; `wc -c build/antforth.com` recorded.
+- If binary moved from 24,996, run hardware smoke on real CP/M 2.2 / MicroBeast; file transcript.
+- Bump banner string in `src/antforth.asm` and `README.md` version reference if shipping a 2.x point release.
+- Run `make check-doc-sync`; resolve any strict drift items.
+- Tag the close-out commit; publish GitHub release.
+- Mark `docs/PHASE-3-CARRY-FORWARD.md` P1 rows `✅ Done` (B.6 / B.8 → `❌ Deferred indefinitely` per Epic 14 retro decision).
+- Run a Phase-3 retrospective.
 
-**Given** every Phase-3 story (Epic 14 + Epic 15) has been dev-passed,
-**When** Story 15.6 is dev-passed,
-**Then** AC1 (verdict-table walk) — every Phase-3 story has its verdict-table row read; every AC's verdict reviewed; any PARTIAL verdict triggers S5 HALT (root-cause handled in-pass or sibling story spawned). All Phase-3 carry-forward catalogue P1 items (A.1, A.2, A.3, B.1–B.9) verified `✅ Done` in `docs/PHASE-3-CARRY-FORWARD.md` (or explicitly re-prioritised down with project-lead approval per `feedback_no_preexisting_discharge.md`).
-**And** AC2 (S11 user-visible version surface audit) — banner string in `src/antforth.asm` reflects the new 2.x version; `README.md` version reference aligned; memory-file `description` fields citing antforth version (e.g., `project_phase2_scope.md`, `project_phase3_scope.md` if added) read the new 2.x version. Mismatches against the tag being applied are HALT signals.
-**And** AC3 — running Story 14.5's `make check-doc-sync` drift-checker target produces `[ok] doc-sync: 0 drift` on stdout; any drift items resolved before tag application.
-**And** AC4 — full `make test-repl` reports ≥ 973 PASS + Phase-3 additive probes / 0 FAIL on iz-cpm.
-**And** AC5 (S9 final hardware smoke) — final hardware smoke run on real CP/M 2.2 / MicroBeast — PASS; transcript filed.
-**And** AC6 (S1–S12 standing commitments hold) — the close-out story explicitly walks each standing commitment (codified as NFR-P3-22..33) and confirms hold across every Phase-3 epic (Epic 14 + Epic 15). Eleven-plus-N consecutive epic hold confirmed.
-**And** AC7 (NFR-P3-2 cumulative ROM cap held) — `wc -c build/antforth.com` ≤ 25,200 bytes (24,996 baseline + ≤ +200 envelope per NFR-P3-2). Per-story envelope log reviewed; any single story that pushed cumulative would have triggered HALT during its dev-pass.
-**And** AC8 — final Phase-3 antforth 2.x version tagged on the close-out commit; GitHub release published with closure-note summary.
-**And** AC9 — Phase-3 retrospective story file `_bmad-output/implementation-artifacts/phase3-retro-<date>.md` created with skeleton (lessons surfaced, standing-commitment hold, S1–S12 walk, Phase-4 hand-off candidates).
-**And** AC10 — all P1 rows in `docs/PHASE-3-CARRY-FORWARD.md` marked `✅ Done` (or `❌ Re-prioritised down` with explicit rationale + project-lead approval); P2/P3 rows untouched (deferred).
+### REMOVED: Story 15.2, Story 15.3, Story 15.4, Story 15.6 (per Epic 14 retro 2026-05-09)
 
-**FRs covered:** FR-P3-22, FR-P3-23, FR-P3-24, FR-P3-25 (phase-wide regression invariants validated at close-out). **NFRs delivered (verification):** NFR-P3-2 (cumulative ROM cap held); NFR-P3-6 (test baseline maintained); NFR-P3-7 (S9 hardware smoke); NFR-P3-32 (S11 version surface audit). **Standing commitments verified:** S1–S12.
+Removed from story scope per Epic 14 retrospective scope-tightening:
+- **15.2 (caught-form THROW probes)** — demoted to direct-commit work item (above).
+- **15.3 (base-aware NUMBER?)** — demoted to direct-commit work item (above).
+- **15.4 (B.6 + B.8 Makefile tooling sprint)** — dropped entirely (tooling-on-tooling cargo).
+- **15.6 (close-out gate)** — replaced by the checklist above (no story file).
+
