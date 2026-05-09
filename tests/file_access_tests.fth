@@ -477,3 +477,91 @@ FA @ CLOSE-FILE DROP  S" T16.TXT" DELETE-FILE DROP
 \   * self-recursive single file vs chain of distinct files
 \   * explicit INCLUDE-TOP @ verification post-CATCH (= 0)
 \ Verdict regex: T43A=-1 AND T43B=0.
+
+\ ============================================================
+\ Story 15.5 — Filesystem stress hardware sprint (B.7 + B.9)
+\ Tests 965 / 966 / 967 — closes Phase-3 carry-forward rows B.7
+\ (directory-full + zero-byte READ-FILE) and B.9 (disk-full
+\ hardware re-verification).
+\ ============================================================
+\ Story 13.6 (Epic 13 close-out) explicitly punted disk-full hardware
+\ verification per the (s136-stress-e) note above (lines 456..463) —
+\ "iz-cpm's disk image cannot be exhausted within a probe budget
+\ (host filesystem, not host-disk-free-bounded). Hardware re-
+\ verification deferred to Task 9 hardware smoke if budget permits."
+\ Story 15.5 closes that loop with three new probes wired into
+\ Makefile test-repl as 965 / 966 / 967.
+\
+\ Tests 966 / 967 are wired with PASS-or-SKIP-or-FAIL verdict shape
+\ — the load-bearing verdict comes from real MicroBeast hardware
+\ (Story 15.5 AC5). On iz-cpm both probes typically SKIP-with-
+\ rationale because:
+\   * 966 disk-full: iz-cpm's --disk-b directory mapping is
+\     host-filesystem-bounded; WRITE-FILE never returns ior!=0
+\     within the 1024-iteration / 512KB probe budget.
+\   * 967 directory-full: iz-cpm's --disk-b mapping has no CP/M
+\     directory-entry cap (each host file = one entry, host fs
+\     supports millions); CREATE-FILE never returns ior!=0 within
+\     the 256-file probe budget.
+\ On real MicroBeast B: ramdisk both should fire (block-storage
+\ exhaustion + directory-entry exhaustion are real CP/M 2.2 BIOS
+\ failure modes — see architecture finding F2).
+\
+\ Test 965 (zero-byte READ-FILE) is kernel behaviour (DPANS94
+\ §11.6.1.2080 zero-byte no-op rule: ( c-addr 0 fileid -- 0 0 ),
+\ cursor not advanced). Runs PASS on iz-cpm and is hardware-replayed
+\ alongside 966/967 for completeness.
+
+\ (s155-zb) Test 965 — Zero-byte READ-FILE no-op per §11.6.1.2080
+\ Probe creates T965ZB.TXT with content "hello", reopens R/O, calls
+\ READ-FILE with u1=0 and asserts u2=0 ior=0 (the §11.6.1.2080 zero-
+\ byte no-op rule). Then a 1-byte READ-FILE confirms the byte cursor
+\ is still at byte 0 (reads 'h' = 104).
+\ Verdict regex: T65Z=0 0 AND T65A=104.
+
+\ (s155-df) Test 966 — Disk-full / block-storage exhaustion (B.9)
+\ Probe pre-creates B:CANARY.TXT with "Canary!", then iteratively
+\ writes 512-byte chunks to B:DFTEST.TXT until WRITE-FILE returns
+\ ior!=0 or 1024 iterations elapse (probe-bounded outer loop —
+\ caps at 512KB writes; hardware MicroBeast B: ramdisk should
+\ exhaust well before this).
+\ On ior!=0: probe asserts (a) ior!=0 captured (T6I); (b) CLOSE-FILE
+\ on the failed FCB returns ior=0 (T6C — no orphaned FCB); (c)
+\ B:CANARY.TXT re-OPEN-FILE / READ-FILE round-trip returns
+\ "Canary!" (T6R — filesystem consistency post-failure). Final
+\ verdict token T6V=1 on hardware-side success path.
+\ On no-exhaustion (iz-cpm host-bounded path): VERDICT's else branch
+\ emits T6V=0 and the Makefile stanza routes to SKIP (load-bearing
+\ verdict deferred to MicroBeast hardware run).
+\ Numeric verdict codes (1 = DISKFULL_OK, 0 = NO_LIMIT) replaced the
+\ original string-literal tokens (T6V=DISKFULL_OK / T6V=NO_LIMIT) post-
+\ hardware run on 2026-05-09 — the literals false-positive grep-matched
+\ the echoed source-text inside S" ... " bodies on iz-cpm, masking real
+\ verdicts. See Story 15.5 Dev Agent Record + first hardware transcript
+\ ~/Downloads/beastty-20260509-123943.bin for the surface.
+\ Verdict regex: PASS = T6V=1 AND T6C=0 AND T6R=Canary!;
+\                SKIP = T6V=0; FAIL otherwise.
+
+\ (s155-dirf) Test 967 — Directory-full / dir-entry exhaustion (B.7)
+\ Probe pre-creates B:CANARY.TXT, then iteratively CREATE-FILE +
+\ CLOSE-FILE empty files B:F0000.TXT..B:F0255.TXT until CREATE-FILE
+\ returns ior!=0 or 256 files elapse (probe-bounded outer loop —
+\ caps at 256 entries; CP/M 2.2 directories are 64..1024 entries
+\ depending on media so 256 cap covers small-to-medium ramdisks).
+\ Each successful FCB is closed inline; per-iteration CLOSE-FILE ior
+\ is OR-folded into CIM so a non-zero close-ior on any successfully-
+\ created FCB surfaces as T7C != 0 (AC2 sub (b) — "clean CLOSE-FILE
+\ on every successfully-acquired FCB" — literal coverage; CR-1 fix
+\ 2026-05-09 — prior probe DROPped per-iteration close-ior silently).
+\ On ior!=0: asserts (a) ior!=0 captured (T7I); (b) NFILES count
+\ recorded (T7N); (c) per-iteration close-ior fold zero (T7C); (d)
+\ B:CANARY.TXT re-OPEN-FILE / READ-FILE round-trip returns "Canary!"
+\ (T7R — directory consistency post-failure). Final verdict token
+\ T7V=1 on hardware-side success path.
+\ On no-exhaustion (iz-cpm path): emits T7V=0 → SKIP. Numeric verdict
+\ codes (1 = DIRFULL_OK, 0 = NO_LIMIT) replaced the original string
+\ literals — same hardware-2026-05-09 fix as test 966 above.
+\ Cleanup loop deletes all created files at probe end so subsequent
+\ runs are deterministic (no NNNN-file orphans).
+\ Verdict regex: PASS = T7V=1 AND T7C=0 AND T7R=Canary!;
+\                SKIP = T7V=0; FAIL otherwise.

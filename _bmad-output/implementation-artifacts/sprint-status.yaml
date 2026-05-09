@@ -282,5 +282,5 @@ development_status:
   # back-fills, 15.5 filesystem hardware sprint, 15.5.1 conditional B.7 fork.
   epic-15: in-progress
   15-1-ans-forth-core-compliance-audit-a-1: done
-  15-5-filesystem-stress-hardware-sprint-disk-full-directory-full-zero-byte-read-file-b-7-b-9: backlog
+  15-5-filesystem-stress-hardware-sprint-disk-full-directory-full-zero-byte-read-file-b-7-b-9: done
   epic-15-retrospective: optional

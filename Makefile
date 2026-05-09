@@ -9002,6 +9002,122 @@ test-repl: $(TARGET)
 		echo "PASS: REPL test 964 — Story 13.5.5 (p5) TD-7 SAVE/RESTORE-INPUT actually rewinds >IN inside EVALUATE per §6.2.2148 (T-S1355-P5-IN-REWIND)"; \
 	else echo "FAIL: REPL test 964 — expected line starting '-1  ok' (post-restore >IN = pre-SAVE >IN); pre-fix tree throws -13"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === Story 15.5 — Filesystem stress hardware sprint (B.7 + B.9) ===
+	@# Tests 965 / 966 / 967 close out Phase-3 carry-forward rows B.7
+	@# (directory-full + zero-byte READ-FILE) and B.9 (disk-full
+	@# hardware re-verification). Story 13.6 (Epic 13 close-out)
+	@# explicitly punted disk-full hardware verification per
+	@# tests/file_access_tests.fth:456..463 — "iz-cpm's disk image
+	@# cannot be exhausted within a probe budget (host filesystem,
+	@# not host-disk-free-bounded)". Story 15.5 closes that loop.
+	@# Tests 966 / 967 are wired with PASS-or-SKIP-or-FAIL verdict
+	@# shape: load-bearing verdict is the MicroBeast hardware run
+	@# (Story 15.5 AC5); on iz-cpm they SKIP-with-rationale rather
+	@# than fail (host-bounded storage / unbounded host directory).
+	@# Test 965 (zero-byte READ-FILE) is kernel behaviour (DPANS94
+	@# §11.6.1.2080 zero-byte no-op rule) and PASSes on iz-cpm.
+	@# === (s155-zb) Test 965: Zero-byte READ-FILE no-op per §11.6.1.2080 ===
+	@# Probe creates T965ZB.TXT with content "hello", reopens R/O,
+	@# calls READ-FILE with u1=0 and asserts u2=0 ior=0 — the
+	@# §11.6.1.2080 zero-byte no-op rule (cursor not advanced). Then
+	@# a 1-byte READ-FILE confirms the byte cursor is still at byte 0
+	@# (reads 'h' = 104). Probe-quality forward-port: S" + TYPE for
+	@# string labels (not .") per Story 13.5.3 / 13.6 F2; PAD for
+	@# byte buffer per Story 13.5.4 / 14.1 (canonical transient).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'S" T965ZB.TXT" DELETE-FILE DROP' \
+		'VARIABLE FA  S" T965ZB.TXT" R/W CREATE-FILE THROW FA !' \
+		'S" hello" FA @ WRITE-FILE THROW  FA @ CLOSE-FILE THROW' \
+		'S" T965ZB.TXT" R/O OPEN-FILE THROW FA !' \
+		'S" T65Z=" TYPE PAD 0 FA @ READ-FILE . . CR' \
+		'S" T65A=" TYPE PAD 1 FA @ READ-FILE DROP DROP PAD C@ . CR' \
+		'FA @ CLOSE-FILE DROP  S" T965ZB.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T65Z=0 0 ' && echo "$$OUTPUT" | grep -q 'T65A=104 '; then \
+		echo "PASS: REPL test 965 — Story 15.5 (p1) zero-byte READ-FILE no-op per §11.6.1.2080 (T-S155-P1-ZBR-NOOP)"; \
+	else echo "FAIL: REPL test 965 — expected 'T65Z=0 0 ' (zero-byte READ returns u2=0 ior=0) and 'T65A=104 ' (cursor not advanced; first byte = 'h')"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (s155-df) Test 966: Disk-full / block-storage exhaustion (B.9) ===
+	@# Probe pre-creates B:CANARY.TXT ("Canary!"), then iteratively writes
+	@# 512-byte chunks to B:DFTEST.TXT until WRITE-FILE returns ior!=0 or
+	@# 1024 iterations elapse (probe-bounded; caps at 512KB writes — should
+	@# exhaust hardware MicroBeast B: ramdisk well before this).
+	@# On ior!=0 (hardware path): asserts (a) ior!=0 captured in T6I; (b)
+	@# CLOSE-FILE on failed FCB returns ior=0 in T6C (no orphaned FCB); (c)
+	@# B:CANARY.TXT re-OPEN-FILE / READ-FILE returns "Canary!" in T6R
+	@# (filesystem consistency post-failure); verdict-code T6V=1.
+	@# On NO_LIMIT (iz-cpm path): emits T6V=0 → Makefile routes SKIP.
+	@# Verdict logic is wrapped in a colon definition (VERDICT) so IF/ELSE/
+	@# THEN compile inside `:` (compile-only words; bare REPL use raises
+	@# error -14 per ANS Forth — surfaced on real MicroBeast hardware
+	@# 2026-05-09). Numeric verdict codes (1 = DISKFULL_OK, 0 = NO_LIMIT)
+	@# avoid the iz-cpm false-positive SKIP from grep-matching echoed
+	@# source-text `T6V=NO_LIMIT` literal in S" ... " bodies.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'S" B:CANARY.TXT" DELETE-FILE DROP  S" B:DFTEST.TXT" DELETE-FILE DROP' \
+		'VARIABLE FA  CREATE BB 512 ALLOT  CREATE BR 16 ALLOT' \
+		'VARIABLE NRECS  VARIABLE FAILIOR  0 NRECS !  0 FAILIOR !' \
+		'S" B:CANARY.TXT" R/W CREATE-FILE THROW FA !' \
+		'S" Canary!" FA @ WRITE-FILE THROW  FA @ CLOSE-FILE THROW' \
+		'S" B:DFTEST.TXT" R/W CREATE-FILE THROW FA !' \
+		': TRY-FILL 1024 0 DO BB 512 FA @ WRITE-FILE DUP IF FAILIOR ! LEAVE THEN DROP I 1+ NRECS ! LOOP ;' \
+		': PRT-FAIL S" T6I=" TYPE FAILIOR @ . CR  S" T6N=" TYPE NRECS @ . CR  S" T6C=" TYPE FA @ CLOSE-FILE . CR ;' \
+		': OPCAN S" B:CANARY.TXT" R/O OPEN-FILE THROW FA ! ;' \
+		': PRT-CAN OPCAN BR 7 FA @ READ-FILE DROP DROP S" T6R=" TYPE BR 7 TYPE CR FA @ CLOSE-FILE DROP ;' \
+		': VERDICT FAILIOR @ IF PRT-FAIL PRT-CAN 1 ELSE FA @ CLOSE-FILE DROP 0 THEN S" T6V=" TYPE . CR ;' \
+		'TRY-FILL  VERDICT' \
+		'S" B:DFTEST.TXT" DELETE-FILE DROP  S" B:CANARY.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T6V=1 ' && echo "$$OUTPUT" | grep -q 'T6C=0 ' && echo "$$OUTPUT" | grep -q 'T6R=Canary!'; then \
+		echo "PASS: REPL test 966 — Story 15.5 (p2) disk-full + FCB-pool consistency + canary readback (T-S155-P2-DF)"; \
+	elif echo "$$OUTPUT" | grep -q 'T6V=0 '; then \
+		echo "SKIP: REPL test 966 — disk-full not reachable on iz-cpm (host-filesystem-bounded; load-bearing verdict deferred to MicroBeast hardware run, AC5)"; \
+	else echo "FAIL: REPL test 966 — disk-full probe defect (expected T6V=1 + T6C=0 + T6R=Canary! on hardware-exhaustion path, or T6V=0 on iz-cpm-host-bounded path)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# === (s155-dirf) Test 967: Directory-full / dir-entry exhaustion (B.7) ===
+	@# Probe pre-creates B:CANARY.TXT, then iteratively CREATE-FILE +
+	@# CLOSE-FILE empty files B:F0000.TXT..B:F0255.TXT until CREATE-FILE
+	@# returns ior!=0 or 256 files elapse. CP/M 2.2 directories are
+	@# 64..1024 entries depending on media; 256 cap covers small/medium
+	@# ramdisks (architecture finding F2 :799..809 — directory-full vs
+	@# disk-full are distinct CP/M 2.2 failure modes). Each successful FCB
+	@# is closed inline; the per-iteration CLOSE-FILE ior is OR-folded
+	@# into CIM so the verdict surfaces a non-zero close-ior if any
+	@# successful-CREATE FCB failed to release cleanly (AC2 sub (b)
+	@# literal coverage; CR-1 fix 2026-05-09).
+	@# On ior!=0 (hardware path): asserts (a) ior!=0 in T7I; (b) NFILES
+	@# count in T7N; (c) per-iteration close-ior fold in T7C (must be 0
+	@# for clean FCB-pool); (d) B:CANARY.TXT readback intact in T7R;
+	@# verdict-code T7V=1. On NO_LIMIT (iz-cpm path): emits T7V=0 → SKIP.
+	@# CLN cleanup loop deletes all created files so subsequent runs are
+	@# deterministic (no orphaned NNNN-file corpus). Verdict logic wrapped
+	@# in colon def per probe 966 rationale (IF/ELSE/THEN compile-only,
+	@# numeric codes avoid echo false-positive grep matches).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+		'S" B:CANARY.TXT" DELETE-FILE DROP' \
+		'VARIABLE FA  CREATE NMB 12 ALLOT  CREATE BR 16 ALLOT' \
+		'VARIABLE NFILES  VARIABLE FAILIOR  VARIABLE CIM  0 NFILES !  0 FAILIOR !  0 CIM !' \
+		'S" B:F" NMB SWAP MOVE  S" 0000.TXT" NMB 3 + SWAP MOVE' \
+		'S" B:CANARY.TXT" R/W CREATE-FILE THROW FA !' \
+		'S" Canary!" FA @ WRITE-FILE THROW  FA @ CLOSE-FILE THROW' \
+		': DGT [CHAR] 0 + ;' \
+		': STO4 DUP 1000 / DGT NMB 3 + C! DUP 1000 MOD 100 / DGT NMB 4 + C! DUP 100 MOD 10 / DGT NMB 5 + C! 10 MOD DGT NMB 6 + C! ;' \
+		': TRY-CREATE 256 0 DO I STO4 NMB 11 R/W CREATE-FILE DUP IF FAILIOR ! DROP LEAVE THEN' \
+		'  DROP CLOSE-FILE CIM @ OR CIM ! I 1+ NFILES ! LOOP ;' \
+		': PRT-FAIL S" T7I=" TYPE FAILIOR @ . CR  S" T7N=" TYPE NFILES @ . CR  S" T7C=" TYPE CIM @ . CR ;' \
+		': OPCAN S" B:CANARY.TXT" R/O OPEN-FILE THROW FA ! ;' \
+		': PRT-CAN OPCAN BR 7 FA @ READ-FILE DROP DROP S" T7R=" TYPE BR 7 TYPE CR FA @ CLOSE-FILE DROP ;' \
+		': CLN NFILES @ 0 DO I STO4 NMB 11 DELETE-FILE DROP LOOP ;' \
+		': VERDICT FAILIOR @ IF PRT-FAIL PRT-CAN 1 ELSE 0 THEN S" T7V=" TYPE . CR ;' \
+		'TRY-CREATE  VERDICT' \
+		'CLN  S" B:CANARY.TXT" DELETE-FILE DROP' \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'T7V=1 ' && echo "$$OUTPUT" | grep -q 'T7C=0 ' && echo "$$OUTPUT" | grep -q 'T7R=Canary!'; then \
+		echo "PASS: REPL test 967 — Story 15.5 (p3) directory-full + per-iteration CLOSE-FILE pool consistency + canary readback (T-S155-P3-DIRF)"; \
+	elif echo "$$OUTPUT" | grep -q 'T7V=0 '; then \
+		echo "SKIP: REPL test 967 — directory-full not reachable on iz-cpm (host-fs has no CP/M dir-entry cap; load-bearing verdict deferred to MicroBeast hardware run, AC5)"; \
+	else echo "FAIL: REPL test 967 — directory-full probe defect (expected T7V=1 + T7C=0 + T7R=Canary! on hardware-exhaustion path, or T7V=0 on iz-cpm-host-bounded path)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm
