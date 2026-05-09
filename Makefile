@@ -41,7 +41,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test
+.PHONY: all asm disk test test-repl test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -60,6 +60,13 @@ $(BDOS_PROBE_COM): $(BDOS_PROBE_SRC) | $(BUILDDIR)
 firmware-repro-test: $(BDOS_PROBE_COM)
 	@echo "Running BDOS probe under iz-cpm (negative-control gate)..."
 	@printf 'k\nhello\n\n' | $(IZCPM) $(BDOS_PROBE_COM) 2>/dev/null
+
+# --- PRD↔architecture transcription-drift sync (Story 14.5 / B.5) ---
+# Advisory-only: never wired as a prerequisite of `test-repl`, `test`,
+# `all`, or `asm`. Expected clean-pass before any tag-applicable
+# close-out (S11 sibling per architecture §"Doc-sync (NEW, opt-in)").
+check-doc-sync:
+	@bash tools/check-doc-sync/check-doc-sync.sh
 
 $(TARGET): $(SRCS) | $(BUILDDIR)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) antforth.asm --raw=../$(TARGET)

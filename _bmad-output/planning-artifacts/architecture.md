@@ -595,7 +595,7 @@ In a memory entry `feedback_no_mirror_shorthand.md`:
 | `_bmad-output/implementation-artifacts/phase3-a1-<§-rule>-<slug>.md` | A.1 back-fill story files (one per §-level structural-rule gap surfaced; 0–2 expected) | A.1 back-fills |
 | `_bmad-output/implementation-artifacts/<epic>-retro-<date>.md` | Phase-3 retrospective(s) at epic close-out | per-epic |
 
-Path under `tools/check-doc-sync/` follows the `tools/bdos_probe/` precedent (Story 11.5.1.2 firmware reproducer); a self-contained subdirectory keeps tool logic separable from the kernel build.
+Path under `tools/check-doc-sync/` follows the `tools/bdos_probe/` precedent (Story 11.5.1 firmware reproducer); a self-contained subdirectory keeps tool logic separable from the kernel build.
 
 #### Existing files modified in Phase 3
 
