@@ -280,7 +280,7 @@ development_status:
   # gate replaced by a checklist in epics.md (no story file). Remaining
   # story-shaped work: 15.1 audit (simplified to 5 ACs), 15.1.X conditional
   # back-fills, 15.5 filesystem hardware sprint, 15.5.1 conditional B.7 fork.
-  epic-15: backlog
-  15-1-ans-forth-core-compliance-audit-a-1: ready-for-dev
+  epic-15: in-progress
+  15-1-ans-forth-core-compliance-audit-a-1: done
   15-5-filesystem-stress-hardware-sprint-disk-full-directory-full-zero-byte-read-file-b-7-b-9: backlog
   epic-15-retrospective: optional

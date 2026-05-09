@@ -602,7 +602,7 @@ w_RESTORE_INPUT_cf:
 ;   the THROW path. The wrapping pattern is:
 ;       (SAVE-INPUT) ['] INTERPRET CATCH (RESTORE-INPUT) THROW EXIT
 ;   On success, CATCH leaves 0 → THROW is silent (Forth 2014
-;   §6.1.2275: "If any bits of n are non-zero, ...") → EXIT. On a
+;   §9.6.1.2275: "If any bits of n are non-zero, ...") → EXIT. On a
 ;   THROW from inside INTERPRET, CATCH re-emerges with n on TOS,
 ;   (RESTORE-INPUT) runs (data-stack-neutral), then THROW re-raises n
 ;   to the caller's wrapping CATCH. This closes Story 11.6 Review

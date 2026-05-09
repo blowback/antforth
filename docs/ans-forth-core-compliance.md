@@ -1,32 +1,56 @@
 # ANS Forth Core Word Set Compliance Report
 
-**Date:** 2026-04-24 (Story 10.9 refresh — §6.1 Core gap closed)
-**Last full audit:** 2026-04-13 (Story 5.3)
+**Date:** 2026-05-09 (Story 15.1 refresh — full §-by-§ A.1 audit, CCD-P3-1 6-column schema landed across §6.1 + §6.2 + structural rules).
+**Prior refresh:** 2026-04-24 (Story 10.9 — §6.1 Core gap closed).
+**Last full audit:** 2026-04-13 (Story 5.3).
 **Story 13.0 back-fill:** 2026-05-01 — §3.4.1.3 dot-marker recogniser (parser-level rule, not a word; missed by Epic 10's word-counted survey).
-**Story 13.0.1 back-fill:** 2026-05-01 — §3.1.4.1 double-cell stack-layout (high-on-TOS) flipped from inverted convention. Two §-level structural-rule gaps closed by back-fills inside Epic 13 ahead of v2.0 (§3.4.1.3 + §3.1.4.1); both were structurally invisible to Epic 10's word-counted survey. A full §-by-§ pre-2.0 re-audit pass remains a wishlist item.
+**Story 13.0.1 back-fill:** 2026-05-01 — §3.1.4.1 double-cell stack-layout (high-on-TOS) flipped from inverted convention.
+**Story 15.1 audit (this refresh):** §-by-§ walk of DPANS94 §6.1 (133 rules) + §6.2 (46 rules) + structural §-rules; every row carries a §-number per CCD-P3-1. Closes the framework-scale blindspot that Stories 13.0 / 13.0.1 / 13.5 caught case-by-case.
 **System:** antforth (Z80 Forth for CP/M)
-**Reference:** DPANS94 (ANSI X3.215-1994), §3.1.4.1 (Double-cell integers), §3.4.1.3 (Conversion of digit strings), §6.1 (Core), §6.1.0310 (`2!`), §6.1.0350 (`2@`), §6.2 (Core Extension); cross-referenced against §8.6 (Double-Number wordset) for Epic-10 scope reconciliation
-**Source:** `src/*.asm`
+**Reference:** DPANS94 (ANSI X3.215-1994), §3.1.4.1 (Double-cell integers), §3.3.3.6 (One-name parsing transient region), §3.4.1.3 (Conversion of digit strings), §6.1 (Core, 133 rules), §6.2 (Core Extension, 46 rules); cross-referenced against §8.6 (Double-Number wordset) and §11.6 (File-Access wordset) for bonus-coverage tally.
+**Source:** `src/*.asm` (`file:line` of the `cf:` label per CCD-P3-1).
+**Schema:** CCD-P3-1 6-column rows: `§ | Rule | Verdict | Source | Closure | Notes`. Verdict set is the closed set `Implemented` / `Implemented-with-caveat` / `Accepted-with-rationale-N-A` / `Deliberately-omitted` (no other values). `Closure = v2.0 baseline` for pre-Phase-3 closures; `Closure = Story 15.1` for rows produced or re-shaped by this audit; `Closure = Story 15.1.X` for back-fill closures.
 
 ## §3.1.4.1 — Double-cell integers (stack-layout rule)
 
-| Rule | Status | Stories | Notes |
-|---|---|---|---|
-| **High cell on top of stack, low cell below** | **Implemented (post-flip)** | **13.0.1** | "On the stack, the cell containing the most significant part of a double-cell integer shall be above the cell containing the least significant part" |
-| **High cell at lower address (`2@`/`2!` per §6.1.0310 + §6.1.0350)** | **Implemented (post-flip)** | **13.0.1** | x2 (= MSC = high cell) stored at a-addr; low cell at a-addr+2; cell-pair big-endian, each cell internally little-endian |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §3.1.4.1 | High cell on top of stack, low cell below ("the cell containing the most significant part of a double-cell integer shall be above the cell containing the least significant part") | Implemented | src/double.asm | Story 13.0.1 | Closed 2026-05-01 by Story 13.0.1 (was low-on-TOS pre-flip; structurally invisible to Epic 10's word-counted survey). |
+| §3.1.4.1 + §6.1.0310 | High cell at lower address (`2!`/`2@` round-trip) | Implemented | src/double.asm:45 (`2!`), src/double.asm:20 (`2@`) | Story 13.0.1 | x2 (= MSC = high cell) stored at a-addr; low cell at a-addr+2; cell-pair big-endian, each cell internally little-endian. |
+| §3.1.4.1 + §6.1.0350 | `2@: ( a-addr -- x1 x2 )` high cell on TOS, low cell second-on-stack | Implemented | src/double.asm:20 | Story 13.0.1 | F7 dual-row (word + structural rule); revised by Story 13.0.1 (was low-on-TOS pre-flip). |
+| §3.1.4.1 + §6.1.0310 | `2!: ( x1 x2 a-addr -- )` high cell stored at lowest address | Implemented | src/double.asm:45 | Story 13.0.1 | F7 dual-row (word + structural rule); revised by Story 13.0.1. |
 
-Pre-Story-13.0.1 the convention was inverted (low-on-TOS / low-at-low-address); Epic 10's word-counted survey missed §3.1.4.1 (a stack-layout rule, not a per-word rule). Closed 2026-05-01. The full §-by-§ re-audit is recorded as a post-2.0 carry-forward opportunity (see also Story 13.0 Task 10's identical note).
+## §3.2.6 — Environmental queries (framework rule)
+
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §3.2.6 | A standard system shall provide ENVIRONMENT? to query environmental conditions; standard query keys (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`) supported | Implemented | src/system.asm:277 (env_table) | Story 10.9 | F7 dual-row (paired with §6.1.1345 ENVIRONMENT? word row); 14-entry static table; case-sensitive lookup; supports single, double, and flag value kinds. `/PAD` query backed by real `PAD` word per §6.2.2000 since Story 13.5.4. |
+
+## §3.3.3 — Transient regions (taxonomy rule)
+
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §3.3.3.1 | Address alignment — every cell access on a-addr is the system's natural alignment | Accepted-with-rationale-N-A | N-A | v2.0 baseline | Z80 has byte alignment (no alignment penalty / fault on unaligned word access); `ALIGN` and `ALIGNED` are no-ops per §6.1.0705 / §6.1.0706. Satisfied behaviourally — every memory access in `src/*.asm` uses byte-or-cell ops with no alignment assumption. |
+| §3.3.3.4 | Dictionary transient region — `,`, `C,`, `ALLOT` advance HERE; data-space layout is implementation-defined | Implemented | src/memory.asm | v2.0 baseline | `HERE` is a single-cell USER variable; `,` advances by 2; `C,` by 1; `ALLOT` by n. No alignment padding (Z80 byte-addressable). |
+| §3.3.3.6 | Transient region (PAD) survives parsing of one space-delimited name | Implemented | src/memory.asm (`PAD` returns HERE+84) | Story 13.5.4 | TD-6 closure 2026-05-06; F-9 hardware reproducer fixed (cross-line transient survival); satisfies §3.3.3.6 because WORD writes counted-string at HERE+0..HERE+u, leaving HERE+33..HERE+84+ untouched per F_LENMASK ≤31 chars. |
 
 ## §3.4.1.3 — Conversion of digit strings (parser-level rule)
 
-| Rule | Status | Stories | Notes |
-|---|---|---|---|
-| Numeric prefix (`#`/`$`/`%`/`0x`) | Implemented | 9.1–9.5 | Forth 2014 §3.4.1.3 prefix forms |
-| Leading sign `-<prefix><digits>` | Implemented | 9.4 | XOR-composes with in-body sign |
-| Character literal `'c'` | Implemented | 9.3 | §3.4.1.3 character-code literal |
-| **Dot-marker → double-cell** | **Implemented** | **9.1–9.5 + 13.0** | Trailing/leading/embedded dot triggers double-cell parse; DPL USER variable exposes digits-after-dot |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §3.4.1.3 | Numeric prefix (`#`/`$`/`%`/`0x`) | Implemented | src/strings.asm (NUMBER? / Epic 9 dispatch) | Stories 9.1–9.5 | Forth 2014 §3.4.1.3 prefix forms (`#` decimal, `$` hex, `%` binary, `0x` antforth ext). |
+| §3.4.1.3 | Leading sign `-<prefix><digits>` | Implemented | src/strings.asm (NUMBER?) | Story 9.4 | XOR-composes with in-body sign per Forth 2014. |
+| §3.4.1.3 | Character literal `'c'` | Implemented | src/strings.asm (NUMBER?) | Story 9.3 | §3.4.1.3 character-code literal. |
+| §3.4.1.3 | Dot-marker → double-cell (trailing/leading/embedded) | Implemented | src/strings.asm (NUMBER? + double promotion) | Story 13.0 | Trailing/leading/embedded dot triggers double-cell parse; DPL USER variable exposes digits-after-dot. Was missing from Epic 10's word-counted §6.1 survey; closed 2026-05-01. |
 
-Pre-Story-13.0 the dot-marker form was missing from Epic 10's word-counted §6.1 survey ("100% Core" claim was structurally word-counted, not §-counted). Story 13.0 closes the gap; no broader §-level re-audit was in scope per project lead 2026-05-01. A full §-by-§ audit is recorded as a post-2.0 carry-forward opportunity.
+## §9 — Exception wordset (THROW/CATCH framework rule)
+
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §9.3.4 / §9.6.1.0875 | `CATCH ( i*x xt -- j*x 0 \| i*x n )` | Implemented | src/exception.asm (Story 11.2) | Stories 11.2 + 11.4.1 | 8-byte CCD-1 frame; saved-BC repurposed from saved-IX (Story 11.4.1 fixed i*x preservation). |
+| §9.3.4 / §9.6.1.2275 | `THROW ( k*x n -- k*x \| i*x n )` | Implemented | src/exception.asm (Story 11.3) | Stories 11.3 + 11.7 | Caught path restores via PUSH BC after LD SP, HL; uncaught path routes to `.throw_uncaught` recovery chain at `src/exception.asm:412+`. |
+| §9.3.5 | Standard THROW codes -1..-58 (subset) | Implemented | src/exception.asm + per-call-site | Stories 11.4 / 11.5 / 11.6 | -1 ABORT, -2 ABORT", -13 undefined word, -17 pictured-output overflow, -37/-38 file I/O, -69 FCB exhaust, -70 invalid FID (re-purposed), -271/-272 asm-error block. Allocation ranges per CCD-2. |
+| §9.3.5 | Application-defined THROW codes -256..-32767 | Implemented | src/exception.asm + src/assembler.asm | Story 11.5 | Asm-error block -258..-272 (15 codes; A.2 closes caught-form coverage gap for the existing block). -256 reserved gap; -257 reserved THROW_ASM_LOAD_FAIL (never raised; reserved). |
 
 ## Summary
 
@@ -75,231 +99,240 @@ Epic 10 closes the §6.1 gap. Per-story increments (§6.1 Core only — §8.6 Do
 
 ---
 
-## Detailed Audit by Category
+## Detailed Audit by §-Number (CCD-P3-1)
+
+This section walks DPANS94 §6.1 word-by-word in the canonical order (low →
+high §-number within each category cluster). Each row carries a DPANS94
+§-number, the rule text (word + stack effect or other rule body), the
+closed-set verdict, the implementation source `file:line`, the closure
+story, and any caveats. Rows for §-rules without a per-word implementation
+site (structural rules satisfied by absence-of-misbehaviour) carry
+`Source: N-A`. Categories below preserve the v2.0 reading-order
+grouping.
 
 ### Stack Operations
 
 14 §6.1 Core words — 14 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `DUP` | `( x -- x x )` | Implemented | `stack_ops.asm:27` | |
-| `DROP` | `( x -- )` | Implemented | `stack_ops.asm:37` | |
-| `SWAP` | `( x1 x2 -- x2 x1 )` | Implemented | `stack_ops.asm:48` | |
-| `OVER` | `( x1 x2 -- x1 x2 x1 )` | Implemented | `stack_ops.asm:62` | |
-| `ROT` | `( x1 x2 x3 -- x2 x3 x1 )` | Implemented | `stack_ops.asm:77` | |
-| `?DUP` | `( x -- 0 \| x x )` | Implemented | `stack_ops.asm:13` | |
-| `2DROP` | `( x1 x2 -- )` | Implemented | `double.asm:87` | Story 10.2 |
-| `2DUP` | `( x1 x2 -- x1 x2 x1 x2 )` | Implemented | `double.asm:70` | Story 10.2 |
-| `2OVER` | `( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 )` | Implemented | `double.asm:127` | Story 10.2 |
-| `2SWAP` | `( x1 x2 x3 x4 -- x3 x4 x1 x2 )` | Implemented | `double.asm:102` | Story 10.2 |
-| `DEPTH` | `( -- +n )` | Implemented | `stack_ops.asm:178` | |
-| `>R` | `( x -- ) ( R: -- x )` | Implemented | `stack_ops.asm:249` | |
-| `R>` | `( -- x ) ( R: x -- )` | Implemented | `stack_ops.asm:263` | |
-| `R@` | `( -- x ) ( R: x -- x )` | Implemented | `stack_ops.asm:277` | |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.1290 | `DUP ( x -- x x )` | Implemented | src/stack_ops.asm:27 | v2.0 baseline | |
+| §6.1.1260 | `DROP ( x -- )` | Implemented | src/stack_ops.asm:37 | v2.0 baseline | |
+| §6.1.2260 | `SWAP ( x1 x2 -- x2 x1 )` | Implemented | src/stack_ops.asm:48 | v2.0 baseline | |
+| §6.1.1990 | `OVER ( x1 x2 -- x1 x2 x1 )` | Implemented | src/stack_ops.asm:62 | v2.0 baseline | |
+| §6.1.2160 | `ROT ( x1 x2 x3 -- x2 x3 x1 )` | Implemented | src/stack_ops.asm:77 | v2.0 baseline | |
+| §6.1.0630 | `?DUP ( x -- 0 \| x x )` | Implemented | src/stack_ops.asm:13 | v2.0 baseline | |
+| §6.1.0370 | `2DROP ( x1 x2 -- )` | Implemented | src/double.asm:87 | Story 10.2 | |
+| §6.1.0380 | `2DUP ( x1 x2 -- x1 x2 x1 x2 )` | Implemented | src/double.asm:70 | Story 10.2 | |
+| §6.1.0400 | `2OVER ( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 )` | Implemented | src/double.asm:127 | Story 10.2 | |
+| §6.1.0430 | `2SWAP ( x1 x2 x3 x4 -- x3 x4 x1 x2 )` | Implemented | src/double.asm:102 | Story 10.2 | |
+| §6.1.1200 | `DEPTH ( -- +n )` | Implemented | src/stack_ops.asm:178 | v2.0 baseline | |
+| §6.1.0580 | `>R ( x -- ) ( R: -- x )` | Implemented | src/stack_ops.asm:249 | v2.0 baseline | |
+| §6.1.2060 | `R> ( -- x ) ( R: x -- )` | Implemented | src/stack_ops.asm:263 | v2.0 baseline | |
+| §6.1.2070 | `R@ ( -- x ) ( R: x -- x )` | Implemented | src/stack_ops.asm:277 | v2.0 baseline | |
 
 ### Arithmetic
 
-19 §6.1 Core words — 17 implemented, 2 missing.
+19 §6.1 Core words — all implemented (the original 5.3 audit reported 2 missing; Story 10.9 closed `*/` / `*/MOD`). **100% complete.**
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `+` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:55` | |
-| `-` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:69` | |
-| `*` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:86` | |
-| `/` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:240` | |
-| `MOD` | `( n1 n2 -- n3 )` | Implemented | `arithmetic.asm:256` | |
-| `/MOD` | `( n1 n2 -- rem quot )` | Implemented | `arithmetic.asm:219` | |
-| `*/` | `( n1 n2 n3 -- n4 )` | Implemented | `arithmetic.asm:296` | Story 10.9; DEFWORD wrapping `*/MOD SWAP DROP` (double-cell intermediate via `M*` / `SM/REM`) |
-| `*/MOD` | `( n1 n2 n3 -- n4 n5 )` | Implemented | `arithmetic.asm:277` | Story 10.9; DEFWORD `>R M* R> SM/REM` (double-cell intermediate; symmetric remainder sign = dividend) |
-| `1+` | `( n -- n+1 )` | Implemented | `arithmetic.asm:13` | |
-| `1-` | `( n -- n-1 )` | Implemented | `arithmetic.asm:23` | |
-| `2*` | `( x -- x*2 )` | Implemented | `arithmetic.asm:33` | |
-| `2/` | `( x -- x/2 )` | Implemented | `arithmetic.asm:44` | |
-| `ABS` | `( n -- u )` | Implemented | `bootstrap.asm:22` | DEFWORD |
-| `NEGATE` | `( n -- -n )` | Implemented | `bootstrap.asm:9` | DEFWORD |
-| `MAX` | `( n1 n2 -- n3 )` | Implemented | `bootstrap.asm:56` | DEFWORD |
-| `MIN` | `( n1 n2 -- n3 )` | Implemented | `bootstrap.asm:38` | DEFWORD |
-| `FM/MOD` | `( d n1 -- n2 n3 )` | Implemented | `double.asm:691` | Story 10.6; DEFWORD wrapping SM/REM + floor correction |
-| `SM/REM` | `( d n1 -- n2 n3 )` | Implemented | `double.asm:638` | Story 10.6; DEFWORD wrapping UM/MOD + sign fixups |
-| `S>D` | `( n -- d )` | Implemented | `double.asm:151` | Sign-extend single → double |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.0120 | `+ ( n1 n2 -- n3 )` | Implemented | src/arithmetic.asm:55 | v2.0 baseline | |
+| §6.1.0160 | `- ( n1 n2 -- n3 )` | Implemented | src/arithmetic.asm:69 | v2.0 baseline | |
+| §6.1.0090 | `* ( n1 n2 -- n3 )` | Implemented | src/arithmetic.asm:86 | v2.0 baseline | Closes `[advisory-§] §6.1.0090` from `tools/check-doc-sync/check-doc-sync.sh` (Story 14.5). |
+| §6.1.0230 | `/ ( n1 n2 -- n3 )` | Implemented | src/arithmetic.asm:240 | v2.0 baseline | |
+| §6.1.1890 | `MOD ( n1 n2 -- n3 )` | Implemented | src/arithmetic.asm:256 | v2.0 baseline | |
+| §6.1.0240 | `/MOD ( n1 n2 -- rem quot )` | Implemented | src/arithmetic.asm:219 | v2.0 baseline | |
+| §6.1.0100 | `*/ ( n1 n2 n3 -- n4 )` | Implemented | src/arithmetic.asm:296 | Story 10.9 | DEFWORD wrapping `*/MOD SWAP DROP` (double-cell intermediate via `M*` / `SM/REM`). |
+| §6.1.0110 | `*/MOD ( n1 n2 n3 -- n4 n5 )` | Implemented | src/arithmetic.asm:277 | Story 10.9 | DEFWORD `>R M* R> SM/REM` (double-cell intermediate; symmetric remainder sign = dividend). |
+| §6.1.0290 | `1+ ( n -- n+1 )` | Implemented | src/arithmetic.asm:13 | v2.0 baseline | |
+| §6.1.0300 | `1- ( n -- n-1 )` | Implemented | src/arithmetic.asm:23 | v2.0 baseline | |
+| §6.1.0320 | `2* ( x -- x*2 )` | Implemented | src/arithmetic.asm:33 | v2.0 baseline | |
+| §6.1.0330 | `2/ ( x -- x/2 )` | Implemented | src/arithmetic.asm:44 | v2.0 baseline | |
+| §6.1.0690 | `ABS ( n -- u )` | Implemented | src/bootstrap.asm:22 | v2.0 baseline | DEFWORD. |
+| §6.1.1910 | `NEGATE ( n -- -n )` | Implemented | src/bootstrap.asm:9 | v2.0 baseline | DEFWORD. |
+| §6.1.1870 | `MAX ( n1 n2 -- n3 )` | Implemented | src/bootstrap.asm:56 | v2.0 baseline | DEFWORD. |
+| §6.1.1880 | `MIN ( n1 n2 -- n3 )` | Implemented | src/bootstrap.asm:38 | v2.0 baseline | DEFWORD. |
+| §6.1.1561 | `FM/MOD ( d1 n1 -- n2 n3 )` floored division (signed double / signed single → signed remainder, signed quotient; quotient rounds toward -∞; remainder sign matches divisor) | Implemented | src/double.asm:691 | Story 10.6 | DEFWORD wrapping SM/REM + floor correction. Closes `[advisory-§] §6.1.1561` from `tools/check-doc-sync/check-doc-sync.sh` (Story 14.5). |
+| §6.1.2214 | `SM/REM ( d1 n1 -- n2 n3 )` | Implemented | src/double.asm:638 | Story 10.6 | DEFWORD wrapping UM/MOD + sign fixups (symmetric remainder; sign matches dividend). |
+| §6.1.2170 | `S>D ( n -- d )` | Implemented | src/double.asm:151 | Story 10.3 | Sign-extend single → double; high cell on TOS per §3.1.4.1 (post-Story-13.0.1). |
 
 ### Double-Cell and Mixed-Precision Multiplication
 
 2 §6.1 Core words — 2 implemented, 0 missing. **100% complete.** (Story 10.5)
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `M*` | `( n1 n2 -- d )` | Implemented | `double.asm:468` | Signed mixed multiply (DEFWORD wrapping UM*) |
-| `UM*` | `( u1 u2 -- ud )` | Implemented | `double.asm:430` | Unsigned mixed multiply (right-shift 32-bit accumulator) |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.1810 | `M* ( n1 n2 -- d )` | Implemented | src/double.asm:468 | Story 10.5 | Signed mixed multiply (DEFWORD wrapping UM*); high cell on TOS per §3.1.4.1. |
+| §6.1.2360 | `UM* ( u1 u2 -- ud )` | Implemented | src/double.asm:430 | Story 10.5 | Unsigned mixed multiply (right-shift 32-bit accumulator); high cell on TOS per §3.1.4.1. |
 
 ### Double-Cell Division
 
 1 §6.1 Core word — 1 implemented, 0 missing. **100% complete.** (`FM/MOD` and `SM/REM` are listed in Arithmetic above; `UM/MOD` here.)
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `UM/MOD` | `( ud u1 -- u2 u3 )` | Implemented | `double.asm:566` | Story 10.6; 16-iteration shift-subtract with 33rd-bit force path |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.2370 | `UM/MOD ( ud u1 -- u2 u3 )` | Implemented | src/double.asm:566 | Story 10.6 | 16-iteration shift-subtract with 33rd-bit force path; high cell on TOS per §3.1.4.1. |
 
 ### Logic and Comparison
 
 12 §6.1 Core words — 12 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source | Notes |
-|------|-------------|--------|--------|-------|
-| `AND` | `( x1 x2 -- x3 )` | Implemented | `logic.asm:18` | |
-| `OR` | `( x1 x2 -- x3 )` | Implemented | `logic.asm:35` | |
-| `XOR` | `( x1 x2 -- x3 )` | Implemented | `logic.asm:52` | |
-| `INVERT` | `( x1 -- x2 )` | Implemented | `logic.asm:69` | |
-| `LSHIFT` | `( x1 u -- x2 )` | Implemented | `logic.asm:84` | |
-| `RSHIFT` | `( x1 u -- x2 )` | Implemented | `logic.asm:105` | |
-| `=` | `( x1 x2 -- flag )` | Implemented | `logic.asm:127` | |
-| `<` | `( n1 n2 -- flag )` | Implemented | `logic.asm:147` | |
-| `>` | `( n1 n2 -- flag )` | Implemented | `logic.asm:172` | |
-| `0=` | `( x -- flag )` | Implemented | `logic.asm:201` | |
-| `0<` | `( n -- flag )` | Implemented | `logic.asm:216` | |
-| `U<` | `( u1 u2 -- flag )` | Implemented | `logic.asm:231` | |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.0720 | `AND ( x1 x2 -- x3 )` | Implemented | src/logic.asm:18 | v2.0 baseline | |
+| §6.1.1980 | `OR ( x1 x2 -- x3 )` | Implemented | src/logic.asm:35 | v2.0 baseline | |
+| §6.1.2490 | `XOR ( x1 x2 -- x3 )` | Implemented | src/logic.asm:52 | v2.0 baseline | |
+| §6.1.1720 | `INVERT ( x1 -- x2 )` | Implemented | src/logic.asm:69 | v2.0 baseline | |
+| §6.1.1805 | `LSHIFT ( x1 u -- x2 )` | Implemented | src/logic.asm:84 | v2.0 baseline | |
+| §6.1.2162 | `RSHIFT ( x1 u -- x2 )` | Implemented | src/logic.asm:105 | v2.0 baseline | |
+| §6.1.0530 | `= ( x1 x2 -- flag )` | Implemented | src/logic.asm:127 | v2.0 baseline | |
+| §6.1.0480 | `< ( n1 n2 -- flag )` | Implemented | src/logic.asm:147 | v2.0 baseline | |
+| §6.1.0540 | `> ( n1 n2 -- flag )` | Implemented | src/logic.asm:172 | v2.0 baseline | |
+| §6.1.0270 | `0= ( x -- flag )` | Implemented | src/logic.asm:201 | v2.0 baseline | |
+| §6.1.0250 | `0< ( n -- flag )` | Implemented | src/logic.asm:216 | v2.0 baseline | |
+| §6.1.2340 | `U< ( u1 u2 -- flag )` | Implemented | src/logic.asm:231 | v2.0 baseline | |
 
 ### Memory
 
 17 §6.1 Core words — 17 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `!` | `( x a-addr -- )` | Implemented | `memory.asm:57` | |
-| `@` | `( a-addr -- x )` | Implemented | `memory.asm:43` | |
-| `C!` | `( char c-addr -- )` | Implemented | `memory.asm:87` | |
-| `C@` | `( c-addr -- char )` | Implemented | `memory.asm:74` | |
-| `2!` | `( x1 x2 a-addr -- )` | Implemented | `double.asm:45` | Story 10.2 |
-| `2@` | `( a-addr -- x1 x2 )` | Implemented | `double.asm:20` | Story 10.2 |
-| `+!` | `( n a-addr -- )` | Implemented | `memory.asm:102` | |
-| `,` | `( x -- )` | Implemented | `memory.asm:150` | |
-| `C,` | `( char -- )` | Implemented | `memory.asm:168` | |
-| `HERE` | `( -- addr )` | Implemented | `memory.asm:123` | |
-| `ALLOT` | `( n -- )` | Implemented | `memory.asm:135` | |
-| `ALIGN` | `( -- )` | Implemented | `memory.asm:184` | |
-| `ALIGNED` | `( addr -- a-addr )` | Implemented | `memory.asm:201` | |
-| `CELLS` | `( n1 -- n2 )` | Implemented | `memory.asm:214` | |
-| `CELL+` | `( a-addr1 -- a-addr2 )` | Implemented | `memory.asm:13` | |
-| `FILL` | `( c-addr u char -- )` | Implemented | `memory.asm:225` | |
-| `MOVE` | `( addr1 addr2 u -- )` | Implemented | `memory.asm:264` | |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.0010 | `! ( x a-addr -- )` | Implemented | src/memory.asm:57 | v2.0 baseline | |
+| §6.1.0650 | `@ ( a-addr -- x )` | Implemented | src/memory.asm:43 | v2.0 baseline | |
+| §6.1.0850 | `C! ( char c-addr -- )` | Implemented | src/memory.asm:87 | v2.0 baseline | |
+| §6.1.0870 | `C@ ( c-addr -- char )` | Implemented | src/memory.asm:74 | v2.0 baseline | |
+| §6.1.0310 | `2! ( x1 x2 a-addr -- )` | Implemented | src/double.asm:45 | Story 10.2 | High cell stored at lowest address per §3.1.4.1 (post-Story-13.0.1). |
+| §6.1.0350 | `2@ ( a-addr -- x1 x2 )` | Implemented | src/double.asm:20 | Story 10.2 | High cell on TOS per §3.1.4.1 (post-Story-13.0.1). |
+| §6.1.0130 | `+! ( n a-addr -- )` | Implemented | src/memory.asm:102 | v2.0 baseline | |
+| §6.1.0150 | `, ( x -- )` | Implemented | src/memory.asm:150 | v2.0 baseline | |
+| §6.1.0860 | `C, ( char -- )` | Implemented | src/memory.asm:168 | v2.0 baseline | |
+| §6.1.1650 | `HERE ( -- addr )` | Implemented | src/memory.asm:123 | v2.0 baseline | |
+| §6.1.0710 | `ALLOT ( n -- )` | Implemented | src/memory.asm:135 | v2.0 baseline | |
+| §6.1.0705 | `ALIGN ( -- )` | Implemented | src/memory.asm:184 | v2.0 baseline | No-op on Z80 (1-byte alignment); satisfied behaviourally because every memory access in `src/*.asm` uses byte-or-cell ops with no alignment assumption. |
+| §6.1.0706 | `ALIGNED ( addr -- a-addr )` | Implemented | src/memory.asm:201 | v2.0 baseline | No-op on Z80; identity. |
+| §6.1.0890 | `CELLS ( n1 -- n2 )` | Implemented | src/memory.asm:214 | v2.0 baseline | n2 = n1 × 2 (cell = 2 bytes on Z80). |
+| §6.1.0880 | `CELL+ ( a-addr1 -- a-addr2 )` | Implemented | src/memory.asm:13 | v2.0 baseline | a-addr2 = a-addr1 + 2. |
+| §6.1.1540 | `FILL ( c-addr u char -- )` | Implemented | src/memory.asm:225 | v2.0 baseline | |
+| §6.1.1900 | `MOVE ( addr1 addr2 u -- )` | Implemented | src/memory.asm:264 | v2.0 baseline | Overlap-safe per §6.1.1900 (LDIR / LDDR direction selected by a-addr1 vs. a-addr2). |
 
 ### Character
 
 3 §6.1 Core words — 3 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source | Notes |
-|------|-------------|--------|--------|-------|
-| `CHAR` | `( "<spaces>name" -- char )` | Implemented | `strings.asm:161` | |
-| `CHAR+` | `( c-addr1 -- c-addr2 )` | Implemented | `memory.asm:24` | INC BC; same as 1+ on Z80 (1 char = 1 byte) |
-| `CHARS` | `( n1 -- n2 )` | Implemented | `memory.asm:34` | No-op on Z80 (1 char = 1 byte); provided for portability |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.0895 | `CHAR ( "<spaces>name" -- char )` | Implemented | src/strings.asm:161 | v2.0 baseline | |
+| §6.1.0897 | `CHAR+ ( c-addr1 -- c-addr2 )` | Implemented | src/memory.asm:24 | v2.0 baseline | INC BC; same as `1+` on Z80 (1 char = 1 byte). |
+| §6.1.0898 | `CHARS ( n1 -- n2 )` | Implemented | src/memory.asm:34 | v2.0 baseline | No-op on Z80 (1 char = 1 byte); provided for portability. |
 
 ### I/O
 
 8 §6.1 Core words — 8 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source | Notes |
-|------|-------------|--------|--------|-------|
-| `EMIT` | `( x -- )` | Implemented | `io.asm:9` | |
-| `KEY` | `( -- char )` | Implemented | `io.asm:153` | |
-| `ACCEPT` | `( c-addr +n1 -- +n2 )` | Implemented | `io.asm:117` | |
-| `CR` | `( -- )` | Implemented | `io.asm:61` | |
-| `SPACE` | `( -- )` | Implemented | `io.asm:73` | |
-| `SPACES` | `( n -- )` | Implemented | `io.asm:86` | |
-| `TYPE` | `( c-addr u -- )` | Implemented | `io.asm:24` | |
-| `BL` | `( -- char )` | Implemented | `outer_interpreter.asm:83` | |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.1320 | `EMIT ( x -- )` | Implemented | src/io.asm:9 | v2.0 baseline | |
+| §6.1.1750 | `KEY ( -- char )` | Implemented | src/io.asm:153 | v2.0 baseline | |
+| §6.1.0695 | `ACCEPT ( c-addr +n1 -- +n2 )` | Implemented | src/io.asm:117 | v2.0 baseline | |
+| §6.1.0990 | `CR ( -- )` | Implemented | src/io.asm:61 | v2.0 baseline | |
+| §6.1.2220 | `SPACE ( -- )` | Implemented | src/io.asm:73 | v2.0 baseline | |
+| §6.1.2230 | `SPACES ( n -- )` | Implemented | src/io.asm:86 | v2.0 baseline | |
+| §6.1.2310 | `TYPE ( c-addr u -- )` | Implemented | src/io.asm:24 | v2.0 baseline | |
+| §6.1.0770 | `BL ( -- char )` | Implemented | src/outer_interpreter.asm:83 | v2.0 baseline | |
 
 ### Numeric Output and Formatting
 
 10 §6.1 Core words — 10 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `.` | `( n -- )` | Implemented | `formatting.asm:133` | Story 10.8 will rewrite atop pictured-output primitives, preserving observable behaviour |
-| `."` | `( "ccc" -- )` | Implemented | `strings.asm:829` | IMMEDIATE — Story 13.5.3 (TD-5 closure 2026-05-06): interpret-mode tail now preserves caller's TOS (PUSH BC at `.dq_interpret`, POP BC at `.dq_i_end`), see Story 13.5.3 caveats below |
-| `U.` | `( u -- )` | Implemented | `formatting.asm:154` | Story 10.8 rewrite (as `.`) |
-| `DECIMAL` | `( -- )` | Implemented | `formatting.asm:383` | DEFWORD |
-| `<#` | `( -- )` | Implemented | `pictured.asm` (Story 10.7) | Resets HLD to pic_buf sentinel |
-| `#` | `( ud1 -- ud2 )` | Implemented | `pictured.asm` (Story 10.7) | Inline 32-by-8 divide. The §6.1 `#` coexists with the assembler's immediate-operand sigil at `assembler.asm:985`: both share the name, the asm entry is head-of-bucket and dispatches at run time — `asm_mode == 0` → pictured `#`, `asm_mode == 1` → sigil. Epic 12 (wordlists) retires this dispatch. |
-| `#S` | `( ud1 -- ud2 )` | Implemented | `pictured.asm` (Story 10.7) | DEFWORD — canonical `BEGIN # 2DUP OR 0= UNTIL` |
-| `#>` | `( xd -- c-addr u )` | Implemented | `pictured.asm` (Story 10.7) | Returns buffer `( c-addr u )` |
-| `HOLD` | `( char -- )` | Implemented | `pictured.asm` (Story 10.7) | Underflow → `-17 THROW` (`pictured numeric output string overflow`) per ANS Forth 1994 §9.3.5 (Story 11.6) |
-| `SIGN` | `( n -- )` | Implemented | `pictured.asm` (Story 10.7) | `BIT 7,B` inline — no extra (?1) helper |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.0180 | `. ( n -- )` | Implemented | src/formatting.asm:133 | Story 10.8 | Rewritten atop pictured-output primitives, observable behaviour preserved byte-for-byte. |
+| §6.1.0190 | `." ( "ccc" -- )` | Implemented-with-caveat | src/strings.asm:829 | Story 13.5.3 | IMMEDIATE — Story 13.5.3 (TD-5 closure 2026-05-06): interpret-mode tail now preserves caller's TOS (`PUSH BC` at `.dq_interpret`, `POP BC` at `.dq_i_end`); pre-13.5.3 the interpret-mode arm clobbered TOS. See Story 13.5.3 caveats below. |
+| §6.1.2320 | `U. ( u -- )` | Implemented | src/formatting.asm:154 | Story 10.8 | Rewrite atop pictured-output primitives (as `.`). |
+| §6.1.1170 | `DECIMAL ( -- )` | Implemented | src/formatting.asm:383 | v2.0 baseline | DEFWORD. |
+| §6.1.0490 | `<# ( -- )` | Implemented | src/pictured.asm:39 | Story 10.7 | Resets HLD to pic_buf sentinel. |
+| §6.1.0030 | `# ( ud1 -- ud2 )` | Implemented-with-caveat | src/pictured.asm:76 | Story 10.7 | Inline 32-by-8 divide. The §6.1 `#` coexists with the assembler's immediate-operand sigil at `src/assembler.asm:985`: both share the name; asm entry is head-of-bucket and dispatches at run time (`asm_mode == 0` → pictured `#`, `asm_mode == 1` → sigil). Story 10.7 caveat carried forward; Epic 12 (wordlists) did not retire the dispatch (planned retirement deferred — see `project_asm_hash_dispatch_hack.md`). |
+| §6.1.0050 | `#S ( ud1 -- ud2 )` | Implemented | src/pictured.asm:119 | Story 10.7 | DEFWORD — canonical `BEGIN # 2DUP OR 0= UNTIL`. |
+| §6.1.0040 | `#> ( xd -- c-addr u )` | Implemented | src/pictured.asm:139 | Story 10.7 | Returns buffer `( c-addr u )`. |
+| §6.1.1670 | `HOLD ( char -- )` | Implemented | src/pictured.asm:59 | Story 10.7 | Underflow → `-17 THROW` (pictured numeric output string overflow) per DPANS94 §9.3.5 (Story 11.6). |
+| §6.1.2210 | `SIGN ( n -- )` | Implemented | src/pictured.asm:168 | Story 10.7 | `BIT 7,B` inline — no extra (?1) helper. |
 
 ### String and Parsing
 
-4 §6.1 Core words — 3 fully implemented, 1 partial.
+4 §6.1 Core words — 3 fully implemented, 1 implemented-with-caveat.
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `S"` | `( "ccc" -- c-addr u )` | Implemented | `strings.asm:589` | IMMEDIATE |
-| `COUNT` | `( c-addr1 -- c-addr2 u )` | Implemented | `dictionary.asm:9` | |
-| `WORD` | `( char -- c-addr )` | Implemented | `strings.asm:11` | |
-| `>NUMBER` | `( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )` | Implemented | `strings.asm:341` | Full 32-bit accumulation (`ud ← ud × BASE + digit`) with carry propagation across both cells; guards DEPTH ≥ 4. Upgraded from Partial in Story 10.3. **antforth implementation limit:** `u1` is truncated to 8 bits (strings longer than 255 chars are processed only to the first 255); practical for CP/M TIB but a deviation from the 16-bit `u1` signature. |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.2165 | `S" ( "ccc" -- c-addr u )` | Implemented | src/strings.asm:589 | v2.0 baseline | IMMEDIATE. |
+| §6.1.0980 | `COUNT ( c-addr1 -- c-addr2 u )` | Implemented | src/dictionary.asm:9 | v2.0 baseline | |
+| §6.1.2450 | `WORD ( char -- c-addr )` | Implemented | src/strings.asm:11 | v2.0 baseline | Counted-string output staged at HERE+0..HERE+u (count byte at HERE+0, ≤31 chars at HERE+1..HERE+u per F_LENMASK). |
+| §6.1.0570 | `>NUMBER ( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )` | Implemented-with-caveat | src/strings.asm:341 | Story 10.3 | Full 32-bit accumulation (`ud ← ud × BASE + digit`) with carry propagation across both cells; guards DEPTH ≥ 4. Upgraded from Partial in Story 10.3. **antforth implementation limit:** `u1` is truncated to 8 bits (strings longer than 255 chars are processed only to the first 255); practical for CP/M TIB but a deviation from the 16-bit `u1` signature. Accepted-with-rationale per DPANS94 §6.1.0570 — TIB_SIZE=128 cap structurally bounds practical inputs ≪ 255. |
 
 ### Control Flow
 
 16 §6.1 Core words — 16 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source | Notes |
-|------|-------------|--------|--------|-------|
-| `IF` | `( x -- )` | Implemented | `control_flow.asm:32` | DEFIMMED |
-| `THEN` | `( -- )` | Implemented | `control_flow.asm:48` | DEFIMMED |
-| `ELSE` | `( -- )` | Implemented | `control_flow.asm:65` | DEFIMMED |
-| `BEGIN` | `( -- )` | Implemented | `control_flow.asm:89` | DEFIMMED |
-| `UNTIL` | `( x -- )` | Implemented | `control_flow.asm:101` | DEFIMMED |
-| `WHILE` | `( x -- )` | Implemented | `control_flow.asm:118` | DEFIMMED |
-| `REPEAT` | `( -- )` | Implemented | `control_flow.asm:136` | DEFIMMED |
-| `DO` | `( n1 n2 -- )` | Implemented | `control_flow.asm:356` | DEFIMMED |
-| `LOOP` | `( -- )` | Implemented | `control_flow.asm:374` | DEFIMMED |
-| `+LOOP` | `( n -- )` | Implemented | `control_flow.asm:413` | DEFIMMED |
-| `I` | `( -- n )` | Implemented | `control_flow.asm:331` | |
-| `J` | `( -- n )` | Implemented | `control_flow.asm:343` | |
-| `LEAVE` | `( -- )` | Implemented | `control_flow.asm:451` | DEFIMMED |
-| `UNLOOP` | `( -- )` | Implemented | `control_flow.asm:318` | |
-| `EXIT` | `( -- )` | Implemented | `inner_interpreter.asm:32` | DEFCODE wrapping `EXIT_CODE` |
-| `RECURSE` | `( -- )` | Implemented | `control_flow.asm:472` | F_IMMEDIATE |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.1700 | `IF ( x -- )` | Implemented | src/control_flow.asm:32 | v2.0 baseline | DEFIMMED. |
+| §6.1.2270 | `THEN ( -- )` | Implemented | src/control_flow.asm:48 | v2.0 baseline | DEFIMMED. |
+| §6.1.1310 | `ELSE ( -- )` | Implemented | src/control_flow.asm:65 | v2.0 baseline | DEFIMMED. |
+| §6.1.0760 | `BEGIN ( -- )` | Implemented | src/control_flow.asm:89 | v2.0 baseline | DEFIMMED. |
+| §6.1.2390 | `UNTIL ( x -- )` | Implemented | src/control_flow.asm:101 | v2.0 baseline | DEFIMMED. |
+| §6.1.2430 | `WHILE ( x -- )` | Implemented | src/control_flow.asm:118 | v2.0 baseline | DEFIMMED. |
+| §6.1.2140 | `REPEAT ( -- )` | Implemented | src/control_flow.asm:136 | v2.0 baseline | DEFIMMED. |
+| §6.1.1240 | `DO ( n1 n2 -- )` | Implemented | src/control_flow.asm:356 | v2.0 baseline | DEFIMMED. |
+| §6.1.1800 | `LOOP ( -- )` | Implemented | src/control_flow.asm:374 | v2.0 baseline | DEFIMMED. |
+| §6.1.0140 | `+LOOP ( n -- )` | Implemented | src/control_flow.asm:413 | v2.0 baseline | DEFIMMED. |
+| §6.1.1680 | `I ( -- n )` | Implemented | src/control_flow.asm:331 | v2.0 baseline | |
+| §6.1.1730 | `J ( -- n )` | Implemented | src/control_flow.asm:343 | v2.0 baseline | |
+| §6.1.1760 | `LEAVE ( -- )` | Implemented | src/control_flow.asm:451 | v2.0 baseline | DEFIMMED. |
+| §6.1.2380 | `UNLOOP ( -- )` | Implemented | src/control_flow.asm:318 | v2.0 baseline | |
+| §6.1.1380 | `EXIT ( -- )` | Implemented | src/inner_interpreter.asm:32 | v2.0 baseline | DEFCODE wrapping `EXIT_CODE`. |
+| §6.1.2120 | `RECURSE ( -- )` | Implemented | src/control_flow.asm:472 | v2.0 baseline | F_IMMEDIATE. |
 
 ### Compiler and Defining Words
 
 14 §6.1 Core words — 14 implemented, 0 missing. **100% complete.**
 
-| Word | Stack Effect | Status | Source | Notes |
-|------|-------------|--------|--------|-------|
-| `:` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:359` | |
-| `;` | `( -- )` | Implemented | `compiler.asm:459` | F_IMMEDIATE |
-| `CONSTANT` | `( x "<spaces>name" -- )` | Implemented | `compiler.asm:585` | |
-| `VARIABLE` | `( "<spaces>name" -- )` | Implemented | `bootstrap.asm:74` | DEFWORD |
-| `CREATE` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:549` | |
-| `DOES>` | `( -- )` | Implemented | `compiler.asm:632` | F_IMMEDIATE |
-| `IMMEDIATE` | `( -- )` | Implemented | `compiler.asm:339` | |
-| `LITERAL` | `( x -- )` | Implemented | `compiler.asm:521` | F_IMMEDIATE |
-| `POSTPONE` | `( "<spaces>name" -- )` | Implemented | `compiler.asm:279` | DEFIMMED |
-| `[` | `( -- )` | Implemented | `compiler.asm:498` | F_IMMEDIATE |
-| `]` | `( -- )` | Implemented | `compiler.asm:509` | |
-| `STATE` | `( -- a-addr )` | Implemented | `outer_interpreter.asm:26` | |
-| `[']` | `( "<spaces>name" -- xt )` | Implemented | `compiler.asm:55` | DEFIMMED |
-| `[CHAR]` | `( "<spaces>name" -- char )` | Implemented | `compiler.asm:67` | DEFIMMED |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.0450 | `: ( "<spaces>name" -- )` | Implemented | src/compiler.asm:359 | v2.0 baseline | |
+| §6.1.0460 | `; ( -- )` | Implemented | src/compiler.asm:459 | v2.0 baseline | F_IMMEDIATE. |
+| §6.1.0950 | `CONSTANT ( x "<spaces>name" -- )` | Implemented | src/compiler.asm:585 | v2.0 baseline | |
+| §6.1.2410 | `VARIABLE ( "<spaces>name" -- )` | Implemented | src/bootstrap.asm:74 | v2.0 baseline | DEFWORD. |
+| §6.1.1000 | `CREATE ( "<spaces>name" -- )` | Implemented | src/compiler.asm:549 | v2.0 baseline | |
+| §6.1.1250 | `DOES> ( -- )` | Implemented | src/compiler.asm:632 | v2.0 baseline | F_IMMEDIATE. |
+| §6.1.1710 | `IMMEDIATE ( -- )` | Implemented | src/compiler.asm:339 | v2.0 baseline | |
+| §6.1.1780 | `LITERAL ( x -- )` | Implemented | src/compiler.asm:521 | v2.0 baseline | F_IMMEDIATE. |
+| §6.1.2033 | `POSTPONE ( "<spaces>name" -- )` | Implemented | src/compiler.asm:279 | v2.0 baseline | DEFIMMED. |
+| §6.1.2500 | `[ ( -- )` | Implemented | src/compiler.asm:498 | v2.0 baseline | F_IMMEDIATE. |
+| §6.1.2540 | `] ( -- )` | Implemented | src/compiler.asm:509 | v2.0 baseline | |
+| §6.1.2250 | `STATE ( -- a-addr )` | Implemented | src/outer_interpreter.asm:26 | v2.0 baseline | |
+| §6.1.2510 | `['] ( "<spaces>name" -- xt )` | Implemented | src/compiler.asm:55 | v2.0 baseline | DEFIMMED. |
+| §6.1.2520 | `[CHAR] ( "<spaces>name" -- char )` | Implemented | src/compiler.asm:67 | v2.0 baseline | DEFIMMED. |
 
 ### System and Interpreter
 
-13 §6.1 Core words — 11 implemented, 2 missing.
+13 §6.1 Core words — all implemented (the original 5.3 audit reported `EVALUATE` and `ENVIRONMENT?` missing; Story 10.9 closed both). **100% complete.**
 
-| Word | Stack Effect | Status | Source / Story | Notes |
-|------|-------------|--------|----------------|-------|
-| `EXECUTE` | `( xt -- )` | Implemented | `inner_interpreter.asm:224` | |
-| `FIND` | `( c-addr -- c-addr 0 \| xt 1 \| xt -1 )` | Implemented | `dictionary.asm:22` | Hash-table lookup |
-| `ABORT` | `( -- )` | Implemented | `system.asm:259` | |
-| `QUIT` | `( -- )` | Implemented | `outer_interpreter.asm:237` | |
-| `>IN` | `( -- a-addr )` | Implemented | `outer_interpreter.asm:46` | |
-| `BASE` | `( -- a-addr )` | Implemented | `outer_interpreter.asm:36` | |
-| `SOURCE` | `( -- c-addr u )` | Implemented | `outer_interpreter.asm:66` | |
-| `(` | `( "ccc)" -- )` | Implemented | `strings.asm:821` | F_IMMEDIATE |
-| `'` | `( "<spaces>name" -- xt )` | Implemented | `compiler.asm:26` | DEFWORD |
-| `>BODY` | `( xt -- a-addr )` | Implemented | `compiler.asm:11` | xt+5 (skips JP + does-addr) |
-| `ABORT"` | `( "ccc" x -- )` | Implemented | `system.asm:139` | F_IMMEDIATE; runtime `(ABORT")` at `system.asm:89` |
-| `EVALUATE` | `( i*x c-addr u -- j*x )` | Implemented | `outer_interpreter.asm:366` | Story 10.9; DEFWORD `(SAVE-INPUT) INTERPRET (RESTORE-INPUT)`; saves four USER source-spec cells (tib_addr, tib_len, tib_in, source_id) on R-stack across INTERPRET; source_id = -1 during EVALUATE per Forth 2014 §6.2.2218. Distinct surfaces: the (paren) helpers here are EVALUATE's R-stack plumbing (install/uninstall semantics); the user-facing CORE-EXT counterparts `SAVE-INPUT` (§6.2.2182) and `RESTORE-INPUT` (§6.2.2148) — added by Story 13.5.5 — are data-stack snapshot/rewind words. See Core Extension table below + Story 13.5.5 caveats. |
-| `ENVIRONMENT?` | `( c-addr u -- false \| i*x true )` | Implemented | `system.asm:277` | Story 10.9; DEFCODE walking a 14-entry static `env_table` of DPANS94 §3.2.6 standard query keys (case-sensitive); supports single, double, and flag value kinds |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.1.1370 | `EXECUTE ( xt -- )` | Implemented | src/inner_interpreter.asm:224 | v2.0 baseline | |
+| §6.1.1550 | `FIND ( c-addr -- c-addr 0 \| xt 1 \| xt -1 )` | Implemented | src/dictionary.asm:22 | v2.0 baseline | Hash-table lookup. |
+| §6.1.0670 | `ABORT ( -- )` | Implemented | src/system.asm:259 | Story 11.7 | Retargeted as `-1 THROW` wrapper post-Epic-11 (Story 11.7 capstone). |
+| §6.1.2050 | `QUIT ( -- )` | Implemented | src/outer_interpreter.asm:237 | v2.0 baseline | |
+| §6.1.0560 | `>IN ( -- a-addr )` | Implemented | src/outer_interpreter.asm:46 | v2.0 baseline | |
+| §6.1.0750 | `BASE ( -- a-addr )` | Implemented | src/outer_interpreter.asm:36 | v2.0 baseline | |
+| §6.1.2216 | `SOURCE ( -- c-addr u )` | Implemented | src/outer_interpreter.asm:66 | v2.0 baseline | |
+| §6.1.0080 | `( ( "ccc)" -- )` | Implemented | src/strings.asm:821 | v2.0 baseline | F_IMMEDIATE. |
+| §6.1.0070 | `' ( "<spaces>name" -- xt )` | Implemented | src/compiler.asm:26 | v2.0 baseline | DEFWORD. |
+| §6.1.0550 | `>BODY ( xt -- a-addr )` | Implemented | src/compiler.asm:11 | v2.0 baseline | xt+5 (skips JP + does-addr). |
+| §6.1.0680 | `ABORT" ( "ccc" x -- )` | Implemented | src/system.asm:139 | Story 11.7 | F_IMMEDIATE; retargeted as `-2 THROW` wrapper post-Epic-11. Runtime `(ABORT")` at `src/system.asm:89`. |
+| §6.1.1360 | `EVALUATE ( i*x c-addr u -- j*x )` | Implemented | src/outer_interpreter.asm:366 | Story 10.9 | DEFWORD `(SAVE-INPUT) INTERPRET (RESTORE-INPUT)`; saves four USER source-spec cells (tib_addr, tib_len, tib_in, source_id) on R-stack across INTERPRET; source_id = -1 during EVALUATE per Forth 2014 §6.2.2218. Distinct from user-facing `SAVE-INPUT` (§6.2.2182) / `RESTORE-INPUT` (§6.2.2148) which are data-stack words added by Story 13.5.5. |
+| §6.1.1345 | `ENVIRONMENT? ( c-addr u -- false \| i*x true )` | Implemented | src/system.asm:277 | Story 10.9 | DEFCODE walking a 14-entry static `env_table` of DPANS94 §3.2.6 standard query keys (case-sensitive); supports single, double, and flag value kinds. |
 
 ---
 
@@ -349,32 +382,82 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ---
 
-## Core Extension Bonus Coverage
+## §6.2 Core Extension (CCD-P3-1)
 
-**14** of 46 DPANS94 §6.2 Core Extension words are implemented (SAVE-INPUT + RESTORE-INPUT added by Story 13.5.5 — TD-7 closure 2026-05-06; PAD added by Story 13.5.4 — TD-6 closure 2026-05-06). (Forth-2012 / Forth-2014 added several §6.2 entries beyond DPANS94 1994 — `HOLDS` at §6.2.1675 is one — which is why `forth-standard.org` shows a higher §6.2 count than DPANS94 itself. This report's measurement uses the DPANS94 1994 baseline (46) for the bonus tally; the Forth-2014 additions implemented (or planned) are noted in the "Will gain via Epic 10" sub-section.)
+**13** of 46 DPANS94 1994 §6.2 Core Extension words are implemented, plus **1** Forth-2014 addition (`HOLDS` at §6.2.1675), making **14 §6.2-shaped entries** on antforth's surface (`SAVE-INPUT` + `RESTORE-INPUT` added by Story 13.5.5 — TD-7 closure 2026-05-06; `PAD` added by Story 13.5.4 — TD-6 closure 2026-05-06). The remaining 33 §6.2 words from the DPANS94 1994 baseline are deliberately omitted with per-row rationale per CCD-P3-1's "no silent gaps" rule.
 
-| Word | Stack Effect | Source | Notes |
-|------|-------------|--------|-------|
-| `.R` | `( n1 n2 -- )` | `formatting.asm:203` | Right-aligned numeric output; DEFWORD on pictured foundation (Story 10.8) |
-| `COMPILE,` | `( xt -- )` | `compiler.asm:321` | Append execution semantics |
-| `HEX` | `( -- )` | `formatting.asm:370` | Set BASE to 16 |
-| `HOLDS` | `( c-addr u -- )` | `pictured.asm` (Story 10.7) | Forth-2014 addition; inserts counted string into pictured buffer |
-| `MARKER` | `( "<spaces>name" -- )` | `system.asm:22` | Snapshot/restore dictionary state |
-| `PAD` | `( -- c-addr )` | `memory.asm` (Story 13.5.4) | DPANS94 §6.2.2000. Returns transient region address at HERE+`PAD_OFFSET` (84 bytes). Survives parsing of one space-delimited name per §3.3.3.6 (WORD writes ≤32 bytes at HERE+1, leaving HERE+33..+84+ untouched). TD-6 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.4 caveats below. |
-| `PICK` | `( xu...x0 u -- xu...x0 xu )` | `stack_ops.asm:94` | |
-| `RESTORE-INPUT` | `( xn ... x1 n -- flag )` | `outer_interpreter.asm` (Story 13.5.5) | DPANS94 §6.2.2148. User-facing CORE-EXT counterpart of `SAVE-INPUT`. flag = 0 on clean restore (count == 4 AND saved SOURCE-ID matches current); flag = -1 on count or SOURCE-ID mismatch (§6.2.2148 ambiguous condition). TD-7 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.5 caveats below. Distinct from the EVALUATE-private R-stack `(RESTORE-INPUT)` plumbing helper at `outer_interpreter.asm:445-460`. |
-| `ROLL` | `( xu...x0 u -- xu-1...x0 xu )` | `stack_ops.asm:112` | |
-| `SAVE-INPUT` | `( -- xn ... x1 n )` | `outer_interpreter.asm` (Story 13.5.5) | DPANS94 §6.2.2182. Pushes a uniform-quadruple description of the current input source spec: `( -- tib_addr tib_len >IN SOURCE-ID 4 )`. Same shape across all SOURCE-ID classes (0 keyboard / -1 EVALUATE / >0 INCLUDE-FILE). Primary scope: EVALUATE arm round-trip per TD-7 closure (Epic 13.5 Tag-Blocking Slate) — see Story 13.5.5 caveats below. Distinct from the EVALUATE-private R-stack `(SAVE-INPUT)` plumbing helper at `outer_interpreter.asm:395-431`. |
-| `\` | `( "ccc" -- )` | `strings.asm:806` | Line comment; F_IMMEDIATE |
-| `#TIB` | `( -- a-addr )` | `outer_interpreter.asm:56` | Obsolescent in Forth-2012 |
-| `QUERY` | `( -- )` | `outer_interpreter.asm:96` | Obsolescent in Forth-2012 |
+**Story 15.1 audit finding (2026-05-09):** the v2.0 doc reported "14 of 46 implemented" by counting `HOLDS` inside the 46. `HOLDS` is a Forth-2014 addition (§6.2.1675) and not part of DPANS94 1994's 46-word §6.2 baseline. The corrected count is 13 of 46 (DPANS94 1994) + 1 Forth-2014 bonus = 14 §6.2-shaped entries; the §6.2 baseline coverage rate is 13/46 ≈ 28% (not 14/46). No code consequence — purely a count-rationalisation correction. Forth-2012 / Forth-2014 added §-rules beyond DPANS94 1994; the 46-word baseline below is DPANS94 1994 only.
 
-### §6.2 Will gain via Epic 10
+### §6.2 Implemented (13 of 46 — DPANS94 1994 baseline)
 
-| Word | §-number | Story | Notes |
-|------|----------|-------|-------|
-| `HOLDS` | 6.2.1675 | 10.7 ✓ Implemented (`pictured.asm`) | Forth-2014 addition; counterpart of `HOLD` for strings |
-| `U.R` | 6.2.2330 | 10.8 ✓ Implemented (`formatting.asm:217`) | Right-aligned unsigned print on pictured foundation |
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.2.0060 | `#TIB ( -- a-addr )` | Implemented | src/outer_interpreter.asm:56 | v2.0 baseline | Obsolescent in Forth-2012; antforth retains for backward-compat. |
+| §6.2.0210 | `.R ( n1 n2 -- )` | Implemented | src/formatting.asm:203 | Story 10.8 | Right-aligned numeric output; DEFWORD on pictured foundation. |
+| §6.2.0945 | `COMPILE, ( xt -- )` | Implemented | src/compiler.asm:321 | v2.0 baseline | Append execution semantics. |
+| §6.2.1660 | `HEX ( -- )` | Implemented | src/formatting.asm:370 | v2.0 baseline | Set BASE to 16. |
+| §6.2.1850 | `MARKER ( "<spaces>name" -- )` | Implemented | src/system.asm:22 | v2.0 baseline | Snapshot/restore dictionary state. |
+| §6.2.2000 | `PAD ( -- c-addr )` | Implemented | src/memory.asm:148 | Story 13.5.4 | Returns transient region at HERE + PAD_OFFSET (84 bytes). Survives parsing of one space-delimited name per §3.3.3.6 (WORD writes ≤32 bytes at HERE+0..HERE+31, leaving HERE+32..HERE+84+ untouched). TD-6 closure (Epic 13.5 Tag-Blocking Slate); F-9 hardware reproducer fixed. See Story 13.5.4 caveats below. |
+| §6.2.2030 | `PICK ( xu...x0 u -- xu...x0 xu )` | Implemented | src/stack_ops.asm:94 | v2.0 baseline | |
+| §6.2.2040 | `QUERY ( -- )` | Implemented | src/outer_interpreter.asm:96 | v2.0 baseline | Obsolescent in Forth-2012. |
+| §6.2.2148 | `RESTORE-INPUT ( xn ... x1 n -- flag )` | Implemented-with-caveat | src/outer_interpreter.asm:551 | Story 13.5.5 | flag=0 on clean restore (count == 4 AND saved SOURCE-ID matches current); flag=-1 on count or SOURCE-ID mismatch. Cross-REFILL impl-defined deviation: SOURCE-ID match is necessary but not sufficient if buffer content rotated since SAVE-INPUT (§6.2.2148 ambiguous condition). Distinct from the EVALUATE-private R-stack `(RESTORE-INPUT)` plumbing helper. See Story 13.5.5 caveats below. |
+| §6.2.2150 | `ROLL ( xu...x0 u -- xu-1...x0 xu )` | Implemented | src/stack_ops.asm:112 | v2.0 baseline | |
+| §6.2.2182 | `SAVE-INPUT ( -- xn ... x1 n )` | Implemented-with-caveat | src/outer_interpreter.asm:490 | Story 13.5.5 | Pushes uniform-quadruple description: `( -- tib_addr tib_len >IN SOURCE-ID 4 )`. Same shape across all SOURCE-ID classes (0 keyboard / -1 EVALUATE / >0 INCLUDE-FILE). Primary scope: EVALUATE arm round-trip; keyboard / INCLUDE-FILE arms work structurally with cross-REFILL caveat. Distinct from the EVALUATE-private R-stack `(SAVE-INPUT)` plumbing helper. See Story 13.5.5 caveats below. |
+| §6.2.2330 | `U.R ( u n -- )` | Implemented | src/formatting.asm:217 | Story 10.8 | Right-aligned unsigned print on pictured foundation. |
+| §6.2.2535 | `\ ( "ccc<eol>" -- )` | Implemented | src/strings.asm:806 | v2.0 baseline | Line comment; F_IMMEDIATE. |
+
+#### Forth-2014 / Forth-2012 §6.2 additions (post-DPANS94 1994)
+
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.2.1675 | `HOLDS ( c-addr u -- )` | Implemented | src/pictured.asm:199 | Story 10.7 | Forth-2014 addition; counterpart of `HOLD` for strings. Inserts counted string into pictured buffer. Not part of the 46-word DPANS94 1994 §6.2 baseline. |
+
+### §6.2 Deliberately Omitted (33 of 46)
+
+Per CCD-P3-1: "no silent gaps". Each unimplemented §6.2 word carries an
+explicit rationale. The blanket rationale for most omissions is:
+**"deferred — out of v2.0 scope; no behavioural defect; revisit when an
+in-tree caller materialises"**. Per-row rationale below records any
+sharper context. Standing commitment: if any of these are reclassified
+upward to "tag-blocking" the way TD-5 / TD-6 / TD-7 were at the Epic 13
+retro (per `feedback_no_preexisting_discharge.md`), spawn a back-fill story
+under the A.1-D3 canonical six-step shape.
+
+| § | Rule | Verdict | Source | Closure | Notes |
+|---|------|---------|--------|---------|-------|
+| §6.2.0200 | `.( ( "ccc<paren>" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Compile-time print; deferred — out of v2.0 scope. Workaround: `[CHAR] ( EMIT ... CR` or test-only emit chains. |
+| §6.2.0260 | `0<> ( x -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Trivially synthesisable as `0= INVERT`; deferred — out of v2.0 scope. |
+| §6.2.0280 | `0> ( n -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Trivially synthesisable as `0 SWAP <`; deferred — out of v2.0 scope. |
+| §6.2.0340 | `2>R ( x1 x2 -- ) ( R: -- x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP >R >R`; deferred — out of v2.0 scope. |
+| §6.2.0410 | `2R> ( -- x1 x2 ) ( R: x1 x2 -- )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `R> R> SWAP`; deferred — out of v2.0 scope. |
+| §6.2.0415 | `2R@ ( -- x1 x2 ) ( R: x1 x2 -- x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable; deferred — out of v2.0 scope. |
+| §6.2.0455 | `:NONAME ( -- xt )` | Deliberately-omitted | N-A | v2.0 baseline | Anonymous colon definition; deferred — out of v2.0 scope. No in-tree caller. |
+| §6.2.0500 | `<> ( x1 x2 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `= INVERT`; deferred — out of v2.0 scope. |
+| §6.2.0620 | `?DO ( n1 n2 -- )` | Deliberately-omitted | N-A | v2.0 baseline | Conditional DO (skip when limit==index); deferred — out of v2.0 scope. Workaround: `2DUP = IF 2DROP ELSE DO ... LOOP THEN`. |
+| §6.2.0700 | `AGAIN ( -- )` | Deliberately-omitted | N-A | v2.0 baseline | Unconditional BEGIN-loop tail; deferred — out of v2.0 scope. Workaround: `BEGIN ... 0 UNTIL`. |
+| §6.2.0855 | `C" ( "ccc<quote>" -- c-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Counted-string compile; deferred — `S"` covers the modern idiom. |
+| §6.2.0873 | `CASE ( x -- )` | Deliberately-omitted | N-A | v2.0 baseline | CASE/OF/ENDOF/ENDCASE control structure; deferred — out of v2.0 scope. Workaround: nested `IF ... ELSE`. |
+| §6.2.0970 | `CONVERT ( ud1 c-addr1 -- ud2 c-addr2 )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — replaced by `>NUMBER` (§6.1.0570); not exposed because `>NUMBER` is the modern equivalent. |
+| §6.2.1342 | `ENDCASE ( x -- )` | Deliberately-omitted | N-A | v2.0 baseline | Closes CASE structure; deferred — out of v2.0 scope. Closes `[advisory-§] §6.2.1342` from `tools/check-doc-sync/check-doc-sync.sh` (Story 14.5). |
+| §6.2.1343 | `ENDOF ( -- )` | Deliberately-omitted | N-A | v2.0 baseline | Closes OF arm; deferred — paired with CASE/ENDCASE. |
+| §6.2.1350 | `ERASE ( c-addr u -- )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `0 FILL`; deferred — out of v2.0 scope. |
+| §6.2.1390 | `EXPECT ( c-addr +n -- )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — replaced by `ACCEPT` (§6.1.0695); not exposed because `ACCEPT` is the modern equivalent. |
+| §6.2.1485 | `FALSE ( -- false )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `0`; deferred — out of v2.0 scope. |
+| §6.2.1930 | `NIP ( x1 x2 -- x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP DROP`; deferred — out of v2.0 scope. |
+| §6.2.1950 | `OF ( x -- )` | Deliberately-omitted | N-A | v2.0 baseline | Opens CASE arm; deferred — paired with CASE/ENDOF. |
+| §6.2.2008 | `PARSE ( char "ccc<char>" -- c-addr u )` | Deliberately-omitted | N-A | v2.0 baseline | Modern in-source parse without name-skip; deferred — `WORD` covers v2.0 needs. |
+| §6.2.2125 | `REFILL ( -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | User-facing REFILL; deferred — `(file-refill)` plumbing exists internally for INCLUDE-FILE / EVALUATE but no user-facing word. |
+| §6.2.2218 | `SOURCE-ID ( -- 0 \| -1 \| fileid )` | Deliberately-omitted | N-A | v2.0 baseline | The cell exists in UserArea (used internally by EVALUATE / INCLUDE-FILE), but no user-facing fetcher word. Deferred — out of v2.0 scope. |
+| §6.2.2240 | `SPAN ( -- a-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — paired with EXPECT (also omitted). |
+| §6.2.2290 | `TIB ( -- c-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent in Forth-2012 — replaced by `SOURCE`. Deferred. |
+| §6.2.2295 | `TO ( i*x "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Pairs with VALUE (also omitted); deferred — out of v2.0 scope. |
+| §6.2.2298 | `TRUE ( -- true )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `-1`; deferred — out of v2.0 scope. |
+| §6.2.2300 | `TUCK ( x1 x2 -- x2 x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP OVER`; deferred — out of v2.0 scope. |
+| §6.2.2350 | `U> ( u1 u2 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP U<`; deferred — out of v2.0 scope. |
+| §6.2.2395 | `UNUSED ( -- u )` | Deliberately-omitted | N-A | v2.0 baseline | Reports remaining dictionary space; deferred — out of v2.0 scope. |
+| §6.2.2405 | `VALUE ( x "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Pairs with TO (also omitted); deferred — out of v2.0 scope. |
+| §6.2.2440 | `WITHIN ( n1 n2 n3 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `OVER - >R - R> U<`; deferred — out of v2.0 scope. |
+| §6.2.2530 | `[COMPILE] ( "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — replaced by `POSTPONE` (§6.1.2033); not exposed because `POSTPONE` is the modern equivalent. |
 
 ### §8.6 Double-Number wordset — bonus coverage planned by Epic 10
 

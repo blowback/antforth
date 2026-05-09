@@ -336,7 +336,7 @@ do_number:
 ;   antforth implementation limit: u1 is truncated to 8 bits (count fits
 ;   in .tonum_count byte). Strings longer than 255 characters process
 ;   only the first 255; u2 reflects the 8-bit remaining count.
-; ANS Forth 1994 §6.1.0567   >NUMBER   — accumulate digits into 32-bit ud per BASE
+; ANS Forth 1994 §6.1.0570   >NUMBER   — accumulate digits into 32-bit ud per BASE
 ; -----------------------------------------------
 w_TO_NUMBER:
         DEFCODE ">NUMBER", 0
@@ -809,7 +809,7 @@ s_quote_buf:    DS 258          ; transient buffer for interpret mode (256 chars
 ;   the remaining-TIB byte-count (LD C, A at .dq_i_rem_ok) and
 ;   decremented on every iteration (DEC C inside .dq_i_loop), which
 ;   destroyed BC (the TOS-in-register cell per docs/register-conventions.md)
-;   without saving it — violating ANS §6.2.0190 ( -- ) net stack
+;   without saving it — violating ANS §6.1.0190 ( -- ) net stack
 ;   effect for any interpret-mode invocation (REPL, INCLUDED top-level,
 ;   EVALUATE outside a colon body). Originally surfaced as Story 13.5
 ;   adversarial review F2 (catalogue at
