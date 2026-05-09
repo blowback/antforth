@@ -275,6 +275,47 @@ awk 'length > 128' tests/*.fth
 A clean pre-flight returns no rows. Probes intended for hardware-typing
 must split logically across lines that fit.
 
+**Probe colon-def corollary (Story 15.5).** The 128-char limit applies
+to the source line as typed, not to the conceptual probe step. A
+colon definition that folds verdict logic across constructs can grow
+past 128 chars in a single line even when the logical step looks
+small. Story 15.5's Probe 3 `TRY-CREATE` hit 134 chars after a CR-pass
+fix added a per-iteration close-ior fold; truncation cut `NFILES`
+mid-token and cascaded `error -13: undefined word`. Resolution: split
+the colon-def at a `THEN` / `;` / `LOOP` boundary (legal in compile
+state). Treat any colon-def line approaching 128 chars as a refactor
+candidate before hardware paste.
+
+### (c) iz-cpm-vs-hardware verdict-shape divergence (Story 15.5)
+
+iz-cpm sanity-pass is **necessary but not sufficient** for any probe
+whose load-bearing verdict is hardware-only.
+
+Two recurring failure modes documented at Story 15.5 (transcripts
+`~/Downloads/beastty-20260509-{123943,134543}.bin`):
+
+- **Echoed source-line grep false-positive.** iz-cpm's Makefile grep
+  can match a literal verdict-token string (`T6V=NO_LIMIT` etc.) in
+  the *echoed source line* of `S" T6V=NO_LIMIT" TYPE`, not in actual
+  probe output. Run-1 SKIP'd a real probe-design defect (bare-REPL
+  `IF/ELSE/THEN` raising THROW −14) because the grep matched the echo,
+  not the missing verdict. Mitigation: replace string-literal verdict
+  tokens with numeric codes (`T6V=1`/`T6V=0` etc.); source-echo can no
+  longer false-positive grep matches on numeric values.
+- **Hardware-only failure paths.** Code paths that only execute under
+  resource exhaustion (disk-full, directory-full) or specific REPL
+  state-context boundaries cannot be exercised by iz-cpm's host-bounded
+  filesystem. CR-1 M1 in Story 15.5 proposed a fix that iz-cpm
+  sanity-passed but introduced `error -4: stack underflow` on the
+  hardware-only failure path — surfaced only on real MicroBeast.
+
+**Discipline.** Treat /CR proposed fixes that touch a probe's
+hardware-only code path as hypotheses, not ready-to-merge edits.
+Re-run on real hardware before merging. Probe authors should
+explicitly identify which assertions are iz-cpm-load-bearing vs
+hardware-load-bearing in a `\ ` comment near each probe stanza so
+future readers know which path was actually verified where.
+
 ### Cross-reference
 
 The full statement of S12 — including the rationale, the integration

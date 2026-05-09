@@ -410,3 +410,54 @@
 \ (1 2 3 + xt before POP); post-throw has 4 (1 2 3 + -3). After the
 \ first `.` consumes -3 from BC, SP-cells = 3, so DEPTH reports 3.
 1 2 3 ' TOV CATCH . DEPTH .             \ expect: -3 3  ok
+
+\ ============================================================
+\ Section 7 — Caught-form coverage for asm-error THROW codes
+\               (-258..-272) — A.2 / Phase-3 close-out
+\ ============================================================
+\
+\ A.2 closes the caught-form coverage gap for the 15 asm-error THROW
+\ codes (`-258..-272`) added by Stories 11.5 / 11.5.6. Each probe
+\ raises a specific code from a colon body, then verifies CATCH
+\ lands the negative code on the data stack — same shape as Sections
+\ 1.1 / 6.1 above.
+\
+\ Triggering each code via its native asm-error path requires
+\ constructing the matching CODE/END-CODE failure scenario; those
+\ uncaught-form paths are already covered in assembler_tests.fth and
+\ at uncaught-recovery sites elsewhere. A.2's load-bearing assertion
+\ is "the caught path returns the expected code on the data stack
+\ for each of the 15 codes" — direct THROW probes verify that with
+\ minimum noise. Caught-form was unblocked by Story 11.5.3's
+\ EVALUATE source-frame fix (per Phase-3 carry-forward A.2 row).
+
+: T258 -258 THROW ;
+' T258 CATCH .                          \ expect: -258  ok (asm BAD_OPERAND)
+: T259 -259 THROW ;
+' T259 CATCH .                          \ expect: -259  ok (asm NESTED CODE)
+: T260 -260 THROW ;
+' T260 CATCH .                          \ expect: -260  ok (asm CODE NONAME)
+: T261 -261 THROW ;
+' T261 CATCH .                          \ expect: -261  ok (asm ORPHAN_LABEL)
+: T262 -262 THROW ;
+' T262 CATCH .                          \ expect: -262  ok (asm LABEL_AFTER_END)
+: T263 -263 THROW ;
+' T263 CATCH .                          \ expect: -263  ok (asm JR_RANGE)
+: T264 -264 THROW ;
+' T264 CATCH .                          \ expect: -264  ok (asm TOO_LABELS)
+: T265 -265 THROW ;
+' T265 CATCH .                          \ expect: -265  ok (asm TOO_FIXUPS)
+: T266 -266 THROW ;
+' T266 CATCH .                          \ expect: -266  ok (asm EQU_IN_CODE)
+: T267 -267 THROW ;
+' T267 CATCH .                          \ expect: -267  ok (asm BARE_INT)
+: T268 -268 THROW ;
+' T268 CATCH .                          \ expect: -268  ok (asm UNRESOLVED)
+: T269 -269 THROW ;
+' T269 CATCH .                          \ expect: -269  ok (asm ALREADY_FIXED)
+: T270 -270 THROW ;
+' T270 CATCH .                          \ expect: -270  ok (asm NOT_IN_CODE)
+: T271 -271 THROW ;
+' T271 CATCH .                          \ expect: -271  ok (asm DISP_RANGE)
+: T272 -272 THROW ;
+' T272 CATCH .                          \ expect: -272  ok (asm BIT_RANGE)

@@ -417,8 +417,7 @@ When drafting the byte-budget rationale for a new story, if the rationale text c
   - "this is the X arm of the pattern from Story Y"
   - any equivalent comparison-to-prior-work shorthand
 
-HALT and itemise the new arm's parts independently before accepting the byte-budget estimate. The mirror analogy is a red flag, not a justification. (Lesson 13.5-C; B.2 closure.)
-</critical>
+HALT and itemise the new arm's parts independently before accepting the byte-budget estimate. The mirror analogy is a red flag, not a justification. (Lesson 13.5-C; B.2 closure.)</critical>
 ```
 
 **Pre-edit baseline task entry example (B.3 pattern):**
@@ -427,7 +426,7 @@ HALT and itemise the new arm's parts independently before accepting the byte-bud
 ### Pre-edit baseline tasks
 
 - [ ] Capture current binary size: `wc -c build/antforth.com` → record in story Dev Notes
-  - **Do not** inherit the prior story's reported number — re-`wc -c` from the actual current build artifact (B.3 / Lesson 13.5-F)
+  - Do not inherit the prior story's reported number — re-`wc -c` from the actual current build artifact (B.3 / Lesson 13.5-F)
 - [ ] Capture current `make test-repl` baseline pass count
 - [ ] [...other pre-edit tasks per template...]
 ```
@@ -794,7 +793,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 
 **Resolution:** Reuse `Implemented` with `Source: N-A` and an explanatory Notes entry. The audit story's first verdict-criterion artefact establishes this as the canonical pattern via at least one example. No verdict-set expansion needed.
 
-**Action:** A.1 audit story includes an explicit row-pattern example for the satisfied-behaviourally case in its Dev Notes; the example is `§3.1.4.1 alignment | 'cell access never assumes alignment' | Implemented | N-A | v2.0 baseline | satisfied behaviourally — every memory access in src/*.asm uses byte-or-cell ops with no alignment assumption`.
+**Action:** A.1 audit story includes an explicit row-pattern example for the satisfied-behaviourally case in its Dev Notes; the example is `§3.3.3.1 alignment | 'cell access never assumes alignment' | Implemented | N-A | v2.0 baseline | satisfied behaviourally — every memory access in src/*.asm uses byte-or-cell ops with no alignment assumption`. (Story 15.1 audit close-out 2026-05-09: §-number corrected from §3.1.4.1 — the double-cell stack-layout rule — to §3.3.3.1, which is the actual alignment §-rule.)
 
 #### F2 — B.7+B.9 combined hardware run scope tightening
 

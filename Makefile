@@ -9118,6 +9118,50 @@ test-repl: $(TARGET)
 		echo "SKIP: REPL test 967 — directory-full not reachable on iz-cpm (host-fs has no CP/M dir-entry cap; load-bearing verdict deferred to MicroBeast hardware run, AC5)"; \
 	else echo "FAIL: REPL test 967 — directory-full probe defect (expected T7V=1 + T7C=0 + T7R=Canary! on hardware-exhaustion path, or T7V=0 on iz-cpm-host-bounded path)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; fi
+	@# --- A.2 (Phase-3 close-out) — caught-form coverage for the 15
+	@# asm-error THROW codes -258..-272 (Stories 11.5 / 11.5.6). Each
+	@# probe defines a colon body that raises -<N> THROW, then asserts
+	@# CATCH lands the negative code on the data stack. Source spec:
+	@# tests/throw_migration_tests.fth Section 7. Caught-form was
+	@# unblocked by Story 11.5.3's EVALUATE source-frame fix.
+	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n" \
+		': T258 -258 THROW ;' "' T258 CATCH ." \
+		': T259 -259 THROW ;' "' T259 CATCH ." \
+		': T260 -260 THROW ;' "' T260 CATCH ." \
+		': T261 -261 THROW ;' "' T261 CATCH ." \
+		': T262 -262 THROW ;' "' T262 CATCH ." \
+		': T263 -263 THROW ;' "' T263 CATCH ." \
+		': T264 -264 THROW ;' "' T264 CATCH ." \
+		': T265 -265 THROW ;' "' T265 CATCH ." \
+		': T266 -266 THROW ;' "' T266 CATCH ." \
+		': T267 -267 THROW ;' "' T267 CATCH ." \
+		': T268 -268 THROW ;' "' T268 CATCH ." \
+		': T269 -269 THROW ;' "' T269 CATCH ." \
+		': T270 -270 THROW ;' "' T270 CATCH ." \
+		': T271 -271 THROW ;' "' T271 CATCH ." \
+		': T272 -272 THROW ;' "' T272 CATCH ." \
+		'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q -- '-258  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-259  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-260  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-261  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-262  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-263  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-264  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-265  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-266  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-267  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-268  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-269  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-270  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-271  ok' && \
+	   echo "$$OUTPUT" | grep -q -- '-272  ok'; then \
+		echo "PASS: REPL test 968 — A.2 caught-form coverage for asm-error THROW -258..-272 (15 codes; T-A2-258_272)"; \
+	else \
+		echo "FAIL: REPL test 968 — caught-form gap: one or more of -258..-272 did not land on the data stack"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 # === Story 13.1 — file-sanity harness build + invocation ===
 # The harness is wrapped in `IFDEF FILE_SANITY` in src/file_access.asm
