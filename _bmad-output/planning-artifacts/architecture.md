@@ -1,172 +1,179 @@
 ---
 stepsCompleted: []
 lastStep: 0
-status: 'TODO(P4) — seed-copy of Phase 3 architecture'
+status: 'in-progress for Phase 4'
 completedAt: null
+lastEdited: '2026-05-10'
+editHistory:
+  - date: '2026-05-10'
+    changes: 'Phase-4 refill — banking scope per docs/antforth-banking-redesign.md'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/product-brief-antforth-2026-05-08.md
-  - docs/PHASE-3-CARRY-FORWARD.md
-  - docs/antforth-banking-design.md
-  - _bmad-output/implementation-artifacts/epic-13.5-retro-2026-05-07.md
-  - docs/WISHLIST.md
   - _bmad-output/planning-artifacts/architecture-phase2-epics-9-13.5.md
   - _bmad-output/planning-artifacts/prd-phase2-epics-9-13.5.md
+  - _bmad-output/planning-artifacts/architecture-phase3-epics-14-15.md
+  - _bmad-output/planning-artifacts/prd-phase3-epics-14-15.md
   - _bmad-output/planning-artifacts/epics.md
+  - _bmad-output/implementation-artifacts/epic-13.5-retro-2026-05-07.md
+  - docs/PHASE-3-CARRY-FORWARD.md
+  - docs/antforth-banking-redesign.md
+  - docs/WISHLIST.md
   - docs/ans-forth-core-compliance.md
   - docs/register-conventions.md
   - docs/throw-codes.md
-  - docs/z80-instruction-coverage.md
-  - docs/z80-instruction-coverage-reaudit.md
-  - docs/z80_forth_assemblers.md
-  - docs/shadow-register-survey.md
-  - docs/shadow-register-followup-survey.md
 workflowType: 'architecture'
 project_name: 'antforth'
 user_name: 'Ant'
-date: 'TODO(P4)'
+date: '2026-05-10'
 phase: 4
-phaseScope: 'TODO(P4) — replace with Phase-4 scope (banked-RAM enablement is the strategic candidate per product brief)'
+phaseScope: 'Phase 4 — banked-RAM enablement (per docs/antforth-banking-redesign.md)'
 ---
 
 # Architecture Decision Document
 
 _This document builds collaboratively through step-by-step discovery. Sections are appended as we work through each architectural decision together._
 
-> **TODO(P4) — seed-copy notice.** This file is a verbatim copy of the closed Phase 3 architecture document (`architecture-phase3-epics-14-15.md`). Carry-forward sections (Cross-Cutting Architectural Decisions CCD-1..CCD-4 from Phase 2, hardware constraints, Z80 toolchain, source-of-truth boundary, file-organisation patterns) likely stand. Sections marked `TODO(P4)` below are Phase-3-specific and must be replaced.
->
-> **TODO(P4) sections requiring refill:** Requirements Overview · Conflict Points (Phase-3-specific) · Naming & Structure Patterns (Phase-3-specific) · Format Patterns (Phase-3-specific) · Communication Patterns (Phase-3-specific) · Process Patterns (Phase-3-specific) · Concrete Examples (Story P3.A1.1) · Phase-3 File-Touch Surface · Validation Findings · Gap Analysis · Architecture Readiness Assessment · Implementation Handoff.
->
-> **Banking-design seed:** `docs/antforth-banking-design.md` already exists from the Phase 3 architecture pass — Phase 4 architecture should consume it as primary input.
-
 ## Project Context Analysis
 
 ### Requirements Overview
 
-> **TODO(P4):** All FR catalog references below name `FR-P3-*`. Replace with the Phase-4 FR set once `prd.md` is refilled.
-
 **Functional Requirements:**
 
-The 2026-05-08 Phase-3 PRD specifies **25 Phase-3 FRs** (FR-P3-1..25), plus full carry-forward of the Phase-2 FR1–FR47 set via FR-P3-22. All FRs map to one of the 12 P1 items in `docs/PHASE-3-CARRY-FORWARD.md`:
+The 2026-05-10 Phase-4 PRD specifies **43 Phase-4 FRs** (FR-P4-1..43), plus full carry-forward of Phase-1 + Phase-2 + Phase-3 closed FRs via FR-P4-40. All Phase-4 FRs derive from `docs/antforth-banking-redesign.md` (locked 2026-05-09). They cluster into seven architectural-impact groups:
 
-- **FR-P3-1..6 (A.1) — §-level compliance documentation.** Per-rule rows in `docs/ans-forth-core-compliance.md` for DPANS94 §6.1 (Core), §6.2 (Core Extension), and structural §-rules; back-fill stories for any §-level structural-rule gap surfaced (Stories 13.0 / 13.0.1 / 13.5 template); standards-citation discipline (CCD-3) preserved on every back-filled word. Architectural impact: documentation-format decision (per-row schema) + back-fill story shape (ties to existing back-fill template).
-- **FR-P3-7..8 (A.2) — Asm-error caught-form coverage.** `tests/throw_migration_tests.fth` exercises the `' WORD CATCH . CR` idiom for each asm-error THROW code in the `-258..-272` block. Architectural impact: test-harness extension only — no kernel changes (the migration was completed in Story 11.5; the gap is test coverage of the caught-form path).
-- **FR-P3-9..10 (A.3) — Base-aware unprefixed `NUMBER?`.** Unprefixed numerals parse per the explicit `BASE` consistently across REPL / colon bodies / assembler source. Forth-2014 §3.4.1.3 prefixed literals continue to ignore `BASE`. Architectural impact: refinement of the existing `NUMBER?` path in `src/strings.asm` — small surgical change.
-- **FR-P3-11 (B.1) — `PAD` documented as canonical transient-buffer for test authors.** `tests/README.md` (or inline header in `Makefile`'s test section) documents the convention. Architectural impact: documentation only.
-- **FR-P3-12..15 (B.2/B.3/B.4) — Story-template / drafting discipline.** Lints / HALT signals / "Pre-edit baseline" task additions in BMAD story-template files. Architectural impact: BMAD workflow-file edits (story-template, agent definitions); each carries its own verdict criterion.
-- **FR-P3-16..18 (B.5/B.6/B.8) — Build-tool sync & hygiene.** PRD-vs-architecture transcription-drift sync target; `make check-tools` for iz-cpm version stability; Makefile test-numbering hygiene. Architectural impact: Makefile and doc-build targets.
-- **FR-P3-19..21 (B.7/B.9) — Filesystem stress coverage.** Directory-full + zero-byte READ-FILE probes (B.7 conditional on hardware-revealed need); disk-full hardware re-verification on real CP/M 2.2 (B.9). Architectural impact: probe coverage + hardware test discipline; no kernel surgery expected unless hardware reveals defects.
-- **FR-P3-22..25 (phase-wide regression constraint).** Full Phase-1 + Phase-2 + Epic-13.5 behaviour preserved; 973 PASS / 0 FAIL baseline; CODE-source backward compat byte-identical; unprefixed numeric literal parsing preserved (with the A.3 strict-base-aware refinement).
+- **FR-P4-1..12 (Banking Wordset).** The 12 user-facing words (`BANK@ BANK! BANKS IN-BANK BANK-OF .BANKS +BANK -BANK BANKS-CLEAR SET-BANK BANK-MAPPING-ON BANK-MAPPING-OFF`). Architectural impact: new file `src/banking.asm` carrying the descriptor-stub allocator, MMU port wrappers, the `cross_bank_return` trampoline, and the kernel-blessed `IN-BANK`. `BANK@` / `BANK!` mirror `BASE @ / BASE !`; `BANK!` precondition is checked on every call (ABORT" bank?" if `n` not in active list); `IN-BANK` is CATCH-safe and kernel-blessed (not a user library word).
+- **FR-P4-13..17 (Cross-Bank Dispatch — descriptor-stub mechanism (γ)).** Per-word stub layout (3–5 bytes carrying `(target_bank, target_addr_in_bank)`); compiler always emits stub address as the word's xt; intra-bank dispatch one extra `JP` overhead vs flat; cross-bank dispatch ≤60 T-states + bank-switch. Architectural impact: the (γ) decision collapses S1 + S6 + S7 into one artifact — single biggest design call in the phase.
+- **FR-P4-18..21 (Cross-Bank EXIT — sentinel-trampoline (S1 b)).** Sentinel-tagged 3-cell return frame `(sentinel_addr, caller_bank, target_addr)` replaces the broken `BIT 7,H` heuristic from the 2026-05-07 sketch; intra-bank zero-overhead 1-cell return path; cross-bank trampoline lives in fixed memory; recursive cross-bank R-stack overflow falls back to the standard `-5 RETURN-STACK-OVERFLOW` THROW (per-bank guard is open question §9.6).
+- **FR-P4-22..26 (Bank-Aware Compiler).** Per-bank `(here, latest, wordlist-heads)` triple in fixed-memory `bank-table[]`; `,` and `COMPILE,` write into the current bank; `:` body lands in current bank with a stub auto-emitted; `CREATE` / `DOES>` cross-bank explicit (PFA stores doer-stub address paired with data cell); `HERE` / `LATEST` per-bank with cross-bank pointer hazards documented as "doc-and-pray".
+- **FR-P4-27..30 (Bank-Aware FIND).** Per-wordlist `bank` field; `FIND` saves / switches / walks / restores; system wordlists (FORTH, ASSEMBLER) tagged `bank=fixed` so the common case is zero MMU-switch overhead; `WORDS` traverses banks; lookup-failure error messages name the source bank.
+- **FR-P4-31..33 (ABORT/QUIT Bank-State Restore (S5)).** Outermost interactive `BANK!` updates a kernel-internal saved-bank cell; `QUIT` re-asserts on `ABORT` so the user is never stranded in a wrong bank mid-execution. `IN-BANK`'s nested save/restore (FR-P4-4) is independent of this outermost mechanism.
+- **FR-P4-34..39 (Boot Configuration).** CL parser in `src/antforth.asm` accepts `antforth <portal-page> <bank-list>` (e.g. `antforth 24 35-3f`); defaults `22 35-3F` (12 banks); probe-on-add via `+BANK`; banner shows the active-bank count; `STARTUP.FTH` rejected as the configuration mechanism (bank availability needed at banner-print time).
+- **FR-P4-40..43 (Backward Compatibility & Regression — phase-wide constraint).** Full Phase-1+2+3 user-visible behaviour preserved; the 974 PASS / 0 FAIL Phase-3 close-out baseline (with 2 SKIP-on-iz-cpm-PASS-on-hardware) maintained; CODE-source byte-identical; the `BANK*` wordset is additive and pre-Phase-4 `.FTH` source runs unchanged in bank 0.
 
 **Non-Functional Requirements:**
 
-The PRD specifies **33 Phase-3 NFRs** (NFR-P3-1..33) across six categories, including a **new Process Discipline** category that codifies the S1–S12 standing commitments as quality attributes:
+The PRD specifies **39 Phase-4 NFRs** (NFR-P4-1..39) across six categories, with the **Process Discipline** category continuing to codify the S1–S12 standing commitments as quality attributes:
 
-- **Performance** — Phase-2 NFR1–5 envelopes hold; Phase-3-specific cumulative ROM cap +200 bytes (24,996 → ≤25,200).
-- **Reliability** — Phase-2 NFR6–9 carry forward; mid-epic hardware-smoke cadence per binary-delta story (NFR-P3-7 codifies S9).
-- **Compatibility & Standards Conformance** — 100% §6.1 Core via §-level rows (NFR-P3-8); Forth-2014 §3.4.1.3 with A.3 strict refinement; no new extensions; no new BDOS functions added to the allow-list; §-level audit-doc checkability under 10 minutes per row (NFR-P3-13).
-- **Maintainability** — Phase-2 NFR15–18 carry forward; story-template lints fire automatically (NFR-P3-18).
-- **Integration** — Phase-2 NFR19–21 carry forward; bank-0 only (banking design deferred to Phase 4).
-- **Process Discipline (NEW for Phase 3)** — NFR-P3-22..33 codify S1–S12: adversarial CR fresh-context (S1), REPL-piped tests (S2), real byte-count estimation extended by Lesson 13.5-C (S3), AC-composition validation (S4), PARTIAL→HALT (S5), inventory-grep covers helpers (S6), EXX-hygiene per raise site (S7), no "pre-existing" discharge for correctness defects (S8), per-story hardware smoke (S9), workflow > memory > prompt (S10), version-surface audit at tag close-out (S11), hardware-typed probe discipline (S12).
+- **Performance (NFR-P4-1..6)** — Phase-2 NFR1–5 envelopes hold; cross-bank call ≤60 T-states + bank-switch; per-banked-word descriptor stub ≤5 bytes; banking infrastructure ≤8 KB fixed memory worst case (~6 KB at default 12 banks); FIND batch-loading regression envelope ≤5–15%.
+- **Reliability (NFR-P4-7..11)** — REPL survives any THROW including across a bank boundary (the trampoline restores caller's bank on the unwind path); bank-table[] entries not corrupted by mid-execution THROW; full Phase-3 974-test baseline regression-clean on every Phase-4 antforth 3.x point-release; mid-epic hardware-smoke cadence per binary-delta story (NFR-P4-11 codifies S9).
+- **Compatibility & Standards Conformance (NFR-P4-12..17)** — 100% §6.1 Core compliance via §-level rows continues; Forth-2014 §3.4.1.3 continues; banking words flagged as `; antforth extension` per CCD-3 with a redesign-doc §-reference; CP/M 2.2 BDOS allow-list does not grow in Phase 4; CODE-word source byte-identical regression (cross-bank CODE-word policy is an open question, see §9.1); §-level audit-doc checkability under 10 minutes per row.
+- **Maintainability (NFR-P4-18..22)** — Z80 source readability over micro-optimisation; banking infrastructure inline-comments cite redesign-doc §-numbers; REPL-piped Forth tests as canonical regression surface (Phase-4-specifically dual-tracked across banking-capable emulator + iz-cpm); per-epic point-release decoupling; story-template lints (carried from B.1–B.5) fire automatically.
+- **Integration (NFR-P4-23..27)** — Terminal I/O, file path conventions, MicroBeast hardware isolation all unchanged; the 12-word `BANK*` wordset is the explicit kernel-resident exception (banking is a memory-model primitive, not a peripheral); **ISR-from-fixed-memory-only invariant** maintained (no banked code reachable from any interrupt vector); BDOS calls (`CALL 0005h`) work unchanged from banked code.
+- **Process Discipline (NFR-P4-28..39)** — codifies S1–S12: adversarial CR fresh-context (S1), REPL-piped tests (S2), real byte-count estimation (S3), AC-composition validation (S4), PARTIAL→HALT (S5), inventory-grep covers helpers (S6), EXX-hygiene per raise site (S7) **with the `cross_bank_return` trampoline re-walking the rule**, no "pre-existing" discharge for correctness defects (S8), per-story hardware smoke (S9), workflow > memory > prompt (S10), version-surface audit at tag close-out (S11), hardware-typed probe discipline (S12). All 12 carry forward unchanged from Phase-3 close-out — no S13+ proposals (per project-lead direction 2026-05-10).
 
 **Scale & Complexity:**
 
 - Primary domain: `developer_tool_embedded` (Z80 Forth interpreter on CP/M 2.2)
-- Complexity level: **low** (per PRD classification; Phase 3 reduces complexity vs Phase 2 — no new subsystems, no new user-facing surface beyond §-level back-fills)
-- Estimated architectural components touched: 0 new subsystems; refinements to existing components in `src/strings.asm` (A.3); test-harness extensions to `tests/throw_migration_tests.fth` (A.2); documentation artifact `docs/ans-forth-core-compliance.md` (A.1); BMAD workflow files (B.1–B.5); Makefile (B.5/B.6/B.8); plus 0–2 expected A.1 back-fill stories whose shape mirrors Stories 13.0 / 13.0.1 / 13.5.
+- Complexity level: **low** (per PRD classification; Phase 4 introduces one new subsystem — banked-RAM enablement — with locked design)
+- Estimated architectural components touched: 1 new subsystem (banking) housed in a new `src/banking.asm` plus extensions to existing components: per-bank state in `src/dictionary.asm` (HERE/LATEST), bank-saving in `src/wordlists.asm` (FIND), CL parsing in `src/antforth.asm` (boot), QUIT bank-restore in `src/exception.asm` (ABORT/QUIT), MARKER/FORGET per-bank tracking in `src/dictionary.asm`. Also a new `tests/banking_tests.fth` REPL-probe harness; documentation rows for the 12 banking words in `docs/ans-forth-core-compliance.md` flagged as antforth extensions.
 
 ### Technical Constraints & Dependencies
 
-**Inherited from v2.0 baseline (carry forward unchanged):**
+**Inherited from v2.0 + Phase-3 close-out baseline (carry forward unchanged):**
 
-- **Hardware:** Zilog Z80 @ 8 MHz; 512 KB banked RAM/ROM; MicroBeast platform. Phase 3 stays in bank 0 — banking design (`docs/antforth-banking-design.md`) deferred to Phase 4.
-- **Host OS:** CP/M 2.2 only. BDOS function allow-list per NFR-P3-11 — Phase 3 does not grow the allow-list.
-- **Threading model:** direct threading (JP-based), DEFWORD `cf` label via `EQU body-3` pointing to `JP DOCOL`.
-- **Register contract (`docs/register-conventions.md`):** BC = TOS; SP = parameter stack pointer; IX = return stack pointer; IY = user area pointer; DE = IP; HL = working register / scratch. EXX leaf-level rule + "A survives EXX" idiom + shadow BC' as TOS-preservation slot — all carried forward.
-- **Phase-2 cross-cutting decisions (CCD-1..CCD-4):**
+- **Hardware:** Zilog Z80 @ 8 MHz; 512 KB banked RAM/ROM; MicroBeast platform. **Phase 4 lifts banking** — the portal page (default 0x22, configurable on the command line) carries the active user bank; 12 banks of 16 KB each (default 0x35–0x3F) are available to user code; theoretical max 29 banks by trading the virtual-console buffer (0x24) and RAM disk (0x25–0x34).
+- **Host OS:** CP/M 2.2 only. BDOS function allow-list per NFR-P4-15 — Phase 4 does not grow the allow-list. **CCP eviction** ($D400–$DBFF marked DISPOSABLE for +2 KB Page-3 headroom); BDOS ($DC00–$E9FF) and BIOS ($EA00+) stay resident.
+- **Threading model:** direct threading (JP-based), DEFWORD `cf` label via `EQU body-3` pointing to `JP DOCOL`. Unchanged.
+- **Register contract (`docs/register-conventions.md`):** BC = TOS; SP = parameter stack pointer; IX = return stack pointer; IY = user area pointer; DE = IP; HL = working register / scratch. EXX leaf-level rule + "A survives EXX" idiom + shadow BC' as TOS-preservation slot — all carried forward. The `cross_bank_return` trampoline re-walks the EXX-hygiene rule (NFR-P4-34 / S7).
+- **Phase-2 cross-cutting decisions (CCD-1..CCD-4) carry forward unchanged:**
   - **CCD-1** dual-chain return-stack frame discipline (`CATCH-TOP` 8-byte exception frames + `INCLUDE-TOP` 10-byte source frames).
-  - **CCD-2** THROW code allocation: `-1..-58` ANS standard / `-59..-255` reserved for ANS extensions (with `-69`, `-70` re-purposed for FCB / FID-invalid) / `-256..-32767` antforth extensions (with `-257` reserved for `THROW_ASM_LOAD_FAIL` and `-258..-272` allocated for asm-errors).
-  - **CCD-3** standards-citation discipline — every standard-derived word's source carries `; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` / `; antforth extension`.
-  - **CCD-4** per-epic benchmark gate — close-out story validates NFR envelopes.
-- **Source-of-truth boundary frozen for Phase 3:** kernel in Z80 assembly; `src/assembler.asm` stays kernel-resident hard-coded (per `project_assembler_keep_assembly.md`); no new Forth-source kernel additions; no new asm kernel additions except A.1 back-fills.
+  - **CCD-2** THROW code allocation: `-1..-58` ANS standard / `-59..-255` reserved for ANS extensions (with `-69`, `-70` re-purposed for FCB / FID-invalid) / `-256..-32767` antforth extensions (with `-257` reserved for `THROW_ASM_LOAD_FAIL` and `-258..-272` allocated for asm-errors). Phase 4 does not allocate new THROW codes.
+  - **CCD-3** standards-citation discipline — every standard-derived word's source carries `; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` / `; antforth extension`. Banking-extension words cite `docs/antforth-banking-redesign.md` §-numbers.
+  - **CCD-4** per-epic benchmark gate — close-out story validates NFR envelopes; Phase 4 also tracks banked-word stub-count metric per epic alongside binary size.
+- **Source-of-truth boundary stable for Phase 4 except where banking infrastructure requires kernel surgery:** kernel in Z80 assembly; `src/assembler.asm` stays kernel-resident hard-coded (per `project_assembler_keep_assembly.md`); the new `src/banking.asm`, the per-bank dictionary state additions, the per-wordlist `bank` field, the CL parser, and the `cross_bank_return` trampoline live in fixed-memory kernel space.
 
-**Phase-3 specific:**
+**Phase-4 specific:**
 
-- **Cumulative ROM budget:** +200 bytes (NFR-P3-2). Per-story envelopes: B.1–B.5 ≈ 0; A.1 audit story ≈ 0; A.1 back-fill stories ~+10..+50 each; A.2/A.3/B.6/B.8/B.9 ≈ 0..+30 each; B.7 conditional.
-- **Test baseline:** 973 PASS / 0 FAIL on real CP/M 2.2 / MicroBeast. Single regression on 1..952 baseline or 944..964 cleanup-slate is a release blocker.
-- **Hardware smoke per binary-delta story (S9 / NFR-P3-7):** every binary-delta story runs its own hardware-smoke task; zero-binary-delta stories document S9 exemption explicitly.
-- **Tag discipline (S11 / NFR-P3-32):** every Phase-3 antforth 2.x point-release tag passes the user-visible version surface audit (banner / README / memory-file `description` fields).
+- **Fixed-memory budget:** ≤8 KB total banking infrastructure at the 28-bank cap (~6 KB at default 12 banks); CCP eviction yields +2 KB Page-3 headroom that absorbs most projected growth (NFR-P4-5).
+- **Test baseline:** 974 PASS / 0 FAIL / 2 SKIP-on-iz-cpm-PASS-on-hardware on real CP/M 2.2 / MicroBeast (Phase-3 close-out). A single regression is a release blocker (NFR-P4-10).
+- **Hardware smoke per binary-delta story (S9 / NFR-P4-11):** every binary-delta story runs its own hardware-smoke task on real CP/M 2.2 / MicroBeast; zero-binary-delta stories document S9 exemption explicitly.
+- **Tag discipline (S11 / NFR-P4-38):** every Phase-4 antforth 3.x point-release tag passes the user-visible version surface audit (banner / README / memory-file `description` fields).
+- **Dual-track emulator strategy:** iz-cpm continues to carry the non-banking regression baseline; a banking-capable emulator (vendor pick is Epic 16.3) carries cross-bank assertions; real MicroBeast is the load-bearing final word for any binary-delta story.
 
 ### Cross-Cutting Concerns Identified
 
-1. **§-level compliance documentation as checkable artifact (A.1 / NFR-P3-13).** Cross-cuts every standards-claiming word in the kernel, the audit story, the back-fill stories, and the doc-build process. The architecture must define the per-rule row schema and the back-fill-story template that produces each new row.
-2. **Process discipline as workflow-file edits (B.1–B.5 / NFR-P3-18 / S10).** Cross-cuts the BMAD story-template, agent definitions, Makefile sync targets, and `tests/README.md`. The architecture must define which workflow files are touched and how each lint / HALT / pre-edit task is structurally enforced (not aspirational).
-3. **Standing-commitment hold (S1–S12 / NFR-P3-22..33).** Cross-cuts every Phase-3 retro and every story's verdict criteria. Architectural impact is process-shaped: each Phase-3 story re-validates the relevant subset of S1–S12 in its dev-pass.
-4. **Backward-compatibility / regression invariants (FR-P3-22..25 / NFR-P3-6).** Cross-cuts every binary-delta story. The 973 PASS / 0 FAIL baseline + CODE-source byte-identical assembly + no new BDOS functions + bank-0-only — all are absolute, not negotiable.
-5. **ROM budget discipline (NFR-P3-2).** Cross-cuts every binary-delta story. Per-story envelope checked against +200-byte cumulative cap; HALT signal if any single story would push cumulative over.
-6. **Asm-error THROW code block contiguity (CCD-2).** A.2's caught-form coverage applies to the post-Story-11.5.6 block `-258..-272` (15 codes), not just the original Story-11.5 block `-258..-269`. Architecture must reaffirm CCD-2's reservation discipline (gap at `-256`, reservation at `-257`) and codify the contiguous-block invariant for any future allocations.
+1. **Cross-bank dispatch transparency (FR-P4-13..17 / NFR-P4-3).** The (γ) descriptor-stub mechanism collapses S1 (cross-bank EXIT), S6 (`EXECUTE`), and S7 (`COMPILE,`) into one artifact. Cross-cuts the compiler, dictionary, FIND, EXECUTE, and the `cross_bank_return` trampoline. The architecture must pin the stub layout (3 vs 4–5 bytes — open question §9.5), the xt-as-stub-address contract, and the intra-bank zero-overhead path separately from the cross-bank path.
+2. **Sentinel-trampoline cross-bank EXIT (FR-P4-18..21 / S1 b).** Replaces the broken `BIT 7,H` heuristic from the 2026-05-07 sketch. Cross-cuts every `EXIT`, every CATCH frame unwind, and every ABORT/QUIT path. The architecture must specify the sentinel address contract (fixed-memory address recognised by `EXIT`) and the 3-cell return-frame layout `(sentinel_addr, caller_bank, target_addr)`.
+3. **Per-bank dictionary state (FR-P4-22..26).** Cross-cuts `,` / `COMPILE,` / `:` / `CREATE` / `DOES>` / `HERE` / `LATEST` / `MARKER` / `FORGET`. The architecture must define the `bank-table[]` layout, the swap-on-`BANK!` semantics, and the documented "doc-and-pray" disposition for cross-bank pointer hazards.
+4. **Bank-aware FIND (FR-P4-27..30).** Cross-cuts every dictionary lookup, every `WORDS`, every error-message path. System wordlists (FORTH, ASSEMBLER) must be tagged `bank=fixed` so the common case incurs no MMU switch.
+5. **ABORT/QUIT bank-state restore (FR-P4-31..33 / S5).** Cross-cuts the outermost interpret loop, every `ABORT` / `ABORT"`, and every uncaught THROW recovery path. The saved-bank cell is updated only by interactive `BANK!` from the outermost loop; nested `IN-BANK` is independent.
+6. **ISR-from-fixed-memory-only invariant (NFR-P4-26).** Cross-cuts every interrupt vector, every kernel ISR body, and any future Phase-5+ peripheral ISRs. Architectural rule, not a runtime conflict.
+7. **Backward-compatibility / regression invariants (FR-P4-40..43 / NFR-P4-7..10).** Cross-cuts every binary-delta story. The 974 PASS / 0 FAIL Phase-3 close-out baseline + CODE-source byte-identical assembly + no new BDOS functions + the `BANK*` wordset is additive (pre-Phase-4 `.FTH` runs in bank 0 unchanged) — all are absolute, not negotiable.
+8. **Fixed-memory budget discipline (NFR-P4-5).** Cross-cuts every binary-delta story. Per-story envelope checked against the ≤8 KB banking infrastructure cap; HALT signal if any single story would push cumulative over. CCP eviction yields +2 KB Page-3 headroom available as buffer.
+9. **Standing-commitment hold (S1–S12 / NFR-P4-28..39).** Cross-cuts every Phase-4 retro and every story's verdict criteria. Architectural impact is process-shaped: each Phase-4 story re-validates the relevant subset of S1–S12 in its dev-pass.
+10. **Dual-track emulator workflow.** Banking-capable emulator pick (Epic 16.3) is the prework gate; iz-cpm continues to carry the non-banking baseline; real MicroBeast is the load-bearing final word. Cross-cuts every test plan in Epic 17+.
 
 ## Starter Template Evaluation
 
-**Not applicable.** antforth is a brownfield Z80 assembly project (`developer_tool_embedded`) with no relevant starter-template ecosystem. Phase 3 is a **debt-cleanup interlude** on an already-shipped v2.0 baseline; there is no scaffolding decision to make — the "starter" is the v2.0 codebase itself.
+**Not applicable.** antforth is a brownfield Z80 assembly project (`developer_tool_embedded`) with no relevant starter-template ecosystem. Phase 4 is the first feature phase since v2.0 (Phase 3 was a debt-cleanup interlude); there is no scaffolding decision to make — the "starter" is the Phase-3-close-out codebase.
 
-**Phase-3 foundation: antforth v2.0** (commit `6599d73`, tagged `v2.0.0` 2026-05-07, 24,996 bytes, 973 PASS / 0 FAIL on real CP/M 2.2 / MicroBeast). Inherited from v2.0 without replacement:
+**Phase-4 foundation: antforth Phase-3 close-out** (24,995 bytes `build/antforth.com`, 974 PASS / 0 FAIL / 2 SKIP-on-iz-cpm-PASS-on-hardware on real CP/M 2.2 / MicroBeast; Epic 14 + Epic 15 closed 2026-05-09). Inherited without replacement:
 
 - **Inner interpreter:** direct-threaded (JP-based); DEFWORD `cf` label via `EQU body-3` pointing to `JP DOCOL`.
 - **Register contract** (`docs/register-conventions.md`): BC=TOS, SP=pstack, IX=rstack, IY=user-area, DE=IP, HL=W. EXX leaf-level rule + "A survives EXX" idiom + shadow BC' as TOS-preservation slot.
-- **Outer interpreter / REPL:** text parser, interpret/compile state machine, exception-frame-aware error reporting (post-Epic-11 — uncaught THROWs route to the inlined `.throw_uncaught` recovery chain at `src/exception.asm:412+`).
+- **Outer interpreter / REPL:** text parser, interpret/compile state machine, exception-frame-aware error reporting (post-Epic-11 — uncaught THROWs route to the inlined `.throw_uncaught` recovery chain in `src/exception.asm`).
 - **Dictionary:** multi-vocabulary Search-Order (post-Epic-12) — XOR-rotate 64-bucket hash per wordlist, search-order LIFO with bounds check.
-- **Language extension layer:** colon definitions, CREATE/DOES>, control flow, MARKER, immediate words, POSTPONE; numeric-literal prefixes (Forth 2014 §3.4.1.3 + `0x` extension).
+- **Language extension layer:** colon definitions, CREATE/DOES>, control flow, MARKER, immediate words, POSTPONE; numeric-literal prefixes (Forth 2014 §3.4.1.3 + `0x` extension; base-aware unprefixed parsing post-A.3).
 - **Exception subsystem (Epic 11):** CCD-1 dual-chain frame discipline; CATCH-TOP and INCLUDE-TOP USER variables; 8-byte exception frames + 10-byte INCLUDE source frames; ABORT/ABORT" retargeted to -1/-2 THROW.
-- **File-Access wordset (Epic 13):** real CP/M 2.2 BDOS integration (function allow-list per NFR-P3-11); FCB pool with use-after-free detection (-70 re-purposed); INCLUDE source-frame chain walk integrated with THROW.
-- **Built-in Z80 assembler:** 113 DEFCODEs, ~4,100 lines of `src/assembler.asm`, 158/158 instruction-form coverage, asm-error THROW codes -258..-272 with caught-form coverage gap (A.2 closes for Phase 3).
+- **File-Access wordset (Epic 13):** real CP/M 2.2 BDOS integration (function allow-list per NFR-P4-15); FCB pool with use-after-free detection (-70 re-purposed); INCLUDE source-frame chain walk integrated with THROW; disk-full / dir-full / zero-byte READ-FILE coverage closed by Story 15.5 (Phase 3 close-out).
+- **Built-in Z80 assembler:** 113 DEFCODEs, ~4,100 lines of `src/assembler.asm`, 158/158 instruction-form coverage, asm-error THROW codes -258..-272 with caught-form coverage closed by Phase 3 Story A.2.
 - **Pictured numeric output (Epic 10) + double-cell arithmetic** with high-on-TOS layout (post-Story-13.0.1, ANS §3.1.4.1).
-- **§-level Core compliance baseline:** 100% §6.1 word coverage + §3.1.4.1 / §3.4.1.3 structural rules + ad-hoc §6.1.0310 / §6.1.0350 / §6.1.0090 row-level coverage in `docs/ans-forth-core-compliance.md`. A.1 upgrades this from word-counted to §-level for the entire §6.1 + §6.2 surface.
-- **Test harness:** REPL-piped Forth test scripts (convention since Epic 3, codified by S2); 973 PASS / 0 FAIL on real hardware; `make test-repl` baseline.
-- **Process discipline foundation:** standing commitments S1–S12 holding eleven-plus consecutive epics (Epic 13.5 retro); BMAD workflow files (story-template, agent definitions); `feedback_*.md` discipline files; `docs/PHASE-3-CARRY-FORWARD.md` as the prioritised carry-forward catalogue.
+- **§-level Core compliance baseline:** 100% §6.1 word coverage + §3.1.4.1 / §3.4.1.3 structural rules + per-rule §-level rows in `docs/ans-forth-core-compliance.md` (Phase 3 A.1 audit; Story 15.1 close-out).
+- **Test harness:** REPL-piped Forth test scripts (convention since Epic 3, codified by S2); 974 PASS / 0 FAIL on real hardware; `make test-repl` baseline.
+- **Process discipline foundation:** standing commitments S1–S12 holding through Phase-3 close-out (Epic 14 + Epic 15 retros); BMAD workflow files (story-template lints from B.1–B.5); `feedback_*.md` discipline files; `docs/PHASE-3-CARRY-FORWARD.md` as the prioritised catalogue (now closed).
 
-**Toolchain (also unchanged):** project's existing Z80 cross-assembler invoked by build scripts; iz-cpm emulator for `make test-repl` (with B.6 adding `make check-tools` for version stability); real MicroBeast hardware for S9 mid-epic hardware-smoke per binary-delta story.
+**Toolchain (largely unchanged for Phase 4):** project's existing Z80 cross-assembler invoked by build scripts; iz-cpm emulator for `make test-repl` non-banking baseline; real MicroBeast hardware for S9 mid-epic hardware-smoke per binary-delta story. **Phase 4 adds:** a banking-capable emulator (vendor pick = Epic 16.3 prework gate) running dual-track with iz-cpm so cross-bank assertions can run under emulation before the hardware load-bearing pass.
 
-**Phase-1 / Phase-2 cross-reference:** The phase-1 architecture document (`architecture-phase1-epics-1-8.md`) and phase-2 architecture document (`architecture-phase2-epics-9-13.5.md`) are the canonical references for all inherited subsystems. **This document specifies only the additions and changes for phase 3.** Dev-agent invocations consult phase-1 + phase-2 for the foundation, phase-3 for what is changing or being added. Where documents disagree, phase-3 wins (it describes the target state); where phase-3 is silent, phase-2 governs; where phase-2 is silent, phase-1 governs. Phase 3 is expected to be substantially silent on most v2.0 subsystems — the changes are concentrated in the §-level audit, asm-error caught-form harness, NUMBER? base-specialization, and the BMAD process-discipline / Makefile / docs surface.
+**Phase-1 / Phase-2 / Phase-3 cross-reference:** The phase-1 architecture document (`architecture-phase1-epics-1-8.md`), phase-2 architecture document (`architecture-phase2-epics-9-13.5.md`), and phase-3 architecture document (`architecture-phase3-epics-14-15.md`) are the canonical references for all inherited subsystems. **This document specifies only the additions and changes for phase 4.** Dev-agent invocations consult phase-1 + phase-2 + phase-3 for the foundation, phase-4 for what is changing or being added. Where documents disagree, phase-4 wins (it describes the target state); where phase-4 is silent, phase-3 governs; where phase-3 is silent, phase-2 governs; where phase-2 is silent, phase-1 governs. Phase 4 is concentrated in the new banking subsystem (`src/banking.asm`), the per-bank dictionary state additions (`src/dictionary.asm`), bank-aware FIND (`src/wordlists.asm`), the CL parser (`src/antforth.asm`), and the QUIT bank-restore (`src/exception.asm`).
 
-**Note:** No project-initialization story is needed — Phase 3 starts from the v2.0 working tree.
+**Note:** No project-initialization story is needed — Phase 4 starts from the Phase-3 close-out working tree.
 
 ## Core Architectural Decisions
 
-> **Phase-1 / Phase-2 cross-reference:** The phase-1 architecture document (`architecture-phase1-epics-1-8.md`) and phase-2 architecture document (`architecture-phase2-epics-9-13.5.md`) are the canonical references for all inherited subsystems. **This document specifies only the additions and changes for phase 3.** Where documents disagree, phase-3 wins; where phase-3 is silent, phase-2 governs; where phase-2 is silent, phase-1 governs. Phase 3 is substantially silent on most v2.0 subsystems — the changes concentrate in §-level audit, asm-error caught-form harness, NUMBER? base-specialization, and the BMAD process-discipline / Makefile / docs surface.
+> **Phase-1 / Phase-2 / Phase-3 cross-reference:** The phase-1, phase-2, and phase-3 architecture documents are the canonical references for all inherited subsystems. **This document specifies only the additions and changes for phase 4.** Where documents disagree, phase-4 wins; where phase-4 is silent, phase-3 governs; where phase-3 is silent, phase-2 governs; where phase-2 is silent, phase-1 governs. Phase 4 changes concentrate in the new banking subsystem (`src/banking.asm`), the per-bank dictionary state additions (`src/dictionary.asm`), the per-wordlist `bank` field on FIND (`src/wordlists.asm`), the CL parser (`src/antforth.asm`), and the QUIT bank-restore (`src/exception.asm`).
 
 ### Decision Priority Analysis
 
-**Critical Decisions (block specific carry-forward items):**
-- §-level compliance-doc row schema (blocks A.1)
-- A.1 audit decomposition strategy (blocks A.1)
-- Back-fill story canonical shape (blocks any A.1 back-fill)
-- Story-template edit sites for B.2/B.3/B.4 (block process-discipline lead-in)
-- `make check-doc-sync` mechanism (blocks B.5)
-- `make check-tools` mechanism (blocks B.6)
-- Disk-full probe location (blocks B.9)
+**Critical Decisions (block specific FR groups):**
+- (γ) Per-word descriptor stub mechanism (blocks FR-P4-13..17, the entire cross-bank dispatch surface)
+- (S1 b) Sentinel-trampoline cross-bank EXIT (blocks FR-P4-18..21, the cross-bank EXIT surface)
+- Per-bank `(here, latest, wordlist-heads)` triple in `bank-table[]` (blocks FR-P4-22..26, the bank-aware compiler)
+- Per-wordlist `bank` field + system-wordlist `bank=fixed` tagging (blocks FR-P4-27..30, bank-aware FIND)
+- ABORT/QUIT bank-state restore mechanism (blocks FR-P4-31..33, S5 carry)
+- CCP eviction (+2 KB Page-3 headroom; blocks the fixed-memory budget envelope NFR-P4-5)
+- ISR-from-fixed-memory-only invariant (blocks NFR-P4-26 — the architectural rule that lets MMU port writes be non-atomic)
+- Boot-config CL parser (blocks FR-P4-34..39)
+- Banking-capable emulator vendor pick (Epic 16.3 prework gate; blocks Epic 17+ story-writing)
 
-**Important Decisions (shape Phase-3 dev-passes):**
-- Caught-form harness location (A.2)
-- NUMBER? base-specialization site (A.3)
-- PAD-as-canonical doc location (B.1)
-- B.7 conditional-probe-story trigger and recording mechanism
-- Combined B.7 + B.9 close-out shape (one hardware run resolves both)
+**Important Decisions (shape Phase-4 dev-passes):**
+- Stub size pinning: 3 vs 4–5 bytes (open question §9.5; affects per-1000-words cost calculations)
+- CL parser edge-case policy (open question §9.3: no args, bad token, reverse range, dup, probe-fail, empty surviving list)
+- Bank-state-table cap policy (open question §9.4: ABORT-on-`+BANK`-past-cap)
+- Cross-bank R-stack overflow disposition (open question §9.6: documented gotcha vs runtime guard)
+- CODE-words-in-banks decision (open question §9.1: affects S7 dispatch in Epic 22)
+- `BANK-OF` implementation as one-byte read from descriptor stub (free under (γ))
 
 **Carry-forward (no re-decision):**
 - CCD-1 dual-chain frame discipline (Phase-2)
-- CCD-2 THROW code allocation (Phase-2; Phase-3 reaffirms post-Story-11.5.6 block extension to -258..-272)
-- CCD-3 standards-citation discipline (Phase-2)
-- CCD-4 per-epic benchmark gate (Phase-2)
+- CCD-2 THROW code allocation; Phase 4 does not allocate new THROW codes
+- CCD-3 standards-citation discipline; banking words flagged `; antforth extension` with redesign-doc §-reference
+- CCD-4 per-epic benchmark gate; Phase 4 also tracks banked-word stub-count metric
+- CCD-P3-1 §-level compliance-doc row schema (Phase 3)
+- CCD-P3-2 process discipline lives in workflow files (Phase 3)
 - Register contract, EXX leaf-level rule, DTC threading, source-of-truth boundary
+- S1–S12 standing commitments unchanged (no S13+ proposals per project-lead direction 2026-05-10)
 
-**Deferred (post-Phase-3):**
-- Banking architecture (`docs/antforth-banking-design.md`) — Phase 4
-- STARTUP.FTH integration point — Phase 4+
-- MicroBeast hardware vocabulary epic shape — Phase 4+
-- `SEE` decompiler / `TRAVERSE-WORDLIST` — Phase 4+
-- Locals wordset, IN/OUT primitives — Phase 4+
-- D.1–D.4 (DMA pool size-reduction, `.S` migration to pictured output, MARKER full-graph snapshot, WORDS scope-pick) — P3 deferred indefinitely; trigger-only
+**Deferred (post-Phase-4):**
+- Multitasking / TCB-as-1-byte-bank (Phase 5)
+- Semaphores (Phase 6, depends on multitasking)
+- Locals wordset (Phase 5+; all three styles confirmed compatible with banking)
+- ALLOCATE / per-bank heap (Phase 5+; recommended (β) per redesign §2.3)
+- MicroBeast hardware vocabulary epic (Phase 5+; E.1)
+- `SEE` decompiler / `TRAVERSE-WORDLIST` (Phase 5+; E.4 / E.5)
+- Z80 IN / OUT primitives (Phase 5+; E.7)
+- Compilation to standalone `.com` binary (Phase 5+; E.8)
+- Flat-build retention (Phase 5+; deferred from Phase 4 MVP per redesign §4)
 
 ---
 
@@ -176,319 +183,343 @@ The PRD specifies **33 Phase-3 NFRs** (NFR-P3-1..33) across six categories, incl
 
 CCD-1 (return-stack frame taxonomy with dual chain discipline — `CATCH-TOP` 8-byte exception frames + `INCLUDE-TOP` 10-byte source frames), CCD-2 (THROW code allocation across the three ranges -1..-58 / -59..-255 / -256..-32767), CCD-3 (standards-citation discipline per word), and CCD-4 (per-epic benchmark/close-out gate) all carry forward unchanged from `architecture-phase2-epics-9-13.5.md`.
 
-**Phase-3 reaffirmation of CCD-2:** the asm-error THROW code block has extended from the original Story-11.5 allocation `-258..-269` to `-258..-272` post-Story-11.5.6 (which split the generic `-271 range` into `-271 disp range` / `-272 bit range`). Phase 3 does not allocate any new THROW codes; A.2 closes the caught-form coverage gap for the existing `-258..-272` block (15 codes). The reservation discipline holds: `-256` is unallocated (reserved gap), `-257` is reserved for `THROW_ASM_LOAD_FAIL` (per `architecture.md:478,606` from Phase-2; never raised in v2.0; remains reserved). Future asm-error allocations must extend from `-272` downward contiguously.
+**Phase-4 reaffirmation of CCD-1:** the cross-bank 3-cell return frame `(sentinel_addr, caller_bank, target_addr)` is a NEW frame type added to the dual-chain discipline. The intra-bank 1-cell return frame is the standard ANS return frame; the cross-bank 3-cell frame is recognised by `EXIT` via the sentinel-address comparison. Both frames coexist on the same return stack chain; `CATCH-TOP` and `INCLUDE-TOP` chains are unaffected by the cross-bank frame addition (cross-bank-EXIT trampoline does not interact with exception or include frames).
 
-**Phase-3 reaffirmation of CCD-3:** every word touched by an A.1 back-fill story carries its standards-citation comment (`; ANS Forth 1994 §<sec>` / `; Forth 2014 §<sec>` / `; antforth extension`). The A.1 audit walk re-verifies every existing citation against the new §-level rows; mismatches are surfaced and corrected as part of the audit story.
+**Phase-4 reaffirmation of CCD-2:** Phase 4 allocates **no** new THROW codes. The 12-word `BANK*` wordset uses standard ANS THROW codes (`-9 invalid memory address`, `-13 undefined word`) plus the existing antforth-extension block. `BANK!` precondition violation raises ABORT" bank?" (which decodes to -2 ABORT" per CCD-2's existing allocation). Probe-on-add failure raises ABORT" probe?" similarly. The reservation discipline holds unchanged.
 
-#### CCD-P3-1: §-level compliance-doc row schema (NEW)
+**Phase-4 reaffirmation of CCD-3:** every `BANK*` word's source carries `; antforth extension <word> — see docs/antforth-banking-redesign.md §<n>`. The `cross_bank_return` trampoline carries an inline pointer to redesign §2.2.
 
-**Decision:** every row in `docs/ans-forth-core-compliance.md` follows a 6-column format:
+#### CCD-P3-1, CCD-P3-2 (Phase-3 carry-forward)
 
-| Column | Content | Example |
-|---|---|---|
-| **§** | DPANS94 / Forth-2014 section number | `§6.1.0350` |
-| **Rule** | Short text or pointer to the rule | `2@: ( a-addr -- x1 x2 ) high cell on TOS` |
-| **Verdict** | One of `Implemented` / `Implemented-with-caveat` / `Accepted-with-rationale-N-A` / `Deliberately-omitted` | `Implemented` |
-| **Source** | `file:line` where implementation lives, or `N-A` for non-implementation rows | `src/double.asm:120` |
-| **Closure** | Story number for the closure | `Story 13.0.1` |
-| **Notes** | Caveats, sub-§ refs, citation cross-checks | `revised by Story 13.0.1` |
-
-A.1's audit walk produces these rows for every mandatory rule in DPANS94 §6.1 (Core), §6.2 (Core Extension), and structural §-rules (§3.1.4.1 high-on-TOS double-cell layout, §3.4.1.3 numeric-literal parser rule, plus any others surfaced by the walk). Future stories add rows in this format only.
-
-**Rationale:** the schema is the contract that makes NFR-P3-13 ("checkable in under 10 minutes per row") structurally true. A reader has the rule text inline (no off-document lookup required for the verification path), the verdict, the source file:line (so they can read the implementation directly), the story-closure provenance, and the notes column for any caveats or revisions.
-
-**Implications:**
-- Rows for §-rules with no implementation site (e.g., a structural rule satisfied by absence-of-misbehaviour) carry `Source: N-A` with the verdict `Accepted-with-rationale-N-A`
-- `Deliberately-omitted` rows carry an explicit rationale in the Notes column (no silent gaps per `feedback_no_preexisting_discharge.md`)
-- The `Closure` column may read `v2.0 baseline` for rows verified pre-Phase-3 (e.g., the existing §3.1.4.1 / §3.4.1.3 closures from Stories 13.0 / 13.0.1)
-
-#### CCD-P3-2: Process discipline lives in workflow files (NEW)
-
-**Decision:** Story-template lints, HALT signals, pre-edit task additions, and Makefile sync targets are the single source of truth for Phase-3 process discipline. Lints fire structurally (template-level enforcement), not aspirationally.
-
-**Workflow-file enforcement surface:**
-- `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` — drafting `<critical>` blocks (B.2, B.4)
-- `_bmad/bmm/workflows/4-implementation/create-story/template.md` — task-list entries in the dev-pass section (B.3)
-- `_bmad/bmm/workflows/4-implementation/create-story/checklist.md` — drafting checklist updates if needed
-- `_bmad/bmm/agents/dev.md`, `_bmad/bmm/agents/sm.md` — agent-definition extensions for cross-cutting commands (CR cadence, etc.)
-- BMAD installer manifest — ensures structural edits survive installer re-runs
-- `Makefile` — sync targets `make check-doc-sync` (B.5), `make check-tools` (B.6), test-numbering hygiene (B.8)
-- `tests/README.md` — test-author convention documentation (B.1)
-
-**Documentation surface (the *why*, not the enforcement):**
-- `memory/feedback_*.md` — guidance memory entries
-- `docs/PHASE-3-CARRY-FORWARD.md` — prioritised catalog with closure notes
-- Per-story Dev Notes — individual closure context
-
-**Rationale:** codifies S10 ("workflow > memory > prompt") at the architectural level. NFR-P3-18's "drafter does not need to remember to invoke them" is structurally true only if the lints live where the workflow runs. PD-1 (Story 13.5.0) proved this pattern at the Epic-13.5 scale via five mechanically-grep-able verdict criteria, all PASS; Phase-3's B.1–B.5 cluster reuses exactly this pattern.
-
-**Implications for B.x verdict criteria:** each B.x lead-in story carries a verdict criterion that tests whether the new workflow-file edit would have caught the prior incident pattern that motivated it. If a lead-in fails its own verdict (synthesised "mirror" phrase doesn't surface the HALT signal, `wc -c` task isn't grep-able in the template, etc.), the lead-in doesn't ship — discipline-as-deliverable, not aspiration.
+The §-level compliance-doc row schema (CCD-P3-1) and the process-discipline-in-workflow-files convention (CCD-P3-2) both carry forward unchanged. Phase 4 adds rows for the 12 banking words to `docs/ans-forth-core-compliance.md` flagged as `Source: docs/antforth-banking-redesign.md` / `Verdict: Implemented (antforth extension)` / `Closure: Story 17.x..22.x`. The row format is unchanged.
 
 ---
 
-### Per-Item Decisions
+### Per-Item Decisions (Phase-4 — Decision Records)
 
-#### A.1 — §-by-§ ANS Core + Core-Extension audit
+#### PD-P4-1: (γ) Per-word descriptor stubs for cross-bank dispatch
 
-**A.1-D1: Compliance-doc row schema** — formalised as CCD-P3-1 above.
+**Question:** How does an `xt` carry bank information so cross-bank `EXECUTE`, `EXIT`, and `COMPILE,` dispatch transparently?
 
-**A.1-D2: Audit decomposition — single audit story.** One §-by-§ walk produces all rows for §6.1 + §6.2 + structural rules; back-fill stories (0–2 expected) spawn from the audit's verdict per gap. Rationale: per `docs/PHASE-3-CARRY-FORWARD.md` § "Suggested Phase-3 First-Epic Shape", the catalog explicitly frames A.1 as "1 audit story + 0–2 back-fill stories per gap surfaced". The audit is doc-only / zero binary delta — HALT discipline doesn't need fine-grained sub-stories. Risk-mitigation: if the audit surfaces > 5 gaps, propose sprint-change with a re-prioritised cut per the PRD's risk table (some gaps may be acceptable-with-rationale; some may be Phase-3-deferred to a Phase-3.5 micro-phase).
+**Options considered:**
+- (α) Side-table mapping `xt → bank`. **REJECTED** — awkward to maintain on `FORGET`; introduces a second lookup on every dispatch.
+- (β) 24-bit `xt`. **REJECTED** — breaks the Forth-standard cell-as-address invariant; cascades into compiler / FIND / data-stack-passing assumptions.
+- (γ) Fixed-memory descriptor stubs. ★ **CHOSEN** ★ — every banked word, when defined, also gets a 3–5-byte stub in fixed memory containing `(target_bank, target_addr_in_bank)`. **The stub's address is the word's xt.**
 
-**A.1-D3: Back-fill story canonical shape.** Each back-fill story includes:
+**Rationale:** (γ) collapses S1 (cross-bank EXIT) + S6 (`EXECUTE`) + S7 (`COMPILE,`) into one artifact. xts remain cell-sized and stable across `BANK!`. `BANK-OF` becomes a one-byte read from the stub — essentially free.
 
-1. Implementation in the appropriate `src/*.asm` (or `tests/*.fth` for test-only closures)
-2. Standards-citation comment on the affected DEFCODE per CCD-3
-3. New row in `docs/ans-forth-core-compliance.md` per CCD-P3-1
-4. REPL probes (positive path + at least one edge case)
-5. S9 hardware smoke on real CP/M 2.2 / MicroBeast
-6. **Pre-fix negative-result confirmation** — the story explicitly demonstrates that the pre-fix code fails the new probe, so the back-fill closes a real gap rather than papering over a non-issue (codifies the discipline informally exercised on Stories 11.5.x and 13.5.x)
+**Architectural impact:** `src/banking.asm` carries the stub allocator; `src/dictionary.asm` extends `:` to allocate-stub-on-define; `src/compiler.asm`'s `COMPILE,` always emits the stub address. Serves FR-P4-13..17.
 
-#### A.2 — Asm-error caught-form coverage
+**Source:** `docs/antforth-banking-redesign.md` §2.1.
 
-**A.2-D1:** caught-form tests extend `tests/throw_migration_tests.fth`. Each of the 15 asm-error THROW codes (`-258..-272`) gets a `' WORD CATCH . CR` probe asserting the expected code lands on the data stack. Rationale: the original ABORT→THROW migration tests live in this harness; A.2 is gap-closure on the same migration. Splitting harnesses to scope-tag a closure is overhead.
+#### PD-P4-2: (S1 b) Sentinel-tagged cross-bank returns
 
-#### A.3 — Unprefixed `NUMBER?` base-specialization
+**Question:** How does `EXIT` distinguish an intra-bank return from a cross-bank return so it can restore the caller's bank only when needed?
 
-**A.3-D1: site.** The change lands in `w_NUMBER_Q_cf` in `src/strings.asm` (the existing `NUMBER?` implementation, post-Story-13.0 baseline). Precise behaviour spec is deferred to A.3's story-author (the story will read the current code and the standard, then specify the exact pre-/post-behaviour delta). Architectural decision is **the site**, not the spec.
+**Options considered:**
+- (a) `BIT 7,H` heuristic on the return-address high byte. **REJECTED** — broken because user code lives at $8000–$BFFF, so bit 7 is always set on every user-code return-address; the heuristic detects nothing.
+- (b) Sentinel-tagged returns. ★ **CHOSEN** ★ — intra-bank returns push 1 cell (zero overhead, standard ANS frame). Cross-bank returns push three cells: `(sentinel_addr, caller_bank, target_addr)`. The sentinel is a fixed-memory address recognised by `EXIT`; on match, `EXIT` jumps to the `cross_bank_return` trampoline which restores the caller's bank then jumps to the target.
 
-**Test coverage:** HEX (unprefixed `FF .` → `255 ok`), DECIMAL (unprefixed `255 .` → `255 ok`), non-default base (`8 BASE !` then unprefixed `17 .` → `15 ok`); plus the prefix-overrides-BASE invariant from Phase-2 FR9 (`HEX` then `#100 .` → `100 ok`) — regression-only, must continue to hold.
+**Rationale:** Preserves the intra-bank zero-overhead path (the common case). The sentinel comparison is a single CP against a fixed address; the cross-bank path adds one MMU port write + one JP to the standard return-address pop.
 
-#### B.1 — `PAD` as canonical transient-buffer for tests
+**Architectural impact:** `src/banking.asm` carries the `cross_bank_return` trampoline at a fixed address; `src/inner_interpreter.asm`'s `EXIT` adds the sentinel comparison; descriptor-stub dispatch (PD-P4-1) pushes the 3-cell frame on cross-bank entry. Serves FR-P4-18..21.
 
-**B.1-D1:** `tests/README.md` (new file) is the single source of truth. `Makefile`'s test section gets a one-line pointer comment to `tests/README.md` for discoverability. The README documents:
+**Source:** `docs/antforth-banking-redesign.md` §2.2.
 
-- PAD's purpose (transient buffer surviving one space-delimited parse, per ANS §6.2.2000)
-- Historical alternatives that bit (`HERE` / `S"`-near-HERE collisions per Story-13.5.1's transient-buffer-collision incident)
-- The canonical idiom for probe authoring (when to use PAD vs. ALLOT vs. dedicated user-area scratch)
+#### PD-P4-3: Per-bank state triple swapped on `BANK!`
 
-#### B.2/B.3/B.4 — Story-template / drafting discipline edits
+**Question:** How does the compiler track per-bank dictionary state (HERE, LATEST, wordlist heads) so `:` defines into the current bank correctly?
 
-**B.2-D1: "Mirrors prior arm" HALT signal.** Edit lands in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` as a `<critical>` block per the PD-1 precedent. Block requires the drafter to itemise the new arm's parts independently when byte-budget rationale contains "mirrors", "same shape as", or equivalent comparison-to-prior-arm phrasing.
+**Options considered:**
+- (a) Single global state with explicit-target-bank arguments to `,` / `COMPILE,`. **REJECTED** — invasive to every compiler word; user-visible API change.
+- (b) Per-bank `(here, latest, wordlist-heads)` triple swapped on `BANK!`. ★ **CHOSEN** ★ — `bank-table[]` in fixed memory holds one triple per bank; `BANK!` swaps the active triple atomically.
 
-**B.3-D1: Story-to-story binary handoff (re-`wc -c`).** Edit lands in `_bmad/bmm/workflows/4-implementation/create-story/template.md`. The "Pre-edit baseline" task captures `wc -c src/antforth.com` (or the appropriate build artifact path) directly, not inheriting from the prior story's reported number.
+**Rationale:** The user types `5 BANK!` then defines like always — the compiler sees the per-bank triple it's been writing to all along. Cross-bank pointer hazards (capturing HERE in bank A, then `BANK!`-ing to B and writing) are accepted as "doc-and-pray" — documented gotcha, no runtime guard, consistent with Forth tradition of trusting the programmer.
 
-**B.4-D1: PD-2 figure-drift discipline.** Edit lands in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` (sibling of B.2) as a `<critical>` block. Block requires figures, tables, code blocks to be validated against the source-of-truth at draft time, not inherited from earlier stories or retros.
+**Architectural impact:** `src/dictionary.asm` extends HERE / LATEST to read from the active bank-table[] entry; `src/banking.asm` carries the `bank-table[]` allocator and the `BANK!` swap routine. Serves FR-P4-22..26.
 
-**Verdict-criterion meta-pattern (all four):**
-- B.1 — `tests/README.md` exists, references PAD with the canonical-buffer convention; `Makefile` test section has the pointer comment
-- B.2 — synthesised "mirror" phrase fed into the drafting workflow surfaces the HALT signal
-- B.3 — the template's pre-edit task references `wc -c` directly, grep-able from `_bmad/bmm/workflows/4-implementation/create-story/template.md`
-- B.4 — the figure-drift `<critical>` block exists in `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` and is grep-able
+**Source:** `docs/antforth-banking-redesign.md` §5.4.
 
-If a lead-in story fails its own verdict, it doesn't ship.
+#### PD-P4-4: Bank-aware FIND with system-wordlist fast path
 
-#### B.5 — PRD-vs-architecture transcription-drift sync
+**Question:** How does FIND walk wordlist chains that may live in different banks without paying MMU-switch cost on every lookup?
 
-**B.5-D1:** new `make check-doc-sync` target, invoking a project-local script in `tools/check-doc-sync/`. The script walks the planning artifacts and produces a drift report on stdout (exit 1 on drift; exit 0 on clean-pass with one-line `[ok] doc-sync: 0 drift`).
+**Options considered:**
+- (a) Always switch to wordlist's bank, walk chain, switch back. **REJECTED** in its naive form — system wordlists (FORTH, ASSEMBLER) live in fixed memory; switching is wasted.
+- (b) Per-wordlist `bank` field; FIND saves current bank, switches only if wordlist is non-fixed, walks, restores. ★ **CHOSEN** ★ — system wordlists tagged `bank=fixed` (-1); the common case (FORTH lookup) incurs no MMU switch.
 
-**Drift checks:**
-1. Every `FR-P3-N` / `NFR-P3-N` reference in `architecture.md` exists as a label in `prd.md`
-2. Every `Story X.Y` citation in `architecture.md` resolves to an actual story header in `epics.md` (or its predecessor `epics-phase1-epics-1-8.md` / `epics-phase2-epics-9-13.5.md` if the citation is historical)
-3. Every `§X.Y.Z` reference in `architecture.md`'s compliance-related sections has a matching row in `docs/ans-forth-core-compliance.md` (post-A.1 invariant)
-4. Section-name parity check — both docs share the agreed-on top-level sections
+**Rationale:** Interactive FIND latency is invisible to the user (sub-frame at 8 MHz) regardless. Batch loading with many user-bank-resident wordlists costs the documented 5–15% (NFR-P4-6); system-wordlist fast path keeps the everyday case zero-overhead.
 
-**Failure mode:** advisory-only on `make test-repl` (does not block); expected clean before any tag-applicable close-out (S11 sibling — version-surface audit reads cleanly only when doc-sync also reads cleanly).
+**Architectural impact:** `src/wordlists.asm` extends the wordlist header with a `bank` field; `src/dictionary.asm`'s FIND walks the search order, switching banks per wordlist. Serves FR-P4-27..30.
 
-#### B.6 — `make check-tools` (iz-cpm version stability)
+**Source:** `docs/antforth-banking-redesign.md` §5.5.
 
-**B.6-D1:** new `make check-tools` target reading expected versions from a project-local `.tool-versions` file (new — added by B.6's story). Compares `iz-cpm --version` and `sjasmplus --version` (or equivalents) against expected.
+#### PD-P4-5: ABORT/QUIT bank-state restore (S5)
 
-**Failure mode:** advisory-only by default (exit 0 with stderr advisory). Optional `make check-tools STRICT=1` exits 1 on mismatch. Hard-failing every minor version drift would create friction for contributors on slightly different hosts; advisory + opt-in strict is the right tradeoff.
+**Question:** How does the user avoid being stranded in the wrong bank after an `ABORT` mid-execution?
 
-**`.tool-versions` initial content:** the iz-cpm + sjasmplus versions used to certify the v2.0 baseline (commit `6599d73`, 973 PASS / 0 FAIL). Subsequent bumps are story-level decisions recorded in commit history.
+**Options considered:**
+- (a) Snapshot bank on every word entry, restore on uncaught THROW. **REJECTED** — invasive to every word; cost not justified for non-cross-bank common case.
+- (b) Saved-bank cell updated only by interactive `BANK!` from the outermost interpret loop; `QUIT` re-asserts on re-entry. ★ **CHOSEN** ★ — minimal kernel surgery; nested `IN-BANK` is independent (its own save/restore via `>R / R>`).
 
-#### B.7 + B.9 — Filesystem stress coverage (combined)
+**Rationale:** The user's "current bank" is whatever they last typed at the REPL. `ABORT` unwinds + re-enters QUIT; QUIT re-asserts the saved bank. Mid-execution-bank-switching code (which uses `IN-BANK`) is responsible for its own restore via the kernel-blessed `IN-BANK` body.
 
-**B.7-D1: conditional probe story trigger.** B.7 has two dispositions tracked in `docs/PHASE-3-CARRY-FORWARD.md`'s Status column:
+**Architectural impact:** `src/exception.asm`'s QUIT entry-point reads the saved-bank cell and writes it through the MMU; `src/outer_interpreter.asm`'s top-level `BANK!` recogniser updates the saved-bank cell. Serves FR-P4-31..33.
 
-- **(a) "Evaluation suffices"** — `✅ Evaluated, none required`, with closure note citing the hardware-smoke run that exercised the filesystem under load and produced no surprises
-- **(b) "Probe story spawned"** — fires on a hardware-revealed signal: a probe returning a wrong `ior`, leaving an orphaned FCB, corrupting a CP/M directory entry, or failing to recover the FCB pool
+**Source:** `docs/antforth-banking-redesign.md` §5.6.
 
-If (b) fires, the spawned story follows `feedback_verdict_only_audit.md`'s "verdict-only audit + standalone reproducer + fix-story" pattern.
+#### PD-P4-6: CCP eviction (Page 3 +2 KB)
 
-**B.9-D1: disk-full probe location.** Extend `tests/file_access_tests.fth` with a disk-full stress block. Probe shape:
+**Question:** How does Phase 4 absorb the projected ~6 KB banking-infrastructure growth into the existing fixed-memory layout?
 
-1. Fill B: ramdisk to capacity (deterministic procedure)
-2. Assert WRITE-FILE returns disk-full `ior`
-3. Assert FCB pool remains consistent (no orphaned handles)
-4. Assert filesystem remains consistent (clean CLOSE-FILE / re-OPEN-FILE round-trip on an existing file succeeds)
+**Options considered:**
+- (a) Compress existing kernel code. **REJECTED** — kernel is already dense; readability/maintainability cost too high.
+- (b) Move kernel words to a bank. **REJECTED** — defeats the purpose; cross-bank dispatch overhead on every kernel call.
+- (c) Evict CCP from $D400–$DBFF (+2 KB). ★ **CHOSEN** ★ — CCP is reloadable from disk on warm-boot; antforth replaces CCP at process load time anyway; the +2 KB fits the descriptor-stub allocator + bank-table[] worst case.
 
-**Combined close-out shape:** one S9 hardware-smoke task on one Phase-3 story exercises both. The same fill-disk-then-stress procedure that exercises disk-full also exercises directory-full (when CP/M's directory-entry budget is hit) and zero-byte READ-FILE (trivial to add to the same probe block). Result lands in:
+**Rationale:** BDOS at $DC00–$E9FF stays resident; `CALL 0005h` from banked code works unchanged. CCP eviction is a one-line change to the kernel's load-time memory map. CP/M warm-boot reloads CCP from disk on the user's next `^C` (verification needed in Epic 16 — see F3 in Findings).
 
-- `docs/PHASE-3-CARRY-FORWARD.md` Status column: B.7 row + B.9 row both updated with closure notes
-- `tests/file_access_tests.fth`: disk-full probe block added permanently (B.9); directory-full / zero-byte READ-FILE probes added if disposition (b) fires for B.7
-- Hardware-smoke transcript filed alongside the close-out story
+**Architectural impact:** `src/antforth.asm`'s memory-map declaration moves the kernel-end up by 2 KB; the descriptor-stub allocator owns the new $D400–$DBFF region. Serves NFR-P4-5.
 
-#### B.8 — Test-numbering hygiene
+**Source:** `docs/antforth-banking-redesign.md` §5.2.
 
-**Decision:** mechanical Makefile renumber on the next Makefile-touching Phase-3 story (most likely B.5 or B.6). Renumber preserves test-case content and identity — only the leading numeric ID changes. No new architectural surface; cosmetic close-out.
+#### PD-P4-7: ISR-from-fixed-memory-only invariant
+
+**Question:** How does the kernel handle interrupts when user banks may be mapped in MMU slot 2?
+
+**Decision:** Architectural invariant — no banked code is reachable from any interrupt vector. ISR bodies live in fixed memory only. Any kernel code that runs in interrupt context (timer ISR, peripheral ISR if added in a future phase) executes against fixed memory regardless of which user bank is currently active.
+
+**Rationale:** MMU port writes are non-atomic from the ISR vantage; an ISR firing mid-`BANK!` is safe only if the ISR body does not depend on which user bank is mapped. This is also a Phase-5+ multitasking enabler (preemption is safe because the TCB-bank-restore happens in fixed-memory ISR code).
+
+**Architectural impact:** Documented as architectural rule; no new code surface. Any Phase-4 or Phase-5+ story touching the timer-ISR / interrupt-vector path re-walks this invariant. Serves NFR-P4-26.
+
+**Source:** `docs/antforth-banking-redesign.md` §5.3.
+
+#### PD-P4-8: Boot configuration via CL parser (not STARTUP.FTH)
+
+**Question:** How does the user configure which physical pages are available as banks?
+
+**Options considered:**
+- (a) `STARTUP.FTH` — boot-time configuration via Forth source. **REJECTED** — `.FTH` files cannot run before the boot banner; bank availability needs to be known at banner-print time.
+- (b) Command-line tail. ★ **CHOSEN** ★ — `antforth <portal-page> <bank-list>` (e.g. `antforth 24 35-3f`); defaults to `22 35-3F` (12 banks); probe-on-add via `+BANK`; banner shows the active-bank count.
+
+**Rationale:** CP/M's command-tail mechanism is well-defined (BDOS function 0x80h-area); the parser is small (~200 B per redesign §7); the user can over-ride defaults without touching disk files.
+
+**Architectural impact:** `src/antforth.asm` adds a CL-tail parser invoked early in boot; the `+BANK` word is reused for runtime addition (consistency).
+
+**Open question (§9.3):** edge-case policy for no args / bad token / reverse range / dup / probe-fail / empty surviving list. Owned by Epic 16 spike. Serves FR-P4-34..39.
+
+**Source:** `docs/antforth-banking-redesign.md` §6.
+
+#### PD-P4-9: Banking-capable emulator dual-track
+
+**Question:** How does the project run cross-bank assertions under emulation when iz-cpm doesn't support banking?
+
+**Decision:** Run a banking-capable emulator alongside iz-cpm. iz-cpm continues carrying the non-banking regression baseline (so the existing 974-test suite continues passing); the banking-capable emulator carries cross-bank assertions added in Phase 4. Real MicroBeast is the load-bearing final word for any binary-delta story (S9).
+
+**Rationale:** Replacing iz-cpm risks regression on the existing baseline. Adding a second emulator preserves the existing safety net while enabling cross-bank emulation. Vendor pick is the explicit Epic 16.3 prework gate.
+
+**Three eval criteria pinned for vendor selection:**
+1. Models the 32-page MMU at ports 0x70+slot / 0x74 (matches MicroBeast hardware)
+2. Pipe-able for `make test-repl`-style automation
+3. Bank-visibility for tests (test scripts can assert which bank is currently active)
+
+**Architectural impact:** new `make test-repl-banking` (or equivalent) target; per-probe annotation of which emulator surface the probe targets. Serves NFR-P4-19.
+
+**Source:** `docs/antforth-banking-redesign.md` §8.1.
+
+#### PD-P4-10: Phase-5+ future-proofing (no painted corners)
+
+**Question:** Does the Phase-4 banking design close off Phase-5+ candidates (multitasking, locals, ALLOCATE)?
+
+**Decision:** No. The 2026-05-09 design session walked the implications; all three remain compatible.
+
+- **Multitasking (Phase 5):** bank = 1 byte of TCB; stubs/sentinels ride preemption cleanly because the trampoline is in fixed memory and the cross-bank frame is on the standard return stack (which is per-task).
+- **Locals (Phase 5+):** all three styles (`{: a b -- c :}`, `VALUE` / `TO`, return-stack-based) compatible with banking — locals live on the return stack or in a per-task user-area, neither of which is bank-sensitive.
+- **ALLOCATE (Phase 5+):** recommended direction is (β) per-bank heap with a `BANK-OF-ALLOC` helper. Greek labels (α′)/(β′)/(γ′) reused for ALLOCATE design — explicitly distinct from S6's (α)/(β)/(γ).
+
+**Rationale:** Capturing this as a decision record so future-Phase architects don't re-litigate the "did banking close X off?" question.
+
+**Source:** `docs/antforth-banking-redesign.md` §8.2.
 
 ---
 
 ### Decision Impact Analysis
 
-**Implementation sequence (locked by carry-forward catalog):**
+**Implementation sequence (locked by redesign-doc §8 epic structure):**
 
-Per `docs/PHASE-3-CARRY-FORWARD.md` § "Suggested Phase-3 First-Epic Shape":
+1. **Epic 16 (prework gate, must close first):** memory map + emulator pick + doc lock. Story 16.3 (banking-capable emulator vendor selection) blocks Epic 17+ story-writing.
+2. **Epic 17 (bank primitives + CL config):** all 12 wordset words in first usable form; `+BANK` / `-BANK` / `BANKS-CLEAR`; CL parser; probe-on-add; banner update; first iron spike for cross-bank call.
+3. **Epic 18 (stub mechanism (γ) + cross-bank EXIT (S1 b)):** per-word descriptor stubs; sentinel-trampoline return; kernel `EXECUTE` switches through stub; `BANK-OF`; kernel-blessed `IN-BANK`.
+4. **Epic 19 (bank-aware compiler):** per-bank `(here, latest, wordlist-heads)`; `,` / `COMPILE,` / `:` write into current bank; descriptor stub auto-emitted on `:`; `CREATE` / `DOES>` cross-bank explicit.
+5. **Epic 20 (bank-aware FIND + interpreter loop):** per-wordlist `bank` field; `FIND` saves/switches/walks/restores; `WORDS`; error messages name source bank.
+6. **Epic 21 (MARKER/FORGET + ABORT/QUIT bank state (S5)):** per-bank dictionary tail tracking; `QUIT` re-asserts saved current bank.
+7. **Epic 22 (polish):** `.BANKS`; REPL prompt indicator; CODE-words-in-banks decision (open question §9.1); test-harness sweep across all three test surfaces.
 
-1. **Lead-in (must land first):** B.1 + B.2 + B.3 + B.4 + B.5
-2. **Strategic body:** A.1 (audit) → 0–2 back-fill stories per gap surfaced
-3. **Hitch-hikers (fold opportunistically):** A.2, A.3, B.6, B.8, B.9
-4. **Conditional:** B.7 if hardware-revealed need from B.9 / S9 cadence
-
-The lead-in (B.1–B.5) shapes every subsequent dev-pass; landing it first is the load-bearing sequencing constraint. CCD-P3-2 makes this structural: post-lead-in, the BMAD workflow files themselves enforce the discipline that subsequent stories inherit.
+The Epic-16 prework gate is the load-bearing sequencing constraint. Without the banking-capable emulator pick, Epic 17 stories cannot specify their test plan (each banking-touching probe must specify which emulator surface it targets).
 
 **Cross-component dependencies:**
 
-- A.1's audit walk re-verifies every CCD-3 citation; mismatches surfaced are corrected as part of the audit story (creates a small dependency: the audit story's diff may include `src/*.asm` citation-comment fixes alongside the new `docs/ans-forth-core-compliance.md` rows)
-- B.5's `make check-doc-sync` references stories in `epics.md` (or predecessors); it must land before the first PRD/architecture-touching Phase-3 story to be useful (which is why it's in the lead-in cluster, not a hitch-hiker)
-- B.6's `.tool-versions` references the v2.0 baseline; bumping it is a story-level decision, not architecturally pinned here
-- B.7 + B.9 share a hardware run; their close-out is intrinsically coupled
-- A.2 caught-form tests assume the CCD-2 asm-error block is `-258..-272`; if a future Phase-3 story (unlikely) allocates new asm-error codes, A.2's test suite must extend correspondingly
+- Epic 18 stubs (PD-P4-1) depend on Epic 17 bank primitives (`BANK!`, `BANK@`) being in place
+- Epic 19 bank-aware compiler depends on Epic 18 stub auto-emission (`:` allocates a stub via the stub allocator from PD-P4-1)
+- Epic 20 bank-aware FIND can proceed in parallel with Epic 19 once Epic 17 is in
+- Epic 21 ABORT/QUIT bank-state restore depends on Epic 18 (sentinel-trampoline EXIT must be in place for cross-bank THROW unwind)
+- Epic 22 polish depends on Epics 17–21 all being in (the test-harness sweep validates the integrated surface)
 
-**Per-story binary delta envelopes:**
+**Per-epic fixed-memory budget envelopes (against NFR-P4-5 ≤8 KB cap; ~6 KB at default 12 banks):**
 
-| Item | Expected delta (bytes) |
-|---|---|
-| B.1 | 0 (doc only) |
-| B.2 / B.3 / B.4 | 0 (workflow-file only) |
-| B.5 | 0 (Makefile + script only) |
-| B.6 | 0 (Makefile + `.tool-versions` only) |
-| B.7 | 0..+30 if probe story spawned; 0 if (a) |
-| B.8 | 0 (Makefile renumber) |
-| B.9 | 0 (probe-only) |
-| A.1 audit story | 0 (doc only) |
-| A.1 back-fill story (per gap) | +10..+50 (Story 13.0 / 13.0.1 / 13.5 precedent) |
-| A.2 | 0 (test-only) |
-| A.3 | +0..+30 (small surgery in `w_NUMBER_Q_cf`) |
+| Epic | Component | Expected fixed-memory delta |
+|---|---|---|
+| 16 | Memory map / emulator pick / doc lock | 0 (planning only; CCP eviction is a one-line memory-map change) |
+| 17 | Bank primitives + CL parser + probe loop | ~400 B (12 wordset words ~120 B; CL parser ~200 B; probe ~80 B) |
+| 18 | Stub allocator + sentinel trampoline + EXECUTE switch | ~400 B (allocator ~150 B; trampoline ~80 B; EXECUTE-switch ~50 B; `IN-BANK` + `BANK-OF` ~120 B) |
+| 19 | Bank-aware compiler (`,` / `COMPILE,` / `:` / `CREATE` / `DOES>`) | ~300 B (per-bank state plumbing) |
+| 20 | Bank-aware FIND + per-wordlist `bank` field + `WORDS` | ~200 B (FIND extension + WORDS extension) |
+| 21 | MARKER/FORGET per-bank + QUIT bank-restore | ~150 B (saved-bank cell + QUIT entry-point edit + MARKER/FORGET per-bank tracking) |
+| 22 | Polish (`.BANKS`, prompt indicator, CODE-words-in-banks, test sweep) | ~100 B (`.BANKS` ~80 B; prompt indicator ~20 B; CODE-words-in-banks may add more depending on §9.1 disposition) |
+| Per-banked-word descriptor stubs (allocated dynamically, not per-epic) | 3–5 B/word × 1000 words target | ~5 KB worst case (in the +2 KB Page-3 headroom + CL/banking-words allocation) |
+| **Total banking infrastructure (worst case at 28-bank cap)** | | **~7–8 KB (within NFR-P4-5)** |
 
-**Cumulative target:** +0..+200 bytes (24,996 → ≤ 25,200), dominated by 0–2 expected A.1 back-fill stories. NFR-P3-2 enforces the cap; per-story envelope checked at each dev-pass; HALT signal if any single story would push cumulative over.
+**Cumulative target:** ≤8 KB total banking infrastructure (NFR-P4-5). +2 KB Page-3 headroom from CCP eviction (PD-P4-6) absorbs most projected growth. HALT signal if any single epic would push cumulative over.
 
-**Tag-applicable close-out gates (S11 / NFR-P3-32):**
+**Tag-applicable close-out gates (S11 / NFR-P4-38):**
 
-Every Phase-3 antforth 2.x point-release tag passes the user-visible version surface audit:
+Every Phase-4 antforth 3.x point-release tag passes the user-visible version surface audit:
 
-- Banner string in binary: `make` produces a binary whose banner reads the new 2.x version
+- Banner string in binary: `make` produces a binary whose banner reads the new 3.x version
 - README version reference: aligned to the tag being applied
-- Memory-file `description` fields: any memory entry citing the antforth version (e.g., `project_phase2_scope.md`) reads the new 2.x version
+- Memory-file `description` fields: any memory entry citing the antforth version (e.g., the Phase-4 successor to `project_phase3_scope.md`) reads the new 3.x version
 
 S11 + B.5 (`make check-doc-sync`) together form the close-out gate's documentation arm; S9 (per-story hardware smoke) forms the hardware arm; the verdict-table walk (per Story 13.5.6 precedent) consolidates both at the close-out story.
 
 ## Implementation Patterns & Consistency Rules
 
-> **Phase-2 carry-forward.** All naming, format, and inter-word communication patterns from `architecture-phase2-epics-9-13.5.md` § "Implementation Patterns & Consistency Rules" continue to apply unchanged in Phase 3. This section covers only the Phase-3-specific additions: compliance-doc row authoring (CCD-P3-1), back-fill story shape (A.1-D3), workflow-file edit patterns (CCD-P3-2), probe-authoring discipline (S12 / B.1), and drafter discipline (B.2 / B.3 / B.4).
+> **Phase-2 / Phase-3 carry-forward.** All naming, format, and inter-word communication patterns from the phase-2 + phase-3 architecture documents continue to apply unchanged in Phase 4. This section covers only the Phase-4-specific additions: banking-word naming (BANK@/BANK!/+BANK/-BANK/etc.), descriptor-stub layout, sentinel-trampoline contract, per-bank state-swap idiom, and ISR-from-fixed-only invariant.
 
-### Conflict Points Identified (Phase-3-specific)
+### Conflict Points Identified (Phase-4-specific)
 
-> **TODO(P4):** Replace with Phase-4 conflict-point analysis (banking memory-map vs existing memory layout, bank-switch latency vs interrupt-handler timing, etc.).
+Phase-4-shaped points where multiple AI agents could make different choices:
 
-Where multiple AI agents could make different choices in Phase-3 work:
+- **Bank-switch latency vs ISR timing** — resolved as architectural constraint (PD-P4-7 ISR-from-fixed-only invariant); not a runtime conflict but documented so any Phase-4 story touching the timer-ISR path re-walks the rule
+- **Descriptor-stub fixed-mem cost vs ~8 KB headroom** — stubs at 4–5 B/word × 1000 words = 4–5 KB; total banking infra ~6 KB worst case at default 12 banks, ~7–8 KB at 28-bank cap; "fits, not by miles, fits"; per-epic stub-count metric tracked alongside binary size
+- **Per-bank `HERE` cross-bank pointer hazard** — accepted as "doc-and-pray" gotcha (user holds HERE in bank A then `BANK!`s to B and writes — undefined); no runtime guard; documented in user docs
+- **CL parser failure modes** — open question §9.3 (Epic-16 spike): no args, bad token, reverse range, dup, probe-fail, empty surviving list — final policy for each not yet signed off
+- **ABORT-on-`+BANK`-past-cap policy** — open question §9.4 (Epic-16 spike): `bank-table[]` is 29 entries; `+BANK` beyond cap behaviour unspecified
+- **Banking-capable emulator availability gating Phase-4 work** — Epic 17+ blocked on Epic 16.3 vendor pick; iz-cpm continues carrying the non-banking baseline
+- **Stub size pinning (3 vs 4–5 bytes)** — open question §9.5 (Epic-16 spike): final size affects per-1000-words cost calculations; agents could draft against an unpinned figure
+- **Cross-bank R-stack overflow disposition** — open question §9.6: documented gotcha vs runtime guard; default policy is documented-gotcha (cheaper); upgrade if hardware repro surfaces a real failure
 
-- **Compliance-doc row granularity** — agent A writes one row per ANS *word*; agent B writes one row per ANS *§-rule* (the spec includes a word in §6.1.0350 plus a structural rule in §3.1.4.1 — both must have rows)
-- **Back-fill story shape** — agent A ships implementation + new probe + hardware smoke; agent B adds the citation comment but skips the pre-fix negative-result confirmation
-- **Workflow-file edit format** — agent A writes a `<critical>` block; agent B adds an inline `<note>` at a similar spot; agent C adds it to the wrong instructions file
-- **Probe transient-buffer choice** — agent A uses PAD; agent B uses HERE; agent C uses S" — each was acceptable historically but only PAD is correct post-Phase-3 (per B.1)
-- **"Mirrors prior arm" lint trigger** — agent A treats only the literal word "mirrors" as a HALT signal; agent B treats any comparison-to-prior-work shorthand
-- **Compliance-doc Source column** — agent A writes `src/double.asm:120`; agent B writes `src/double.asm:w_TWO_FETCH_cf`; agent C writes a relative path
+### Naming & Structure Patterns (Phase-4-specific)
 
-### Naming & Structure Patterns (Phase-3-specific)
+**Banking-word naming idioms:**
 
-> **TODO(P4):** Re-evaluate for Phase 4 (banking word naming conventions, bank-switching primitive names, etc.).
+- **`BANK@ / BANK!` mirrors `BASE @ / BASE !`** — the established Forth idiom for ambient state with getter/setter. Reads naturally inside colon definitions (`BANK@ >R 5 BANK! ... R> BANK!`).
+- **`USER-` prefix dropped** — only one kind of user-controllable bank exists; the prefix from the obsolete `docs/antforth-banking-design.md` was noise. (`USER-BANK / USER-BANK@ / SET-USER-BANK` from the obsolete doc are not in the wordset.)
+- **System wordlists tagged `bank=fixed`** — FORTH, ASSEMBLER never need MMU switch on lookup; the field is the discriminator FIND uses to skip the switch.
+- **`+BANK / -BANK / BANKS-CLEAR` follow Forth list-mutation idiom** — "+/-WORDLIST"-shaped; the `+` / `-` prefix signals mutation of an ambient set.
+- **Greek-letter decision shorthand** — (α) / (β) / (γ) used in design discussions for option labels under specific architecture-question subheads (S1, S6, etc.); REJECTED / ★ CHOSEN ★ markers in plain text. Reused for future ALLOCATE design as (α′) / (β′) / (γ′) per redesign §2.3 — explicitly distinct from S6's letters.
+- **`SET-BANK` retained for diagnostics** — raw MMU port write; not a user-facing common path; lives in the wordset because `+BANK` can't bypass the bank-table[] machinery.
+- **`BANK-MAPPING-ON` / `BANK-MAPPING-OFF`** — explicit kernel control; auto-`ON` in COLD; `OFF` exists for the CP/M warm-boot escape (returning to a flat-memory CP/M context).
 
-**Compliance-doc row labels.** Per CCD-P3-1's 6-column schema:
+**Descriptor-stub layout label conventions:**
 
-- **§ column** — full DPANS94 / Forth-2014 §-number with explicit standard prefix when ambiguous (`§6.1.0350` for DPANS94 / ANS Forth 1994; `§3.4.1.3 (Forth 2014)` if the rule is Forth-2014-only). Structural rules use `§3.1.4.1 (Forth 2014 — high-on-TOS)` form.
-- **Source column** — `file:line` format using the assembly source line of the `cf:` label (not the body or the dictionary header). Example: `src/double.asm:120` where line 120 is `w_TWO_FETCH_cf:`. For test-only closures: `tests/throw_migration_tests.fth:t<test-number>`. For non-implementation rows (structural-rule satisfied by absence-of-misbehaviour): `N-A`.
-- **Closure column** — `Story X.Y` form (or `Story X.Y.Z` for sub-stories), or `v2.0 baseline` for pre-Phase-3 closures. A.1 audit-story rows use `Story P3.A1` (or whatever the actual A.1 story number becomes); A.1 back-fills use their per-gap story number.
-- **Notes column** — kept short (≤ 120 chars typical); links to a ground-truth reference document if a longer caveat is needed (e.g., `revised by Story 13.0.1; see _bmad-output/implementation-artifacts/13-0-1-double-cell-flip.md`).
+- Stub address IS the xt — name stub-allocator output `xt_<word>` consistently in source; never `stub_<word>` (the stub IS the xt; the names should not encode internal structure)
+- `target_bank` field convention: signed byte; `-1` for fixed-memory marker; `0..28` for active bank indices
+- `target_addr_in_bank` field convention: 16-bit address inside the target bank's body region
 
-**Back-fill story file naming.** Per Phase-2 convention: `_bmad-output/implementation-artifacts/<epic>-<story>-<short-slug>.md`. A.1 back-fills use the audit story's epic number; the slug names the §-rule being back-filled (e.g., `phase3-a1-§6.2.1342-evaluate-input-source-frame.md`).
+**Sentinel-trampoline labels:**
 
-**Workflow-file edit identity.** Edits land in named files, never inline in conversation transcripts:
-- Drafting `<critical>` blocks → `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml`
-- Task-list entries → `_bmad/bmm/workflows/4-implementation/create-story/template.md`
-- Drafting checklist additions → `_bmad/bmm/workflows/4-implementation/create-story/checklist.md`
-- Agent-definition extensions → `_bmad/bmm/agents/{dev,sm}.md` (or other named agent file)
-- Installer manifest → BMAD installer's expected list of files (so structural edits survive installer re-runs)
+- `cross_bank_return:` — the trampoline label in `src/banking.asm`; sentinel address is `cross_bank_return` itself (one symbol does both jobs)
+- 3-cell return frame field order on the return stack (top-to-bottom): `(sentinel_addr, caller_bank, target_addr)` — names in source comments must match this order
 
-### Format Patterns (Phase-3-specific)
+**Per-bank state field naming:**
 
-> **TODO(P4):** Re-evaluate for Phase 4.
+- `bank-table[]` — fixed-memory array, one entry per bank
+- Each entry holds `(here, latest, wordlist-heads)` — the names match the global Forth idiom; the per-bank version is the same name with the bank context implicit
 
-**Compliance-doc row format example:**
+**Carry-forward Phase-2/3 naming patterns** (compliance-doc row labels per CCD-P3-1, back-fill story file naming, workflow-file edit identity per CCD-P3-2) — preserved unchanged.
 
-```markdown
-| §6.1.0350 | `2@: ( a-addr -- x1 x2 )` high cell on TOS, low cell second-on-stack | Implemented | src/double.asm:120 | Story 13.0.1 | revised by Story 13.0.1 (was low-on-TOS pre-flip) |
-```
+### Format Patterns (Phase-4-specific)
 
-**`<critical>` block format example (B.2 / B.4 pattern):**
-
-```xml
-<critical>
-When drafting the byte-budget rationale for a new story, if the rationale text contains any of the following phrasings:
-  - "mirrors arm X from Story Y"
-  - "same shape as Story Z"
-  - "this is the X arm of the pattern from Story Y"
-  - any equivalent comparison-to-prior-work shorthand
-
-HALT and itemise the new arm's parts independently before accepting the byte-budget estimate. The mirror analogy is a red flag, not a justification. (Lesson 13.5-C; B.2 closure.)</critical>
-```
-
-**Pre-edit baseline task entry example (B.3 pattern):**
+**Greek-letter decision shorthand format.** Used in `docs/antforth-banking-redesign.md` §2 to label options under specific architecture-question subheads (S1, S6, etc.):
 
 ```markdown
-### Pre-edit baseline tasks
+### S6 — `EXECUTE` across banks (the (γ) decision)
 
-- [ ] Capture current binary size: `wc -c build/antforth.com` → record in story Dev Notes
-  - Do not inherit the prior story's reported number — re-`wc -c` from the actual current build artifact (B.3 / Lesson 13.5-F)
-- [ ] Capture current `make test-repl` baseline pass count
-- [ ] [...other pre-edit tasks per template...]
+- **(α) Side-table mapping `xt → bank`.** REJECTED — awkward to maintain on `FORGET`.
+- **(β) 24-bit `xt`.** REJECTED — breaks the Forth-standard cell-as-address invariant.
+- **(γ) Fixed-memory descriptor stubs.** ★ CHOSEN ★ — every banked word, when defined, also gets a 3–5-byte stub in fixed memory containing `(target_bank, target_addr_in_bank)`. The stub's address is the word's xt.
 ```
 
-### Communication Patterns — Phase-3-specific (inter-word contracts unchanged from Phase 2)
+Options are labelled (α) / (β) / (γ) with **REJECTED** / ★ **CHOSEN** ★ markers in plain text; rationale paragraph follows. The (α′) / (β′) / (γ′) variant is reserved for the future ALLOCATE design (Phase 5+) and is explicitly distinct from S6's letters.
 
-> **TODO(P4):** Re-evaluate for Phase 4. Banking introduces new inter-word contracts (caller's bank-state preserved across callee, etc.).
+**S-numbered architecture-question shorthand format.** Used as section labels in design discussions:
 
-Phase 3 adds no new inter-word contracts. The Phase-2 contracts (BC = TOS, EXX leaf-level rule, exception-frame layout, INCLUDE source-frame layout, IY-relative user-area access, FCB-pool acquire/release semantics, the `file_byte_read` tri-state contract from Story 13.5.2) all carry forward.
+```markdown
+### S1 — Cross-bank EXIT (the (b) sentinel decision)
+### S6 — `EXECUTE` across banks (the (γ) decision)
+```
 
-**A.3-specific contract:** the `w_NUMBER_Q_cf` modification preserves the established stack-effect `( c-addr u -- n true | c-addr u false )` and the established register-clobbering envelope; only the BASE-aware-parsing branch logic changes. Tests must verify both the new behaviour and the unchanged stack contract (regression).
+S1 (cross-bank EXIT), S2 (per-bank state), S3 (bank-aware FIND), S5 (ABORT/QUIT), S6 (EXECUTE), S7 (COMPILE,) — used as shorthand in design discussions; **NOT** a numbered-question-list anyone needs to memorise; surfaces in commit messages and retro notes for traceability ("Story 18.2: closes S1 b").
 
-**A.2-specific contract:** the asm-error THROW codes' caught-form path uses the standard CATCH frame layout from CCD-1 — no new frame fields, no new escape mechanism. Caught-form tests use the canonical `' WORD CATCH . CR` idiom.
+**Banking-extension citation comment format (per CCD-3):**
 
-### Process Patterns (Phase-3-specific)
+```asm
+; antforth extension BANK! — see docs/antforth-banking-redesign.md §1
+w_BANK_STORE_cf:
+    ...
+```
 
-> **TODO(P4):** Re-evaluate for Phase 4 (S1–S12 standing commitments still hold; Phase-4-specific process additions go here).
+The comment carries (a) the `; antforth extension <word>` flag and (b) the redesign-doc §-reference. No external standard is cited (banking is not in any ANS / Forth-2014 wordset).
 
-**Probe-authoring discipline (S12 / NFR-P3-33).** Every smoke-batch destined for human typing on real hardware passes both pre-flight checks before being committed:
+**Carry-forward Phase-2/3 format patterns** (one-line standards-citation comments per CCD-3, compliance-doc row format per CCD-P3-1, `<critical>` block format from B.2 / B.4, pre-edit baseline task format from B.3) — preserved unchanged.
 
-1. **Word-existence pre-flight** — every word referenced in the probe resolves in antforth's dictionary (or is an explicit new word being introduced by the same story). Mechanical check: extract the words, cross-reference against `WORDS` output or kernel source. Any missing word is a HALT (recall Story-13.5.6's `CMOVE`-instead-of-`MOVE` incident).
-2. **TIB-128 line-length lint** — every line in the probe is ≤ 128 characters. Mechanical check: `awk 'length > 128'` returns no rows. Probes intended for hardware-typing-by-human must split logically across lines that fit the input buffer.
+### Communication Patterns — Phase-4-specific (banking inter-word contracts)
 
-**Probe transient-buffer choice (B.1).** Per `tests/README.md`'s canonical guidance:
-- **Default to PAD** for any one-shot scratch buffer surviving a single space-delimited parse (per ANS §6.2.2000)
-- Use `ALLOTed` named buffers (`B45`, `B46`, etc. per Story 13.5.1's pattern) for buffers that must survive across multiple parses
-- **Avoid HERE for transient writes** — Story-13.5.1 surfaced a transient-buffer-collision incident where `S"` allocates near HERE; HERE C@ post-READ-FILE returned the residual S" byte rather than the read byte
-- **Avoid S"-near-HERE writes for the same reason** — use ALLOTed buffers for read destinations
+Phase 4 adds the following inter-word contracts on top of the Phase-2/3 contracts (BC=TOS, EXX leaf-level rule, exception-frame layout, INCLUDE source-frame layout, IY-relative user-area access, FCB-pool acquire/release semantics, the `file_byte_read` tri-state contract from Story 13.5.2 — all unchanged):
 
-**Hardware-smoke cadence (S9 / NFR-P3-7).** Every binary-delta Phase-3 story runs its own hardware-smoke task on real CP/M 2.2 / MicroBeast with a PASS verdict before being declared done. Zero-binary-delta stories (B.1–B.5 doc/template-only) document their S9 exemption explicitly in the story's verdict table — never silently skipped.
+- **`IN-BANK` is CATCH-safe and kernel-blessed** — not a user library word. Reference body: `: IN-BANK BANK@ >R SWAP BANK! EXECUTE R> BANK! ;`. Restore-on-throw must be guaranteed; the kernel implements it directly so the contract holds even if the EXECUTEd word raises an exception.
+- **`BANK!` precondition: `n` in active list, else `ABORT" bank?"`** — checked on every call, not just first. Callers must not assume "I just called `BANK!` with this `n`, so it's still valid"; another word may have called `-BANK` in between.
+- **Cross-bank-call ABI is descriptor-stub-mediated** — the callee never sees the caller's bank explicitly; the sentinel-trampoline EXIT restores the caller's bank automatically. Callees never write to the caller's bank-table[] entry directly.
+- **Per-bank state swap on `BANK!` is atomic from user's view** — the `(here, latest, wordlist-heads)` triple swaps in one go; user cannot observe a partial swap (e.g., new HERE with old LATEST). Implementation is an indexed load of three cells from `bank-table[n]` into the active-state cells.
+- **System wordlists never trigger MMU switch on FIND** — FORTH and ASSEMBLER tagged `bank=fixed` (-1); FIND's per-wordlist loop checks the field and skips the switch. New wordlists default to whatever bank they're created in; user must explicitly tag a new wordlist `bank=fixed` if they want zero-switch lookups (rare, only for kernel-extension wordlists).
+- **BDOS calls work unchanged from banked code** — `CALL 0005h` lands in fixed memory ($DC00–$E9FF); the caller's bank stays mapped throughout the BDOS call; the `RET` returns to the caller's bank context. No bank-switching glue needed around BDOS calls. (Verification: this depends on the BDOS implementation not depending on slot-2 contents during its execution; verified for CP/M 2.2 standard BDOS.)
+- **`cross_bank_return` trampoline preserves all user-visible registers** — when `EXIT` jumps to the trampoline, registers are in the standard NEXT-time state (BC=TOS, DE=IP, HL=W). The trampoline writes one MMU port, pops the caller's bank from the return stack, and continues NEXT. No EXX needed (the trampoline is a leaf with respect to the EXX rule).
+- **Saved-bank cell (S5) is updated only by interactive `BANK!`** — `BANK!` from inside a colon definition does NOT update the saved-bank cell; only top-level interactive `BANK!` from the outermost interpret loop does. This is what makes `IN-BANK`'s nested save/restore work correctly under QUIT bank-restore (the saved-bank cell still reflects the user's last interactive choice).
 
-**"Mirrors prior arm" lint scope (B.2).** Triggers on:
-- Literal "mirrors" / "same shape as" / "this is the X arm" phrasings in byte-budget rationale
-- Any "Story Y" reference in a byte-budget rationale paragraph (pattern-match: "Story" + capital-letter or digit + cardinal/ordinal)
-- The lint requires the drafter to **count the parts of the new arm** independently — listing each component (load, store, branch, return-stack manipulation, etc.) with its byte cost — before the rationale is accepted.
+### Process Patterns (Phase-4-specific)
 
-**Pre-fix negative-result confirmation (A.1-D3 / per-back-fill).** Each A.1 back-fill story includes an explicit demonstration that the pre-fix code fails the new probe:
-1. Build the pre-fix binary (current HEAD before back-fill)
-2. Run the new probe against the pre-fix binary
-3. Capture the failure (wrong output, missing behaviour, ABORT, etc.)
-4. Apply the back-fill
-5. Re-run the same probe; capture the now-PASS verdict
+**S1–S12 standing commitments carry forward unchanged** (per project-lead direction 2026-05-10: no S13+ proposals). Codified as NFR-P4-28..39. Each Phase-4 retro re-walks the relevant subset.
 
-The diff between pre-fix-FAIL and post-fix-PASS is the back-fill's primary verdict-criterion artefact.
+**Per-bank hardware-smoke discipline (NFR-P4-11 / S9).** Every binary-delta Phase-4 story runs on **three test surfaces**:
+1. **iz-cpm** — non-banking regression baseline (the existing 974-test suite continues passing under the banked binary running flat-mode tests)
+2. **Banking-capable emulator** (Epic 16.3 vendor pick) — cross-bank assertions
+3. **Real MicroBeast** — load-bearing final word (S9 standing commitment)
+
+All three surfaces must PASS for any binary-delta story. Zero-binary-delta stories document their S9 exemption explicitly.
+
+**Per-epic prework-gate review.** Epic 16 prework (memory map + emulator pick + doc lock) blocks Epic 17 onward. Explicit gate-state check at Epic 17 kickoff: confirm Story 16.3 closed (vendor selected and integrated into `make test-repl-banking` or equivalent), confirm CCP-eviction policy verified on real CP/M 2.2 (see Finding F3), confirm doc lock (this document) signed off.
+
+**Architecture-stage open questions captured as `TODO(P4-arch)` markers** in this document, not as PRD-blockers. Six open questions from `docs/antforth-banking-redesign.md` §9 are owned by Epic-16 spike stories:
+- §9.1 CODE-words-in-banks (S7 dispatch implication)
+- §9.2 banking-capable emulator vendor pick (Epic 16.3 — explicit prework gate)
+- §9.3 CL parser edge cases
+- §9.4 bank-state-table cap (29 entries) ABORT policy
+- §9.5 stub size (3 vs 4–5 bytes)
+- §9.6 recursive cross-bank R-stack overflow (documented gotcha vs runtime guard)
+- §9.7 flat-build semantics — **CLOSED 2026-05-10** as non-MVP for Phase 4 (per project-lead direction)
+
+**Carry-forward Phase-3 process additions** that survive into Phase 4:
+- Probe-authoring discipline (S12 / word-existence pre-flight + TIB-128 line-length lint) — unchanged
+- "Mirrors prior arm" HALT signal (B.2) — unchanged; fires on byte-budget rationale containing "mirrors", "same shape as", or any "Story Y" reference in a byte-budget paragraph
+- PD-2 figure-drift discipline (B.4) — unchanged; figures, tables, code blocks validated against source-of-truth at draft time
+- `wc -c` real-baseline capture (B.3) — unchanged; pre-edit baseline never inherited from prior story
+- Story-template lints (B.2–B.5) fire automatically — unchanged
+- Pre-fix negative-result confirmation (A.1-D3) — unchanged where Phase 4 ships a behavioural fix; banking-feature stories use the standard AC-positive-path-PASS pattern instead
 
 ### Enforcement Guidelines
 
-**All Phase-3 dev-pass agents MUST:**
+**All Phase-4 dev-pass agents MUST:**
 
 1. Author compliance-doc rows in CCD-P3-1's 6-column format — no shorthand, no row-format drift
 2. Use the A.1-D3 back-fill story shape verbatim — six steps, including pre-fix negative-result confirmation
@@ -507,7 +538,7 @@ The diff between pre-fix-FAIL and post-fix-PASS is the back-fill's primary verdi
 - **`make check-doc-sync`** (B.5) catches PRD-vs-architecture drift at any time the maintainer runs it
 - **`make check-tools`** (B.6) catches host-toolchain drift at any time the contributor runs it
 - **S9 hardware smoke per binary-delta story** catches kernel-regression at dev-pass close
-- **S11 user-visible version surface audit** (NFR-P3-32) catches version-banner drift at tag close-out
+- **S11 user-visible version surface audit** (NFR-P4-38) catches version-banner drift at tag close-out
 - **Adversarial code review (`/CR`)** post-PD-1 fresh-context — eleven-plus consecutive epic finding-rate held; catches whatever the structural lints don't
 
 ### Concrete Examples
@@ -526,33 +557,42 @@ The diff between pre-fix-FAIL and post-fix-PASS is the back-fill's primary verdi
 
 (Missing § prefix and standard cite, missing rule text, non-canonical verdict, relative path, ambiguous closure label, vacuous notes.)
 
-**Good — back-fill story shape (skeleton):**
+**Good — Phase-4 banking-feature story shape (skeleton):**
 
 ```markdown
-### Story P3.A1.1: Back-fill §X.Y.Z structural rule
+### Story 17.X: Implement BANK! with probe-and-ABORT semantics
 
-> **TODO(P4):** Replace with Phase-4 example story (likely a banking-related shape) demonstrating the architectural patterns.
+**Wordset row** (banking-redesign §1):
+| `BANK!` | `( n -- )` | Switch logical bank. `ABORT" bank?"` if `n` is not in the active list. |
 
-**AC:**
-- AC1: Implementation in src/<file>.asm at <line>; standards-citation comment per CCD-3
-- AC2: New row in docs/ans-forth-core-compliance.md per CCD-P3-1
-- AC3: REPL probes in tests/<harness>.fth — positive path + edge case
-- AC4: S9 hardware smoke on real CP/M 2.2 / MicroBeast — PASS verdict
-- AC5: Pre-fix negative-result confirmation — pre-fix binary fails new probe, post-fix passes; diff captured in Dev Notes
-- AC6: ROM delta within +0..+50 bytes; HALT if outside envelope
+**FRs served:** FR-P4-2 (BANK! switches logical bank), FR-P4-2 precondition (ABORT on `n` not in active list), FR-P4-7 (probe-on-add via +BANK validates list membership).
+
+**Files touched:**
+- `src/banking.asm` — `BANK!` colon-CFA + ABORT-on-bad-arg path
+- `src/wordlists.asm` — bank-table[] lookup helper (callee of BANK! to validate `n`)
+- `tests/banking_tests.fth` (NEW) — REPL probes: valid switch, invalid index, switch+restore round-trip
+
+**Test shape:**
+1. REPL probe: `: T1 BANK@ 5 BANK! BANK@ 5 = SWAP 0 = AND ;` (round-trip validity)
+2. REPL probe: `: T2 ['] BAD-INDEX-BANK CATCH . CR ;` expects negative THROW code (-2 ABORT")
+3. Hardware smoke: same probes on iz-cpm + banking-capable emulator + real MicroBeast (per S9)
+
+**Standards citation comment (CCD-3):** `; antforth extension BANK! — see docs/antforth-banking-redesign.md §1`
+
+**Verdict gate:** all three test surfaces PASS; binary-delta within fixed-memory NFR-P4-5 envelope; no regression on Phase-3 974-PASS baseline.
 ```
 
-**Bad — back-fill story shape (anti-pattern):**
+**Bad — Phase-4 story shape (anti-pattern):**
 
 ```markdown
-### Story P3.A1.1: Add the missing rule
+### Story 17.X: Add BANK!
 
 **AC:**
-- AC1: Implement the rule
+- AC1: Implement BANK!
 - AC2: Tests pass
 ```
 
-(Missing CCD-3 citation, missing CCD-P3-1 row, missing pre-fix negative-result confirmation, missing S9 hardware smoke, no envelope.)
+(Missing FR mapping, missing CCD-3 citation, missing test-surface enumeration, no S9 hardware-smoke task, no fixed-memory envelope, no Phase-3-baseline regression statement.)
 
 **Good — `<critical>` workflow edit (file: `instructions.xml`):**
 
@@ -599,133 +639,125 @@ In a memory entry `feedback_no_mirror_shorthand.md`:
 
 ## Project Structure & Boundaries
 
-> **Phase-2 carry-forward.** The full project directory structure from `architecture-phase2-epics-9-13.5.md` § "Project Structure & Boundaries" carries forward unchanged. Phase 3 does not restructure the codebase — it adds a small set of new files and modifies a focused set of existing ones. This section enumerates only the **Phase-3 file-touch surface**.
+> **Phase-2 / Phase-3 carry-forward.** The full project directory structure from the phase-2 + phase-3 architecture documents carries forward unchanged. Phase 4 does not restructure the codebase — it adds one new kernel file (`src/banking.asm`) and extends a focused set of existing ones. This section enumerates only the **Phase-4 file-touch surface**.
 
-### Phase-3 File-Touch Surface
+### Phase-4 File-Touch Surface
 
-> **TODO(P4):** Replace with Phase-4 file-touch surface (banking primitives → likely new file `src/banking.asm` or extension to `src/kernel.asm`; new Forth-source banking words; banking docs; etc.).
+#### New files created in Phase 4
 
-#### New files created in Phase 3
-
-| Path | Purpose | Carry-forward item |
+| Path | Purpose | Epic |
 |---|---|---|
-| `tests/README.md` | Test-author guidance: PAD-as-canonical-transient-buffer, S12 probe-authoring discipline, hardware-typed probe lints | B.1 |
-| `tools/check-doc-sync/check-doc-sync.<sh\|py>` | Project-local script: PRD↔architecture transcription-drift checker | B.5 |
-| `tools/check-doc-sync/README.md` | Tool documentation (drift-check rules, exit codes, intended cadence) | B.5 |
-| `.tool-versions` | Pinned `iz-cpm` and `sjasmplus` versions used to certify the v2.0 baseline | B.6 |
-| `_bmad-output/implementation-artifacts/phase3-a1-<§-rule>-<slug>.md` | A.1 back-fill story files (one per §-level structural-rule gap surfaced; 0–2 expected) | A.1 back-fills |
-| `_bmad-output/implementation-artifacts/<epic>-retro-<date>.md` | Phase-3 retrospective(s) at epic close-out | per-epic |
+| `src/banking.asm` | NEW kernel file — descriptor-stub allocator, sentinel-trampoline cross-bank EXIT, MMU port wrappers, `bank-table[]` allocator, `BANK!` swap routine, the 12 banking words' assembly bodies, `cross_bank_return` trampoline | Epic 17 / 18 |
+| `tests/banking_tests.fth` | NEW REPL-probe harness — probes for the 12 wordset words + cross-bank dispatch round-trip + ABORT-bank-restore + boot-config edge cases; per-probe annotation of which emulator surface (banking-capable / iz-cpm / hardware) the probe targets | Epic 17–22 |
+| `_bmad-output/implementation-artifacts/<epic>-retro-<date>.md` | Phase-4 retrospective(s) at each epic close-out (one per epic, 16–22) | per-epic |
+| `_bmad-output/implementation-artifacts/<story>-<slug>.md` | Per-story dev-notes for any story that needs them | per-story |
 
-Path under `tools/check-doc-sync/` follows the `tools/bdos_probe/` precedent (Story 11.5.1 firmware reproducer); a self-contained subdirectory keeps tool logic separable from the kernel build.
+`src/banking.asm` follows the existing per-subsystem-file convention (`src/exception.asm`, `src/file_access.asm`, etc.) — one file per subsystem, kernel-resident, hard-coded.
 
-#### Existing files modified in Phase 3
+#### Existing files modified in Phase 4
 
-| Path | Changes | Carry-forward item |
+| Path | Changes | Epic |
 |---|---|---|
-| `Makefile` | Add `check-doc-sync` PHONY target (B.5); add `check-tools` PHONY target (B.6); renumber duplicate test IDs in `test-repl` recipe (B.8); add pointer comment to `tests/README.md` from test section (B.1) | B.5, B.6, B.8, B.1 |
-| `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` | Add `<critical>` block for "mirrors prior arm" HALT signal (B.2); add `<critical>` block for figure-drift discipline (B.4) | B.2, B.4 |
-| `_bmad/bmm/workflows/4-implementation/create-story/template.md` | Add `wc -c` task to "Pre-edit baseline" section (B.3) | B.3 |
-| `_bmad/bmm/workflows/4-implementation/create-story/checklist.md` | Update drafting checklist for B.1–B.5 cluster awareness (if needed) | B.1–B.5 |
-| `docs/ans-forth-core-compliance.md` | A.1 audit walk produces §-level rows for §6.1, §6.2, structural rules per CCD-P3-1 schema; row count grows from current word-count baseline to §-level coverage | A.1 |
-| `docs/PHASE-3-CARRY-FORWARD.md` | Status column updated per item as each closes (`✅ Done` with closure note) | per-item |
-| `tests/throw_migration_tests.fth` | Add caught-form probes for the `-258..-272` asm-error block (15 codes) per A.2 | A.2 |
-| `tests/file_access_tests.fth` | Add disk-full stress block (B.9); add directory-full + zero-byte READ-FILE probes if B.7 disposition (b) fires | B.9, B.7 conditional |
-| `src/strings.asm` | Modify `w_NUMBER_Q_cf` for unprefixed-numeral base-specialization (A.3); regression-only otherwise | A.3 |
-| `src/antforth.asm` (banner string) | Update version banner for each Phase-3 antforth 2.x point-release (S11 / NFR-P3-32) | every tag |
-| `README.md` | Update version reference for each Phase-3 antforth 2.x point-release (S11 / NFR-P3-32) | every tag |
-| `memory/project_phase2_scope.md` (or successor) | Update `description` fields citing antforth version at each tag close-out (S11 / NFR-P3-32) | every tag |
-| `_bmad-output/implementation-artifacts/sprint-status.yaml` | Story status updates per Phase-3 dev-pass close | every story |
+| `src/inner_interpreter.asm` | Extend `w_EXIT_cf:` with sentinel-comparison branch (intra-bank zero-overhead path preserved); extend `w_EXECUTE_cf:` to dispatch through descriptor stub | Epic 18 |
+| `src/compiler.asm` | Extend `w_COMPILE_COMMA_cf:` to emit stub address (always); extend `w_COLON_cf:` to allocate descriptor stub on `:` and link the stub address as the new word's xt | Epic 18 / 19 |
+| `src/dictionary.asm` | Extend `w_FIND_cf:` with per-wordlist `bank` field check; save current bank, switch to wordlist's bank only if non-fixed, walk chain, restore; extend wordlist-header layout with `bank` field; extend MARKER/FORGET to track per-bank dictionary tail | Epic 19 / 20 / 21 |
+| `src/wordlists.asm` | Extend wordlist creation to default new wordlists' `bank` field to current bank; tag system wordlists (FORTH, ASSEMBLER) `bank=fixed` (-1) at kernel build time; extend `w_WORDS_cf` to traverse banks per wordlist's `bank` field | Epic 20 |
+| `src/memory.asm` | Extend `w_HERE_cf:` and `w_LATEST_cf:` (and the `,` / `C,` family) to read/write per-bank state from `bank-table[]` instead of from a single global cell | Epic 19 |
+| `src/system.asm` | Extend `w_ABORT_cf:` (and `w_ABORT_QUOTE_cf:`) so the unwind path leaves the saved-bank cell intact for QUIT to re-assert; update CCP-eviction memory-map declaration ($D400–$DBFF reclaimed for stub allocator) | Epic 18 / 21 |
+| `src/outer_interpreter.asm` | Extend `w_QUIT_cf:` to re-assert the saved-bank cell on re-entry; extend the outermost interpret-loop `BANK!` recogniser to update the saved-bank cell | Epic 21 |
+| `src/exception.asm` | Verify the `.throw_uncaught` recovery chain interacts correctly with cross-bank frames; no functional change expected (the trampoline restores caller's bank before EXIT, so uncaught THROW unwind is a recursive sentinel-trampoline walk) | Epic 21 (verification) |
+| `src/antforth.asm` | Add CL-tail parser invoked early in boot (FR-P4-34..38); update banner string to include active-bank count (FR-P4-37); auto-`BANK-MAPPING-ON` in COLD; update banner for each Phase-4 antforth 3.x point-release (S11 / NFR-P4-38) | Epic 17 / every tag |
+| `src/structures.asm` | Add UserArea cells: `saved-bank`, `current-bank`, `bank-table-base`, `bank-mapping-state` | Epic 17 |
+| `docs/ans-forth-core-compliance.md` | Add 12 rows for the banking words flagged as antforth extensions per CCD-3 / CCD-P3-1; `Source` column points to `docs/antforth-banking-redesign.md`; `Verdict` is `Implemented (antforth extension)`; `Closure` per Phase-4 story | Epic 17–22 |
+| `README.md` | Update version reference for each Phase-4 antforth 3.x point-release (S11 / NFR-P4-38) | every tag |
+| `memory/project_phase2_scope.md` (or successor `project_phase3_scope.md` / `project_phase4_scope.md`) | Update `description` fields citing antforth version at each tag close-out (S11 / NFR-P4-38) | every tag |
+| `_bmad-output/implementation-artifacts/sprint-status.yaml` | Story status updates per Phase-4 dev-pass close | every story |
+| `Makefile` | Add `make test-repl-banking` target (or equivalent) per Epic 16.3 vendor pick; per-probe surface annotation supported | Epic 16 / 17 |
 
-#### Files explicitly NOT touched in Phase 3
+#### Files SUPERSEDED / not consumed in Phase 4
 
 | Path | Reason |
 |---|---|
-| `src/assembler.asm` | Per `project_assembler_keep_assembly.md` — assembler stays kernel-resident hard-coded; no ASSEMBLER wordlist; A.2 closes asm-error caught-form gap via test harness only, no kernel changes |
-| `src/inner_interpreter.asm`, `src/outer_interpreter.asm` | Threading model and outer-interpreter loop frozen for Phase 3; no changes expected |
-| `src/exception.asm` | Exception subsystem complete post-Story-11.7; A.2 is test-only |
-| `src/file_access.asm` | File-access subsystem complete post-Epic-13.5; B.7/B.9 are test-only unless hardware reveals defects |
-| `src/wordlists.asm`, `src/compiler.asm`, `src/dictionary.asm`, `src/hash.asm`, `src/control_flow.asm` | Phase-2 subsystems frozen for Phase 3 |
-| `src/structures.asm` (UserArea layout) | Frozen for Phase 3; banking design (`docs/antforth-banking-design.md`) deferred to Phase 4 |
-| `disk/`, `build/`, `examples/`, `blog/`, `images/`, `reference_docs/`, `node_modules/` | No Phase-3 surface |
+| `docs/antforth-banking-design.md` | SUPERSEDED — the obsolete 2026-05-07 sketch with the broken `BIT 7,H` heuristic and `THUNK-TO-USER-BANKn` family; banner-marked SUPERSEDED; preserved only for design-evolution traceability |
+| `docs/PHASE-3-CARRY-FORWARD.md` | CLOSED — the prioritised Phase-3 catalog; all 12 P1 items closed at Phase-3 close-out 2026-05-09 |
 
-#### A.1 back-fill conditional touch surface
+#### Files explicitly NOT touched in Phase 4
 
-If an A.1 back-fill story is spawned (0–2 expected), it may touch:
-- One or more `src/*.asm` files (the implementation site for the §-rule being back-filled)
-- `docs/ans-forth-core-compliance.md` (new row per CCD-P3-1)
-- One or more `tests/*.fth` harnesses (depending on which subsystem the rule belongs to)
-- `src/constants.asm` if the back-fill introduces a new EQU symbol (unlikely but possible)
-
-The back-fill story shape (per A.1-D3) constrains the touch surface: implementation + citation comment + new compliance-doc row + REPL probes + S9 hardware smoke + pre-fix negative-result confirmation.
+| Path | Reason |
+|---|---|
+| `src/assembler.asm` | Per `project_assembler_keep_assembly.md` — assembler stays kernel-resident hard-coded; CODE-words-in-banks decision (open question §9.1) does not require assembler changes — the question is about whether user CODE words can land in banks, not about restructuring the assembler kernel |
+| `src/file_access.asm` | File-access subsystem complete post-Epic-13.5; banking doesn't change BDOS call semantics (BDOS lives in fixed memory; PD-P4-6) |
+| `src/strings.asm` | Phase-3 close-out (post-A.3); no Phase-4 changes expected |
+| `src/hash.asm`, `src/control_flow.asm`, `src/io.asm`, `src/arithmetic.asm`, `src/logic.asm`, `src/stack_ops.asm`, `src/double.asm`, `src/pictured.asm`, `src/formatting.asm`, `src/number_prefixes.asm`, `src/bootstrap.asm`, `src/macros.asm`, `src/constants.asm` | Phase-1/2 subsystems frozen for Phase 4 — the descriptor-stub mechanism (PD-P4-1) means these don't need internal-banking awareness; cross-bank dispatch is handled at the `EXIT` / `EXECUTE` / `COMPILE,` chokepoints |
+| `disk/`, `build/`, `examples/`, `blog/`, `images/`, `reference_docs/`, `node_modules/` | No Phase-4 surface |
 
 ### Architectural Boundaries
 
-**Kernel boundary (frozen for Phase 3):**
+**Kernel boundary (Phase 4 — banking subsystem additions):**
 
-The Z80 assembly kernel surface (`src/*.asm` minus `src/strings.asm`'s A.3 surgery) is frozen for Phase 3 with one exception: A.1 back-fill stories may surface kernel surgery (constrained to the affected `cf:` label). Otherwise, the kernel is the v2.0 binary baseline; Phase-3 binary growth is dominated by 0–2 expected A.1 back-fills (~+10..+50 each) and the small A.3 surgery (~+0..+30).
+The Z80 assembly kernel surface adds `src/banking.asm` (NEW) for the descriptor-stub mechanism, sentinel-trampoline EXIT, MMU port wrappers, and the 12 banking-word bodies. Existing kernel files extended at narrow chokepoints: `src/dictionary.asm` / `src/memory.asm` (per-bank `(here, latest, wordlist-heads)` triple), `src/wordlists.asm` (per-wordlist `bank` field on FIND), `src/inner_interpreter.asm` (cross-bank EXIT + EXECUTE switch), `src/compiler.asm` (per-bank `COMPILE,`), `src/system.asm` / `src/exception.asm` (QUIT bank-restore), `src/antforth.asm` (CL parser, banner). The Phase-1/2/3 binary baseline is preserved as a starting point; Phase-4 binary growth is dominated by descriptor-stub allocation + the new banking subsystem (~6 KB worst case at default 12 banks per NFR-P4-5).
 
 **Test-harness boundary:**
 
-Tests are REPL-piped Forth scripts in `tests/*.fth` (per S2). New probes added in Phase 3:
-- `tests/throw_migration_tests.fth` extension — A.2 caught-form coverage for `-258..-272`
-- `tests/file_access_tests.fth` extension — B.9 disk-full block, B.7 conditional probes
-- A.1 back-fill stories add probes to the appropriate harness (`core_tests.fth`, `double_tests.fth`, `pictured_tests.fth`, etc., per §-rule subsystem)
+Tests are REPL-piped Forth scripts in `tests/*.fth` (per S2). Phase 4 adds a new test file:
+- `tests/banking_tests.fth` (NEW) — REPL probes for the 12 banking words, cross-bank dispatch, ABORT-bank-restore, boot-config edge cases
+- Hardware-smoke probes for the banking-capable emulator + real MicroBeast (per S9 + per Phase-4 three-test-surface discipline)
+- Existing test files extended for any banked-mode regression coverage
 
-No new test-harness file is created in Phase 3 — extension over creation.
+Test surface expands from 1 (iz-cpm) to 3 (iz-cpm + banking-capable emulator + real MicroBeast) for binary-delta stories; Epic 16.3 emulator pick gates this expansion.
 
 **Documentation boundary:**
 
-- **Standards-compliance doc** (`docs/ans-forth-core-compliance.md`) — A.1 produces §-level rows per CCD-P3-1; row format is the contract that makes NFR-P3-13 ("checkable in under 10 minutes per row") true
-- **Phase-3 catalog** (`docs/PHASE-3-CARRY-FORWARD.md`) — status table updated per item; living document throughout the phase
-- **Test-author guidance** (`tests/README.md`, NEW) — single source of truth for probe-authoring conventions (PAD-as-canonical, S12 lints)
-- **Tool documentation** (`tools/check-doc-sync/README.md`, NEW) — drift-checker rules and intended cadence
-- **`docs/dev_journal.md`** — engineering log; touched by author at his discretion, not architecturally pinned (per user preference, not loaded into this workflow)
+- **Standards-compliance doc** (`docs/ans-forth-core-compliance.md`) — Phase 4 adds 12 rows for the banking words (flagged as antforth extensions per CCD-P3-1 row schema). Row format unchanged. NFR-P4-17 row-checkability holds.
+- **Banking design doc** (`docs/antforth-banking-redesign.md`) — locked source of truth for Phase 4 architectural decisions; superseded `docs/antforth-banking-design.md` (banner-marked).
+- **Phase-3 catalog** (`docs/PHASE-3-CARRY-FORWARD.md`) — closed; historical reference only.
+- **Test-author guidance** (`tests/README.md`) — already exists from Phase 3 (B.1); Phase 4 may extend with banking-specific probe conventions.
+- **`docs/dev_journal.md`** — engineering log; touched by author at his discretion, not architecturally pinned.
 
 **Tooling boundary:**
 
-- **Makefile** is the build and test orchestrator; Phase-3 adds two PHONY targets (`check-doc-sync`, `check-tools`) and one renumber pass (B.8). Default `make` behaviour unchanged.
-- **`.tool-versions`** is a pinned-versions manifest used by `make check-tools`. Format: `<tool> <version>` per line.
-- **`tools/check-doc-sync/`** is a self-contained drift-checker; language choice (Bash, Python, etc.) deferred to B.5's story-author. Output format pinned: `[ok] doc-sync: 0 drift` on clean, line-per-drift on failure with exit 1.
+- **Makefile** is the build and test orchestrator; Phase-4 adds a banking-build target (likely `make test-repl-banked` or extension to the existing `test-repl` target with EMULATOR variable selection); the iz-cpm-only path is preserved for the existing 974-PASS baseline.
+- **`.tool-versions`** — Phase 4 adds an entry for the banking-capable emulator vendor (Epic 16.3 outcome).
+- **`tools/check-doc-sync/`** — already exists from Phase 3 (B.5); Phase 4 may extend to cover the architecture-vs-banking-redesign-doc drift case.
+- The Phase-3-specific `tools/` additions are complete; Phase 4 does not create new `tools/` directories unless emulator integration requires one.
 
 **Workflow-file boundary (BMAD enforcement surface, per CCD-P3-2):**
 
-- `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` — drafting `<critical>` blocks land here
-- `_bmad/bmm/workflows/4-implementation/create-story/template.md` — task-list entries land here
-- `_bmad/bmm/workflows/4-implementation/create-story/checklist.md` — drafting-checklist updates if any
-- `_bmad/bmm/agents/dev.md`, `_bmad/bmm/agents/sm.md` — agent extensions for cross-cutting commands; Phase-3 may not touch these (no equivalent of PD-1's CR-cadence-extension expected)
+- The four BMAD workflow files (`_bmad/bmm/workflows/4-implementation/create-story/instructions.xml`, `_bmad/bmm/workflows/4-implementation/create-story/template.md`, `_bmad/bmm/workflows/4-implementation/create-story/checklist.md`, `_bmad/bmm/agents/dev.md`, `_bmad/bmm/agents/sm.md`) carry forward unchanged from Phase 3. Phase 4 may extend them only if a Phase-4-specific workflow gap surfaces (e.g., a banked-mode test-cadence task). No expected touches per the current epic outline.
+- CCD-P3-2 (process discipline lives in workflow files) carries forward.
 
 ### Requirements-to-Structure Mapping
 
-| Carry-forward item | Touches |
+| Phase-4 epic | Touches |
 |---|---|
-| **A.1** §-by-§ audit | `docs/ans-forth-core-compliance.md` (audit-story rows); 0–2 back-fill stories conditionally touching `src/*.asm` + `tests/*.fth` |
-| **A.2** caught-form coverage | `tests/throw_migration_tests.fth` |
-| **A.3** NUMBER? base-spec | `src/strings.asm:w_NUMBER_Q_cf`; regression probes in `tests/number_prefixes_tests.fth` |
-| **B.1** PAD doc | `tests/README.md` (NEW); `Makefile` test-section pointer comment |
-| **B.2** "mirrors" HALT | `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` |
-| **B.3** re-`wc -c` | `_bmad/bmm/workflows/4-implementation/create-story/template.md` |
-| **B.4** figure-drift | `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` |
-| **B.5** doc-sync | `tools/check-doc-sync/` (NEW); `Makefile` `check-doc-sync` target |
-| **B.6** check-tools | `.tool-versions` (NEW); `Makefile` `check-tools` target |
-| **B.7** stress-matrix | Conditional: `tests/file_access_tests.fth` (if hardware reveals defect) |
-| **B.8** test renumber | `Makefile` (test-repl recipe) |
-| **B.9** disk-full | `tests/file_access_tests.fth` |
-| **S11** version surface | `src/antforth.asm` banner; `README.md`; `memory/project_phase2_scope.md` (or successor `description` fields) per tag |
-| **S9** hardware smoke | Per-story closure transcript — filed alongside dev-pass story file |
+| **Epic 16 — Memory map & doc lock** | `docs/antforth-banking-redesign.md` (already landed); `docs/antforth-banking-design.md` SUPERSEDED banner; emulator-vendor research notes (Epic 16.3); CCP-eviction verification on real hardware |
+| **Epic 17 — Bank primitives + CL config** | `src/banking.asm` (NEW — 12 wordset words bodies + MMU port wrappers + probe-on-add); `src/antforth.asm` (CL parser, banner update); `tests/banking_tests.fth` (NEW — wordset probes); banking-capable emulator integration |
+| **Epic 18 — Stub mechanism (γ) + cross-bank EXIT (S1 b)** | `src/banking.asm` (descriptor-stub layout + sentinel-trampoline `cross_bank_return`); `src/inner_interpreter.asm` (`EXIT` sentinel detection, `EXECUTE` switch); `BANK-OF` + `IN-BANK` wordset bodies in `src/banking.asm`; `tests/banking_tests.fth` (cross-bank dispatch probes) |
+| **Epic 19 — Bank-aware compiler** | `src/dictionary.asm` / `src/memory.asm` (per-bank `(here, latest, wordlist-heads)` triple in `bank-table[]`); `src/compiler.asm` (per-bank `,` and `COMPILE,`); `:` body lands in current bank; `CREATE`/`DOES>` cross-bank PFA layout; `tests/banking_tests.fth` (cross-bank `:`/`CREATE` probes) |
+| **Epic 20 — Bank-aware FIND + interpreter loop** | `src/wordlists.asm` (per-wordlist `bank` field, FIND saves/switches/walks/restores, system wordlists tagged `bank=fixed`); `src/outer_interpreter.asm` (interpreter-loop bank state); error-message attribution to source bank; `tests/banking_tests.fth` (FIND probes) |
+| **Epic 21 — MARKER/FORGET + ABORT/QUIT bank state (S5)** | `src/structures.asm` (per-bank dictionary tail tracking for MARKER); `src/system.asm` / `src/exception.asm` (QUIT re-asserts saved current-bank); `tests/banking_tests.fth` (ABORT-bank-restore probes) |
+| **Epic 22 — Polish** | `.BANKS` formatting in `src/banking.asm`; REPL prompt indicator (`src/outer_interpreter.asm`); CODE-words-in-banks decision (Epic-22 spike per `TODO(P4-arch)` §9.1); test-harness sweep |
+| **S11 version surface (per-tag)** | `src/antforth.asm` banner; `README.md`; memory `description` fields per tag; `make check-doc-sync` clean-pass |
+| **S9 hardware smoke (per binary-delta story)** | Three-test-surface transcripts: iz-cpm + banking-capable emulator + real MicroBeast |
 
 ### Integration Points
 
-**Internal communication (no change from v2.0):**
+**Internal communication:**
 
-The kernel's internal subsystem boundaries — outer interpreter ↔ compiler ↔ dictionary ↔ search-order ↔ exception subsystem ↔ file-access — all carry forward unchanged. Phase 3 does not introduce new internal communication paths. CCD-1 dual-chain frame discipline (CATCH-TOP / INCLUDE-TOP) and CCD-2 THROW code allocation continue to govern cross-subsystem error flow.
+Phase 4 introduces **two new internal communication paths** beyond the Phase-3 carry-forward set:
+1. **Cross-bank dispatch** via descriptor stubs (PD-P4-1) — every `EXECUTE` / `COMPILE,` / `:`-call path now flows through the stub mechanism; same-bank calls add one `JP` overhead, cross-bank calls add ~60 T-states + MMU port-write
+2. **Per-bank state swap** (PD-P4-3) — `BANK!` atomically swaps the `(here, latest, wordlist-heads)` triple; FIND, `,`, `COMPILE,`, `:`, `CREATE`, `MARKER`, `FORGET` all read from the current bank's triple
+
+CCD-1 dual-chain frame discipline (CATCH-TOP / INCLUDE-TOP) and CCD-2 THROW code allocation continue to govern cross-subsystem error flow, including across banks (sentinel-trampoline EXIT preserves CATCH frames; `IN-BANK` is CATCH-safe). The ISR invariant (PD-P4-7) holds: no banked code reachable from interrupt vectors.
 
 **External integrations:**
 
-- **CP/M 2.2 BDOS** — function allow-list per NFR-P3-11 unchanged; Phase 3 does not add any new BDOS functions
-- **iz-cpm emulator** — used by `make test-repl`; version pinned via `.tool-versions` (B.6)
-- **sjasmplus assembler** — used by `make` for kernel build; version pinned via `.tool-versions` (B.6)
+- **CP/M 2.2 BDOS** — function allow-list per NFR-P4-15 unchanged; Phase 4 does not add any new BDOS functions; BDOS calls (`CALL 0005h`) work unchanged from banked code (BDOS at $DC00–$E9FF lives in fixed memory)
+- **iz-cpm emulator** — used by `make test-repl` for the existing 974-PASS regression baseline; does NOT support banking; Phase 4 adds dual-track integration with a banking-capable emulator (Epic 16.3 vendor pick)
+- **Banking-capable emulator** (Epic 16.3 vendor pick) — used for banked-mode probes; runs alongside iz-cpm; three eval criteria pinned (32-page MMU at ports 0x70+slot/0x74; pipe-able; bank-visibility for tests)
+- **sjasmplus assembler** — used by `make` for kernel build; version pinned via `.tool-versions`
 - **MicroBeast hardware** — used by S9 hardware smoke for every binary-delta story; transcript binary captured under `~/Downloads/bestialitty-<date>.bin` per established naming
-- **GitHub releases** — antforth 2.x point-release tags published as github releases (S11 sibling)
+- **GitHub releases** — antforth 3.x point-release tags published as GitHub releases (S11 sibling)
 
 **Data flow (no change from v2.0):**
 
@@ -733,234 +765,245 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 
 ### File Organisation Patterns
 
-**Kernel source:** `src/*.asm` — one file per subsystem (frozen for Phase 3 except A.3's `src/strings.asm` surgery and A.1 back-fill conditional touches).
+**Kernel source:** `src/*.asm` — one file per subsystem; Phase 4 adds `src/banking.asm` (NEW) and extends a focused set of existing files (per the File-Touch Surface table).
 
-**Test sources:** `tests/*.fth` — one file per subsystem-or-feature (extended in Phase 3, never new files).
+**Test sources:** `tests/*.fth` — one file per subsystem-or-feature; Phase 4 adds `tests/banking_tests.fth` (NEW).
 
-**Documentation:** `docs/*.md` — flat directory; Phase-3 modifies `ans-forth-core-compliance.md` (A.1) and `PHASE-3-CARRY-FORWARD.md` (status); `tests/README.md` is colocated with the tests.
+**Documentation:** Phase 4 modifies `docs/ans-forth-core-compliance.md` (12 banking-word rows as antforth extensions); `docs/antforth-banking-redesign.md` is the locked Phase-4 design source.
 
-**Planning artifacts:** `_bmad-output/planning-artifacts/*.md` — PRD, architecture, epics, briefs, sprint-change proposals, readiness reports. Phase-3 archives the Phase-2 architecture (already done at workflow start) and writes the Phase-3 architecture (this document).
+**Planning artifacts:** Phase 4 archives the Phase-3 PRD/architecture/epics (`*-phase3-epics-14-15.md`) and writes the Phase-4 PRD, this architecture document, and the Phase-4 epics document.
 
-**Implementation artifacts:** `_bmad-output/implementation-artifacts/*.md` — per-story dev notes + retrospectives + sprint-status. Phase-3 adds back-fill story files and the eventual Phase-3 retrospective.
+**Implementation artifacts:** Phase 4 will add per-story dev notes + retrospectives + sprint-status updates as epics ship.
 
-**Tools:** `tools/<tool-name>/` — self-contained tool subdirectories (per `tools/bdos_probe/` precedent); Phase-3 adds `tools/check-doc-sync/` (B.5).
+**Tools:** Phase 4 may add `tools/<emulator-vendor>/` if emulator integration requires custom tooling (Epic 16.3 outcome).
 
 ### Development Workflow Integration
 
-**Build:** `make` (or `make asm`) → `build/antforth.com`. Unchanged.
+**Build:** `make` (or `make asm`) → `build/antforth.com`. Unchanged for Phase 4 (binary still builds the same way; banking is internal infrastructure).
 
-**Test:** `make test-repl` → runs the full `tests/*.fth` suite under iz-cpm. Phase-3 may add probes that extend the suite; the recipe is renumbered by B.8 once during the phase.
+**Test:** `make test-repl` → runs the full `tests/*.fth` suite under iz-cpm (the 974-PASS baseline). Phase 4 adds banking-mode probe variants — likely a new `make test-repl-banked` target using the banking-capable emulator (Epic 16.3 outcome). Both must pass for Phase-4 binary-delta stories.
 
-**Doc-sync (NEW, opt-in):** `make check-doc-sync` → runs `tools/check-doc-sync/` script; clean-pass is `[ok] doc-sync: 0 drift`; expected before any tag-applicable close-out (S11 sibling).
+**Doc-sync** (`make check-doc-sync`): unchanged from Phase 3; runs before any tag-applicable close-out.
 
-**Tool-version check (NEW, opt-in):** `make check-tools` → advisory by default; `make check-tools STRICT=1` exits 1 on mismatch.
+**Tool-version check** (`make check-tools`): unchanged from Phase 3; Phase 4 adds the banking-capable emulator entry to `.tool-versions`.
 
-**Hardware smoke (S9):** binary copied to MicroBeast via established serial / SD-card path; smoke probes typed by hand or piped from a hardware-typed Forth file. Transcript captured. Per-story closure references the transcript.
+**Hardware smoke (S9):** binary copied to MicroBeast via established serial / SD-card path; Phase-4 banking probes typed by hand or piped from a hardware-typed Forth file. Three-test-surface discipline for binary-delta stories.
 
-**Tag close-out (S11):** verdict-table walk per Story-13.5.6 precedent; banner / README / memory `description` fields all aligned to the new 2.x version; `make check-doc-sync` clean-pass; full `make test-repl` clean (973+ PASS / 0 FAIL); hardware smoke clean. Tag applied.
+**Tag close-out (S11):** verdict-table walk; banner / README / memory `description` fields all aligned to the new 3.x version; `make check-doc-sync` clean-pass; full test suite clean across all three test surfaces (iz-cpm + banking-capable emulator + real MicroBeast); hardware smoke clean. Tag applied.
 
 ## Architecture Validation Results
 
 ### Coherence Validation
 
-**Decision compatibility:** All Phase-3 decisions cohere with the v2.0 baseline:
-- A.1 / A.2 / A.3 layer onto existing subsystems without restructuring; CCD-P3-1's row schema is consistent with the existing `docs/ans-forth-core-compliance.md` format extended for §-level granularity
-- B.1–B.9 either touch new files (`tests/README.md`, `tools/check-doc-sync/`, `.tool-versions`) or extend existing files (`Makefile`, story-template files) — no replacement, no version conflict
-- CCD-1..CCD-4 (Phase-2) carry forward unchanged; CCD-P3-1 and CCD-P3-2 are net additions, not overrides
-- The "Phase 3 wins → Phase 2 → Phase 1" precedence chain is transitively correct (Phase 2 already governed by the same rule for its inheritance from Phase 1)
+**Decision compatibility:** All Phase-4 decisions cohere with the Phase-3 close-out baseline:
+- (γ) descriptor stubs (PD-P4-1) sit on top of existing dictionary/EXECUTE chain without restructuring CCD-1 dual-chain discipline or CCD-2 THROW codes
+- (S1 b) sentinel-tagged returns (PD-P4-2) extend EXIT path semantics; intra-bank zero-overhead path preserves Phase-1/2/3 EXIT timing exactly
+- Per-bank state triple (PD-P4-3) is additive — fixed-memory `bank-table[]` holds per-bank `(here, latest, wordlist-heads)`; the Phase-1/2/3 single-dictionary-pointer model is now bank-0's case
+- CCD-1..CCD-4 (Phase-2) carry forward unchanged; CCD-P3-1 / CCD-P3-2 (Phase-3) carry forward unchanged; PD-P4-1..10 are net additions, not overrides
+- The "Phase 4 wins → Phase 3 → Phase 2 → Phase 1" precedence chain is transitively correct
 
-**Pattern consistency:** Phase-3 patterns extend Phase-2 patterns without contradiction. The only behavioural-change site is A.3's `w_NUMBER_Q_cf`; everything else is additive (new probes, new doc rows, new workflow-file entries).
+**Pattern consistency:** Phase-4 patterns extend Phase-1/2/3 patterns without contradiction. Banking-word naming (BANK@/BANK!) mirrors BASE @/BASE ! idiom; descriptor-stub format is new but localised to the cross-bank dispatch path; sentinel-trampoline format is new but localised to EXIT.
 
-**Structure alignment:** The Phase-3 file-touch surface is small and well-scoped; no two carry-forward items target overlapping kernel sites. A.1 back-fill stories may touch any `src/*.asm` based on which §-rule is back-filled, but each touch is constrained to a single `cf:` label per the back-fill story shape.
+**Structure alignment:** The Phase-4 file-touch surface concentrates in one new file (`src/banking.asm`) plus narrow chokepoint extensions to ~6-8 existing files. No two Phase-4 epics target overlapping kernel sites at the function level (Epic 18 owns EXIT/EXECUTE, Epic 19 owns the compiler, Epic 20 owns FIND, Epic 21 owns ABORT/QUIT — all distinct).
 
 ### Requirements Coverage Validation
 
-**Functional Requirements (FR-P3-1..25 + Phase-2 carry-forward):**
+**Functional Requirements (FR-P4-1..43):**
 
 | Coverage | Status |
 |---|---|
-| All 25 FR-P3-N requirements map to at least one architectural decision | ✅ verified via the Requirements-to-Structure Mapping table |
-| Phase-2 FR1–FR47 preserved via FR-P3-22 | ✅ explicit carry-forward statement; A.3 is the only behavioural change and is documented as a refinement of Phase-2 FR9 / FR47 (unprefixed BASE-aware parsing) |
-| All 12 P1 carry-forward items covered | ✅ A.1, A.2, A.3, B.1, B.2, B.3, B.4, B.5, B.6, B.7, B.8, B.9 — all addressed |
+| All 43 FR-P4-N requirements map to at least one architectural decision | ✅ verified via the Requirements-to-Structure Mapping table; FR-P4-1..12 (Banking Wordset) → `src/banking.asm`; FR-P4-13..21 (Descriptor stubs + cross-bank EXIT) → PD-P4-1 + PD-P4-2 + Epic 18; FR-P4-22..26 (Bank-Aware Compiler) → PD-P4-3 + Epic 19; FR-P4-27..30 (Bank-Aware FIND) → PD-P4-4 + Epic 20; FR-P4-31..33 (ABORT/QUIT Bank-State) → PD-P4-5 + Epic 21; FR-P4-34..39 (Boot Config) → `src/antforth.asm` CL parser + Epic 17; FR-P4-40..43 (Backward-Compat) → regression discipline + S9 baseline |
+| Phase-1/2/3 closed FRs preserved via FR-P4-40..43 (Backward Compatibility & Regression) | ✅ explicit carry-forward statement; banked build is the new normal; existing flat programs run unmodified under banked build |
+| All 7 Phase-4 epics have at least one FR mapping | ✅ Epic 16 (prework), Epic 17 (Bank primitives + CL), Epic 18 (Stub + EXIT), Epic 19 (Compiler), Epic 20 (FIND), Epic 21 (MARKER/FORGET + ABORT), Epic 22 (Polish) — all addressed |
+| The 6 architecture-stage open questions (banking-redesign §9.1-9.6) are captured as `TODO(P4-arch)` markers | ✅ each owned by an Epic-16 spike story; not PRD-blockers |
 
-**Non-Functional Requirements (NFR-P3-1..33):**
+**Non-Functional Requirements (NFR-P4-1..39):**
 
 | Coverage | Status |
 |---|---|
-| Performance NFR-P3-1..2 (Phase-2 envelopes + cumulative ROM cap) | ✅ per-story envelope table in Decision Impact Analysis enforces NFR-P3-2 |
-| Reliability NFR-P3-3..7 | ✅ S9 cadence codified as NFR-P3-7; FCB-pool consistency in B.7/B.9 closure shape |
-| Compatibility & Standards NFR-P3-8..13 | ✅ CCD-P3-1 schema delivers NFR-P3-13 row-checkability |
-| Maintainability NFR-P3-14..18 | ✅ workflow-file enforcement surface in CCD-P3-2 delivers NFR-P3-18 |
-| Integration NFR-P3-19..21 | ✅ no new BDOS functions, bank-0 only, terminal I/O unchanged |
-| Process Discipline NFR-P3-22..33 (S1–S12) | ✅ each codified; B.1–B.5 lead-in cluster + verdict-criterion meta-pattern enforces structural hold |
+| Performance NFR-P4-1..7 (Phase-2/3 envelopes + Phase-4 banking budgets) | ✅ per-epic descriptor-stub cost tracked in Decision Impact Analysis; cross-bank ≤60 T-states (NFR-P4-2); banking infra ≤8 KB fixed mem (NFR-P4-5) |
+| Reliability NFR-P4-8..11 | ✅ ISR-from-fixed-only invariant (NFR-P4-26); BDOS calls work unchanged from banked code (NFR-P4-27); sentinel-trampoline restores CATCH frames; Phase-3 baseline regression-zero (NFR-P4-10) |
+| Compatibility & Standards NFR-P4-12..18 | ✅ banking words as antforth extensions (no new ANS wordset); CCD-P3-1 row schema unchanged (NFR-P4-17); CODE-source-file backward compat (NFR-P4-16) preserved with cross-bank-CODE-words flagged as architecture-stage open question |
+| Maintainability NFR-P4-19..22 | ✅ banking inline-comments cite redesign-doc §-numbers per CCD-3 (NFR-P4-20); per-epic point-release decoupling (NFR-P4-21); story-template lints from B.1–B.5 fire automatically (NFR-P4-22) |
+| Integration NFR-P4-23..27 | ✅ no new BDOS functions; banked default with flat-build deferred to Phase 5+; ISR invariant; emulator dual-track |
+| Process Discipline NFR-P4-28..39 (S1–S12) | ✅ each codified; S1–S12 carry forward unchanged from Phase 3; no S13+ added per project-lead direction 2026-05-10 |
 
 **Cross-cutting concerns coverage:**
 
 | Concern (from § "Cross-Cutting Concerns Identified") | Architectural address |
 |---|---|
-| §-level compliance documentation (A.1) | CCD-P3-1 (row schema) + A.1-D2 (decomposition) + A.1-D3 (back-fill shape) |
-| Process discipline as workflow-file edits | CCD-P3-2 + B.1/B.2/B.3/B.4 per-item decisions |
-| Standing-commitment hold (S1–S12) | NFR-P3-22..33 codified; verdict-criterion meta-pattern per B.x lead-in |
-| Backward-compatibility / regression invariants | FR-P3-22..25 + NFR-P3-6 enforced per Phase-3 dev-pass close |
-| ROM budget discipline | NFR-P3-2 + per-story envelope table |
-| Asm-error THROW code block contiguity | CCD-2 reaffirmation (Phase-3-extended block -258..-272); A.2 caught-form coverage closes the block |
+| §-level compliance documentation (A.1) | CCD-P3-1 (row schema) carries forward; Phase 4 adds 12 banking-word rows as antforth extensions |
+| Process discipline as workflow-file edits | CCD-P3-2 carries forward unchanged |
+| Standing-commitment hold (S1–S12) | NFR-P4-28..39 codified; verdict-criterion meta-pattern carries forward |
+| Backward-compatibility / regression invariants | FR-P4-40..43 + NFR-P4-10 enforced per Phase-4 dev-pass close |
+| ROM / fixed-memory budget discipline | NFR-P4-5 + per-epic descriptor-stub envelope table |
+| Asm-error THROW code block contiguity | CCD-2 reaffirmation (Phase-3-extended block -258..-272); no Phase-4 additions |
 
 ### Findings (genuine issues requiring resolution)
 
-> **TODO(P4):** Phase-3 validation findings are stale. Re-run validation against the refilled Phase-4 PRD/Architecture and document fresh findings here.
-
 **Per the project's adversarial-review discipline (memory: "reviews MUST find things; zero findings is suspect"), surfacing the following before declaring ready-for-implementation:**
 
-#### F1 — CCD-P3-1 verdict set: satisfied-behaviourally case
+#### F1 — Banking-capable emulator vendor pick is a real prework risk
 
-**Issue:** The 4-value verdict set (`Implemented` / `Implemented-with-caveat` / `Accepted-with-rationale-N-A` / `Deliberately-omitted`) doesn't cleanly cover §-rules that antforth satisfies *behaviourally* without a specific implementation site (e.g., a structural rule like "the system MUST NOT assume aligned cell addresses" — antforth satisfies this by construction, not by a specific code path).
+**Issue:** iz-cpm does not support banking. Phase 4 cannot proceed past Epic 17 onward without dual-track emulator capability. If the emulator pick (Story 16.3) slips, all downstream banking story-writing slips.
 
-**Resolution:** Reuse `Implemented` with `Source: N-A` and an explanatory Notes entry. The audit story's first verdict-criterion artefact establishes this as the canonical pattern via at least one example. No verdict-set expansion needed.
+**Mitigation:** Explicit Epic 16.3 spike story; three eval criteria pinned (32-page MMU model at ports 0x70+slot/0x74; pipe-able for `make test-repl`-style automation; bank-visibility for tests). Worst-case fallback: Epic 16 stories that don't depend on banking emulation (memory-map docs, CCP eviction policy, doc lock) proceed in parallel; vendor research extends; Epic 17 story-writing slips; the existing 974-test baseline is unaffected on iz-cpm.
 
-**Action:** A.1 audit story includes an explicit row-pattern example for the satisfied-behaviourally case in its Dev Notes; the example is `§3.3.3.1 alignment | 'cell access never assumes alignment' | Implemented | N-A | v2.0 baseline | satisfied behaviourally — every memory access in src/*.asm uses byte-or-cell ops with no alignment assumption`. (Story 15.1 audit close-out 2026-05-09: §-number corrected from §3.1.4.1 — the double-cell stack-layout rule — to §3.3.3.1, which is the actual alignment §-rule.)
+**Action:** Story 16.3 spec includes the three eval criteria as ACs; Epic 17 kickoff includes a gate-state check on Story 16.3 closure.
 
-#### F2 — B.7+B.9 combined hardware run scope tightening
+#### F2 — Descriptor-stub cost growth is linear in banked-word count
 
-**Issue:** The Phase-3 architecture says "the same fill-disk-then-stress procedure that exercises disk-full also exercises directory-full". This conflates two different CP/M 2.2 failure modes — disk-full is exhaustion of *block storage*; directory-full is exhaustion of *directory entries* (CP/M directories are 64–128 entries). A single large file exhausts disk-full but not directory-full; many small files exhaust directory-full but maybe not disk-full.
+**Issue:** Stub cost grows linearly: at 1000 words × 5 B/stub = 5 KB; at 2000 words = 10 KB. Current antforth has ~500 user-visible words across all wordlists; the 1000-word target leaves ~5 KB of headroom against NFR-P4-5 (8 KB total banking infrastructure cap), but a future-Phase explosion in banked-word count could blow the cap.
 
-**Resolution:** B.9's hardware probe procedure is split into two sub-steps:
-- **Sub-step (a)** — disk-full: one large file written until WRITE-FILE returns disk-full ior
-- **Sub-step (b)** — directory-full: many small files created until CREATE-FILE returns directory-full ior (or the equivalent CP/M ior code)
+**Mitigation:** Per-epic stub-count metric tracked alongside binary size in CCD-4 close-out. CCP eviction (PD-P4-6) yields +2 KB Page-3 headroom available as buffer. If the metric trends past the cap before Epic 22, sprint-change-proposal evaluation triggers — options include stub-size pinning at 3 bytes (open question §9.5), splitting infrequently-banked words to a separate dispatch path, or accepting the cap as a real-word-count limit.
 
-Both sub-steps assert FCB-pool consistency and filesystem consistency post-failure. The combined run resolves B.9 (disk-full sub-step) and B.7 disposition (directory-full sub-step + zero-byte READ-FILE single-call).
+**Action:** CCD-4 close-out adds a "banked-word stub-count" line item; Epic 22 polish includes a final stub-count + total fixed-memory measurement against the NFR-P4-5 envelope.
 
-**Action:** B.9's story specifies the two sub-steps explicitly; the architecture's § "B.7 + B.9 — Filesystem stress coverage (combined)" is read with this clarification.
+#### F3 — CCP eviction policy needs verification on real CP/M 2.2 hardware
 
-#### F3 — CCD-P3-2 "structural enforcement" overclaim in LLM-agent contexts
+**Issue:** PD-P4-6 evicts the CCP at $D400–$DBFF for +2 KB Page-3 headroom. CP/M 2.2's BIOS warm-boot path may expect CCP to be reloadable from disk on warm-boot. If the BIOS reloads CCP from disk, eviction is safe (the BIOS will restore it on the user's next ^C / system reset). If not, the warm-boot path needs a restore mechanism.
 
-**Issue:** CCD-P3-2 says "Lints fire structurally (template-level enforcement), not aspirationally." In PD-1's precedent (Story 13.5.0), "structural" meant *file deletion* and *workflow-step retargeting* — workflow-as-runtime physically cannot run a step that no longer exists. In Phase-3's B.2/B.3/B.4, "structural" means *a `<critical>` block exists in instructions.xml* — but an LLM agent reading the instructions.xml could theoretically ignore the block. Enforcement is not the same as in PD-1's case.
+**Mitigation:** Epic 16 spike to verify on real MicroBeast: assert that ^C from inside antforth returns to a working CCP prompt (CCP reloaded from disk by BIOS) without crashing or corrupting state. If verification fails, restore-on-warm-boot path needed (small kernel addition; estimated +50 B).
 
-**Resolution:** Clarify that CCD-P3-2's "structural" refers to *artifact existence* (grep-able verdict criteria), not automated-CI enforcement. The discipline is: the workflow-file edit makes the lint *visible to every drafter* without requiring memory recall; agent obedience to the visible lint is the residual softer discipline that adversarial review (`/CR`) catches.
+**Action:** Epic 16 includes an explicit CCP-eviction-verification spike before any Phase-4 binary-delta story ships. If the spike surfaces a real failure, restore-on-warm-boot story spawned with a +50 B envelope.
 
-**Action:** CCD-P3-2's wording is correct in spirit but read with this clarification. The verdict criteria for B.2/B.3/B.4 (grep-able artifacts) are the structural part; the agent-obedience part is the same as every other structural discipline in the project (S1, S2, S5, S8, S10).
+#### F4 — Cross-bank pointer hazard documented but not guarded
 
-#### F4 — B.6 `.tool-versions` initial content is undetermined
+**Issue:** Per-bank `HERE` (FR-P4-26) is "doc-and-pray" — user can hold HERE from one bank then `BANK!` to another and write garbage. No runtime guard. A casual user writing their first multi-bank application may hit this without warning.
 
-**Issue:** The architecture says `.tool-versions`'s initial content is "the iz-cpm + sjasmplus versions used to certify the v2.0 baseline (commit `6599d73`)". These versions aren't currently recorded anywhere in the v2.0 working tree.
+**Mitigation:** Documented gotcha in user docs (post-Epic-22 user-facing documentation). No runtime guard, consistent with Forth tradition of trusting the programmer (and consistent with the broader "doc-and-pray" disposition locked per redesign §5.4).
 
-**Resolution:** B.6's story includes an introspection task: capture `iz-cpm --version` and `sjasmplus --version` on the host that produced the certified `make test-repl` 973 PASS / 0 FAIL run, and pin those versions in `.tool-versions`. If the versions can't be retroactively determined (e.g., host has been updated), the story records the *current* host's versions as the new pinned baseline and notes the lack of v2.0 traceback.
+**Action:** Epic 22 polish includes a user-docs entry titled "Cross-bank pointer hazards" naming HERE / LATEST / wordlist-head pointers as bank-sensitive; example anti-pattern shown; recommendation is "do all your work in one bank per logical session, swap banks at well-defined boundaries."
 
-**Action:** B.6's story has an explicit introspection sub-task and a fallback path for the un-traceable case.
+#### F5 — Six architecture-stage open questions captured as `TODO(P4-arch)` markers
 
-#### F5 — A.3 site decision is load-bearing for FR-P3-24
+**Issue:** The redesign-doc §9 lists 7 unresolved questions (item 7 closed as non-MVP per project-lead direction 2026-05-10). The remaining 6 (CODE-words-in-banks §9.1, emulator vendor pick §9.2, CL parser edge cases §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6) need owners. If they accumulate without spike-story owners, they could block Epic 17 story-writing.
 
-**Issue:** A.3-D1's site decision (`w_NUMBER_Q_cf` in `src/strings.asm`) was framed as deferring the *spec* to the story-author. But the *site* is load-bearing: an alternative site (e.g., a new `w_NUMBER_QQ_cf` entry word) would change the dictionary layout and could violate FR-P3-24 (CODE-source byte-identical assembly under Phase-3 antforth) for any user code that calls NUMBER?.
+**Mitigation:** Each open question is owned by an Epic-16 spike story (or explicit deferral to a later epic). Captured as `TODO(P4-arch)` markers in this document, not as PRD-blockers.
 
-**Resolution:** The site decision is binding — A.3's story implements the change in `w_NUMBER_Q_cf`; alternative-site proposals require sprint-change-proposal evaluation, not story-level discretion.
+**Action:** Epic 16 spec includes one spike story per open question (or explicit deferral to a later epic with an Epic-N owner named); architecture document is updated as each spike closes.
 
-**Action:** A.3's story spec explicitly acknowledges the site decision is binding; story-author discretion is over the *behaviour delta* (precise BASE-validity rules), not the site.
+#### F6 — Saved-bank-cell semantics "interactive only" needs an unambiguous test
 
-#### F6 — A.1 audit story scope: citation-cleanup overflow
+**Issue:** PD-P4-5 (S5) says the saved-bank cell is updated only by interactive `BANK!` from the outermost interpret loop. In practice, the kernel needs to distinguish "I'm executing a colon-definition that called `BANK!`" from "the user typed `BANK!` at the REPL." The standard mechanism is a STATE-aware check (interactive = STATE @ 0=) plus an outer-interpreter-depth check. If the depth check is wrong, an `INCLUDE`d file's `BANK!` call could update the saved cell as if it were interactive.
 
-**Issue:** The architecture says A.1's audit walk "re-verifies every CCD-3 citation; mismatches are surfaced and corrected as part of the audit story". If the audit surfaces > 20 citation-comment mismatches, the audit story's diff blows up beyond reasonable single-story scope.
+**Mitigation:** Epic 21 spec explicitly defines the "interactive `BANK!`" recogniser: `STATE @ 0=` AND outer-interpreter-depth = 1 (i.e., not inside an `INCLUDE`). Tests assert that an `INCLUDE`d `.FTH` file's `BANK!` call does NOT update the saved-bank cell.
 
-**Resolution:** Pin a sub-envelope: if A.1's audit walk surfaces > 20 citation-comment mismatches against the new §-level rows, those mismatches spawn a follow-up "citation cleanup" hitch-hiker story rather than landing in the audit story itself. The audit story's diff is bounded to: doc rows added + ≤ 20 in-pass citation fixes.
-
-**Action:** A.1's story spec includes this sub-envelope. If the threshold fires, a follow-up "citation cleanup" story is spawned per the standing pattern (verdict-only audit + standalone reproducer + fix-story per `feedback_verdict_only_audit.md`).
-
-#### F7 — A.1 row grain: word vs. structural-rule clarity
-
-**Issue:** The architecture's CCD-P3-1 example rows mix word-rows (`§6.1.0350` for `2@`) and structural-rule-rows (`§3.1.4.1 (Forth 2014)` for high-on-TOS). A naive audit-walker might produce only one or the other.
-
-**Resolution:** Audit walk produces a row for every mandatory §-rule (both word definitions and structural §-rules). Some §-numbers appear once (a word with no separate structural rule constraining it); others appear multiple times (the word's row + a structural rule that constrains its layout). This is consistent with DPANS94's structure but must be explicit in the audit story spec.
-
-**Action:** A.1's story spec lists the expected rows from a walked-through example like §6.1.0350 (the `2@` word) — produces (a) a row for the word's stack-effect + standard reference and (b) a row for the §3.1.4.1 high-on-TOS structural constraint that applies to it. The two rows are linked via the Notes column.
+**Action:** Epic 21 spec includes an "interactive BANK! definition" sub-task; tests cover both the REPL case (saved cell updates) and the INCLUDE case (saved cell does NOT update).
 
 ### Gap Analysis
 
-> **TODO(P4):** Re-perform against Phase-4 FR/NFR set.
-
-**Critical gaps (block implementation):** none. Findings F1–F7 are actionable in their owning stories without architectural change.
+**Critical gaps (block implementation):** none. Findings F1–F6 are actionable in their owning epics without architectural change.
 
 **Important gaps (could improve smoother implementation):**
-- The architecture document doesn't enumerate the *exact* set of §6.2 (Core Extension) words antforth implements (the v2.0 baseline post-Epic-13.5 says 14/46 selectively but doesn't list which 14). A.1's audit walk produces this enumeration as a side-effect; until A.1 lands, the §6.2 coverage spec is under-specified. Mitigation: A.1 is the strategic body of Phase 3, so this gap closes as the phase progresses.
-- The "back-fill story shape" (A.1-D3) doesn't explicitly cover *how* a §-level structural-rule-only back-fill (no specific word, no specific code site) is implemented. Story 13.0.1 was a structural-rule-only back-fill (§3.1.4.1) but it touched code (the double-cell-flip across `src/double.asm`). A back-fill that's *truly* structural (e.g., satisfied behaviourally) might land as a doc row + new probe + S9 hardware smoke without any kernel surgery. Mitigation: A.1-D3's six-step shape allows step 1 to be `tests/*.fth`-only for test-only closures; structural-rule closures use the same allowance.
+- The 6 architecture-stage open questions from redesign §9 (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6, plus the emulator vendor pick §9.2 which is the explicit prework gate) need spike-story owners. **Mitigation:** Epic 16 prework spec includes one spike story per open question.
+- The descriptor-stub allocator's interaction with `MARKER` / `FORGET` is under-specified. When a MARKER is set in bank 5 and the user `MARKER`-rolls back, the stubs allocated in fixed memory for words defined since the MARKER must also be reclaimed. **Mitigation:** Epic 21 spec includes per-bank dictionary tail tracking + per-bank stub-allocator tail tracking; the MARKER stores both tails and FORGET reverts both.
+- `NUMBER?` and other words that internally use `,` to compile literals must continue to work cross-bank. **Mitigation:** the per-bank `,` (FR-P4-23) writes to the current bank's HERE; words that use `,` compile into whatever bank they're called from; no special-casing needed.
 
 **Nice-to-have gaps:**
-- A `make clean-all-and-validate` target that runs `make clean && make && make test-repl && make check-doc-sync` in sequence as a single tag-applicable close-out gate. Could land as a B.5 hitch-hiker. Not gating any Phase-3 deliverable.
-- A `tools/check-doc-sync/` CI integration (e.g., GitHub Actions). Out of scope for Phase 3 (no current CI in the repo); mention as a Phase-4+ candidate.
+- A `make banking-stub-report` target that prints per-bank stub-count and fixed-memory occupancy. Useful for the per-epic CCD-4 close-out. Could land as an Epic 22 polish item.
+- A REPL prompt indicator showing the current bank (e.g., `[5] ok`). Mentioned in Epic 22 scope as optional. Not gating MVP.
+- CI integration for `make test-repl-banking` (banking-capable emulator). Out of scope for Phase 4 (no current CI in repo); mention as a Phase-5+ candidate.
 
 ### Architecture Completeness Checklist
 
 **Requirements Analysis:**
-- [x] Project context thoroughly analyzed (25 FR-P3-N + carry-forward of 47 Phase-2 FRs; 33 NFR-P3-N across 6 categories)
-- [x] Scale and complexity assessed (low; debt-cleanup interlude shape)
-- [x] Technical constraints identified (bank-0 only, no new BDOS, +200-byte ROM cap, 973 PASS / 0 FAIL baseline)
-- [x] Cross-cutting concerns mapped (6 concerns, each with architectural address)
+- [x] Project context thoroughly analyzed (43 FR-P4-N + carry-forward of Phase-1+2+3 closed FRs via FR-P4-40; 39 NFR-P4-N across 6 categories)
+- [x] Scale and complexity assessed (low; one new subsystem — banking — with locked design)
+- [x] Technical constraints identified (≤8 KB banking infra, ISR-from-fixed-only invariant, BDOS unchanged, 974 PASS / 0 FAIL baseline)
+- [x] Cross-cutting concerns mapped (10 concerns, each with architectural address)
 
 **Architectural Decisions:**
-- [x] Critical decisions documented (A.1-D1/D2/D3, A.2-D1, A.3-D1, B.1-D1, B.2/B.3/B.4-D1, B.5-D1, B.6-D1, B.7-D1, B.9-D1)
-- [x] CCDs documented (CCD-1..CCD-4 carry-forward; CCD-P3-1, CCD-P3-2 new)
-- [x] Integration patterns defined (no change from v2.0; documented as carry-forward)
-- [x] Performance considerations addressed (NFR-P3-1 carry-forward + NFR-P3-2 cumulative ROM cap)
+- [x] Critical decisions documented (PD-P4-1..10 — descriptor stubs, sentinel-trampoline, per-bank state, bank-aware FIND, ABORT/QUIT restore, CCP eviction, ISR invariant, CL parser, dual-track emulator, Phase-5+ future-proofing)
+- [x] CCDs documented (CCD-1..CCD-4 carry-forward; CCD-P3-1, CCD-P3-2 carry-forward; Phase-4 reaffirmations spelled out)
+- [x] Integration patterns defined (BDOS unchanged; ISR fixed-memory only; cross-bank dispatch transparent)
+- [x] Performance considerations addressed (NFR-P4-1..6 — cross-bank ≤60 T-states, stub ≤5 B, infra ≤8 KB)
 
 **Implementation Patterns:**
-- [x] Naming conventions established (CCD-P3-1 row schema; back-fill story file naming; workflow-file edit identity)
-- [x] Structure patterns defined (Phase-2 carry-forward; Phase-3 additions in Implementation Patterns section)
-- [x] Communication patterns specified (no new inter-word contracts; A.3 preserves stack-effect; A.2 uses canonical CATCH idiom)
-- [x] Process patterns documented (S1–S12 codified as NFR-P3-22..33; verdict-criterion meta-pattern)
+- [x] Naming conventions established (BANK@/BANK! mirror BASE @/!, USER- prefix dropped, system wordlists tagged bank=fixed, Greek-letter shorthand format)
+- [x] Structure patterns defined (Phase-2/3 carry-forward; Phase-4 banking-naming additions)
+- [x] Communication patterns specified (IN-BANK CATCH-safe contract, BANK! precondition checked every call, cross-bank ABI stub-mediated, per-bank state swap atomic)
+- [x] Process patterns documented (S1–S12 codified as NFR-P4-28..39 unchanged; per-bank hardware-smoke discipline across three test surfaces; per-epic prework-gate review)
 
 **Project Structure:**
-- [x] Phase-3 file-touch surface enumerated (new + modified + NOT-touched tables)
-- [x] Component boundaries established (kernel frozen except A.3 + A.1 back-fills; tooling boundary; workflow-file boundary)
-- [x] Integration points mapped (BDOS allow-list unchanged; iz-cpm/sjasmplus version-pinned via B.6)
-- [x] Requirements-to-structure mapping complete (table maps every carry-forward item to specific files)
+- [x] Phase-4 file-touch surface enumerated (new + modified + SUPERSEDED + NOT-touched tables); src/ paths verified against actual codebase
+- [x] Component boundaries established (kernel surgery localised to banking + per-bank state additions)
+- [x] Integration points mapped (BDOS allow-list unchanged; dual-track emulator; real hardware load-bearing)
+- [x] Requirements-to-structure mapping complete (PD records map every Phase-4 FR group to specific files)
 
 **Validation:**
 - [x] Coherence validation complete
 - [x] Requirements coverage verified
-- [x] Implementation readiness assessed
-- [x] **Findings F1–F7 surfaced and resolution paths assigned to owning stories**
-- [x] Gap analysis completed (critical: 0; important: 2; nice-to-have: 2)
+- [x] Implementation readiness assessed (Epic 16 prework gate outstanding)
+- [x] **Findings F1–F6 surfaced and mitigation paths assigned to owning epics**
+- [x] Gap analysis completed (critical: 0; important: 3; nice-to-have: 3)
 
 ### Architecture Readiness Assessment
 
-> **TODO(P4):** Re-assess for Phase 4 once refill is complete.
+- **PRD lock:** ✓ (refilled 2026-05-10 per `docs/antforth-banking-redesign.md`; FR-P4-1..43, NFR-P4-1..39)
+- **Design-doc lock:** ✓ (`docs/antforth-banking-redesign.md`, party-mode session 2026-05-09)
+- **Architecture lock:** in-progress (this document; last edited 2026-05-10)
+- **Prework gate (Epic 16):** ⏳ outstanding — banking-capable emulator vendor pick + memory-map verification + CCP-eviction check
+- **Readiness verdict:** **Ready to start Epic 16 prework. NOT ready to start Epic 17 story-writing until prework gate closes** (banking-capable emulator vendor pick is the critical-path item; CCP-eviction verification on real hardware is the second critical-path item).
 
-**Overall Status:** **READY FOR IMPLEMENTATION** with F1–F7 actionable in owning stories.
-
-**Confidence Level:** **High**, on the following bases:
-- 0 new subsystems means 0 new architectural surfaces with unknown failure modes
-- All decisions are concrete (CCD-P3-1 row schema specific, A.1-D3 back-fill template specific, file-touch surface enumerated to file:item)
-- v2.0 baseline (973 PASS / 0 FAIL on real hardware, eleven-plus epic standing-commitment hold) provides a known-good foundation
-- The phase follows the proven Epic-13.5 pattern at phase scale (process-recovery vehicle → tag close-out)
+**Confidence Level:** **High for Epic 16; Medium-High for Epic 17+ pending prework closure.** Bases:
+- The redesign doc is locked from a focused party-mode session (2026-05-09); the (γ) descriptor-stub mechanism is endorsed by the project lead.
+- All Phase-4 architectural decisions trace to specific redesign-doc §-references; nothing is invented in this architecture document beyond what the redesign locked.
+- Phase-3 close-out baseline (974 PASS / 0 FAIL on real hardware; S1–S12 standing-commitment hold) provides a known-good foundation.
+- Phase-5+ future-proofing (multitasking, locals, ALLOCATE) confirmed not-painted-into-corner per redesign §8.2.
 
 **Key strengths:**
-- Discipline-as-deliverable framing for B.x stories (verdict-criterion meta-pattern) prevents discipline-edits from regressing into aspirational documentation
-- §-level compliance audit (A.1) closes the structural blindspot the Epic-13 retro identified ("Epic 10's '100% Core' claim was word-counted, not §-counted") at framework scale
-- Combined B.7+B.9 hardware run consolidates two carry-forward items into one S9 task — denser per hardware run, lighter on phase ceremony
-- Single-audit-story decision (A.1-D2) preserves momentum for the strategic body without over-decomposing
-- All 12 standing commitments (S1–S12) codified as NFRs — process discipline is now an architectural quality attribute, not aspirational guidance
+- The (γ) decision collapses S1 + S6 + S7 into one artifact — single biggest design call simplifies dispatch, EXIT, and COMPILE, simultaneously.
+- Sentinel-trampoline cross-bank EXIT preserves the intra-bank zero-overhead path (the common case is unchanged).
+- System wordlists tagged `bank=fixed` keep the FIND common case zero-overhead.
+- Boot config via CL parser (not STARTUP.FTH) makes bank availability known at banner-print time.
+- Dual-track emulator strategy preserves the existing 974-test safety net while enabling cross-bank emulation.
 
-**Areas for future enhancement (Phase-4+):**
-- Banking architecture (`docs/antforth-banking-design.md`) — strategic enabler for the ~25 KB binary ceiling; design exists but is explicitly Phase-4 deferred
-- `make clean-all-and-validate` consolidated tag-close-out target (B.5 hitch-hiker candidate)
-- CI integration for `tools/check-doc-sync/` (Phase-4+ candidate; no current CI in repo)
-- §6.2 (Core Extension) coverage expansion as a side-effect of A.1 audit walk
+**Areas for future enhancement (Phase-5+):**
+- Multitasking (TCB-as-1-byte-bank) — Phase 5 candidate E.2
+- Locals wordset (all three styles compatible) — Phase 5+ candidate E.6
+- ALLOCATE / per-bank heap (recommended (β)) — Phase 5+
+- Flat-build retention for the 12-word `BANK*` set — deferred from Phase-4 MVP per redesign §4
+- CODE-words-in-banks decision — open question §9.1; deferred to Epic 22 if Epic 16 spike doesn't pre-resolve
 
 ### Implementation Handoff
 
+**Phase-4 epic outline (per `docs/antforth-banking-redesign.md` §8):**
+
+| Epic | Theme | ~Stories | Tag |
+|---|---|---|---|
+| **16 — Memory map & doc lock (prework)** | H1 memo, page-allocation survey, CCP overwrite policy verification, IM 2 confirmation, doc rewrite (closed by redesign doc); 16.3 = banking-capable emulator vendor selection | 3–4 | antforth 3.0.x |
+| **17 — Bank primitives + CL config** | All 12 wordset words; `+BANK`/`-BANK`/`BANKS-CLEAR`; CL parser; probe-on-add; banner update; first iron spike for cross-bank call | 5–6 | antforth 3.x |
+| **18 — Stub mechanism (γ) + cross-bank EXIT (S1 b)** | Per-word descriptor stubs; sentinel-trampoline return; kernel `EXECUTE` switch; `BANK-OF`; kernel-blessed `IN-BANK` | 4–5 | antforth 3.x |
+| **19 — Bank-aware compiler** | Per-bank `(here, latest, wordlist-heads)`; `,` / `COMPILE,` writing into target bank; `:` lands body in current bank; stub auto-emitted; `CREATE`/`DOES>` cross-bank explicit | 4–5 | antforth 3.x |
+| **20 — Bank-aware FIND + interpreter loop** | Per-wordlist `bank` field; `FIND` traversal; `WORDS`; error messages name source bank | 3–4 | antforth 3.x |
+| **21 — `MARKER`/`FORGET` + ABORT/QUIT bank state (S5)** | Per-bank dictionary tail tracking; saved-bank restore on `ABORT` | 2–3 | antforth 3.x |
+| **22 — Polish** | `.BANKS`; REPL prompt indicator; CODE-words-in-banks decision; test-harness sweep across all three test surfaces | 3–4 | antforth 3.x (Phase-4 close-out) |
+
+**Per-epic shape:**
+- Each epic ships an antforth 3.x point-release.
+- Per-epic prework-gate review at kickoff (Epic 17+ explicitly checks Epic 16.3 closure).
+- S1–S12 standing commitments hold across every epic close-out (codified as NFR-P4-28..39).
+- CCD-4 per-epic benchmark gate: close-out validates NFR envelopes + tracks banked-word stub-count metric alongside binary size.
+- Phase-5+ shape (multitasking, locals, ALLOCATE) confirmed not-painted-into-corner per `docs/antforth-banking-redesign.md` §8.2.
+
 **AI Agent Guidelines:**
 
-- Follow all Phase-3 architectural decisions exactly as documented in this document; where Phase-3 is silent, consult `architecture-phase2-epics-9-13.5.md`; where Phase-2 is silent, consult `architecture-phase1-epics-1-8.md`
-- Use Phase-3 implementation patterns consistently (CCD-P3-1 row schema, A.1-D3 back-fill shape, CCD-P3-2 workflow-file edit identity, B.1 PAD-as-canonical, S12 probe-authoring discipline)
-- Respect the kernel-frozen-except-A.3-and-A.1-back-fills boundary — propose any other kernel surgery via sprint-change-proposal, not story-level discretion
-- Honour S1–S12 standing commitments codified as NFR-P3-22..33; the verdict-criterion meta-pattern makes B.x lead-in stories discipline-as-deliverable
-- Address findings F1–F7 in their owning stories' specs (the audit story carries F1, F6, F7; B.9's story carries F2; A.3's story acknowledges F5; B.6's story carries F4; CCD-P3-2's wording-clarification F3 is read with this section)
-- Refer to this document for all Phase-3 architectural questions; do not improvise
+- Follow all Phase-4 architectural decisions exactly as documented in this document; where Phase-4 is silent, consult `architecture-phase3-epics-14-15.md`; where Phase-3 is silent, consult `architecture-phase2-epics-9-13.5.md`; where Phase-2 is silent, consult `architecture-phase1-epics-1-8.md`
+- Use Phase-4 implementation patterns consistently (banking-word naming, descriptor-stub layout, sentinel-trampoline contract, per-bank state-swap idiom, ISR-from-fixed-only invariant, dual-track emulator surface annotation per probe)
+- Respect the Epic 16 prework gate — Epic 17+ story-writing blocks on Story 16.3 closure (banking-capable emulator vendor pick) and CCP-eviction verification (Finding F3)
+- Honour S1–S12 standing commitments codified as NFR-P4-28..39; per-bank hardware-smoke runs on three test surfaces (iz-cpm + banking-capable emulator + real MicroBeast)
+- Address findings F1–F6 in their owning epics' specs (F1 + F5 owned by Epic 16; F2 owned by every binary-delta epic via CCD-4; F3 owned by Epic 16; F4 owned by Epic 22 user-docs; F6 owned by Epic 21)
+- Refer to this document for all Phase-4 architectural questions; do not improvise
+- For the 6 open questions captured as `TODO(P4-arch)` markers (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6, plus emulator vendor pick §9.2), check the relevant Epic 16 spike story before drafting against an unresolved question
 
 **First Implementation Priority:**
 
-The lead-in cluster (B.1 + B.2 + B.3 + B.4 + B.5) lands first per `docs/PHASE-3-CARRY-FORWARD.md` § "Suggested Phase-3 First-Epic Shape". Recommended sequencing within the lead-in:
+Epic 16 prework lands first. Recommended sequencing within Epic 16:
 
-1. **B.1** first — `tests/README.md` exists, PAD documented as canonical (closes Epic-12 retro A1 belatedly)
-2. **B.2 + B.4** together — `<critical>` blocks added to `instructions.xml` (sibling edits, single dev-pass)
-3. **B.3** — `wc -c` task added to `template.md` (single-file edit)
-4. **B.5** — `tools/check-doc-sync/` script + Makefile target
+1. **Story 16.1** — Memory map + page-allocation survey + CCP eviction policy declaration (`src/antforth.asm` memory-map declaration)
+2. **Story 16.2** — Banking-capable emulator vendor research (writeup; not the integration)
+3. **Story 16.3** — Banking-capable emulator vendor pick + integration into `make test-repl-banking` target (the Phase-4 prework gate)
+4. **Story 16.4** — CCP-eviction verification on real CP/M 2.2 / MicroBeast (Finding F3); IM 2 confirmation; spike stories for the 6 architecture-stage open questions
 
-After lead-in lands, **A.1 audit story** is the strategic-body kickoff. Hitch-hikers (A.2, A.3, B.6, B.8, B.9) fold opportunistically; B.7 is conditional on B.9's hardware run.
+After Epic 16 closes, **Epic 17 (bank primitives + CL config)** is the strategic-body kickoff. Epic 18 (stub mechanism (γ)) follows once Epic 17's primitives are in. Epics 19, 20, 21, 22 follow in dependency order per the redesign-doc §8 epic sequence.
