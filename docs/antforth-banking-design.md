@@ -1,5 +1,7 @@
 # AntForth Banking Architecture for MicroBeast
 
+> **⚠️ SUPERSEDED 2026-05-09.** This document is the initial banking sketch (2026-05-07). It was superseded by the `/bmad-party-mode` session of 2026-05-09; the authoritative Phase-4 design is now [`docs/antforth-banking-redesign.md`](antforth-banking-redesign.md). Specifically, the user-facing wordset (`USER-BANK` / `USER-BANK@` / `ENABLE-MAPPING` / `THUNK-TO-USER-BANKn`) is replaced by a 12-word set (`BANK@` / `BANK!` / `BANKS` / `IN-BANK` / `BANK-OF` / `.BANKS` / `+BANK` / `-BANK` / `BANKS-CLEAR` / `SET-BANK` / `BANK-MAPPING-ON` / `BANK-MAPPING-OFF`); the per-target-bank thunk family is replaced by per-word descriptor stubs (the **(γ)** mechanism); the cross-bank EXIT `BIT 7,H` heuristic is replaced by sentinel-tagged returns (broken in this doc — user code at $8000–$BFFF always has bit 7 set on return-address high bytes). **Do not consult this document for current decisions.** Retained for historical traceability of design evolution only.
+
 ## Problem Statement
 
 MicroBeast has 512KB RAM but only 64KB address space, organized as 4×16KB banks. Need to adapt AntForth (Z80 Forth implementation) to utilize extended memory without breaking portability to flat-memory systems.

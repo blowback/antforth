@@ -1,8 +1,8 @@
 ---
-stepsCompleted: []
-lastStep: 0
-status: 'TODO(P4) — seed-copy of Phase 3 architecture'
-completedAt: null
+stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
+lastStep: 8
+status: 'complete'
+completedAt: '2026-05-08'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/product-brief-antforth-2026-05-08.md
@@ -24,26 +24,18 @@ inputDocuments:
 workflowType: 'architecture'
 project_name: 'antforth'
 user_name: 'Ant'
-date: 'TODO(P4)'
-phase: 4
-phaseScope: 'TODO(P4) — replace with Phase-4 scope (banked-RAM enablement is the strategic candidate per product brief)'
+date: '2026-05-08'
+phase: 3
+phaseScope: 'Phase 3 — debt-cleanup interlude (carry-forward catalogue P1 close-out + §-by-§ ANS Core/Core-Extension audit)'
 ---
 
 # Architecture Decision Document
 
 _This document builds collaboratively through step-by-step discovery. Sections are appended as we work through each architectural decision together._
 
-> **TODO(P4) — seed-copy notice.** This file is a verbatim copy of the closed Phase 3 architecture document (`architecture-phase3-epics-14-15.md`). Carry-forward sections (Cross-Cutting Architectural Decisions CCD-1..CCD-4 from Phase 2, hardware constraints, Z80 toolchain, source-of-truth boundary, file-organisation patterns) likely stand. Sections marked `TODO(P4)` below are Phase-3-specific and must be replaced.
->
-> **TODO(P4) sections requiring refill:** Requirements Overview · Conflict Points (Phase-3-specific) · Naming & Structure Patterns (Phase-3-specific) · Format Patterns (Phase-3-specific) · Communication Patterns (Phase-3-specific) · Process Patterns (Phase-3-specific) · Concrete Examples (Story P3.A1.1) · Phase-3 File-Touch Surface · Validation Findings · Gap Analysis · Architecture Readiness Assessment · Implementation Handoff.
->
-> **Banking-design seed:** `docs/antforth-banking-design.md` already exists from the Phase 3 architecture pass — Phase 4 architecture should consume it as primary input.
-
 ## Project Context Analysis
 
 ### Requirements Overview
-
-> **TODO(P4):** All FR catalog references below name `FR-P3-*`. Replace with the Phase-4 FR set once `prd.md` is refilled.
 
 **Functional Requirements:**
 
@@ -380,8 +372,6 @@ S11 + B.5 (`make check-doc-sync`) together form the close-out gate's documentati
 
 ### Conflict Points Identified (Phase-3-specific)
 
-> **TODO(P4):** Replace with Phase-4 conflict-point analysis (banking memory-map vs existing memory layout, bank-switch latency vs interrupt-handler timing, etc.).
-
 Where multiple AI agents could make different choices in Phase-3 work:
 
 - **Compliance-doc row granularity** — agent A writes one row per ANS *word*; agent B writes one row per ANS *§-rule* (the spec includes a word in §6.1.0350 plus a structural rule in §3.1.4.1 — both must have rows)
@@ -392,8 +382,6 @@ Where multiple AI agents could make different choices in Phase-3 work:
 - **Compliance-doc Source column** — agent A writes `src/double.asm:120`; agent B writes `src/double.asm:w_TWO_FETCH_cf`; agent C writes a relative path
 
 ### Naming & Structure Patterns (Phase-3-specific)
-
-> **TODO(P4):** Re-evaluate for Phase 4 (banking word naming conventions, bank-switching primitive names, etc.).
 
 **Compliance-doc row labels.** Per CCD-P3-1's 6-column schema:
 
@@ -412,8 +400,6 @@ Where multiple AI agents could make different choices in Phase-3 work:
 - Installer manifest → BMAD installer's expected list of files (so structural edits survive installer re-runs)
 
 ### Format Patterns (Phase-3-specific)
-
-> **TODO(P4):** Re-evaluate for Phase 4.
 
 **Compliance-doc row format example:**
 
@@ -447,8 +433,6 @@ HALT and itemise the new arm's parts independently before accepting the byte-bud
 
 ### Communication Patterns — Phase-3-specific (inter-word contracts unchanged from Phase 2)
 
-> **TODO(P4):** Re-evaluate for Phase 4. Banking introduces new inter-word contracts (caller's bank-state preserved across callee, etc.).
-
 Phase 3 adds no new inter-word contracts. The Phase-2 contracts (BC = TOS, EXX leaf-level rule, exception-frame layout, INCLUDE source-frame layout, IY-relative user-area access, FCB-pool acquire/release semantics, the `file_byte_read` tri-state contract from Story 13.5.2) all carry forward.
 
 **A.3-specific contract:** the `w_NUMBER_Q_cf` modification preserves the established stack-effect `( c-addr u -- n true | c-addr u false )` and the established register-clobbering envelope; only the BASE-aware-parsing branch logic changes. Tests must verify both the new behaviour and the unchanged stack contract (regression).
@@ -456,8 +440,6 @@ Phase 3 adds no new inter-word contracts. The Phase-2 contracts (BC = TOS, EXX l
 **A.2-specific contract:** the asm-error THROW codes' caught-form path uses the standard CATCH frame layout from CCD-1 — no new frame fields, no new escape mechanism. Caught-form tests use the canonical `' WORD CATCH . CR` idiom.
 
 ### Process Patterns (Phase-3-specific)
-
-> **TODO(P4):** Re-evaluate for Phase 4 (S1–S12 standing commitments still hold; Phase-4-specific process additions go here).
 
 **Probe-authoring discipline (S12 / NFR-P3-33).** Every smoke-batch destined for human typing on real hardware passes both pre-flight checks before being committed:
 
@@ -531,8 +513,6 @@ The diff between pre-fix-FAIL and post-fix-PASS is the back-fill's primary verdi
 ```markdown
 ### Story P3.A1.1: Back-fill §X.Y.Z structural rule
 
-> **TODO(P4):** Replace with Phase-4 example story (likely a banking-related shape) demonstrating the architectural patterns.
-
 **AC:**
 - AC1: Implementation in src/<file>.asm at <line>; standards-citation comment per CCD-3
 - AC2: New row in docs/ans-forth-core-compliance.md per CCD-P3-1
@@ -602,8 +582,6 @@ In a memory entry `feedback_no_mirror_shorthand.md`:
 > **Phase-2 carry-forward.** The full project directory structure from `architecture-phase2-epics-9-13.5.md` § "Project Structure & Boundaries" carries forward unchanged. Phase 3 does not restructure the codebase — it adds a small set of new files and modifies a focused set of existing ones. This section enumerates only the **Phase-3 file-touch surface**.
 
 ### Phase-3 File-Touch Surface
-
-> **TODO(P4):** Replace with Phase-4 file-touch surface (banking primitives → likely new file `src/banking.asm` or extension to `src/kernel.asm`; new Forth-source banking words; banking docs; etc.).
 
 #### New files created in Phase 3
 
@@ -807,8 +785,6 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 
 ### Findings (genuine issues requiring resolution)
 
-> **TODO(P4):** Phase-3 validation findings are stale. Re-run validation against the refilled Phase-4 PRD/Architecture and document fresh findings here.
-
 **Per the project's adversarial-review discipline (memory: "reviews MUST find things; zero findings is suspect"), surfacing the following before declaring ready-for-implementation:**
 
 #### F1 — CCD-P3-1 verdict set: satisfied-behaviourally case
@@ -873,8 +849,6 @@ Both sub-steps assert FCB-pool consistency and filesystem consistency post-failu
 
 ### Gap Analysis
 
-> **TODO(P4):** Re-perform against Phase-4 FR/NFR set.
-
 **Critical gaps (block implementation):** none. Findings F1–F7 are actionable in their owning stories without architectural change.
 
 **Important gaps (could improve smoother implementation):**
@@ -919,8 +893,6 @@ Both sub-steps assert FCB-pool consistency and filesystem consistency post-failu
 - [x] Gap analysis completed (critical: 0; important: 2; nice-to-have: 2)
 
 ### Architecture Readiness Assessment
-
-> **TODO(P4):** Re-assess for Phase 4 once refill is complete.
 
 **Overall Status:** **READY FOR IMPLEMENTATION** with F1–F7 actionable in owning stories.
 
