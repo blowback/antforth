@@ -166,6 +166,7 @@ The session left these unresolved. They are inputs to the Phase-4 Architecture d
 
 1. **CODE words in banks.** Can user-defined CODE (assembler) words live in banks? Affects S7 dispatch. Epic 22 was left ambiguous.
 2. **Banking-capable emulator vendor pick.** Ant's research outstanding. Three eval criteria pinned: models 32-page MMU at ports 0x70+slot/0x74; pipe-able; bank-visibility for tests.
+   **Closed by Story 16.3, 2026-05-13, vendor = `iz-cpm-banking` (blowback/iz-cpm fork @ `1777a85`); see `_bmad-output/planning-artifacts/architecture.md` F1 closure.**
 3. **CL parser edge cases.** Listed in session: no args, bad token, reverse range, dup, probe-fail, empty surviving list. Final policy for each not signed off.
 4. **Bank-state-table cap (29 entries).** ABORT-on-`+BANK`-past-cap policy not formally specced.
 5. **Stub size: 3 vs 4–5 bytes.** Final size pinning not done. Affects per-word cost calculations.

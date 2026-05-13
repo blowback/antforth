@@ -327,6 +327,95 @@ architecture document is the canonical authority.
 
 ---
 
+## 5. Three test surfaces (Phase-4 banking dual-track)
+
+Phase 4 introduces banking to antforth. The kernel runs on three
+distinct test surfaces, each carrying a different load-bearing role.
+Probes that touch banking-aware functionality (bank-mapping, cross-bank
+calls, descriptor stubs, per-bank dictionary head — Epic 17 onwards)
+must declare which surface(s) they target via the per-probe annotation
+convention below.
+
+### The three surfaces
+
+- **iz-cpm** — non-banking regression baseline. Carries the 975+ PASS
+  REPL suite (`make test-repl`). Cannot observe MMU port writes
+  (no bank model). Probes whose load-bearing assertion does not
+  depend on banking run here as the cheapest verification surface.
+- **iz-cpm-banking** — banking-capable. Carries cross-bank assertions
+  for Epic 17+ (`make test-repl-banking`). Models the MicroBeast 32-page
+  MMU at ports `0x70`–`0x73` (slot bank registers) and `0x74` (mapping
+  enable); `IN A,(0x70+slot)` returns the current bank-map value.
+  Source: blowback/iz-cpm fork at `1777a85` (see `.tool-versions`).
+  Probes whose load-bearing assertion *is* the bank switch behaviour
+  run here.
+- **Real MicroBeast** — load-bearing final word per S9 / NFR-P4-11.
+  Carries the hardware-verification verdict (`firmware-repro`
+  precedent; Story 16.1 transcript). The only surface where genuine
+  Flash, RAM, RTC, UART, PIO, keyboard, and display behaviour land
+  simultaneously. Probes whose verdict cannot be reproduced under
+  either emulator (resource-exhaustion paths, peripheral edge cases,
+  load-bearing CCP eviction shape) run here.
+
+### Per-probe surface-annotation convention
+
+Every banking-touching probe carries a comment block at the head of
+the probe stanza stating which surface(s) it targets and the expected
+verdict per surface. Verdicts are one of:
+
+- **PASS** — probe runs and the load-bearing assertion fires green.
+- **SKIP-with-rationale** — probe runs cleanly but the assertion is
+  not load-bearing on this surface; rationale captured in the same
+  comment block (e.g., `iz-cpm-SKIP: no MMU model`).
+- **FAIL-with-rationale** — probe is expected to FAIL on this surface
+  as a negative-control gate (rare; document why).
+
+The convention is **descriptive** at this stage. Story 16.3 documents
+the convention but does not retroactively annotate existing tests.
+Per-probe annotation lands story-by-story as Epic 17+ banking-aware
+probes are authored; pre-Phase-4 probes are implicitly
+`iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS` per the
+backward-compatibility of the iz-cpm-banking fork (which round-trips
+the 975-PASS suite byte-identical to upstream — verified at Story
+16.3 close-out).
+
+### Example annotation
+
+```forth
+\ Surface: banking-capable / iz-cpm-SKIP (no MMU model)
+\ Probe: bank switch observed via MMU port write at slot-2's bank
+\ register (0x72). PASSes under iz-cpm-banking (port_in round-trips
+\ the written value); SKIPs cleanly under iz-cpm baseline (port_in
+\ returns 0 for unmodelled ports, no FAIL, no kernel crash).
+: BANKING-EMU-PROBE ( -- )
+  FETCH-72              \ save current slot-2 mapping
+  $36 BANG-72           \ write marker
+  FETCH-72              \ read back
+  DUP $36 = IF
+    ." PASS: ..."
+    DROP
+  ELSE
+    ." SKIP: ..."
+  THEN
+  CR
+  BANG-72               \ restore saved mapping
+;
+BANKING-EMU-PROBE
+```
+
+(Canonical first iron probe: `_bmad-output/implementation-artifacts/16.3-probe.fth`.)
+
+### Cross-reference
+
+The three-test-surface discipline is defined canonically in
+`_bmad-output/planning-artifacts/architecture.md` § "Three test
+surfaces" (lines `:494..499`); the closure source for the emulator
+vendor pick is `docs/antforth-banking-redesign.md` §9 item 2 (with
+Story 16.3 closure line appended). This README summarises the
+convention; the architecture document is the canonical authority.
+
+---
+
 ## Story-archaeology footnote
 
 The convention described above was assembled out of three concrete

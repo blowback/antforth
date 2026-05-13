@@ -10,6 +10,12 @@
 ASM      = sjasmplus
 ASMFLAGS = --fullpath --nologo
 IZCPM    = iz-cpm
+# Story 16.3 — banking-capable emulator dual-track per architecture `:494..499`.
+# `IZCPM_BANKING` is the blowback/iz-cpm fork (pin: 1777a85, see .tool-versions)
+# which adds the MicroBeast MMU at ports 0x70-0x73 (slot bank regs) and 0x74
+# (mapping enable). Used by `make test-repl-banking` for cross-bank assertions;
+# `make test-repl` continues to use the non-banking iz-cpm baseline (975-PASS).
+IZCPM_BANKING = iz-cpm-banking
 
 # Story 13.1 — multi-drive iz-cpm wiring (AC #8). disk/a/ is the
 # directory iz-cpm maps as drive A:. Verified against
@@ -41,7 +47,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -67,6 +73,25 @@ firmware-repro-test: $(BDOS_PROBE_COM)
 # close-out (S11 sibling per architecture §"Doc-sync (NEW, opt-in)").
 check-doc-sync:
 	@bash tools/check-doc-sync/check-doc-sync.sh
+
+# --- Banking-capable emulator probe harness (Story 16.3) ---
+# Story 16.3 — banking-capable emulator dual-track per architecture `:494..499`.
+# Carries cross-bank assertions for Epic 17+; iz-cpm continues carrying the
+# non-banking 975-PASS baseline. Additive — does NOT modify `test-repl` semantics.
+# Picked vendor: blowback/iz-cpm fork @ 1777a85 (see
+# _bmad-output/implementation-artifacts/16.3-emulator-vendor-research.md).
+BANKING_PROBE = _bmad-output/implementation-artifacts/16.3-probe.fth
+
+test-repl-banking: $(TARGET)
+	@echo "Running banking-capable emulator probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q 'PASS: banking-emu-probe'; then \
+		echo "PASS: REPL banking test — bank switch observed under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: REPL banking test — expected 'PASS: banking-emu-probe' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 $(TARGET): $(SRCS) | $(BUILDDIR)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) antforth.asm --raw=../$(TARGET)

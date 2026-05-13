@@ -502,7 +502,7 @@ All three surfaces must PASS for any binary-delta story. Zero-binary-delta stori
 
 **Architecture-stage open questions captured as `TODO(P4-arch)` markers** in this document, not as PRD-blockers. Six open questions from `docs/antforth-banking-redesign.md` §9 are owned by Epic-16 spike stories:
 - §9.1 CODE-words-in-banks (S7 dispatch implication)
-- §9.2 banking-capable emulator vendor pick (Epic 16.3 — explicit prework gate)
+- §9.2 banking-capable emulator vendor pick — **CLOSED by Story 16.3, 2026-05-13, vendor = `iz-cpm-banking` (blowback/iz-cpm fork @ `1777a85`)**
 - §9.3 CL parser edge cases
 - §9.4 bank-state-table cap (29 entries) ABORT policy
 - §9.5 stub size (3 vs 4–5 bytes)
@@ -852,6 +852,8 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 
 **Action:** Story 16.3 spec includes the three eval criteria as ACs; Epic 17 kickoff includes a gate-state check on Story 16.3 closure.
 
+**Closed by Story 16.3, 2026-05-13, vendor = `iz-cpm-banking` (blowback/iz-cpm fork @ `1777a85`)** — vendor research + integration done (`_bmad-output/implementation-artifacts/16.3-emulator-vendor-research.md`); `make test-repl-banking` standalone phony target wired (additive, does not modify `make test-repl` semantics); `.tool-versions` pins `iz-cpm fffb8bb` (baseline) and `iz-cpm-banking 1777a85` (banking-capable); first iron probe (`_bmad-output/implementation-artifacts/16.3-probe.fth`) PASSes under `iz-cpm-banking` (slot-2 port-`0x72` round-trips marker `$36`) and SKIPs cleanly under iz-cpm baseline (`readback=0 expected=36 hex`); 975-PASS regression baseline preserved byte-identical under both surfaces; three-test-surface discipline (architecture `:494..499`) now executable.
+
 #### F2 — Descriptor-stub cost growth is linear in banked-word count
 
 **Issue:** Stub cost grows linearly: at 1000 words × 5 B/stub = 5 KB; at 2000 words = 10 KB. Current antforth has ~500 user-visible words across all wordlists; the 1000-word target leaves ~5 KB of headroom against NFR-P4-5 (8 KB total banking infrastructure cap), but a future-Phase explosion in banked-word count could blow the cap.
@@ -880,7 +882,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 
 #### F5 — Six architecture-stage open questions captured as `TODO(P4-arch)` markers
 
-**Issue:** The redesign-doc §9 lists 7 unresolved questions (item 7 closed as non-MVP per project-lead direction 2026-05-10). The remaining 6 (CODE-words-in-banks §9.1, emulator vendor pick §9.2, CL parser edge cases §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6) need owners. If they accumulate without spike-story owners, they could block Epic 17 story-writing.
+**Issue:** The redesign-doc §9 lists 7 unresolved questions (item 7 closed as non-MVP per project-lead direction 2026-05-10; item 2 emulator vendor pick CLOSED by Story 16.3, 2026-05-13). Five remaining open questions (CODE-words-in-banks §9.1, CL parser edge cases §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6) need owners. If they accumulate without spike-story owners, they could block Epic 17 story-writing.
 
 **Mitigation:** Each open question is owned by an Epic-16 spike story (or explicit deferral to a later epic). Captured as `TODO(P4-arch)` markers in this document, not as PRD-blockers.
 
@@ -899,7 +901,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 **Critical gaps (block implementation):** none. Findings F1–F6 are actionable in their owning epics without architectural change.
 
 **Important gaps (could improve smoother implementation):**
-- The 6 architecture-stage open questions from redesign §9 (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6, plus the emulator vendor pick §9.2 which is the explicit prework gate) need spike-story owners. **Mitigation:** Epic 16 prework spec includes one spike story per open question.
+- The 5 remaining architecture-stage open questions from redesign §9 (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6) need spike-story owners. §9.2 emulator vendor pick CLOSED by Story 16.3 (2026-05-13). **Mitigation:** Epic 16 prework spec includes one spike story per open question.
 - The descriptor-stub allocator's interaction with `MARKER` / `FORGET` is under-specified. When a MARKER is set in bank 5 and the user `MARKER`-rolls back, the stubs allocated in fixed memory for words defined since the MARKER must also be reclaimed. **Mitigation:** Epic 21 spec includes per-bank dictionary tail tracking + per-bank stub-allocator tail tracking; the MARKER stores both tails and FORGET reverts both.
 - `NUMBER?` and other words that internally use `,` to compile literals must continue to work cross-bank. **Mitigation:** the per-bank `,` (FR-P4-23) writes to the current bank's HERE; words that use `,` compile into whatever bank they're called from; no special-casing needed.
 
@@ -998,7 +1000,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 - Honour S1–S12 standing commitments codified as NFR-P4-28..39; per-bank hardware-smoke runs on three test surfaces (iz-cpm + banking-capable emulator + real MicroBeast)
 - Address findings F1–F6 in their owning epics' specs (F1 + F5 owned by Epic 16; F2 owned by every binary-delta epic via CCD-4; F3 owned by Epic 16; F4 owned by Epic 22 user-docs; F6 owned by Epic 21)
 - Refer to this document for all Phase-4 architectural questions; do not improvise
-- For the 6 open questions captured as `TODO(P4-arch)` markers (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6, plus emulator vendor pick §9.2), check the relevant Epic 16 spike story before drafting against an unresolved question
+- For the 5 remaining open questions captured as `TODO(P4-arch)` markers (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6 — §9.2 emulator vendor pick CLOSED by Story 16.3, 2026-05-13), check the relevant Epic 16 spike story before drafting against an unresolved question
 
 **First Implementation Priority:**
 
