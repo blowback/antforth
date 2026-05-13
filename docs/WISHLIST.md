@@ -8,7 +8,7 @@ carry-forward list — for the prioritised Phase-3 stabilisation + standards clo
 Available user RAM is getting tight as AntForth grows, but I don't 
 want to sacrifice any of our core wordset, nor our built in assembler.
 Proposal is to use bank swapping to make more memory available to users - 
-see docs/antforth-banking-design.md .
+see docs/antforth-banking-redesign.md (locked Phase-4 design) — the older docs/antforth-banking-design.md sketch is SUPERSEDED.
 
 # STARTUP.FTH
 

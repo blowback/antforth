@@ -11,7 +11,7 @@
 # Pinned by:
 #   _bmad-output/planning-artifacts/architecture.md:272..282 (§"B.5-D1")
 #   _bmad-output/planning-artifacts/prd.md:530 (FR-P3-16)
-#   _bmad-output/planning-artifacts/epics.md:394..414 (Story 14.5 ACs)
+#   _bmad-output/planning-artifacts/epics-phase3-epics-14-15.md:394..414 (Story 14.5 ACs)
 #   docs/PHASE-3-CARRY-FORWARD.md:36 (B.5 carry-forward row)
 #
 # Usage:  bash tools/check-doc-sync/check-doc-sync.sh
@@ -50,17 +50,20 @@ SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 cd "$PROJECT_ROOT" || { echo "[fatal] cannot cd to project root from $SCRIPT_DIR" >&2; exit 1; }
 
-# Input files (the four canonical drift surfaces).
+# Input files. The canonical 'epics.md' was split into per-phase files in
+# commit 51bc6d6 (2026-05-10); the script walks all four phase files in
+# the order Phase-1 → Phase-2 → Phase-3 → Phase-4.
 PRD="_bmad-output/planning-artifacts/prd.md"
 ARCH="_bmad-output/planning-artifacts/architecture.md"
-EPICS="_bmad-output/planning-artifacts/epics.md"
 EPICS_P1="_bmad-output/planning-artifacts/epics-phase1-epics-1-8.md"
 EPICS_P2="_bmad-output/planning-artifacts/epics-phase2-epics-9-13.5.md"
+EPICS_P3="_bmad-output/planning-artifacts/epics-phase3-epics-14-15.md"
+EPICS_P4="_bmad-output/planning-artifacts/epics-phase4-epics-16-22.md"
 COMPLIANCE="docs/ans-forth-core-compliance.md"
 
 # Verify inputs exist; emit fatal + exit 1 on any missing file.
 fatal=0
-for f in "$PRD" "$ARCH" "$EPICS" "$EPICS_P1" "$EPICS_P2" "$COMPLIANCE"; do
+for f in "$PRD" "$ARCH" "$EPICS_P1" "$EPICS_P2" "$EPICS_P3" "$EPICS_P4" "$COMPLIANCE"; do
     if [ ! -r "$f" ]; then
         printf '[fatal] required input file missing or unreadable: %s\n' "$f" >&2
         fatal=1
@@ -89,7 +92,7 @@ ARCH_LINES="$(awk '{printf "%d:%s\n", NR, $0}' "$ARCH")"
 PRD_LINES="$(awk '{printf "%d:%s\n", NR, $0}' "$PRD")"
 COMP_LINES="$(awk '{printf "%d:%s\n", NR, $0}' "$COMPLIANCE")"
 EPICS_HEADERS="$(awk 'FNR==1{f=FILENAME} /^### Story /{print f":"FNR":"$0}' \
-    "$EPICS" "$EPICS_P1" "$EPICS_P2")"
+    "$EPICS_P1" "$EPICS_P2" "$EPICS_P3" "$EPICS_P4")"
 
 # Architecture references FR-P3-N / NFR-P3-N tokens both as singletons
 # ("FR-P3-15") and as inclusive ranges ("FR-P3-22..25", "NFR-P3-22..33").
@@ -173,7 +176,9 @@ fi
 # Check (b): Story X.Y citation resolution
 #------------------------------------------------------------------------------
 # Resolution: a header line matching '^### Story X.Y:' or '^### Story X.Y.Z:'
-# in epics.md, epics-phase1-epics-1-8.md, or epics-phase2-epics-9-13.5.md.
+# in any of the four per-phase epics files (epics-phase1-epics-1-8.md,
+# epics-phase2-epics-9-13.5.md, epics-phase3-epics-14-15.md,
+# epics-phase4-epics-16-22.md).
 # Regex matches singular "Story " only; plural "Stories" forms (e.g.,
 # "Stories 14.1 / 14.2 / 14.3") are not extracted by this check — they
 # are conventionally human prose, not citations the reader follows.
