@@ -47,7 +47,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-skip test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -89,6 +89,21 @@ test-repl-banking: $(TARGET)
 		echo "PASS: REPL banking test — bank switch observed under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: REPL banking test — expected 'PASS: banking-emu-probe' in output"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+
+# Companion to `test-repl-banking`: assert the probe SKIPs cleanly under the
+# non-banking iz-cpm baseline (no FAIL, no kernel crash). AC6 demanded the SKIP
+# path; original `test-repl-banking` validated PASS only, leaving SKIP shape
+# manual-only (CR review fix M2, 2026-05-13).
+test-repl-banking-skip: $(TARGET)
+	@echo "Verifying banking probe SKIPs cleanly under $(IZCPM) baseline..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^SKIP: banking-emu-probe'; then \
+		echo "PASS: banking probe SKIPs cleanly under $(IZCPM) baseline (no MMU model)"; \
+	else \
+		echo "FAIL: banking probe expected to SKIP under $(IZCPM); no SKIP line emitted"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

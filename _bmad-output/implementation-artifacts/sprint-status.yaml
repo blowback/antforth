@@ -297,7 +297,7 @@ development_status:
   epic-16: in-progress
   16-1-ccp-eviction-hardware-verification-spike-memory-map-page-allocation-survey: done
   16-2-doc-lock-supersede-obsolete-docs-antforth-banking-design-md: done
-  16-3-banking-capable-emulator-vendor-selection-make-test-repl-banking-integration: review
+  16-3-banking-capable-emulator-vendor-selection-make-test-repl-banking-integration: done
   16-4-architecture-stage-open-questions-resolution-9-1-9-3-9-4-9-5-9-6: backlog
   epic-16-retrospective: optional
 

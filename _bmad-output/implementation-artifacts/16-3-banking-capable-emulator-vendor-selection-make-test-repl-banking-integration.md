@@ -1,6 +1,6 @@
 # Story 16.3: Banking-capable emulator vendor selection + `make test-repl-banking` integration
 
-Status: review
+Status: done
 
 <!-- Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -177,11 +177,11 @@ So that every Phase-4 binary-delta story can specify which test surface its prob
   - [x] 2.3 — Pick the vendor. Justify against all three criteria with explicit `pass / pass / pass`. If zero candidates satisfy all three: HALT — invoke the AC2 fallback path (Task 3 owns the fallback shape); skip Tasks 4–8 until the SCP decision lands.
   - [x] 2.4 — Record the picked vendor + its upstream URL + the specific release tag / commit SHA / version string used for the AC4 `.tool-versions` pin. This is the load-bearing reproducibility anchor — future readers must be able to install the exact same emulator build.
 
-- [x] **Task 3 — AC2 fallback handler (only if Task 2.3 HALTs)** (AC2)
-  - [x] 3.1 — Author a fallback-path memo (one section in this story's Dev Notes) naming the SCP options: (i) re-scope criteria; (ii) re-pin prework gate; (iii) closest-fit + Story 16.3.1 follow-up. Invoke `/bmad-bmm-correct-course` per the memory `feedback_follow_process.md` — don't ask permission for obvious next steps.
-  - [x] 3.2 — The SCP output (Approved / Revised / Rejected) lands as a sprint-change-proposal document `_bmad-output/planning-artifacts/sprint-change-proposal-<YYYY-MM-DD>.md` per the existing SCP filename convention (cf. existing SCPs at `sprint-change-proposal-2026-04-12.md`, `:-04-20`, `:-04-27`).
-  - [x] 3.3 — If the SCP outcome picks fallback (iii) (closest-fit with documented gaps): a row `16-3-1-emulator-vendor-gap-followup: backlog` is appended to `sprint-status.yaml` directly after `16-3-...`. Story 16.3's verdict at this point is "fallback (iii) — picked = <name>; gap = <criterion>; Story 16.3.1 owns gap closure"; Tasks 4..8 proceed under the closest-fit pick.
-  - [x] 3.4 — If the SCP outcome picks fallback (i) re-scope or (ii) re-pin: this story closes at the SCP-decision-recorded point; Tasks 4..8 are deferred until the re-scoped / re-pinned scope is re-spawned as Story 16.3 (revised) or Story 16.3a per the SCP. `sprint-status.yaml` reflects the SCP outcome.
+- [ ] **Task 3 — AC2 fallback handler (only if Task 2.3 HALTs)** (AC2) — **N/A: AC2 fallback NOT invoked; Task 2.3 picked candidate #1 (`iz-cpm-banking` @ `1777a85`) pass / pass / pass on all three criteria. Sub-tasks 3.1–3.4 deliberately not executed; left unchecked to honour conditional semantics. (CR fix M1, 2026-05-13.)**
+  - [ ] 3.1 — N/A (no fallback-path memo authored; no `/bmad-bmm-correct-course` invocation)
+  - [ ] 3.2 — N/A (no SCP document produced)
+  - [ ] 3.3 — N/A (no `16-3-1-emulator-vendor-gap-followup` row added to `sprint-status.yaml`)
+  - [ ] 3.4 — N/A (no re-scope / re-pin path taken)
 
 - [x] **Task 4 — `.tool-versions` integration** (AC4)
   - [x] 4.1 — Re-check `ls .tool-versions` (Task 1.3(i)). If absent: create `.tool-versions` at the repo root from scratch. Include both rows in canonical `asdf`-compatible `<tool> <version>` per-line shape:
@@ -454,14 +454,14 @@ claude-opus-4-7 (Opus 4.7, 1M context) — dev-pass 2026-05-13
 ### File List
 
 - `_bmad-output/implementation-artifacts/16.3-emulator-vendor-research.md` (NEW) — five-candidate research artifact + picked-vendor justification
-- `_bmad-output/implementation-artifacts/16.3-probe.fth` (NEW) — first iron probe (slot-2 port-0x72 round-trip)
+- `_bmad-output/implementation-artifacts/16.3-probe.fth` (NEW; **CR-fix M3 2026-05-13**: SKIP path prints readback in hex with `$`-prefix to remove decimal-vs-hex ambiguity — output now reads `(readback=$0 expected=$36)`) — first iron probe (slot-2 port-0x72 round-trip)
 - `.tool-versions` (NEW) — `iz-cpm fffb8bb` + `iz-cpm-banking 1777a85`
-- `Makefile` (MODIFIED) — added `IZCPM_BANKING` variable, `BANKING_PROBE` constant, `test-repl-banking` phony target + recipe; `.PHONY` line gained `test-repl-banking`
+- `Makefile` (MODIFIED; **CR-fix M2 2026-05-13**: added `test-repl-banking-skip` phony target asserting probe SKIPs cleanly under upstream `iz-cpm`; `.PHONY` line gained `test-repl-banking-skip`) — added `IZCPM_BANKING` variable, `BANKING_PROBE` constant, `test-repl-banking` phony target + recipe; `.PHONY` line gained `test-repl-banking`
 - `tests/README.md` (MODIFIED) — added §5 "Three test surfaces (Phase-4 banking dual-track)" section before `---` / Story-archaeology footnote
 - `_bmad-output/planning-artifacts/architecture.md` (MODIFIED) — F1 closure (`:847..853` body unchanged; closure line appended); open-questions tracking §9.2 line (`:505`) marked CLOSED in-place; F5 body (`:885`) re-counted; Gap Analysis (`:904`) re-counted; Future Reader Guidance (`:1003`) re-counted
 - `docs/antforth-banking-redesign.md` (MODIFIED) — §9 item 2 (`:168`) closure line appended cross-referencing architecture F1 closure
-- `_bmad-output/implementation-artifacts/16-3-banking-capable-emulator-vendor-selection-make-test-repl-banking-integration.md` (this story file; MODIFIED) — Status → review; all tasks ticked; Dev Agent Record populated
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED) — `16-3-...` row flipped `ready-for-dev` → `review`
+- `_bmad-output/implementation-artifacts/16-3-banking-capable-emulator-vendor-selection-make-test-repl-banking-integration.md` (this story file; MODIFIED) — Status → review; tasks ticked; Dev Agent Record populated. **CR-fix M1 2026-05-13**: Task 3 (AC2 fallback handler) re-marked `[ ]` with N/A annotation since fallback never fired. Status → done after CR pass.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED) — `16-3-...` row `ready-for-dev` → `review` → `done` (post-CR fixes 2026-05-13)
 
 Zero `src/` files modified; zero `build/` artifact change; zero `tests/*.fth` regressions.
 
@@ -470,3 +470,4 @@ Zero `src/` files modified; zero `build/` artifact change; zero `tests/*.fth` re
 | Date | Description |
 |---|---|
 | 2026-05-13 | Story 16.3 dev-pass — vendor `iz-cpm-banking` (blowback/iz-cpm fork @ `1777a85`) picked pass/pass/pass on three criteria; `.tool-versions` created; `make test-repl-banking` standalone target wired; first iron probe authored (slot-2 port-0x72 round-trip; PASS under banking emulator, SKIP under iz-cpm baseline); `tests/README.md` §5 three-test-surface section added; `architecture.md` F1 + open-questions §9.2 + F5 closure; `docs/antforth-banking-redesign.md` §9 item 2 closure; zero binary delta (24,995 bytes unchanged); zero regression on 975-PASS baseline; AC2 fallback not invoked. |
+| 2026-05-13 | Story 16.3 CR pass — 0 HIGH / 3 MEDIUM findings fixed: **M1** Task 3 marks corrected to `[ ]`/N/A (fallback never invoked); **M2** added `make test-repl-banking-skip` phony target so probe SKIP behaviour under upstream `iz-cpm` is now regression-checked (was manual-only at first-pass close); **M3** probe SKIP output prints readback as `$<hex>` and matches `expected=$36` (was decimal-with-"36 hex" suffix — ambiguous if readback ≠ 0). Re-verified: `wc -c build/antforth.com` = 24,995 (Δ=0); `make test-repl` = 975 PASS / 0 FAIL / 2 SKIP (Δ=0); `make test-repl-banking` = PASS; `make test-repl-banking-skip` = PASS (new). 5 LOW findings deferred (L1 `.tool-versions` build-comment, L2 F1 body "974" stale figure, L3 F5 header "Six" stale, L4 `iz-cpm-banking --version` upstream URL, L5 no fork-side 975-PASS regression — all cosmetic / pre-existing). Status → done. |

@@ -46,8 +46,11 @@ END-CODE
     ." PASS: banking-emu-probe - bank switch observed (slot-2 port 72h round-tripped marker $36)"
     DROP
   ELSE
-    ." SKIP: banking-emu-probe - iz-cpm does not model MMU; this probe targets banking-capable surface only (readback="
-    . ." expected=36 hex)"
+    \ Print readback in hex with $ prefix to match `expected=$36` literal —
+    \ avoids the decimal-output / "36 hex" ambiguity flagged in CR review M3.
+    ." SKIP: banking-emu-probe - iz-cpm does not model MMU; this probe targets banking-capable surface only (readback=$"
+    BASE @ HEX SWAP . BASE !
+    ." expected=$36)"
   THEN
   CR
   BANG-72                                   \ restore saved slot-2 mapping (consumes saved)
