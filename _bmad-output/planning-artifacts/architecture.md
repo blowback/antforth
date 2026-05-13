@@ -651,6 +651,7 @@ In a memory entry `feedback_no_mirror_shorthand.md`:
 | `tests/banking_tests.fth` | NEW REPL-probe harness — probes for the 12 wordset words + cross-bank dispatch round-trip + ABORT-bank-restore + boot-config edge cases; per-probe annotation of which emulator surface (banking-capable / iz-cpm / hardware) the probe targets | Epic 17–22 |
 | `_bmad-output/implementation-artifacts/<epic>-retro-<date>.md` | Phase-4 retrospective(s) at each epic close-out (one per epic, 16–22) | per-epic |
 | `_bmad-output/implementation-artifacts/<story>-<slug>.md` | Per-story dev-notes for any story that needs them | per-story |
+| `docs/phase4-memory-map.md` | Page 0–3 page-allocation survey + slot-3 CP/M residency sub-table; canonical lookup for "what's at page 0xNN?" across Epic 17+ stories that touch the MMU / CL parser / banked-word descriptor stubs | Epic 16 (Story 16.1) |
 
 `src/banking.asm` follows the existing per-subsystem-file convention (`src/exception.asm`, `src/file_access.asm`, etc.) — one file per subsystem, kernel-resident, hard-coded.
 
@@ -866,6 +867,8 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 **Mitigation:** Epic 16 spike to verify on real MicroBeast: assert that ^C from inside antforth returns to a working CCP prompt (CCP reloaded from disk by BIOS) without crashing or corrupting state. If verification fails, restore-on-warm-boot path needed (small kernel addition; estimated +50 B).
 
 **Action:** Epic 16 includes an explicit CCP-eviction-verification spike before any Phase-4 binary-delta story ships. If the spike surfaces a real failure, restore-on-warm-boot story spawned with a +50 B envelope.
+
+**Closed by Story 16.1, 2026-05-13, verdict PASS** — CCP reloaded from disk by BIOS on warm-boot per CP/M 2.2 spec; both `BYE` and `^C` exit paths verified clean on real MicroBeast hardware (transcript `~/Downloads/beastty-20260513-110640.bin`; per-story verdict artifact `_bmad-output/implementation-artifacts/16-1-ccp-eviction-hardware-transcript.md`). +2 KB Page-3 headroom ($D400–$DBFF) safe to consume in Epic 17+ for the descriptor-stub allocator + `bank-table[]`. No restore-on-warm-boot follow-up needed; AC2 FAIL fork did not fire.
 
 #### F4 — Cross-bank pointer hazard documented but not guarded
 
