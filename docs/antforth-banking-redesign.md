@@ -165,10 +165,15 @@ The session future-proofed banking against multitasking, locals, and ALLOCATE �
 The session left these unresolved. They are inputs to the Phase-4 Architecture document (not the PRD) — capture as `TODO(P4-arch)` items there, or as Epic-16 spike stories.
 
 1. **CODE words in banks.** Can user-defined CODE (assembler) words live in banks? Affects S7 dispatch. Epic 22 was left ambiguous.
+   **Closed by Story 16.4, 2026-05-14, fixed-memory-only; see `_bmad-output/planning-artifacts/architecture.md` PD-P4-15.**
 2. **Banking-capable emulator vendor pick.** Ant's research outstanding. Three eval criteria pinned: models 32-page MMU at ports 0x70+slot/0x74; pipe-able; bank-visibility for tests.
    **Closed by Story 16.3, 2026-05-13, vendor = `iz-cpm-banking` (blowback/iz-cpm fork @ `1777a85`); see `_bmad-output/planning-artifacts/architecture.md` F1 closure.**
 3. **CL parser edge cases.** Listed in session: no args, bad token, reverse range, dup, probe-fail, empty surviving list. Final policy for each not signed off.
+   **Closed by Story 16.4, 2026-05-14, warn-and-continue across all six edge cases (never abort the boot); see `_bmad-output/planning-artifacts/architecture.md` PD-P4-14.**
 4. **Bank-state-table cap (29 entries).** ABORT-on-`+BANK`-past-cap policy not formally specced.
+   **Closed by Story 16.4, 2026-05-14, `+BANK` past cap raises `ABORT" cap?"`; see `_bmad-output/planning-artifacts/architecture.md` PD-P4-13.**
 5. **Stub size: 3 vs 4–5 bytes.** Final size pinning not done. Affects per-word cost calculations.
+   **Closed by Story 16.4, 2026-05-14, 4 bytes — `(target_bank: 1B) + (JP target_addr: 3B)`; see `_bmad-output/planning-artifacts/architecture.md` PD-P4-11.**
 6. **Recursive cross-bank R-stack overflow.** Documented gotcha or runtime guard? No FR or limit defined.
+   **Closed by Story 16.4, 2026-05-14, documented-gotcha (standard `-5 RETURN-STACK-OVERFLOW` THROW; no runtime guard); see `_bmad-output/planning-artifacts/architecture.md` PD-P4-12.**
 7. **Flat-build semantics for the 12-word set.** Resolved by project-lead direction 2026-05-10: flat build is non-MVP for Phase 4. Specification deferred to Phase 5+.

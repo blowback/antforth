@@ -57,7 +57,7 @@ The PRD specifies **39 Phase-4 NFRs** (NFR-P4-1..39) across six categories, with
 
 - **Performance (NFR-P4-1..6)** — Phase-2 NFR1–5 envelopes hold; cross-bank call ≤60 T-states + bank-switch; per-banked-word descriptor stub ≤5 bytes; banking infrastructure ≤8 KB fixed memory worst case (~6 KB at default 12 banks); FIND batch-loading regression envelope ≤5–15%.
 - **Reliability (NFR-P4-7..11)** — REPL survives any THROW including across a bank boundary (the trampoline restores caller's bank on the unwind path); bank-table[] entries not corrupted by mid-execution THROW; full Phase-3 974-test baseline regression-clean on every Phase-4 antforth 3.x point-release; mid-epic hardware-smoke cadence per binary-delta story (NFR-P4-11 codifies S9).
-- **Compatibility & Standards Conformance (NFR-P4-12..17)** — 100% §6.1 Core compliance via §-level rows continues; Forth-2014 §3.4.1.3 continues; banking words flagged as `; antforth extension` per CCD-3 with a redesign-doc §-reference; CP/M 2.2 BDOS allow-list does not grow in Phase 4; CODE-word source byte-identical regression (cross-bank CODE-word policy is an open question, see §9.1); §-level audit-doc checkability under 10 minutes per row.
+- **Compatibility & Standards Conformance (NFR-P4-12..17)** — 100% §6.1 Core compliance via §-level rows continues; Forth-2014 §3.4.1.3 continues; banking words flagged as `; antforth extension` per CCD-3 with a redesign-doc §-reference; CP/M 2.2 BDOS allow-list does not grow in Phase 4; CODE-word source byte-identical regression (cross-bank CODE-word policy closed by Story 16.4 PD-P4-15: CODE words live in fixed memory only); §-level audit-doc checkability under 10 minutes per row.
 - **Maintainability (NFR-P4-18..22)** — Z80 source readability over micro-optimisation; banking infrastructure inline-comments cite redesign-doc §-numbers; REPL-piped Forth tests as canonical regression surface (Phase-4-specifically dual-tracked across banking-capable emulator + iz-cpm); per-epic point-release decoupling; story-template lints (carried from B.1–B.5) fire automatically.
 - **Integration (NFR-P4-23..27)** — Terminal I/O, file path conventions, MicroBeast hardware isolation all unchanged; the 12-word `BANK*` wordset is the explicit kernel-resident exception (banking is a memory-model primitive, not a peripheral); **ISR-from-fixed-memory-only invariant** maintained (no banked code reachable from any interrupt vector); BDOS calls (`CALL 0005h`) work unchanged from banked code.
 - **Process Discipline (NFR-P4-28..39)** — codifies S1–S12: adversarial CR fresh-context (S1), REPL-piped tests (S2), real byte-count estimation (S3), AC-composition validation (S4), PARTIAL→HALT (S5), inventory-grep covers helpers (S6), EXX-hygiene per raise site (S7) **with the `cross_bank_return` trampoline re-walking the rule**, no "pre-existing" discharge for correctness defects (S8), per-story hardware smoke (S9), workflow > memory > prompt (S10), version-surface audit at tag close-out (S11), hardware-typed probe discipline (S12). All 12 carry forward unchanged from Phase-3 close-out — no S13+ proposals (per project-lead direction 2026-05-10).
@@ -147,12 +147,12 @@ The PRD specifies **39 Phase-4 NFRs** (NFR-P4-1..39) across six categories, with
 - Banking-capable emulator vendor pick (Epic 16.3 prework gate; blocks Epic 17+ story-writing)
 
 **Important Decisions (shape Phase-4 dev-passes):**
-- Stub size pinning: 3 vs 4–5 bytes (open question §9.5; affects per-1000-words cost calculations)
-- CL parser edge-case policy (open question §9.3: no args, bad token, reverse range, dup, probe-fail, empty surviving list)
-- Bank-state-table cap policy (open question §9.4: ABORT-on-`+BANK`-past-cap)
-- Cross-bank R-stack overflow disposition (open question §9.6: documented gotcha vs runtime guard)
-- CODE-words-in-banks decision (open question §9.1: affects S7 dispatch in Epic 22)
-- `BANK-OF` implementation as one-byte read from descriptor stub (free under (γ))
+- Stub size: **4 bytes** `(target_bank: 1B) + (JP target_addr: 3B)` (closed by Story 16.4, 2026-05-14 — see PD-P4-11)
+- CL parser edge-case policy (closed by Story 16.4, 2026-05-14 — see PD-P4-14: warn-and-continue across all six edge cases; never abort the boot)
+- Bank-state-table cap policy (closed by Story 16.4, 2026-05-14 — see PD-P4-13: `+BANK` past cap raises `ABORT" cap?"`)
+- Cross-bank R-stack overflow disposition (closed by Story 16.4, 2026-05-14 — see PD-P4-12: documented-gotcha; standard `-5 RETURN-STACK-OVERFLOW` THROW; no runtime guard)
+- CODE-words-in-banks decision (closed by Story 16.4, 2026-05-14 — see PD-P4-15: CODE words live in fixed memory only; not in banks)
+- `BANK-OF` implementation as one-byte read from descriptor stub (free under (γ); confirmed by PD-P4-11 byte-0-bank layout)
 
 **Carry-forward (no re-decision):**
 - CCD-1 dual-chain frame discipline (Phase-2)
@@ -307,7 +307,7 @@ The §-level compliance-doc row schema (CCD-P3-1) and the process-discipline-in-
 
 **Architectural impact:** `src/antforth.asm` adds a CL-tail parser invoked early in boot; the `+BANK` word is reused for runtime addition (consistency).
 
-**Open question (§9.3):** edge-case policy for no args / bad token / reverse range / dup / probe-fail / empty surviving list. Owned by Epic 16 spike. Serves FR-P4-34..39.
+**Closed by Story 16.4 (PD-P4-14), 2026-05-14:** edge-case policy for no args / bad token / reverse range / dup / probe-fail / empty surviving list adopted as the spec defaults verbatim — warn-and-continue across all six edge cases; never abort the boot. Serves FR-P4-34..39.
 
 **Source:** `docs/antforth-banking-redesign.md` §6.
 
@@ -344,6 +344,110 @@ The §-level compliance-doc row schema (CCD-P3-1) and the process-discipline-in-
 
 ---
 
+#### PD-P4-11: Descriptor-stub size pin (§9.5 closure)
+
+**Question:** What is the per-banked-word descriptor-stub size — 3 bytes, 4 bytes, or 5 bytes — and what does each byte buy against the NFR-P4-5 envelope?
+
+**Options considered:**
+
+- **3 bytes (`JP target_addr` only).** 3 KB per 1000 words. The stub is a single executable `JP target_addr` (`C3 lo hi`); no in-stub bank info. Cross-bank dispatch requires either (a) caller's MMU pre-switched to the target bank — defeats FR-P4-17 xt-portability since callers would need bank knowledge — or (b) a parallel `stub-bank-table[]` indexed by stub address. Option (b) recovers ~1 B per stub in the parallel table = effectively 4 B per stub split across two regions, plus allocator complexity.
+- **4 bytes (`(target_bank: 1B) + (JP target_addr: 3B)`).** 4 KB per 1000 words. ★ **CHOSEN** ★. Stub layout: byte 0 = target bank (-1 = fixed memory per FR-P4-13), bytes 1..3 = `JP target_addr` (`C3 lo hi`). EXECUTE chokepoint reads byte 0, conditionally writes MMU port, then jumps to `xt+1` (the JP). Intra-bank dispatch hits exactly FR-P4-15's "one extra `JP` overhead vs flat dispatch"; cross-bank dispatch hits FR-P4-16's "≤60 T-states + bank-switch". Single contiguous stub allocation; no parallel table.
+- **5 bytes (`(target_bank: 1B) + (JP target_addr: 3B) + (slack: 1B)`).** 5 KB per 1000 words. Same dispatch as 4 B with a defensive padding byte for future extension (e.g., flags, checksum, redirect-on-FORGET marker). Phase-5+ can extend the 4-byte stub without breaking xt stability since each new word gets a fresh stub allocation; the slack byte buys nothing concrete in Phase 4.
+
+**Decision:** 4 bytes. Stub layout `(target_bank: 1B) + (JP target_addr: 3B)`.
+
+**Rationale:** 4 B is the smallest contiguous layout that satisfies both FR-P4-13 (stub carries `(target_bank, target_addr_in_bank)`) and FR-P4-15 (intra-bank dispatch = one extra `JP` overhead). The 3-byte option requires a parallel bank-lookup table that recovers the saved byte and adds allocator complexity; the 5-byte option burns 1 KB per 1000 words for slack with no concrete Phase-4 use. Per-1000-words cost = 4 KB out of NFR-P4-5's ≤8 KB envelope (PRD `:600`); leaves ~4 KB headroom for the CL parser (~200 B), bank-table[] (29 entries × ~16 B = ~448 B), `cross_bank_return` trampoline (~80 B), descriptor-stub allocator (~150 B), banking-word bodies (~120 B) — comfortably under cap at 1000 banked words.
+
+**Architectural impact:** Story 18.1 (`bank-table[]` allocator) inherits the 4-byte allocation unit; Story 18.3 (descriptor-stub allocator + `EXECUTE` chokepoint) inherits the byte-0-bank / byte-1-JP layout for its dispatch decoder. NFR-P4-4 (per-stub ≤5 B) holds with margin. `BANK-OF` (FR-P4-5) is implemented as a one-byte read at xt+0 (free under this layout, cited in Important Decisions :155).
+
+**Source:** `docs/antforth-banking-redesign.md` §7 (3 bytes minimum, 4–5 bytes realistic with `JP` opcode); FR-P4-13..17; NFR-P4-4 / NFR-P4-5; PD-P4-1 (descriptor-stub mechanism).
+
+---
+
+#### PD-P4-12: Cross-bank R-stack overflow disposition (§9.6 closure)
+
+**Question:** When recursive cross-bank calls accumulate 3-cell return frames and exhaust the standard return stack, does the kernel add a cross-bank-specific overflow guard, or does it rely on the existing `-5 RETURN-STACK-OVERFLOW` THROW?
+
+**Options considered:**
+
+- **Documented-gotcha (no kernel addition).** ★ **CHOSEN** ★. The existing return-stack overflow check fires on any R-stack push past the limit; cross-bank frames are 3 cells (3× normal) so they exhaust 3× faster, but the same `-5` THROW catches them. Zero new kernel code; relies on FR-P4-21's already-codified fallback. The gotcha is documented in the source comment for `cross_bank_return` and in the user-docs entry slated for Epic 22 polish (extending the existing F4 cross-bank pointer hazard entry — see F4 Action paragraph extension).
+- **Runtime guard (kernel addition, +30..+60 B).** A cross-bank-specific overflow check on each cross-bank frame push raises the same `-5` THROW earlier in the call chain with potentially better attribution. Cost: extra CP / JR Z sequence in the cross-bank dispatch path on every cross-bank call (~30 B for the check + ~30 B for the early-throw raise). Worse: the check fires before the frame is fully pushed, which means R-stack state at THROW-time differs from the standard overflow case, requiring divergent unwind handling.
+
+**Decision:** Documented-gotcha. No new kernel code; `-5 RETURN-STACK-OVERFLOW` THROW continues to be the failure mode for runaway cross-bank recursion.
+
+**Rationale:** The runtime guard provides marginal UX improvement (slightly earlier error) at real cost (+30..+60 B against NFR-P4-5, divergent unwind handling). The standard `-5` THROW already gives the user an actionable error; cross-bank attribution can be added to the user-docs entry without kernel cost. Consistent with the "doc-and-pray" disposition for cross-bank pointer hazards (F4) — same family of gotchas, same family of mitigation.
+
+**Architectural impact:** Story 18.x (cross-bank EXIT — sentinel-trampoline + FR-P4-21 stack-frame docs) carries this disposition into the trampoline source comment. F4 user-docs entry (Epic 22 polish) extends to cover the cross-bank-R-stack-overflow gotcha — same entry, one-line addition (no separate Epic-22 work item). FR-P4-21 row in `prd.md` and `epics-phase4-epics-16-22.md` carries the closure cross-reference inline (the prior architecture-stage marker is replaced).
+
+**Source:** `docs/antforth-banking-redesign.md` §9.6; FR-P4-21 (`prd.md:540` and `epics-phase4-epics-16-22.md:62`); F4 Action paragraph (existing Epic-22 polish user-docs entry); `epics-phase4-epics-16-22.md:436` (spec default = documented-gotcha).
+
+---
+
+#### PD-P4-13: bank-table[] cap policy (§9.4 closure)
+
+**Question:** When `+BANK` is called with `BANKS` already at the 29-entry `bank-table[]` cap, what is the behaviour?
+
+**Options considered:**
+
+- **(a) `ABORT" cap?"` raised.** ★ **CHOSEN** ★. `+BANK` past cap raises `THROW -2` (ABORTED-WITH-MESSAGE per the standard) with the literal message `cap?` (per `epics-phase4-epics-16-22.md:437` spec wording). User-visible error signals configuration mistake; consistent with antforth ABORT-error convention; bank-table[] stays at 29 entries; NFR-P4-5 envelope preserved. Cost: ~10–20 B (string literal + `ABORT"` call site in the `+BANK` body).
+- **(b) Silent no-op.** `+BANK` past cap is a no-op, no error, no warning. Most permissive; user can blindly call `+BANK` in scripts without bounds-checking. Bad UX: misconfigurations silently produce a smaller-than-expected bank set; the user then sees `BANKS` returning a value lower than the number of `+BANK` calls and has to discover the cap by reading docs.
+- **(c) Growable table.** `bank-table[]` grows past 29 entries on demand. Breaks the worst-case NFR-P4-5 envelope (29 entries × ~16 B = ~448 B is part of the ≤8 KB cap; growable means unbounded fixed-memory consumption). Bad fit for Z80 fixed-memory constraint.
+
+**Decision:** (a) `ABORT" cap?"` raised.
+
+**Rationale:** The 29-entry cap is a hard architectural constraint (driven by the +2 KB Page-3 headroom from CCP eviction PD-P4-6 and the NFR-P4-5 envelope). Going past the cap is a configuration error worth signaling; silent no-op masks the misconfiguration; growable table breaks the envelope. ABORT" matches antforth's existing user-misuse convention (the same shape as `ABORT" stack underflow"` etc. in antforth's existing error sites). The literal message `cap?` is short enough to fit comfortably in the +BANK body.
+
+**Architectural impact:** Story 17.3 (`+BANK` implementation with probe-on-add per `epics-phase4-epics-16-22.md:526`) inherits this disposition verbatim — the `+BANK` body carries an `ABORT" cap?"` site at the cap check. Story 17.5 (CL parser past-cap edge case) inherits the same disposition for the CL surface — when CL adds banks past the cap, the per-token warning (PD-P4-14 §9.3 edge case (v) probe-fail equivalent) fires followed by an ABORT" cap?" if the cap is exceeded by the CL itself (vs interactive `+BANK`).
+
+**Source:** `docs/antforth-banking-redesign.md` §9.4; FR-P4-34..36 (boot config); `epics-phase4-epics-16-22.md:437` (option enumeration); `epics-phase4-epics-16-22.md:526` (Story 17.3 inheritance).
+
+---
+
+#### PD-P4-14: CL parser edge-case policy (§9.3 closure)
+
+**Question:** What is the behavioural disposition for each of the six named CL-parser edge cases (no args / bad token / reverse range / dup / probe-fail / empty surviving list)?
+
+**Options considered:** Per edge case, (1) abort the boot, (2) per-token warning then continue, or (3) silent fallback. Spec defaults at `epics-phase4-epics-16-22.md:438` converge on a unified "warn-and-continue, never abort the boot" principle; dev-pass picks per edge case with rationale.
+
+**Decision:** All six spec defaults adopted verbatim. Disposition policy (the **behavioural** disposition, not the warning-text wordsmithing — Story 17.4 owns the wordsmithing per `epics-phase4-epics-16-22.md:550..552`):
+
+- **(i) no args** → apply defaults `22 35-3F` (0x22 portal + 12 banks at 0x35..0x3F per redesign §6). No warning; the absence of args is a normal usage pattern (the user wants the default config). Boot continues with the default bank set.
+- **(ii) bad token** → per-token warning, continue parsing (do NOT abort the whole CL parse). Each unrecognised token in the CL produces one warning line; well-formed tokens before/after the bad token are still processed. Rationale: partial-validity is more user-recoverable than total-rejection in the CP/M 2.2 CL surface — a typo in one bank number shouldn't blow away the user's whole config.
+- **(iii) reverse range** (e.g. `3f-35`) → warning, treat as empty range. Boot continues. Rationale: reverse range is almost certainly a typo (the user meant `35-3f`); silently empty-ranging it would mask the typo, but aborting would be over-strict. Warn-and-empty-range is the middle ground.
+- **(iv) dup** (same page named twice) → warning, deduplicate silently. Boot continues with the deduplicated set. Rationale: duplicate is a benign user error (often from copy-paste); dedup is the natural fix; warning lets the user know it happened.
+- **(v) probe-fail** (page fails probe-on-add) → one-line warning per failed page, exclude from active list, continue. Rationale: probe-fail means the hardware didn't respond on that page (bad MMU slot, wrong physical page); excluding it from the active list is the safe action; the warning lets the user know which pages failed so they can investigate.
+- **(vi) empty surviving list after probes** → warning + boot continues with `BANKS = 0`. Rationale: do NOT abort boot — even with zero banks, the user has a working flat-memory antforth REPL. They can `+BANK` interactively to add pages once they figure out which physical pages work, or recover by editing the CL and re-running. Aborting would strand them at the CP/M prompt without a working antforth.
+
+The exact warning message format for each edge case is **not** pinned by this story; only the disposition is. Story 17.4 wordsmiths the warning text per `epics-phase4-epics-16-22.md:550..552`.
+
+**Rationale:** The unifying principle across all six edge cases is **warn loudly, never abort the boot, fall back to the most permissive sensible interpretation**. This aligns with CP/M tradition (small embedded systems boot to a usable shell even with imperfect config) and with antforth's interactive ethos (the user can always recover at the REPL). It also keeps the CL parser ~200 B per redesign §7 — the per-edge-case handling is mostly a warning-print-and-skip pattern, not divergent control flow.
+
+**Architectural impact:** Story 17.4 (CL-tail parser per `epics-phase4-epics-16-22.md:550..552`) inherits the disposition policy verbatim and owns the warning-text wordsmithing. Story 17.5 (boot configuration / banner / `.BANKS` minimal) carries the post-CL state into the banner (`BANKS` count) and behavioural assertions (e.g., empty-surviving-list boot continues to REPL prompt). PD-P4-8 §9.3 open-question line at `:310` is replaced with a closure cross-reference to PD-P4-14.
+
+**Source:** `docs/antforth-banking-redesign.md` §9.3; `epics-phase4-epics-16-22.md:438` (six-edge-case enumeration with spec defaults); `epics-phase4-epics-16-22.md:550..552` (Story 17.4 inheritance); FR-P4-34..39 (boot config FRs).
+
+---
+
+#### PD-P4-15: CODE-words-in-banks policy (§9.1 closure)
+
+**Question:** Can user-defined CODE (assembler) words live in banks? Affects S7 (cross-bank dispatch) and Epic 22 polish work.
+
+**Options considered:**
+
+- **(a) Yes, banks can host CODE words.** CODE word body lives in target bank; descriptor stub in fixed memory follows the same (γ) mechanism as `:`-defined words; S7 `COMPILE,` emits stub address; cross-bank CODE-word invocation goes through the same sentinel-trampoline as cross-bank `:`-defined words. Restrictions: CODE words may not use Z80-relative jumps that escape the bank (PC-relative jumps don't survive cross-bank dispatch); CODE words may not assume current MMU state for fixed-memory absolute reads/writes (the bank-switch invalidates that contract). Documentation burden in Epic 22; estimated +30..+60 B Epic-22 cost (CODE-word body emitter extension + restriction-check surface + user-doc entry on the restrictions).
+- **(b) No, CODE words must live in fixed memory.** ★ **CHOSEN** ★. CODE words stay in fixed memory (the existing pre-Phase-4 placement). Users who write CODE words get their words working unchanged — NFR-P4-16 byte-identical regression is automatic for any CODE word source assembled into the same memory region. Phase-4 design preserved as-is; zero Epic-22 cost; CODE-word descriptor-stub layout is N/A (CODE words don't get banked stubs, they are reachable directly from fixed memory like the existing kernel words). Cross-bank CODE-word semantics: not applicable.
+- **(c) Deferred to Phase 5+.** Phase 4 ships with fixed-memory-only CODE words (operationally identical to (b)) plus an explicit follow-up FR-P5-N marker for the in-bank-CODE-words decision to be re-litigated in a Phase-5+ spike. Net Phase-4 cost is zero (same as (b)); the "deferred" framing is just a TODO promise.
+
+**Decision:** (b) No, CODE words must live in fixed memory.
+
+**Rationale:** CODE words are an advanced low-frequency user surface (assembler users); the in-bank-CODE-words use case has no concrete demand surfaced during the redesign sessions or Phase-4 planning. Option (a) costs +30..+60 B in Epic 22 (against NFR-P4-5) for a restriction-laden surface (no PC-relative jumps escaping the bank, no current-MMU-state assumptions for fixed-memory access) that most CODE-word authors would find easier to avoid by just not putting their CODE word in a bank. Option (c) is operationally identical to (b) plus a TODO promise; the TODO promise has no near-term consumer and can always be raised later without an FR-P5-N marker if real demand surfaces. (b) is the Pareto-best Phase-4 pick: zero Epic-22 cost, NFR-P4-16 byte-identical regression preserved trivially, no painted Phase-5+ corner (Phase 5+ can add in-bank CODE words by extending the descriptor-stub allocator to handle CODE-word bodies, with the (a)-style restrictions as user docs).
+
+**Architectural impact:** Story 22.x polish (Epic 22 — CODE-words-in-banks decision per `epics-phase4-epics-16-22.md:439`) inherits this disposition: CODE words are fixed-memory only; the Epic-22 polish item closes with no behavioural change (the existing Phase-1/2/3 CODE-word machinery in `src/assembler.asm` continues to work; user CODE words land in fixed memory; the +30..+60 B Epic-22 budget line at `:379` reduces to 0 B for CODE-words-in-banks). FR-P4-13..17 (descriptor-stub mechanism) abstract over CODE-word vs `:`-word via the xt-as-stub-address contract — but since CODE words now don't get banked stubs at all (they live in fixed memory and are reachable directly), no clarifier is needed in FR-P4-13. NFR-P4-16's "Cross-bank CODE-word policy is an architecture-stage open question" is closed: the policy is "CODE words live in fixed memory; cross-bank CODE-word semantics N/A".
+
+**Source:** `docs/antforth-banking-redesign.md` §9.1; `epics-phase4-epics-16-22.md:439` (option enumeration + Story 22.x inheritance); NFR-P4-16 (`prd.md:617`); FR-P4-13..17 (descriptor-stub mechanism, abstracts over CODE-vs-`:`-word).
+
+---
+
 ### Decision Impact Analysis
 
 **Implementation sequence (locked by redesign-doc §8 epic structure):**
@@ -354,7 +458,7 @@ The §-level compliance-doc row schema (CCD-P3-1) and the process-discipline-in-
 4. **Epic 19 (bank-aware compiler):** per-bank `(here, latest, wordlist-heads)`; `,` / `COMPILE,` / `:` write into current bank; descriptor stub auto-emitted on `:`; `CREATE` / `DOES>` cross-bank explicit.
 5. **Epic 20 (bank-aware FIND + interpreter loop):** per-wordlist `bank` field; `FIND` saves/switches/walks/restores; `WORDS`; error messages name source bank.
 6. **Epic 21 (MARKER/FORGET + ABORT/QUIT bank state (S5)):** per-bank dictionary tail tracking; `QUIT` re-asserts saved current bank.
-7. **Epic 22 (polish):** `.BANKS`; REPL prompt indicator; CODE-words-in-banks decision (open question §9.1); test-harness sweep across all three test surfaces.
+7. **Epic 22 (polish):** `.BANKS`; REPL prompt indicator; CODE-words-in-banks decision (closed by Story 16.4 PD-P4-15: CODE words live in fixed memory only — Epic 22 polish item closes with no behavioural change); test-harness sweep across all three test surfaces.
 
 The Epic-16 prework gate is the load-bearing sequencing constraint. Without the banking-capable emulator pick, Epic 17 stories cannot specify their test plan (each banking-touching probe must specify which emulator surface it targets).
 
@@ -376,7 +480,7 @@ The Epic-16 prework gate is the load-bearing sequencing constraint. Without the 
 | 19 | Bank-aware compiler (`,` / `COMPILE,` / `:` / `CREATE` / `DOES>`) | ~300 B (per-bank state plumbing) |
 | 20 | Bank-aware FIND + per-wordlist `bank` field + `WORDS` | ~200 B (FIND extension + WORDS extension) |
 | 21 | MARKER/FORGET per-bank + QUIT bank-restore | ~150 B (saved-bank cell + QUIT entry-point edit + MARKER/FORGET per-bank tracking) |
-| 22 | Polish (`.BANKS`, prompt indicator, CODE-words-in-banks, test sweep) | ~100 B (`.BANKS` ~80 B; prompt indicator ~20 B; CODE-words-in-banks may add more depending on §9.1 disposition) |
+| 22 | Polish (`.BANKS`, prompt indicator, CODE-words-in-banks, test sweep) | ~100 B (`.BANKS` ~80 B; prompt indicator ~20 B; CODE-words-in-banks per §9.1 closure (Story 16.4 PD-P4-15) = 0 B — fixed-memory-only policy means no Epic-22 cost) |
 | Per-banked-word descriptor stubs (allocated dynamically, not per-epic) | 3–5 B/word × 1000 words target | ~5 KB worst case (in the +2 KB Page-3 headroom + CL/banking-words allocation) |
 | **Total banking infrastructure (worst case at 28-bank cap)** | | **~7–8 KB (within NFR-P4-5)** |
 
@@ -403,11 +507,11 @@ Phase-4-shaped points where multiple AI agents could make different choices:
 - **Bank-switch latency vs ISR timing** — resolved as architectural constraint (PD-P4-7 ISR-from-fixed-only invariant); not a runtime conflict but documented so any Phase-4 story touching the timer-ISR path re-walks the rule
 - **Descriptor-stub fixed-mem cost vs ~8 KB headroom** — stubs at 4–5 B/word × 1000 words = 4–5 KB; total banking infra ~6 KB worst case at default 12 banks, ~7–8 KB at 28-bank cap; "fits, not by miles, fits"; per-epic stub-count metric tracked alongside binary size
 - **Per-bank `HERE` cross-bank pointer hazard** — accepted as "doc-and-pray" gotcha (user holds HERE in bank A then `BANK!`s to B and writes — undefined); no runtime guard; documented in user docs
-- **CL parser failure modes** — open question §9.3 (Epic-16 spike): no args, bad token, reverse range, dup, probe-fail, empty surviving list — final policy for each not yet signed off
-- **ABORT-on-`+BANK`-past-cap policy** — open question §9.4 (Epic-16 spike): `bank-table[]` is 29 entries; `+BANK` beyond cap behaviour unspecified
+- **CL parser failure modes** — closed by Story 16.4, 2026-05-14 (PD-P4-14): warn-and-continue across all six edge cases (no args / bad token / reverse range / dup / probe-fail / empty surviving list); never abort the boot
+- **ABORT-on-`+BANK`-past-cap policy** — closed by Story 16.4, 2026-05-14 (PD-P4-13): `+BANK` past cap raises `ABORT" cap?"` (option (a)); preserves NFR-P4-5 envelope at 29-entry cap
 - **Banking-capable emulator availability gating Phase-4 work** — Epic 17+ blocked on Epic 16.3 vendor pick; iz-cpm continues carrying the non-banking baseline
-- **Stub size pinning (3 vs 4–5 bytes)** — open question §9.5 (Epic-16 spike): final size affects per-1000-words cost calculations; agents could draft against an unpinned figure
-- **Cross-bank R-stack overflow disposition** — open question §9.6: documented gotcha vs runtime guard; default policy is documented-gotcha (cheaper); upgrade if hardware repro surfaces a real failure
+- **Stub size pinning** — closed by Story 16.4, 2026-05-14 (PD-P4-11): 4 bytes `(target_bank: 1B) + (JP target_addr: 3B)`; 4 KB per 1000 words against NFR-P4-5
+- **Cross-bank R-stack overflow disposition** — closed by Story 16.4, 2026-05-14 (PD-P4-12): documented-gotcha; standard `-5 RETURN-STACK-OVERFLOW` THROW; no runtime guard
 
 ### Naming & Structure Patterns (Phase-4-specific)
 
@@ -500,13 +604,13 @@ All three surfaces must PASS for any binary-delta story. Zero-binary-delta stori
 
 **Per-epic prework-gate review.** Epic 16 prework (memory map + emulator pick + doc lock) blocks Epic 17 onward. Explicit gate-state check at Epic 17 kickoff: confirm Story 16.3 closed (vendor selected and integrated into `make test-repl-banking` or equivalent), confirm CCP-eviction policy verified on real CP/M 2.2 (see Finding F3), confirm doc lock (this document) signed off.
 
-**Architecture-stage open questions captured as `TODO(P4-arch)` markers** in this document, not as PRD-blockers. Six open questions from `docs/antforth-banking-redesign.md` §9 are owned by Epic-16 spike stories:
-- §9.1 CODE-words-in-banks (S7 dispatch implication)
+**Architecture-stage open questions captured as `TODO(P4-arch)` markers** in this document, not as PRD-blockers. All seven open questions from `docs/antforth-banking-redesign.md` §9 are now closed:
+- §9.1 CODE-words-in-banks (S7 dispatch implication) — **CLOSED by Story 16.4, 2026-05-14, see PD-P4-15** (fixed-memory-only; cross-bank CODE-word semantics N/A)
 - §9.2 banking-capable emulator vendor pick — **CLOSED by Story 16.3, 2026-05-13, vendor = `iz-cpm-banking` (blowback/iz-cpm fork @ `1777a85`)**
-- §9.3 CL parser edge cases
-- §9.4 bank-state-table cap (29 entries) ABORT policy
-- §9.5 stub size (3 vs 4–5 bytes)
-- §9.6 recursive cross-bank R-stack overflow (documented gotcha vs runtime guard)
+- §9.3 CL parser edge cases — **CLOSED by Story 16.4, 2026-05-14, see PD-P4-14** (warn-and-continue across all six edge cases; never abort the boot)
+- §9.4 bank-state-table cap (29 entries) ABORT policy — **CLOSED by Story 16.4, 2026-05-14, see PD-P4-13** (`+BANK` past cap raises `ABORT" cap?"`)
+- §9.5 stub size (3 vs 4–5 bytes) — **CLOSED by Story 16.4, 2026-05-14, see PD-P4-11** (4 bytes; `(target_bank: 1B) + (JP target_addr: 3B)`)
+- §9.6 recursive cross-bank R-stack overflow (documented gotcha vs runtime guard) — **CLOSED by Story 16.4, 2026-05-14, see PD-P4-12** (documented-gotcha; standard `-5 RETURN-STACK-OVERFLOW` THROW; no runtime guard)
 - §9.7 flat-build semantics — **CLOSED 2026-05-10** as non-MVP for Phase 4 (per project-lead direction)
 
 **Carry-forward Phase-3 process additions** that survive into Phase 4:
@@ -686,7 +790,7 @@ In a memory entry `feedback_no_mirror_shorthand.md`:
 
 | Path | Reason |
 |---|---|
-| `src/assembler.asm` | Per `project_assembler_keep_assembly.md` — assembler stays kernel-resident hard-coded; CODE-words-in-banks decision (open question §9.1) does not require assembler changes — the question is about whether user CODE words can land in banks, not about restructuring the assembler kernel |
+| `src/assembler.asm` | Per `project_assembler_keep_assembly.md` — assembler stays kernel-resident hard-coded; CODE-words-in-banks decision (closed by Story 16.4 PD-P4-15: CODE words live in fixed memory only) confirmed: the question of whether user CODE words can land in banks resolved as "no"; no assembler changes needed in Phase 4 |
 | `src/file_access.asm` | File-access subsystem complete post-Epic-13.5; banking doesn't change BDOS call semantics (BDOS lives in fixed memory; PD-P4-6) |
 | `src/strings.asm` | Phase-3 close-out (post-A.3); no Phase-4 changes expected |
 | `src/hash.asm`, `src/control_flow.asm`, `src/io.asm`, `src/arithmetic.asm`, `src/logic.asm`, `src/stack_ops.asm`, `src/double.asm`, `src/pictured.asm`, `src/formatting.asm`, `src/number_prefixes.asm`, `src/bootstrap.asm`, `src/macros.asm`, `src/constants.asm` | Phase-1/2 subsystems frozen for Phase 4 — the descriptor-stub mechanism (PD-P4-1) means these don't need internal-banking awareness; cross-bank dispatch is handled at the `EXIT` / `EXECUTE` / `COMPILE,` chokepoints |
@@ -737,7 +841,7 @@ Test surface expands from 1 (iz-cpm) to 3 (iz-cpm + banking-capable emulator + r
 | **Epic 19 — Bank-aware compiler** | `src/dictionary.asm` / `src/memory.asm` (per-bank `(here, latest, wordlist-heads)` triple in `bank-table[]`); `src/compiler.asm` (per-bank `,` and `COMPILE,`); `:` body lands in current bank; `CREATE`/`DOES>` cross-bank PFA layout; `tests/banking_tests.fth` (cross-bank `:`/`CREATE` probes) |
 | **Epic 20 — Bank-aware FIND + interpreter loop** | `src/wordlists.asm` (per-wordlist `bank` field, FIND saves/switches/walks/restores, system wordlists tagged `bank=fixed`); `src/outer_interpreter.asm` (interpreter-loop bank state); error-message attribution to source bank; `tests/banking_tests.fth` (FIND probes) |
 | **Epic 21 — MARKER/FORGET + ABORT/QUIT bank state (S5)** | `src/structures.asm` (per-bank dictionary tail tracking for MARKER); `src/system.asm` / `src/exception.asm` (QUIT re-asserts saved current-bank); `tests/banking_tests.fth` (ABORT-bank-restore probes) |
-| **Epic 22 — Polish** | `.BANKS` formatting in `src/banking.asm`; REPL prompt indicator (`src/outer_interpreter.asm`); CODE-words-in-banks decision (Epic-22 spike per `TODO(P4-arch)` §9.1); test-harness sweep |
+| **Epic 22 — Polish** | `.BANKS` formatting in `src/banking.asm`; REPL prompt indicator (`src/outer_interpreter.asm`); CODE-words-in-banks decision (closed by Story 16.4 PD-P4-15: fixed-memory-only — no Epic-22 work item); test-harness sweep |
 | **S11 version surface (per-tag)** | `src/antforth.asm` banner; `README.md`; memory `description` fields per tag; `make check-doc-sync` clean-pass |
 | **S9 hardware smoke (per binary-delta story)** | Three-test-surface transcripts: iz-cpm + banking-capable emulator + real MicroBeast |
 
@@ -816,7 +920,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 | All 43 FR-P4-N requirements map to at least one architectural decision | ✅ verified via the Requirements-to-Structure Mapping table; FR-P4-1..12 (Banking Wordset) → `src/banking.asm`; FR-P4-13..21 (Descriptor stubs + cross-bank EXIT) → PD-P4-1 + PD-P4-2 + Epic 18; FR-P4-22..26 (Bank-Aware Compiler) → PD-P4-3 + Epic 19; FR-P4-27..30 (Bank-Aware FIND) → PD-P4-4 + Epic 20; FR-P4-31..33 (ABORT/QUIT Bank-State) → PD-P4-5 + Epic 21; FR-P4-34..39 (Boot Config) → `src/antforth.asm` CL parser + Epic 17; FR-P4-40..43 (Backward-Compat) → regression discipline + S9 baseline |
 | Phase-1/2/3 closed FRs preserved via FR-P4-40..43 (Backward Compatibility & Regression) | ✅ explicit carry-forward statement; banked build is the new normal; existing flat programs run unmodified under banked build |
 | All 7 Phase-4 epics have at least one FR mapping | ✅ Epic 16 (prework), Epic 17 (Bank primitives + CL), Epic 18 (Stub + EXIT), Epic 19 (Compiler), Epic 20 (FIND), Epic 21 (MARKER/FORGET + ABORT), Epic 22 (Polish) — all addressed |
-| The 6 architecture-stage open questions (banking-redesign §9.1-9.6) are captured as `TODO(P4-arch)` markers | ✅ each owned by an Epic-16 spike story; not PRD-blockers |
+| The 6 architecture-stage open questions (banking-redesign §9.1-9.6) — closure status | ✅ all closed: §9.2 by Story 16.3 (2026-05-13); §9.1 / §9.3 / §9.4 / §9.5 / §9.6 by Story 16.4 (2026-05-14, PD-P4-11..15); §9.7 closed 2026-05-10 as non-MVP. See Findings F5 closure paragraph. |
 
 **Non-Functional Requirements (NFR-P4-1..39):**
 
@@ -878,7 +982,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 
 **Mitigation:** Documented gotcha in user docs (post-Epic-22 user-facing documentation). No runtime guard, consistent with Forth tradition of trusting the programmer (and consistent with the broader "doc-and-pray" disposition locked per redesign §5.4).
 
-**Action:** Epic 22 polish includes a user-docs entry titled "Cross-bank pointer hazards" naming HERE / LATEST / wordlist-head pointers as bank-sensitive; example anti-pattern shown; recommendation is "do all your work in one bank per logical session, swap banks at well-defined boundaries."
+**Action:** Epic 22 polish includes a user-docs entry titled "Cross-bank pointer hazards" naming HERE / LATEST / wordlist-head pointers as bank-sensitive; example anti-pattern shown; recommendation is "do all your work in one bank per logical session, swap banks at well-defined boundaries." **Per Story 16.4 §9.6 closure (PD-P4-12) the same user-docs entry is extended to cover the cross-bank-R-stack-overflow gotcha** (recursive cross-bank calls accumulate 3-cell return frames, fill the standard return stack 3× faster than intra-bank, and trigger the standard `-5 RETURN-STACK-OVERFLOW` THROW; no runtime guard added).
 
 #### F5 — Six architecture-stage open questions captured as `TODO(P4-arch)` markers
 
@@ -887,6 +991,8 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 **Mitigation:** Each open question is owned by an Epic-16 spike story (or explicit deferral to a later epic). Captured as `TODO(P4-arch)` markers in this document, not as PRD-blockers.
 
 **Action:** Epic 16 spec includes one spike story per open question (or explicit deferral to a later epic with an Epic-N owner named); architecture document is updated as each spike closes.
+
+**Closed by Story 16.4, 2026-05-14, 5 of 5 remaining open questions resolved** — §9.1 (PD-P4-15: CODE-words fixed-memory-only), §9.3 (PD-P4-14: warn-and-continue across all six CL parser edge cases), §9.4 (PD-P4-13: `+BANK" cap?"` past cap), §9.5 (PD-P4-11: 4-byte stub `(target_bank: 1B) + (JP target_addr: 3B)`), §9.6 (PD-P4-12: documented-gotcha; standard `-5 RETURN-STACK-OVERFLOW` THROW). All five PD-P4-N closure blocks landed in this document; tracking-block markers (above) and Important-Decisions / Conflict-Points cross-references all updated to closure form. F4 user-docs entry extended to cover the cross-bank-R-stack-overflow gotcha (one-line addition; same Epic-22 polish item). Net Phase-4 Epic-22 byte-budget impact: -30..-60 B vs the option (a) §9.1 ceiling (closure picked option (b) fixed-memory-only). Epic 17+ story-writing surface is now unblocked — every forward-story AC that inherited "Story 16.4 §9.x closure" can be authored without further architecture-stage decisions.
 
 #### F6 — Saved-bank-cell semantics "interactive only" needs an unambiguous test
 
@@ -901,7 +1007,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 **Critical gaps (block implementation):** none. Findings F1–F6 are actionable in their owning epics without architectural change.
 
 **Important gaps (could improve smoother implementation):**
-- The 5 remaining architecture-stage open questions from redesign §9 (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6) need spike-story owners. §9.2 emulator vendor pick CLOSED by Story 16.3 (2026-05-13). **Mitigation:** Epic 16 prework spec includes one spike story per open question.
+- All 5 remaining architecture-stage open questions from redesign §9 closed by Story 16.4 (2026-05-14): §9.1 → PD-P4-15 (CODE-words fixed-memory-only); §9.3 → PD-P4-14 (CL parser warn-and-continue); §9.4 → PD-P4-13 (`+BANK" cap?"`); §9.5 → PD-P4-11 (4-byte stub); §9.6 → PD-P4-12 (R-stack documented-gotcha). §9.2 emulator vendor pick CLOSED by Story 16.3 (2026-05-13). §9.7 flat-build CLOSED 2026-05-10 as non-MVP. See Findings F5 closure paragraph for the close-out summary.
 - The descriptor-stub allocator's interaction with `MARKER` / `FORGET` is under-specified. When a MARKER is set in bank 5 and the user `MARKER`-rolls back, the stubs allocated in fixed memory for words defined since the MARKER must also be reclaimed. **Mitigation:** Epic 21 spec includes per-bank dictionary tail tracking + per-bank stub-allocator tail tracking; the MARKER stores both tails and FORGET reverts both.
 - `NUMBER?` and other words that internally use `,` to compile literals must continue to work cross-bank. **Mitigation:** the per-bank `,` (FR-P4-23) writes to the current bank's HERE; words that use `,` compile into whatever bank they're called from; no special-casing needed.
 
@@ -969,7 +1075,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 - Locals wordset (all three styles compatible) — Phase 5+ candidate E.6
 - ALLOCATE / per-bank heap (recommended (β)) — Phase 5+
 - Flat-build retention for the 12-word `BANK*` set — deferred from Phase-4 MVP per redesign §4
-- CODE-words-in-banks decision — open question §9.1; deferred to Epic 22 if Epic 16 spike doesn't pre-resolve
+- CODE-words-in-banks decision — closed by Story 16.4 PD-P4-15 (2026-05-14): CODE words live in fixed memory only; cross-bank CODE-word semantics N/A; Epic 22 polish item closes with no behavioural change
 
 ### Implementation Handoff
 
@@ -1000,7 +1106,7 @@ User Forth source → REPL or `INCLUDE` → outer interpreter → compiler / int
 - Honour S1–S12 standing commitments codified as NFR-P4-28..39; per-bank hardware-smoke runs on three test surfaces (iz-cpm + banking-capable emulator + real MicroBeast)
 - Address findings F1–F6 in their owning epics' specs (F1 + F5 owned by Epic 16; F2 owned by every binary-delta epic via CCD-4; F3 owned by Epic 16; F4 owned by Epic 22 user-docs; F6 owned by Epic 21)
 - Refer to this document for all Phase-4 architectural questions; do not improvise
-- For the 5 remaining open questions captured as `TODO(P4-arch)` markers (CODE-words-in-banks §9.1, CL parser edges §9.3, bank-state-table cap §9.4, stub size §9.5, R-stack overflow §9.6 — §9.2 emulator vendor pick CLOSED by Story 16.3, 2026-05-13), check the relevant Epic 16 spike story before drafting against an unresolved question
+- All 5 remaining open questions previously captured as `TODO(P4-arch)` markers closed by Story 16.4 (PD-P4-11..15, 2026-05-14): §9.1 → PD-P4-15 (CODE-words fixed-memory-only); §9.3 → PD-P4-14 (CL parser warn-and-continue); §9.4 → PD-P4-13 (`+BANK" cap?"`); §9.5 → PD-P4-11 (4-byte stub); §9.6 → PD-P4-12 (R-stack documented-gotcha). §9.2 emulator vendor pick closed by Story 16.3 (2026-05-13). §9.7 flat-build closed 2026-05-10 as non-MVP. See Findings F5 closure paragraph for the close-out summary.
 
 **First Implementation Priority:**
 

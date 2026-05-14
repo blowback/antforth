@@ -59,7 +59,7 @@ This document provides the complete epic and story breakdown for **antforth Phas
 - **FR-P4-18 (sentinel-tagged cross-bank return):** Cross-bank call pushes three cells onto the return stack: `(sentinel_addr, caller_bank, target_addr)`. `sentinel_addr` is the address of the `cross_bank_return` trampoline in fixed memory; kernel `EXIT` recognises it.
 - **FR-P4-19 (intra-bank zero-overhead path):** Intra-bank call pushes one cell (standard ANS return frame). Intra-bank `EXIT` decodes the standard frame; no sentinel-check overhead beyond a single CP against the sentinel address.
 - **FR-P4-20 (cross-bank-return trampoline):** A `cross_bank_return` trampoline lives in fixed memory. When `EXIT` encounters the sentinel, the trampoline restores the caller's bank by writing `caller_bank` to the MMU and jumps to `target_addr`.
-- **FR-P4-21 (recursive cross-bank R-stack):** Recursive cross-bank calls accumulate 3-cell return frames. No hard limit beyond existing return-stack depth limit; runaway recursion raises standard `-5 RETURN-STACK-OVERFLOW` THROW. (TODO(P4-resolve): redesign-doc §9.6 — documented gotcha vs runtime guard — deferred to architecture stage / Epic 16 spike.)
+- **FR-P4-21 (recursive cross-bank R-stack):** Recursive cross-bank calls accumulate 3-cell return frames. No hard limit beyond existing return-stack depth limit; runaway recursion raises standard `-5 RETURN-STACK-OVERFLOW` THROW. (Per redesign §9.6 closure 2026-05-14: documented-gotcha; no runtime guard added — see `_bmad-output/planning-artifacts/architecture.md` PD-P4-12.)
 
 #### Bank-Aware Compiler (FR-P4-22..26)
 
