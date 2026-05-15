@@ -35,4 +35,13 @@ dpl                 DW      0       ; DPL: digits-after-dot from last successful
                                     ; NOT in ANS Core. Story 13.0 ANS Forth 1994 §3.4.1.3 dot-marker recogniser.
 include_top         DW      0       ; INCLUDE-TOP: most-recent INCLUDE source-frame address, 0 if none (CCD-1).
                                     ; antforth extension — exposed via DEFCODE INCLUDE-TOP (Story 13.4 v2).
+; --- Phase-4 banking (Story 17.1; appended — pre-existing offsets unchanged) ---
+saved_bank          DW      0       ; PD-P4-5 (S5): saved by outermost interactive BANK!; QUIT re-asserts on re-entry (architecture.md:267).
+                                    ; Story 17.1 declares the cell; QUIT re-assertion plumbing is Story 17.2 / Epic 21 scope.
+current_bank        DW      0       ; FR-P4-1: current logical bank index; BANK@ returns this. 0 = portal page (default bank 0).
+                                    ; Story 17.1 declares + zero-inits the cell; BANK@ / BANK! land in Story 17.2.
+bank_table_base     DW      0       ; PD-P4-13 (29-entry cap): base of bank-table[]; COLD sets to BANK_TABLE_BASE = $D400 (architecture.md:386..402).
+                                    ; Story 17.1 routes the value; Story 17.2 / Epic 19 reads from it.
+bank_mapping_state  DW      0       ; FR-P4-11/12: non-zero iff MMU mapping enabled; BANK-MAPPING-ON sets 1, BANK-MAPPING-OFF sets 0.
+                                    ; COLD's auto-BANK-MAPPING-ON sets to 1 before banner (architecture.md:323; redesign §5.1).
     ENDS

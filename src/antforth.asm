@@ -129,6 +129,37 @@ cold_start:
         ;     (sentinel: refill on first read).
         CALL    pool_init
 
+        ; 8h. Phase-4 banking foundation (Story 17.1) — zero-init the
+        ;     29-entry bank-table[] shell in the reclaimed $D400-$DBFF
+        ;     CCP region, seed the four banking UserArea cells, and
+        ;     auto-enable MMU mapping (FR-P4-11; redesign §5.1).
+        ;     DJNZ loop pattern chosen for layout-stability parity with
+        ;     `.so_init_zero` at :109..112 (LDIR cascade was ruled out
+        ;     in Story 12.3 for the same layout-sensitive reason).
+        LD      HL, BANK_TABLE_BASE
+        LD      B, BANK_TABLE_SHELL_SIZE
+        XOR     A
+.bt_init_zero:
+        LD      (HL), A
+        INC     HL
+        DJNZ    .bt_init_zero
+        ; Seed banking UserArea cells: saved_bank = 0, current_bank = 0
+        ; (portal page default per FR-P4-1), bank_table_base = $D400.
+        LD      (IY+UserArea.saved_bank),       0
+        LD      (IY+UserArea.saved_bank+1),     0
+        LD      (IY+UserArea.current_bank),     0
+        LD      (IY+UserArea.current_bank+1),   0
+        LD      (IY+UserArea.bank_table_base),   LOW BANK_TABLE_BASE
+        LD      (IY+UserArea.bank_table_base+1), HIGH BANK_TABLE_BASE
+        ; Auto BANK-MAPPING-ON (FR-P4-11): enable MMU mapping before banner.
+        ; Inline body matches w_BANK_MAPPING_ON_cf (src/banking.asm); inlined
+        ; rather than CALLed because the DEFCODE body ends in NEXT, not RET.
+        LD      A, 1
+        OUT     (0x74), A
+        LD      (IY+UserArea.bank_mapping_state),   1
+        LD      (IY+UserArea.bank_mapping_state+1), 0
+        NOP                             ; Layout-shift NOP (Story 17.1; see Dev Notes)
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 
@@ -152,12 +183,17 @@ cold_thread:
         DW      w_LIT_cf, str_banner2
         DW      w_LIT_cf, STR_BANNER2_LEN
         DW      w_TYPE_cf
-        ; Calculate free bytes: (sp_base - PS_SIZE - RS_SIZE) - HERE
-        DW      w_LIT_cf, sp_base
-        DW      w_FETCH_cf              ; ( sp_base_value )
-        DW      w_LIT_cf, PS_SIZE + RS_SIZE
-        DW      w_MINUS_cf              ; ( sp_base - 512 = bottom of stack area )
-        DW      w_HERE_cf               ; ( stack_bottom here )
+        ; Calculate free bytes: BANK_TABLE_BASE - HERE.
+        ; Story 17.1 lowered the dictionary HERE ceiling from
+        ; (sp_base - PS_SIZE - RS_SIZE) ≈ $F4F6 (iz-cpm) / ~$DA00 (real MB)
+        ; to BANK_TABLE_BASE = $D400 — banking infrastructure now occupies
+        ; $D400-$DBFF (PD-P4-6 closure; Story 16.1 hardware verification).
+        ; A MIN(stack-bottom, BANK_TABLE_BASE) - HERE form was considered;
+        ; rejected because $D400 < (sp_base - 512) uniformly on both
+        ; surfaces (iz-cpm sp_base≈$F6F6 → stack-bottom≈$F4F6; real MB
+        ; sp_base≈$DC00 → stack-bottom≈$DA00 — both > $D400).
+        DW      w_LIT_cf, BANK_TABLE_BASE
+        DW      w_HERE_cf               ; ( bank_table_base here )
         DW      w_MINUS_cf              ; ( free_bytes )
         DW      w_U_DOT_cf              ; print unsigned number + space
         DW      w_LIT_cf, str_banner3
@@ -199,6 +235,7 @@ cold_thread:
         INCLUDE "assembler.asm"
         INCLUDE "system.asm"
         INCLUDE "exception.asm"
+        INCLUDE "banking.asm"
         INCLUDE "file_access.asm"
 
 ; === Forth bootstrap definitions (depend on everything above) ===

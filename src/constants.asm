@@ -6,6 +6,16 @@ BDOS_ENTRY      EQU     0x0005          ; BDOS entry point
 BDOS_ADDR_PTR   EQU     0x0006          ; Word containing BDOS base address
 TPA_START       EQU     0x0100          ; .COM entry point / start of TPA
 
+; === Phase-4 Banking (Story 17.1) ===
+; bank-table[] base in the reclaimed CCP region $D400-$DBFF (2 KB).
+; PD-P4-6 closure (architecture.md:282) chose option (c) — CCP eviction
+; for Phase-4 banking infrastructure; Story 16.1 verified safe on real
+; MicroBeast hardware (transcript ~/Downloads/beastty-20260513-110640.bin;
+; BIOS reloads CCP from disk on warm-boot). Per-bank `(here, latest,
+; wordlist_head)` triple table (Story 17.1) and descriptor-stub allocator
+; (Story 18.1) both consume this region; see docs/antforth-banking-redesign.md §5.2.
+BANK_TABLE_BASE EQU     0xD400
+
 ; === BDOS Function Numbers ===
 P_TERMCPM       EQU     0               ; BDOS function 0: terminate program
 C_READ          EQU     1               ; BDOS function 1: console input (blocking, echoes)

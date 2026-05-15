@@ -80,30 +80,49 @@ check-doc-sync:
 # non-banking 975-PASS baseline. Additive — does NOT modify `test-repl` semantics.
 # Picked vendor: blowback/iz-cpm fork @ 1777a85 (see
 # _bmad-output/implementation-artifacts/16.3-emulator-vendor-research.md).
-BANKING_PROBE = _bmad-output/implementation-artifacts/16.3-probe.fth
+# Story 17.1 — tests/banking_tests.fth carries the BANK-MAPPING-ON/OFF
+# round-trip assertion (AC5/AC6); the iron 16.3 probe stays as the
+# first-light bank-register round-trip surface check.
+BANKING_PROBES = _bmad-output/implementation-artifacts/16.3-probe.fth tests/banking_tests.fth
 
 test-repl-banking: $(TARGET)
-	@echo "Running banking-capable emulator probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'PASS: banking-emu-probe'; then \
-		echo "PASS: REPL banking test — bank switch observed under $(IZCPM_BANKING)"; \
-	else \
-		echo "FAIL: REPL banking test — expected 'PASS: banking-emu-probe' in output"; \
+	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	FAILED=0; \
+	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74'; do \
+		if echo "$$OUTPUT" | grep -q "$$pat"; then \
+			echo "PASS: REPL banking test — $$pat under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: REPL banking test — expected '$$pat' in output"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
 
-# Companion to `test-repl-banking`: assert the probe SKIPs cleanly under the
-# non-banking iz-cpm baseline (no FAIL, no kernel crash). AC6 demanded the SKIP
-# path; original `test-repl-banking` validated PASS only, leaving SKIP shape
-# manual-only (CR review fix M2, 2026-05-13).
+# Companion to `test-repl-banking`: assert the surface-conditional probes
+# SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
+# crash). Story 16.3 AC6 introduced the SKIP-with-rationale shape for the
+# iron probe; Story 17.1 extends the same shape to the port-0x74 readback
+# probe (banking-mapping-on-port-74 — iz-cpm baseline returns 0 for the
+# unmodelled MMU port). The idempotent ON probe is surface-agnostic
+# (kernel-side cell update works regardless of MMU model) so it is NOT
+# expected to SKIP — it should PASS on iz-cpm baseline too.
 test-repl-banking-skip: $(TARGET)
-	@echo "Verifying banking probe SKIPs cleanly under $(IZCPM) baseline..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '^SKIP: banking-emu-probe'; then \
-		echo "PASS: banking probe SKIPs cleanly under $(IZCPM) baseline (no MMU model)"; \
-	else \
-		echo "FAIL: banking probe expected to SKIP under $(IZCPM); no SKIP line emitted"; \
+	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	FAILED=0; \
+	for pat in '^SKIP: banking-emu-probe' '^SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent'; do \
+		if echo "$$OUTPUT" | grep -q "$$pat"; then \
+			echo "PASS: banking probe surface check — '$$pat' present under $(IZCPM) baseline"; \
+		else \
+			echo "FAIL: banking probe surface check — expected '$$pat' under $(IZCPM)"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
