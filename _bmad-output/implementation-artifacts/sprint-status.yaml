@@ -303,7 +303,7 @@ development_status:
 
   epic-17: in-progress
   17-1-bank-table-allocator-userarea-cells-bank-mapping-on-bank-mapping-off-ccp-eviction-memory-map-edit: done
-  17-2-bank-fetch-bank-store-banks-read-and-swap-primitives: backlog
+  17-2-bank-fetch-bank-store-banks-read-and-swap-primitives: review
   17-3-plus-bank-with-probe-on-add-minus-bank-banks-clear-set-bank: backlog
   17-4-cl-tail-parser-boot-configuration-banner-update: backlog
   17-5-dot-banks-minimal-working-form: backlog

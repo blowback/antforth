@@ -129,28 +129,51 @@ cold_start:
         ;     (sentinel: refill on first read).
         CALL    pool_init
 
-        ; 8h. Phase-4 banking foundation (Story 17.1) — zero-init the
-        ;     29-entry bank-table[] shell in the reclaimed $D400-$DBFF
-        ;     CCP region, seed the four banking UserArea cells, and
-        ;     auto-enable MMU mapping (FR-P4-11; redesign §5.1).
+        ; 8h. Phase-4 banking foundation (Story 17.1 + Story 17.2) —
+        ;     zero-init the 29-entry bank-table[] shell AND the 29-byte
+        ;     active_pages[] array in the reclaimed $D400-$DBFF CCP
+        ;     region (single DJNZ pass covers both: shell at $D400+0..173,
+        ;     active_pages at $D400+174..202), seed the five banking
+        ;     UserArea cells, snapshot the live (HERE, LATEST, wordlist
+        ;     head) triple into bank-table[0] so `0 BANK!` round-trips
+        ;     once Story 17.3+17.4 populate the active list, and auto-
+        ;     enable MMU mapping (FR-P4-11; redesign §5.1).
         ;     DJNZ loop pattern chosen for layout-stability parity with
         ;     `.so_init_zero` at :109..112 (LDIR cascade was ruled out
         ;     in Story 12.3 for the same layout-sensitive reason).
         LD      HL, BANK_TABLE_BASE
-        LD      B, BANK_TABLE_SHELL_SIZE
+        LD      B, BANK_TABLE_SHELL_SIZE + ACTIVE_PAGES_SIZE    ; 174 + 29 = 203
         XOR     A
 .bt_init_zero:
         LD      (HL), A
         INC     HL
         DJNZ    .bt_init_zero
         ; Seed banking UserArea cells: saved_bank = 0, current_bank = 0
-        ; (portal page default per FR-P4-1), bank_table_base = $D400.
+        ; (portal page default per FR-P4-1), bank_table_base = $D400,
+        ; bank_count = 0 (active list empty until Story 17.4's CL parser).
         LD      (IY+UserArea.saved_bank),       0
         LD      (IY+UserArea.saved_bank+1),     0
         LD      (IY+UserArea.current_bank),     0
         LD      (IY+UserArea.current_bank+1),   0
         LD      (IY+UserArea.bank_table_base),   LOW BANK_TABLE_BASE
         LD      (IY+UserArea.bank_table_base+1), HIGH BANK_TABLE_BASE
+        LD      (IY+UserArea.bank_count),       0
+        LD      (IY+UserArea.bank_count+1),     0
+        ; Snapshot live (HERE, LATEST, wordlist_head) → bank-table[0][0..5].
+        ; HERE / LATEST live in UserArea (contiguous 4 bytes at offset
+        ; UserArea.here); wordlist_head = the cell at `forth_wordlist` (the
+        ; canonical FORTH-WORDLIST struct's first cell, WORDLIST_NEXT).
+        ; Without this snapshot, `0 BANK!` post-Story-17.3 would clobber
+        ; HERE / LATEST with the zero-initialised bank-table[0]. The
+        ; snapshot fires AFTER HERE (step 7) / LATEST (step 8b) / CURRENT-
+        ; WORDLIST (step 8e) have settled, BEFORE the auto-BANK-MAPPING-ON
+        ; below — Story 17.2 AC2 insertion point.
+        LD      HL, user_area + UserArea.here
+        LD      DE, BANK_TABLE_BASE
+        LD      BC, 4                           ; 2 cells: HERE, LATEST
+        LDIR
+        LD      HL, (forth_wordlist)
+        LD      (BANK_TABLE_BASE + 4), HL
         ; Auto BANK-MAPPING-ON (FR-P4-11): enable MMU mapping before banner.
         ; Inline body matches w_BANK_MAPPING_ON_cf (src/banking.asm); inlined
         ; rather than CALLed because the DEFCODE body ends in NEXT, not RET.
@@ -158,7 +181,13 @@ cold_start:
         OUT     (0x74), A
         LD      (IY+UserArea.bank_mapping_state),   1
         LD      (IY+UserArea.bank_mapping_state+1), 0
-        NOP                             ; Layout-shift NOP (Story 17.1; see Dev Notes)
+        ; NOP layout-shift slot — Story 17.1 fix for iz-cpm */ underflow hang
+        ; (feedback_iz_cpm_test_643_quirk.md). Count tuned empirically per
+        ; Story 17.2 dev-pass; insertion above adds 25 B and shifts the
+        ; critical THROW-recovery into a hang region without the NOP padding.
+        NOP
+        NOP
+        NOP
 
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed

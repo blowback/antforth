@@ -26,6 +26,16 @@ BANK_TABLE_CAP         EQU 29
 BANK_TABLE_ENTRY_SIZE  EQU 6
 BANK_TABLE_SHELL_SIZE  EQU BANK_TABLE_CAP * BANK_TABLE_ENTRY_SIZE   ; 174 B
 
+; active_pages[]: dense logical-bank-index → physical-page mapping.
+; Lives in the reclaimed $D400-$DBFF CCP region immediately after
+; bank-table[] (no kernel binary bytes consumed). Read by BANK! to
+; translate the popped logical index to the physical page written to
+; MMU port 0x72 (slot 2); written by Story 17.3's +BANK / -BANK /
+; BANKS-CLEAR. Zero-initialised in COLD alongside bank-table[].
+; Footprint $D4AE..$D4CA — well under the 2 KB CCP claim's high edge.
+ACTIVE_PAGES_BASE      EQU BANK_TABLE_BASE + BANK_TABLE_SHELL_SIZE   ; $D4AE
+ACTIVE_PAGES_SIZE      EQU BANK_TABLE_CAP                            ; 29 B (1 byte / logical bank)
+
 ; === BANK-MAPPING-ON ( -- ) ===
 ;   Enable the MicroBeast MMU mapping (port 0x74 bit 0 set).
 ;   Updates UserArea.bank_mapping_state to 1.
@@ -76,3 +86,165 @@ w_BANK_MAPPING_OFF:
         DEFCODE "BANK-MAPPING-OFF", 0
 w_BANK_MAPPING_OFF_cf:
         JP      0x0000          ; BIOS WBOOT — never returns
+
+; === BANK@ ( -- n ) ===
+;   Return the current logical bank index — i.e. (IY+UserArea.current_bank).
+;   n is the index into the active bank list (NOT the physical page
+;   number) per FR-P4-1. Initial value 0 (portal-page default); updated
+;   by BANK! on successful bank switch. Available at the REPL and inside
+;   colon definitions.
+;
+; antforth extension BANK@ — see docs/antforth-banking-redesign.md §5.4
+w_BANK_AT:
+        DEFCODE "BANK@", 0
+w_BANK_AT_cf:
+        PUSH    BC                                  ; save old TOS
+        LD      C, (IY+UserArea.current_bank)
+        LD      B, (IY+UserArea.current_bank+1)     ; BC = current_bank
+        NEXT
+
+; === BANK! ( n -- ) ===
+;   Switch to logical bank n.
+;
+;   Preconditions:
+;     n must satisfy 0 <= n < bank_count (BC.high == 0 also required;
+;     n is a logical bank-list index, never > 28 in practice). On
+;     out-of-range, raises ABORT" bank?" — THROW -2 with "bank?"
+;     message printed via the kernel-internal w_THROW_cf.kernel_entry
+;     path (same shape as `(ABORT")` runtime at src/system.asm:164-171).
+;     FR-P4-2 wording: `If n is not in the active bank list, raises
+;     ABORT" bank?"`.
+;
+;     At Story 17.2 close, bank_count = 0 (active list empty until
+;     Story 17.3's +BANK populates it / Story 17.4's CL parser auto-
+;     populates at boot), so every BANK! invocation aborts. The swap
+;     mechanism wired below is dormant in 17.2 — verified active by
+;     Story 17.3 / Epic 19.
+;
+;   Effects on success:
+;     1. MMU port write: OUT (0x72), active_pages[n]. Port 0x72 = slot 2
+;        per iz-cpm-banking cpm_machine.rs:13-14 (PORT_BANK0..3 =
+;        0x70..0x73); slot 2 = portal page per redesign §5.1/§5.2.
+;        UNLIKE BANK-MAPPING-OFF (port 0x74, disconnects kernel from
+;        RAM and triggers BIOS WBOOT — Story 17.1 AC10), the slot-2
+;        page-ID write at port 0x72 is safe from kernel-disconnect
+;        failure: the kernel binary lives in slot 0 ($0000-$3FFF);
+;        switching slot 2 does not affect the address range the CPU
+;        is currently fetching from.
+;     2. Per-bank triple swap (PD-P4-3 / FR-P4-22):
+;        save live (HERE, LATEST, wordlist_head) → bank-table[old][0..5]
+;        then load bank-table[new][0..5] → live cells. wordlist_head =
+;        the cell at `forth_wordlist` (canonical FORTH-WORDLIST struct's
+;        WORDLIST_NEXT slot per src/wordlists.asm:336-337). "Initial
+;        swap only" semantics at 17.2; full per-bank ,/COMPILE,/HERE/
+;        LATEST plumbing is Epic 19.
+;     3. (IY+UserArea.current_bank) ← n. (The high byte stays 0 — it is
+;        zero at COLD and the precondition validates BC.high == 0 on
+;        every entry, so the high-byte write is a known-zero no-op and
+;        is elided to save 3 B.)
+;
+; antforth extension BANK! — see docs/antforth-banking-redesign.md §5.4
+w_BANK_STORE:
+        DEFCODE "BANK!", 0
+w_BANK_STORE_cf:
+        ; --- Precondition: BC.high == 0 AND BC.low < bank_count ---
+        LD      A, B
+        OR      A
+        JR      NZ, .abort_bank
+        LD      A, C
+        CP      (IY+UserArea.bank_count)
+        JR      NC, .abort_bank
+        ; --- MMU port write: OUT (0x72), active_pages[n] ---
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                              ; BC.high == 0 validated
+        LD      A, (HL)
+        OUT     (0x72), A
+        ; --- Swap current_bank (read old; write new). High byte stays 0. ---
+        LD      A, (IY+UserArea.current_bank)       ; A = old_bank
+        LD      (IY+UserArea.current_bank), C       ; current_bank.low ← new
+        ; --- Save live → bank-table[old_bank][0..5] ---
+        CALL    rpush_bc                            ; preserve new_bank across LDIR
+        CALL    bank_offset_hl                      ; HL = &bank-table[A=old]
+        EX      DE, HL                              ; DE = &bank-table[old]
+        LD      HL, user_area + UserArea.here
+        LD      BC, 4
+        LDIR                                        ; HERE,LATEST → [0..3]; DE += 4
+        LD      HL, (forth_wordlist)
+        EX      DE, HL
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                             ; wordlist_head → [4..5]
+        ; --- Load bank-table[new_bank][0..5] → live ---
+        CALL    rpop_bc                             ; BC = new_bank
+        LD      A, C
+        CALL    bank_offset_hl                      ; HL = &bank-table[new]
+        LD      DE, user_area + UserArea.here
+        LD      BC, 4
+        LDIR                                        ; [0..3] → HERE,LATEST; HL += 4
+        LD      DE, forth_wordlist
+        LD      BC, 2
+        LDIR                                        ; [4..5] → (forth_wordlist)
+        ; --- Pop new TOS (BC = previous-second-from-top) ---
+        POP     BC
+        NEXT
+
+.abort_bank:
+        LD      HL, str_bank_q
+        LD      B, str_bank_q_len
+        CALL    bdos_print_str
+        LD      BC, THROW_ABORT_QUOTE
+        JP      w_THROW_cf.kernel_entry
+
+str_bank_q:     DB "bank?"
+str_bank_q_len  EQU 5
+
+; bank_offset_hl — Given A = logical bank index in [0..28], returns
+;   HL = &bank-table[A]. Internal helper for w_BANK_STORE_cf (called
+;   twice per BANK! invocation). Clobbers A.
+;
+;   Compact path takes advantage of two invariants:
+;     - BANK_TABLE_BASE = $D400 has low byte 0, so HL.high = HIGH
+;       BANK_TABLE_BASE unchanged regardless of offset.
+;     - Max index = BANK_TABLE_CAP-1 = 28, max offset = 28*6 = 168 < 256,
+;       so the offset fits entirely in HL.low (no carry into HL.high).
+;   ASSERTed below; any future redesign that changes either invariant
+;   forces this helper to fall back to a longer HL-arithmetic shape.
+bank_offset_hl:
+    ASSERT (BANK_TABLE_BASE & 0xFF) == 0
+    ASSERT (BANK_TABLE_CAP - 1) * BANK_TABLE_ENTRY_SIZE < 256
+        ADD     A, A                                ; A = idx*2
+        LD      L, A
+        ADD     A, A                                ; A = idx*4
+        ADD     A, L                                ; A = idx*6
+        LD      L, A
+        LD      H, HIGH BANK_TABLE_BASE             ; HL = &bank-table[A]
+        RET
+
+; === BANKS ( -- n ) ===
+;   Push the count of currently-active banks (= length of the active
+;   list). Reads (IY+UserArea.bank_count).
+;
+;   Implementation-vs-spec NOTE: FR-P4-3 names this word as "a VALUE
+;   derived from the active bank-list length". Antforth has §6.2.2405
+;   `VALUE` and §6.2.2295 `TO` both Deliberately-omitted in v2.0
+;   (docs/ans-forth-core-compliance.md:453,458 — "Pairs with VALUE
+;   (also omitted); deferred — out of v2.0 scope"). Shipping VALUE/TO
+;   to back this single use is scope-creep against the Story 17.2
+;   ~80 B envelope; a DEFCODE proxy reading a kernel cell has identical
+;   user-observable stack effect ( -- n ) pushing the stored count.
+;   Future enhancement (Epic N+1) can refactor `BANKS` to a real `VALUE`
+;   once VALUE/TO ship. Story 17.2 dev-pass choice; see Q1 in story
+;   17-2-bank-fetch-bank-store-banks-read-and-swap-primitives.md.
+;   At Story 17.2 close bank_count = 0 (active list empty until
+;   Story 17.3's +BANK / Story 17.4's CL parser populate it); BANKS
+;   returns 0. Story 17.4 dev-pass updates the active-probe to assert
+;   the configured-defaults count.
+;
+; antforth extension BANKS — see docs/antforth-banking-redesign.md §5.4
+w_BANKS:
+        DEFCODE "BANKS", 0
+w_BANKS_cf:
+        PUSH    BC                                  ; save old TOS
+        LD      C, (IY+UserArea.bank_count)
+        LD      B, (IY+UserArea.bank_count+1)       ; BC = bank_count
+        NEXT

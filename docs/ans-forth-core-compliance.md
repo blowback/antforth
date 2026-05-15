@@ -866,8 +866,11 @@ antforth also defines words that are useful but outside the Core word sets:
 | `KEY?` | `io.asm:169` | FACILITY |
 | `SP@` `SP!` `RP@` `RP!` | `stack_ops.asm:198,212,225,237` | Non-standard (common extension) |
 | Z80 assembler (107 words) | `assembler.asm` | Non-standard (antforth extension) |
-| `BANK-MAPPING-ON` | `banking.asm:41` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
-| `BANK-MAPPING-OFF` | `banking.asm:76` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
+| `BANK-MAPPING-ON` | `banking.asm:51` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
+| `BANK-MAPPING-OFF` | `banking.asm:86` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
+| `BANK@` | `banking.asm:99` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
+| `BANK!` | `banking.asm:148` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
+| `BANKS` | `banking.asm:245` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4; DEFCODE proxy for the `VALUE` specified in FR-P4-3 — `VALUE` / `TO` are `Deliberately-omitted` in v2.0 per §6.2.2295 + §6.2.2405) |
 
 ---
 

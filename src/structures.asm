@@ -44,4 +44,8 @@ bank_table_base     DW      0       ; PD-P4-13 (29-entry cap): base of bank-tabl
                                     ; Story 17.1 routes the value; Story 17.2 / Epic 19 reads from it.
 bank_mapping_state  DW      0       ; FR-P4-11/12: non-zero iff MMU mapping enabled; BANK-MAPPING-ON sets 1, BANK-MAPPING-OFF sets 0.
                                     ; COLD's auto-BANK-MAPPING-ON sets to 1 before banner (architecture.md:323; redesign §5.1).
+bank_count          DW      0       ; FR-P4-3: count of active banks (= length of the active-pages list). BANKS pushes this cell.
+                                    ; Story 17.2 declares the cell + COLD zero-init; +BANK / -BANK / BANKS-CLEAR (Story 17.3) update it.
+                                    ; Implemented as a DEFCODE-readable kernel cell rather than an ANS VALUE (VALUE / TO are
+                                    ; `Deliberately-omitted` in v2.0 per docs/ans-forth-core-compliance.md:453,458).
     ENDS
