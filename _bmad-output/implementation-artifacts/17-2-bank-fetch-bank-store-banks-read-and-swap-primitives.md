@@ -1,6 +1,10 @@
 # Story 17.2: `BANK@` / `BANK!` / `BANKS` — read + swap primitives
 
 Status: review
+<!-- 2026-05-16 H4 hardware re-run closed: transcript ~/Downloads/beastty-20260515-234415.bin observed the full AC10.4 chain (99 BANK! → bank?error -2: ABORT" → BANK@ . → 0  ok → arithmetic ok → .S = <0>  ok). All HIGH/MEDIUM review findings dispositioned: H1+H2+L1+L2 FIXED, H4 FIXED-on-hardware, H3+M1 deferred-with-rationale (H3 to Story 17.3 dev-pass start, M1 to Epic 19 design), M2+M3 accepted. Re-flipped in-progress → review. -->
+<!-- Senior Developer Review (AI) 2026-05-16 first pass: pulled review → in-progress for H4 + M1. -->
+<!-- Pre-review: Status: review (dev-pass close 2026-05-15) -->
+
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -763,13 +767,116 @@ claude-opus-4-7 (Claude Opus 4.7 / 1M context)
 | `src/banking.asm` | modified | +ACTIVE_PAGES_BASE / ACTIVE_PAGES_SIZE constants; +w_BANK_AT / w_BANK_STORE / w_BANKS DEFCODEs; +bank_offset_hl helper; +str_bank_q literal; +.abort_bank tail |
 | `src/antforth.asm` | modified | cold_start step 8h: DJNZ counter 174 → 203; +bank_count zero-init; +bank-table[0] live-triple snapshot; +2 extra layout-shift NOPs (iz-cpm test-643 parity) |
 | `docs/ans-forth-core-compliance.md` | modified | Non-standard words table: BANK-MAPPING-ON/OFF line-number drift + 3 new rows (BANK@, BANK!, BANKS) |
-| `tests/banking_tests.fth` | modified | +Probe 3 (bank-at-zero), +Probe 4 (banks-zero), +Probe 5 (bank-store-abort-bank-q), +Probe 6 (bank-store-round-trip-1 PENDING-17.3), +Probe 7 (bank-store-round-trip-0 PENDING-17.3), +Probe 8 (bank-store-t-states INFO) |
-| `Makefile` | modified | `test-repl-banking` + `test-repl-banking-skip` recipes' inline pattern lists extended for the new probes |
-| `build/antforth.com` | rebuilt | 25,101 B → 25,285 B (+184 B; see AC8 SCP-trigger disposition) |
-| `~/Downloads/beastty-20260515-225700.bin` | added | Hardware-smoke transcript (Task 9; AC10 verdict PASS on banner + BANK@ + BANKS + BANK! ABORT" message) |
+| `_bmad-output/implementation-artifacts/17-2-bank-fetch-bank-store-banks-read-and-swap-primitives.md` | added | Story file: task checkboxes, Dev Agent Record, Senior Developer Review (AI), Status → review |
+| `tests/banking_tests.fth` | modified | +Probe 3 (bank-at-zero), +Probe 4 (banks-zero), +Probe 5 (bank-store-abort-bank-q), +Probe 6 (bank-store-swap-path; review fix H1+H2), +Probe 7 (bank-store-round-trip-1 PENDING-17.3), +Probe 8 (bank-store-round-trip-0 PENDING-17.3), +Probe 9 (bank-store-t-states INFO) |
+| `Makefile` | modified | `test-repl-banking` + `test-repl-banking-skip` recipes' inline pattern lists extended for the new probes (incl. `bank-store-swap-path` from review) |
+| `build/antforth.com` | rebuilt | 25,101 B → 25,285 B (+184 B; H1 +2 B / L1 −2 B from review = net 0 B post-review; see AC8 SCP-trigger disposition + §"Senior Developer Review (AI)") |
+| `~/Downloads/beastty-20260515-225700.bin` | added | Hardware-smoke transcript (Task 9; AC10 — banner + BANK@ + BANKS + BANK! ABORT" message observed) |
+| `~/Downloads/beastty-20260515-234415.bin` | added | Hardware re-run transcript (H4 review-fix; AC10.4 recovery half — `99 BANK!` → abort msg → `BANK@ .` → `0 ok` → arithmetic ok → `.S = <0> ok` chain fully observed on hardware) |
 
 ### Change Log
 
 | Date | Change |
 |------|--------|
 | 2026-05-15 | Story 17.2 dev-pass: §banking BANK@ / BANK! / BANKS primitives + COLD bank-table[0] snapshot + UserArea bank_count cell + active_pages[$D4AE..$D4CA] zero-init + tests/banking_tests.fth 6-probe extension + compliance-doc 3-row addition. wc -c = 25,101 → 25,285 (+184 B; AC8 SCP-trigger accepted-with-rationale per the Body-byte-budget itemisation in Dev Notes). Tasks 1-8 + 10 closed; Task 9 (hardware-smoke) deferred to user-driven MicroBeast run. |
+| 2026-05-16 | Senior Developer Review (AI) — see §"Senior Developer Review (AI)" below. Fixed H1 (BANK! swap clobbered DE/IP — kernel would have crashed on first valid `BANK!` invocation in Story 17.3) by saving IP across the swap (`PUSH DE` / `POP DE`); fixed L1 (hardcoded `LD B, 0` in BANK@/BANKS, applying the same invariant the BANK! current_bank write already exploits); added Probe 6 `bank-store-swap-path` with inline-asm fixture seeding `bank_count=1` + `active_pages[0]=$22` so the swap path is exercised at Story 17.2 close (closes H2 — Probes 7+8 PENDING-17.3 had deferred this verification). H1 +2 B, L1 −2 B → net 0 B; binary unchanged at 25,285 B; 975 PASS / 0 FAIL / 2 SKIP preserved; banking-emu probes 10/10 (incl. new swap-path); banking-skip-baseline probes 9/9; doc-sync 0 drift. Status pulled review → in-progress pending H4 hardware re-run + M1 Epic-19 inheritance. |
+| 2026-05-16 | H4 closed on hardware: second MicroBeast transcript `~/Downloads/beastty-20260515-234415.bin` captured the full AC10.4 chain post-abort (`99 BANK!` → `bank?error -2: ABORT"` → `BANK@ .` → `0 ok` → arithmetic → `.S = <0> ok`). All HIGH/MEDIUM review findings dispositioned: H1+H2+H4+L1+L2 FIXED; H3 (envelope) + M1 (wordlist swap target) deferred-with-rationale to Story 17.3 dev-pass / Epic 19 respectively; M2 (NOP padding) + M3 (row-count) accepted. Status flipped in-progress → review. |
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Ant (via claude-opus-4-7) on 2026-05-16
+**Outcome:** Changes Requested → Fixed in same review pass → Status: **review** (re-pass after H4 hardware re-verification + Story 17.3 inheritance of M1 follow-up)
+
+### Findings summary
+
+| ID | Severity | Title | Disposition |
+|----|----------|-------|-------------|
+| H1 | HIGH (critical) | `BANK!` swap clobbers DE (= IP register); kernel crashes on first valid swap | **FIXED** — `PUSH DE` / `POP DE` around swap section in `src/banking.asm` |
+| H2 | HIGH | ~120 B swap mechanism shipped untested (every BANK! aborts at 17.2 close; Probes 7+8 deferred to 17.3) | **FIXED** — added Probe 6 `bank-store-swap-path` with inline-asm fixture |
+| H3 | HIGH | AC8 envelope: +184 B vs ~80 B target (>2x miss); accept-with-rationale skipped design alternatives | **DEFERRED** — see §"H3 disposition" below |
+| H4 | HIGH | AC10.4 hardware "REPL recovers to the prompt with state intact" inferred, not observed | **FIXED** — hardware re-run captured the full chain (transcript `~/Downloads/beastty-20260515-234415.bin`): `99 BANK!` → abort msg → `BANK@ .` → `0 ok` → arithmetic ok → `.S = <0> ok` |
+| M1 | MEDIUM | Wordlist swap saves WORDLIST_NEXT chain pointer, not the per-bank dictionary state (hash-bucket array or LATEST-equivalent) | **DEFERRED to Epic 19** — captured in forward-inheritance pointers below |
+| M2 | MEDIUM | iz-cpm test-643 NOP padding now at 3 NOPs (Story 17.1: 1 NOP); recurring overhead per Phase-4 story | **ACCEPTED** — emulator-side bug; pattern documented in `feedback_iz_cpm_test_643_quirk.md` |
+| M3 | MEDIUM | Compliance-table baseline row count asserted, not verified | **ACCEPTED** — re-verify at Phase-4 retro |
+| L1 | LOW | BANK@/BANKS could each save 1 B by hardcoding `LD B, 0` (invariant high byte = 0) | **FIXED** — applied; offsets the H1 +2 B back to net 0 B |
+| L2 | LOW | File-list table records story file as `modified`; git tracks as `added` | **FIXED** — entry corrected to `added` |
+
+### H1 detail (fixed)
+
+**Defect:** `src/banking.asm` BANK! swap section used `EX DE, HL` + `LDIR` cascades that clobber DE — but DE is the inner-interpreter IP register (`docs/register-conventions.md`; `src/inner_interpreter.asm:7`). The swap never restored DE, so the trailing `NEXT` would fetch the next opcode from `forth_wordlist+2` (= start of the 64-entry hash bucket array) — `JP (HL)` into whatever the first bucket pointer aimed at → garbage execution.
+
+**Why it was hidden:** at Story 17.2 close, `bank_count = 0`, so every `BANK!` aborts at the precondition before reaching the swap. Probes 7+8 (the only probes that would invoke the swap path) were deliberately authored as `PENDING-17.3`. The bug would have surfaced as a kernel crash on the very first `1 BANK!` after Story 17.3's `+BANK` populated the active list.
+
+**Why the in-file precedent was missed:** `src/wordlists.asm:48-49` (WORDLIST DEFCODE) does exactly `PUSH DE ; save IP — LDIR clobbers DE` around its LDIR; the comment explicitly names the failure mode. The Story 17.2 dev-pass byte-budget walked the swap body in detail but did not consult the WORDLIST precedent for the IP-preservation invariant.
+
+**Fix:** `PUSH DE` immediately after the precondition passes, `POP DE` immediately before the trailing `POP BC ; NEXT`. +2 B. Verified by Probe 6 (without the fix, the kernel would crash before the PASS line printed).
+
+### H2 detail (fixed)
+
+**Defect:** the swap-path verification was deferred to Story 17.3 (PENDING-17.3 markers on Probes 7+8). The dev notes literally suggest the right shape — *"a temporary test fixture that seeds `active_pages[0] = 0x22` and `bank_count = 1` for the local dev-pass verification"* — but this fixture was never implemented. ~120 B of newly-shipped Z80 went into the binary unverified, which is exactly how H1 slipped through.
+
+**Fix:** added Probe 6 `bank-store-swap-path` to `tests/banking_tests.fth`. Two inline-assembled fixture words (`_SEED-BANK`, `_CLEAR-BANK`) write `bank_count := 1` + `active_pages[0] := 0x22` directly via `(IY+108)` / abs-address writes (magic numbers annotated in-file with offset derivation); the probe then runs `0 BANK!` (degenerate self-swap, but exercises the full code path) and asserts `BANK@` returns 0. Surface-agnostic: 0x22 is slot 2's pre-existing portal-page mapping under iz-cpm-banking (no-op effect); port 0x72 unmodelled under iz-cpm baseline. Story 17.3 retires the `_SEED-BANK` / `_CLEAR-BANK` fixture in favour of `$22 +BANK` once `+BANK` lands.
+
+### H3 disposition (deferred)
+
+The dev-pass disposition (a) accept-with-rationale rests on per-component itemisation showing every line is at compact optimum. The review pushes back: design-level alternatives (refactor swap to a `CALL`-able helper that Epic 18 cross-bank-call can reuse; defer wordlist_head until Epic 19/20 actually has multi-wordlist plumbing; revisit the per-bank entry stride) were not seriously considered.
+
+The review does NOT block on this. Cumulative Epic-17 = 290 B / 400 B = 72.5% with 4 stories remaining; ~110 B for Stories 17.3 / 17.4 / 17.5 is tight but not yet over. The right time to revisit is Story 17.3 dev-pass start: if the 17.3 estimate exceeds its share of the ~110 B remaining, the design alternatives above must be evaluated before another accept-with-rationale fires. Project-lead direction at that point is in scope.
+
+### H4 disposition (fixed on hardware)
+
+AC10.4 explicitly requires "REPL recovers to the prompt with state intact". The first hardware run (`~/Downloads/beastty-20260515-225700.bin`) captured the abort message (`bank?error -2: ABORT"`) but stopped there — the post-recovery prompt + stack-clean half was INFERRED from byte-parity with the `.throw_uncaught` recovery path. Inference is plausible but is not observation.
+
+**Resolution:** second hardware run (`~/Downloads/beastty-20260515-234415.bin`) captured the full chain:
+
+```
+99 BANK!
+bank?error -2: ABORT"     ← abort fired, message printed (AC10.4 first half)
+BANK@ .
+0  ok                     ← REPL returned to prompt; BANK@ works post-recovery
+3  ok                     ← arithmetic follow-up; REPL parser fully functional
+<0>  ok                   ← .S confirms DEPTH = 0 (stack reset wholesale by uncaught-THROW handler)
+```
+
+AC10.4 is now fully observed on real MicroBeast — both the abort half AND the recovery half. The byte-parity rationale from dev-pass is no longer load-bearing.
+
+### M1 detail (deferred to Epic 19)
+
+The swap saves/loads `(forth_wordlist)` = the WORDLIST_NEXT chain pointer (`src/wordlists.asm:336-337`), not the per-bank dictionary state. For the per-bank dictionary semantics that Epic 19 will implement, the load-bearing per-bank state is the **64-entry hash bucket array** at `forth_wordlist+2..+129` (or some other identity that links dictionary entries to banks). Story 17.2's swap mechanism is wired to the wrong target.
+
+This is honestly disclosed in the dev notes ("the swap is therefore degenerate at 17.2 close but the MECHANISM is wired for Epic 19/20"). The MECHANISM is wired, but to a target that Epic 19 will need to re-litigate. Two paths forward at Epic-19 dev-pass start:
+1. Expand the per-bank entry from 6 B → 6+128 = 134 B (bank-table[] grows to 29 × 134 = 3,886 B; doesn't fit in $D400-region without re-shape).
+2. Adopt a different per-bank dictionary model (e.g., rebase `current_wordlist` per bank; or keep one bucket array but per-bank LATEST-chain-walk discipline) that doesn't need bucket swap.
+
+Both are Epic 19 design decisions. Story 17.2's mechanism is not load-bearing for Epic 19's choice — Epic 19 may keep it, replace it, or invert it — but the current 17.2 wording in §"Forward inheritance pointers" implies Epic 19 inherits the triple-swap shape verbatim. This wording should be softened at Story 17.6 (epic close-out) once Epic 19's design is firmer.
+
+### Verification (post-fix)
+
+- `make asm` — clean, 0 errors / 0 warnings, 29,842 lines compiled.
+- `wc -c build/antforth.com` — **25,285 B** (unchanged from pre-review post-dev-pass — H1 +2 B and L1 −2 B cancel).
+- `make test-repl` — **975 PASS / 0 FAIL / 2 SKIP** (baseline preserved).
+- `make test-repl-banking` — **10/10 patterns matched** (3 from 17.1 + 4 active PASS new + 1 swap-path PASS [review] + 2 SKIP pending + 1 INFO latency).
+- `make test-repl-banking-skip` — **9/9 surface checks PASS** (incl. new `bank-store-swap-path`).
+- `make check-doc-sync` — exit 0; **31 advisories, 0 drift** (unchanged).
+
+### Validation checklist (per `_bmad/bmm/workflows/4-implementation/code-review/checklist.md`)
+
+- [x] Story file loaded (`17-2-bank-fetch-bank-store-banks-read-and-swap-primitives.md`)
+- [x] Story Status verified as reviewable (`review`)
+- [x] Epic and Story IDs resolved (17.2)
+- [x] Story Context located (epics-phase4-epics-16-22.md §"Story 17.2")
+- [x] Architecture/standards docs loaded (architecture-phase3, ans-forth-core-compliance, antforth-banking-redesign, register-conventions, z80-instruction-coverage)
+- [x] Tech stack detected (Z80 / sjasmplus / antforth runtime)
+- [x] Acceptance Criteria cross-checked against implementation (AC1-AC10; AC10.4 partial — see H4)
+- [x] File List reviewed and validated (8 files in git, all listed; story file row corrected `modified` → `added`)
+- [x] Tests identified and mapped to ACs; gaps noted (H2 closed; PENDING-17.3 markers retained for future Story 17.3 enablement)
+- [x] Code quality review performed on changed files (`src/banking.asm`, `src/structures.asm`, `src/antforth.asm`, `tests/banking_tests.fth`, `Makefile`, `docs/ans-forth-core-compliance.md`)
+- [x] Security review performed (no user-input parsing in this story; the ABORT path uses the established `(ABORT")` pattern from `src/system.asm:147+`; MMU port write is gated by an in-range precondition)
+- [x] Outcome decided (Changes Requested → Fixed in pass → review)
+- [x] Review notes appended under "Senior Developer Review (AI)"
+- [x] Change Log updated with review entry
+- [x] Status preserved at `review` pending hardware re-verification (H4) + Story 17.3 inheritance (M1)
+- [x] Sprint status preserved at `in-progress` (epic-17 row); 17-2 row at `review` (no flip — fixes did not transition state)
+- [x] Story saved successfully
+
+_Reviewer: Ant on 2026-05-16_

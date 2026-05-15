@@ -128,7 +128,54 @@ ELSE
 THEN
 CR
 
-\ === PENDING-17.3: Probe 6 — 1 BANK! BANK@ . round-trips (Story 17.3 active) ===
+\ === Probe 6 (Story 17.2 review fix H1+H2): BANK! swap path round-trip ===
+\ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
+\
+\ Synthesises bank_count = 1 + active_pages[0] = $22 (portal-page default)
+\ via inline-assembled fixture words, then exercises the BANK! swap path
+\ that the precondition blocks at Story 17.2 close (Probes 7+8 PENDING-17.3
+\ defer this same verification). Catches H1 (DE/IP clobber across the
+\ LDIR cascade in BANK!'s swap section — fixed in same review commit) and
+\ any future swap-path defect at Story 17.2 dev-pass instead of Story 17.3.
+\
+\ Surface-agnostic: writes 0x22 to MMU port 0x72 (slot 2's pre-existing
+\ portal-page mapping) — no-op effect under iz-cpm-banking; unmodelled
+\ port under iz-cpm baseline.
+\
+\ Magic numbers (annotated; refactor when Story 17.3's +BANK retires this
+\ fixture in favour of `$22 +BANK`):
+\   108   = UserArea.bank_count offset (state(0) .. bank_count(108);
+\           src/structures.asm + PIC_BUF_SIZE=40)
+\   $D4AE = ACTIVE_PAGES_BASE (BANK_TABLE_BASE $D400 + BANK_TABLE_SHELL_SIZE
+\           174 = $AE; src/banking.asm:36)
+\   $22   = portal-page default for slot 2 (redesign-doc §5.1)
+CODE _SEED-BANK ( -- )
+  A $22 # LD,
+  HL $D4AE # LD,
+  (HL) A LD,                   \ active_pages[0] := $22
+  A 1 # LD,
+  (IY) 108 +D A LD,            \ (IY+UserArea.bank_count) := 1
+  NEXT,
+END-CODE
+
+CODE _CLEAR-BANK ( -- )
+  A 0 # LD,
+  (IY) 108 +D A LD,            \ (IY+UserArea.bank_count) := 0 (restore)
+  NEXT,
+END-CODE
+
+_SEED-BANK
+0 BANK!
+BANK@ DUP 0 = IF
+  ." PASS: bank-store-swap-path — 0 BANK! round-trips with seeded fixture (H1 IP-clobber fix verified)"
+  DROP
+ELSE
+  ." FAIL: bank-store-swap-path — BANK@ returned " .
+THEN
+CR
+_CLEAR-BANK
+
+\ === PENDING-17.3: Probe 7 — 1 BANK! BANK@ . round-trips (Story 17.3 active) ===
 \ Surface: SKIP-on-all (active list empty at Story 17.2 close;
 \          Story 17.3's +BANK populates index 1; this probe lights up
 \          at Story 17.3 dev-pass)
@@ -144,7 +191,7 @@ CR
 \ PENDING-17.3: 1 BANK! BANK@ DUP 1 = IF ." PASS: bank-store-round-trip-1" DROP ELSE ." FAIL " . THEN CR
 ." SKIP: bank-store-round-trip-1 — PENDING-17.3 (active list empty until +BANK populates index 1)" CR
 
-\ === PENDING-17.3: Probe 7 — 0 BANK! round-trips (Story 17.3 active) ===
+\ === PENDING-17.3: Probe 8 — 0 BANK! round-trips (Story 17.3 active) ===
 \ Surface: SKIP-on-all (active list empty at Story 17.2 close; even
 \          though current_bank = 0 by COLD default, 0 BANK! ABORTs
 \          because precondition `0 < bank_count` fails when bank_count
@@ -154,7 +201,7 @@ CR
 \ PENDING-17.3: 0 BANK! BANK@ DUP 0 = IF ." PASS: bank-store-round-trip-0" DROP ELSE ." FAIL " . THEN CR
 ." SKIP: bank-store-round-trip-0 — PENDING-17.3 (active list empty; 0 BANK! aborts with bank_count = 0)" CR
 
-\ === Probe 8: BANK! T-state latency probe (Story 17.2 AC5; informational) ===
+\ === Probe 9: BANK! T-state latency probe (Story 17.2 AC5; informational) ===
 \ Surface: informational-on-all (NFR-P4-2's ≤60 T-state envelope binds
 \          cross-bank dispatch overhead per FR-P4-16 — Epic 18 scope —
 \          NOT the user-facing BANK! word; AC5 disposition (a)

@@ -100,7 +100,7 @@ w_BANK_AT:
 w_BANK_AT_cf:
         PUSH    BC                                  ; save old TOS
         LD      C, (IY+UserArea.current_bank)
-        LD      B, (IY+UserArea.current_bank+1)     ; BC = current_bank
+        LD      B, 0                                ; current_bank.high invariantly 0 (bounded < 29)
         NEXT
 
 ; === BANK! ( n -- ) ===
@@ -162,6 +162,12 @@ w_BANK_STORE_cf:
         ; --- Swap current_bank (read old; write new). High byte stays 0. ---
         LD      A, (IY+UserArea.current_bank)       ; A = old_bank
         LD      (IY+UserArea.current_bank), C       ; current_bank.low ← new
+        ; DE = IP (inner-interpreter convention; src/inner_interpreter.asm:7).
+        ; The LDIR cascade + EX DE,HL below clobber DE; preserve IP across the
+        ; swap so the trailing NEXT resumes at the caller. Precedent: WORDLIST
+        ; (src/wordlists.asm:48-63) does the same PUSH DE / POP DE around its
+        ; LDIR. (Story 17.2 review fix — H1.)
+        PUSH    DE                                  ; save IP — LDIR clobbers DE
         ; --- Save live → bank-table[old_bank][0..5] ---
         CALL    rpush_bc                            ; preserve new_bank across LDIR
         CALL    bank_offset_hl                      ; HL = &bank-table[A=old]
@@ -184,6 +190,7 @@ w_BANK_STORE_cf:
         LD      DE, forth_wordlist
         LD      BC, 2
         LDIR                                        ; [4..5] → (forth_wordlist)
+        POP     DE                                  ; restore IP
         ; --- Pop new TOS (BC = previous-second-from-top) ---
         POP     BC
         NEXT
@@ -246,5 +253,5 @@ w_BANKS:
 w_BANKS_cf:
         PUSH    BC                                  ; save old TOS
         LD      C, (IY+UserArea.bank_count)
-        LD      B, (IY+UserArea.bank_count+1)       ; BC = bank_count
+        LD      B, 0                                ; bank_count.high invariantly 0 (bounded by BANK_TABLE_CAP=29)
         NEXT
