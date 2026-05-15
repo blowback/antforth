@@ -47,14 +47,11 @@ w_BANK_MAPPING_ON_cf:
         NEXT
 
 ; === BANK-MAPPING-OFF ( -- ) ===
-;   CP/M warm-boot escape (FR-P4-12). Updates the kernel-side
-;   bank_mapping_state cell to 0 and jumps to BIOS WBOOT at $0000
-;   to reload CCP and return to a healthy `B>` prompt. The JP
-;   never returns.
+;   CP/M warm-boot escape (FR-P4-12). Jumps to BIOS WBOOT at $0000
+;   to reload CCP and return to a healthy `B>` prompt. Never returns.
 ;
 ;   IMPLEMENTATION NOTE — literal port-0x74 write is INTENTIONALLY
-;   NOT performed. A naive `OUT (0x74), A` with A=0 (the obvious
-;   reading of "disable MMU mapping hardware") disconnects the
+;   NOT performed. A naive `OUT (0x74), A` with A=0 disconnects the
 ;   kernel from RAM in the next instruction fetch: the CPU sees
 ;   flash bank 0 (firmware code) at the slot-0 address it was
 ;   executing, falls through to the firmware reset path, and
@@ -65,20 +62,17 @@ w_BANK_MAPPING_ON_cf:
 ;   BIOS WBOOT at $EA03 (MicroBeast firmware beastos/bios.asm:55+164
 ;   `wboote JP bios_wboot`), reachable as `JP 0x0000` via the JP
 ;   wboote that bios_wboot sets up at address 0 (beastos/bios.asm:173-176).
-;   BDOS function 0 (`BYE`'s path) ends up here too. Mapping stays
-;   enabled across warm-boot; CP/M operates with mapping enabled
-;   (it's how the BIOS loaded antforth in the first place). The
-;   `bank_mapping_state` cell update reflects user intent ("we're
-;   done with banked mode") even though the hardware bit is unchanged.
+;   Mapping stays enabled across warm-boot; CP/M operates with mapping
+;   enabled (it's how the BIOS loaded antforth in the first place).
 ;
-;   FR-P4-12 / PRD wording ("disables the MMU mapping hardware")
-;   needs a follow-up correction to align spec with the only
-;   physically-feasible mechanism — flagged for Story-17 retro.
+;   The kernel-side `bank_mapping_state` cell is NOT updated here —
+;   the BIOS warm-boot destroys the antforth runtime before any
+;   observer could read it back, so the cell write would be dead
+;   code. The next antforth invocation runs COLD, which re-inits
+;   `bank_mapping_state` to 1 (src/antforth.asm step 8h).
 ;
 ; antforth extension BANK-MAPPING-OFF — see docs/antforth-banking-redesign.md §5.1
 w_BANK_MAPPING_OFF:
         DEFCODE "BANK-MAPPING-OFF", 0
 w_BANK_MAPPING_OFF_cf:
-        LD      (IY+UserArea.bank_mapping_state),   0
-        LD      (IY+UserArea.bank_mapping_state+1), 0
         JP      0x0000          ; BIOS WBOOT — never returns

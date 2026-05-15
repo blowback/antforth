@@ -21,7 +21,7 @@ This document is the authoritative banked-RAM design for antforth Phase 4. Where
 | Configuration | `BANKS-CLEAR` | `( -- )` | Empty the list (lets user rebuild from scratch in startup config). |
 | Low-level | `SET-BANK` | `( page slot -- )` | Raw MMU port write; kept for diagnostics. |
 | Low-level | `BANK-MAPPING-ON` | `( -- )` | Enable mapping hardware. Auto-run in `COLD`. |
-| Low-level | `BANK-MAPPING-OFF` | `( -- )` | Disable mapping hardware. For CP/M warm-boot escape. |
+| Low-level | `BANK-MAPPING-OFF` | `( -- )` | CP/M warm-boot escape via BIOS WBOOT (`JP $0000`). Does NOT write the MMU bit — kernel-resident port-0x74 write disconnects RAM mid-instruction-fetch (Story 17.1 AC10 hardware finding). |
 
 **Replaces** the obsolete doc's `USER-BANK / USER-BANK@ / SET-BANK / ENABLE-MAPPING + THUNK-TO-USER-BANK*` family. The `USER-` prefix is gone (only one kind of user-controllable bank exists, so the prefix was noise). The `BANK@ / BANK!` pair mirrors the established `BASE @ / BASE !` idiom — getter/setter for ambient state.
 

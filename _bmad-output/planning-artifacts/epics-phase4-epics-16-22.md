@@ -44,7 +44,7 @@ This document provides the complete epic and story breakdown for **antforth Phas
 - **FR-P4-9 (`BANKS-CLEAR`):** `BANKS-CLEAR ( -- )` empties the active bank list. After invocation, `BANKS` returns 0; `BANK!` raises `ABORT" bank?"` until `+BANK` rebuilds the list.
 - **FR-P4-10 (`SET-BANK`):** `SET-BANK ( page slot -- )` raw MMU port write of `page` into MMU `slot`. Bypasses `bank-table[]`; diagnostics only; no validation.
 - **FR-P4-11 (`BANK-MAPPING-ON`):** `BANK-MAPPING-ON ( -- )` enables MMU mapping hardware. Auto-run in `COLD`.
-- **FR-P4-12 (`BANK-MAPPING-OFF`):** `BANK-MAPPING-OFF ( -- )` disables MMU mapping hardware. For CP/M warm-boot escape.
+- **FR-P4-12 (`BANK-MAPPING-OFF`):** `BANK-MAPPING-OFF ( -- )` triggers CP/M warm-boot escape via BIOS WBOOT (`JP $0000`); returns to a healthy `B>` CCP prompt. Does **not** write the MMU mapping hardware bit — port 0x74 write from kernel-resident code disconnects RAM mid-instruction-fetch and traps into firmware reset (Story 17.1 AC10 hardware finding).
 
 #### Cross-Bank Dispatch — descriptor-stub mechanism (FR-P4-13..17)
 

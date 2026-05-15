@@ -522,7 +522,7 @@ See **§ Product Scope → Growth Features (Post-MVP — Phase 5+ candidates)** 
 - **FR-P4-9 (`BANKS-CLEAR`):** `BANKS-CLEAR ( -- )` empties the active bank list. After invocation, `BANKS` returns 0; `BANK!` raises `ABORT" bank?"` for any argument until `+BANK` rebuilds the list. Intended for startup-config rebuild.
 - **FR-P4-10 (`SET-BANK`):** `SET-BANK ( page slot -- )` performs a raw MMU port write of `page` into MMU `slot`. Bypasses the bank-table[] machinery; intended for diagnostics only. Does not validate; bad arguments produce undefined hardware behaviour.
 - **FR-P4-11 (`BANK-MAPPING-ON`):** `BANK-MAPPING-ON ( -- )` enables the MMU mapping hardware. Auto-run in `COLD` so the banked build is the default user experience.
-- **FR-P4-12 (`BANK-MAPPING-OFF`):** `BANK-MAPPING-OFF ( -- )` disables the MMU mapping hardware. Provided for the CP/M warm-boot escape (returning control to a flat-memory CP/M context).
+- **FR-P4-12 (`BANK-MAPPING-OFF`):** `BANK-MAPPING-OFF ( -- )` triggers CP/M warm-boot escape via BIOS WBOOT (`JP $0000`), returning control to a healthy `B>` CCP prompt. The MMU mapping hardware bit is intentionally **not** written by this word — writing port 0x74 from kernel-resident code disconnects RAM from the CPU at the next instruction fetch and traps into firmware reset (Story 17.1 AC10 hardware finding; see `src/banking.asm` body). Mapping stays enabled across the warm-boot; CP/M operates with mapping enabled (it's how the BIOS loaded antforth in the first place).
 
 ### Cross-Bank Dispatch (descriptor-stub mechanism)
 

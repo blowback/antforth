@@ -867,7 +867,7 @@ antforth also defines words that are useful but outside the Core word sets:
 | `SP@` `SP!` `RP@` `RP!` | `stack_ops.asm:198,212,225,237` | Non-standard (common extension) |
 | Z80 assembler (107 words) | `assembler.asm` | Non-standard (antforth extension) |
 | `BANK-MAPPING-ON` | `banking.asm:41` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
-| `BANK-MAPPING-OFF` | `banking.asm:80` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
+| `BANK-MAPPING-OFF` | `banking.asm:76` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
 
 ---
 

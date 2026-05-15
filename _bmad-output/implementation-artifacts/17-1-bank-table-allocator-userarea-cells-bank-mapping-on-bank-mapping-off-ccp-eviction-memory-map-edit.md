@@ -1,6 +1,6 @@
 # Story 17.1: `bank-table[]` allocator + UserArea cells + `BANK-MAPPING-ON` / `BANK-MAPPING-OFF` + CCP-eviction memory-map edit
 
-Status: review
+Status: done
 
 ## Context — why this story exists, why now
 
@@ -367,7 +367,7 @@ includes:
 
 ### Task 7 — COLD auto-`BANK-MAPPING-ON` (AC7)
 
-- [x] 7.1 — Inlined the body (not CALLed). Decision rationale: DEFCODE word body ends in `NEXT` macro (7 B), not `RET` — can't be `CALL`ed from raw assembly. Inline body cost = 12 B (LD A,1 + OUT + 2 cell writes); equivalent CALL+helper would have needed a 13-B helper + 3-B CALL = 16 B, plus the DEFCODE body itself stays the same. Inline is cleaner. Insertion point: `src/antforth.asm:154..161` — between bank-table[] zero-init / cell inits (step 8h) and the `IFDEF TEST_MODE` block.
+- [x] 7.1 — Inlined the body (not CALLed). Decision rationale: DEFCODE word body ends in `NEXT` macro (7 B), not `RET` — can't be `CALL`ed from raw assembly directly, so an inline duplication or an extracted RET-terminated helper are the two options. Honest two-site comparison (review fix 2026-05-15): all-inline = 12 B (COLD) + 12 B body + 7 B NEXT = **31 B**; subroutine = 13 B helper (12 B body + RET) + 3 B (COLD CALL) + 3 B (DEFCODE CALL) + 7 B NEXT = **26 B**. Subroutine saves 5 B and de-duplicates the body so a future BANK-MAPPING-ON extension only has to change one site. Inline retained nonetheless for layout simplicity (the COLD inits and the DEFCODE body sit in different `.asm` files; an extracted helper would need its own home and a forward declaration). Trade-off documented honestly per code-review L1 finding; revisit if a future story extends BANK-MAPPING-ON. Insertion point: `src/antforth.asm:154..161` — between bank-table[] zero-init / cell inits (step 8h) and the `IFDEF TEST_MODE` block.
 - [x] 7.2 — iz-cpm sanity-run: kernel boots cleanly, banner prints `AntForth v2.0.0 (C) ant.org 2026 / MicroBeast - 28901 bytes free / Type BYE to exit`, REPL enters QUIT. **975-PASS baseline preserved post-fix** (after the iz-cpm test-643 layout-sensitivity NOP — see Debug Log).
 
 ### Task 8 — Compliance-doc rows + CCD-3 source flags (AC8)
@@ -402,8 +402,9 @@ includes:
     - (a) ✅ Banner — `AntForth v2.0.0 (C) ant.org 2026 / MicroBeast - 28900 bytes free / Type BYE to exit`. Bytes-free = 28,900 B (vs 28,901 on iz-cpm — 1 B variance attributable to `BDOS_ADDR_PTR`).
     - (b) ✅ `BANK-MAPPING-ON .S` → `<0>  ok` — idempotent PASS.
     - (c) ❌ **BUG**: `BANK-MAPPING-OFF` triggered full firmware cold-boot (`Keyboard OK / MicroBeast starting... / Detected PIO / Detected Display 1/2 / Detected Display 2/2 / Detected RTC / Check RTC / Clock speed 8,0Mhz / LED Off / Format RAM disk / Check RTC / Restored 1668 sectors OK`) instead of CP/M warm-boot escape to `B>`. Surfaced as Story 17.1 AC10 defect; project-lead direction 2026-05-15: *"A full hardware reset is not acceptable, and it never was! It's a bug pure and simple, and it needs to be fixed!"*
-  - **Run 2 (post-fix, user verdict 2026-05-15 *"All fixed! Works great."*):** Fix verified — `BANK-MAPPING-OFF` now lands `B>` CCP prompt directly with no firmware cold-boot sequence. AC10 closed.
-- [x] 11.3 — Run 1 transcript: `~/Downloads/beastty-20260515-193026.bin` (captured 2026-05-15 19:30:26). Run 2 verdict captured inline from user confirmation; no separate transcript filed (user's "works great" report is the load-bearing verdict per S12 single-human-typed convention).
+  - **Run 2 (post-AC10-bugfix, user verdict 2026-05-15 *"All fixed! Works great."*):** Fix verified — `BANK-MAPPING-OFF` now lands `B>` CCP prompt directly with no firmware cold-boot sequence. Banner shows `MicroBeast - 28907 bytes free` (binary = 25,109 B post-AC10-bugfix). AC10 closed.
+  - **Run 3 (post-review-M1-fix, transcript `~/Downloads/beastty-20260515-204325.bin`, 17,985 B, 2026-05-15 20:43:25):** Re-verified post-M1-fix. Banner shows `MicroBeast - 28915 bytes free` (binary = 25,101 B post-M1-fix; +8 B bytes-free vs Run 2 matches the -8 B M1 dead-write removal exactly). `BANK-MAPPING-ON .S` → `<0>  ok` (idempotence preserved); `BANK-MAPPING-OFF` → `B>` directly (warm-boot escape still clean post-M1). Transcript captures bug + both fix verifications in one file.
+- [x] 11.3 — Run 1 transcript: `~/Downloads/beastty-20260515-193026.bin` (captured 2026-05-15 19:30:26; the buggy run showing firmware cold-boot). Run 3 transcript: `~/Downloads/beastty-20260515-204325.bin` (captured 2026-05-15 20:43:25; covers Run 2 + Run 3 fix-verification — single contiguous session). Run 2 verdict also captured inline from user confirmation ("works great"). Code-review M2 follow-up closed by the Run-3 transcript.
 - [x] 11.4 — No "pre-existing" discharge attempted. Bug fixed in dev-pass per `feedback_no_accept_disposition_for_bugs.md` (new entry from this dev-pass).
 
 **AC10 bug: BANK-MAPPING-OFF triggered firmware cold-boot, not CP/M warm-boot escape — FIXED.**
@@ -440,6 +441,19 @@ PRD `FR-P4-12` text says `BANK-MAPPING-OFF` "disables the MMU mapping hardware" 
 - [x] 12.1 — `sprint-status.yaml`: 17-1 row flipped `ready-for-dev → in-progress` (Task 1 start) → `review` (Task 12 close-out). `epic-17` row already at `in-progress` (post-story-creation; verified).
 - [x] 12.2 — Commit pending user trigger (per `feedback_no_claude_coauthor.md`: NEVER add Claude co-author trailer in this repo). Suggested subject: `Story 17.1: §banking foundation — src/banking.asm + UserArea + BANK-MAPPING-*`. Deliverables list ready in File List + Change Log sections.
 - [x] 12.3 — Deliverables recorded in File List section above. Hardware transcript path is **pending Task 11 user-action**.
+
+### Review Follow-ups (AI) — 2026-05-15 code-review pass
+
+- [x] [AI-Review][HIGH] **H1 FIXED** — `_bmad-output/planning-artifacts/prd.md:525` + `_bmad-output/planning-artifacts/epics-phase4-epics-16-22.md:47` updated. FR-P4-12 wording no longer claims `BANK-MAPPING-OFF` "disables the MMU mapping hardware"; now reads `"triggers CP/M warm-boot escape via BIOS WBOOT (JP $0000) ... does NOT write the MMU mapping hardware bit"` with one-line rationale citing the Story 17.1 AC10 hardware finding. Per `feedback_no_accept_disposition_for_bugs.md`: hardware-vs-spec divergence is a bug; fix in the same PR, not flagged for retro.
+- [x] [AI-Review][HIGH] **H1 FIXED (cascade)** — `docs/antforth-banking-redesign.md:24` wordset table row for `BANK-MAPPING-OFF` updated from `"Disable mapping hardware. For CP/M warm-boot escape."` to the new BIOS-WBOOT-via-JP-$0000 wording. `architecture.md:526` already used the milder `"OFF exists for the CP/M warm-boot escape"` framing and is untouched. `implementation-readiness-report-2026-05-10.md:101` is a dated snapshot and intentionally not edited (would distort the "as of date X" audit character).
+- [x] [AI-Review][MEDIUM] **M1 FIXED** — `src/banking.asm:81-84`: dropped the two dead `LD (IY+UserArea.bank_mapping_state), 0` writes that preceded `JP 0x0000`. The BIOS warm-boot destroys the antforth runtime before any observer could read the cell; the next antforth invocation re-inits the cell in COLD step 8h. Body is now a single `JP 0x0000` (3 B; was 11 B). Source-comment block at `:51-72` updated to reflect the simpler body (the "user intent recording" rationale was wrong — the kernel is gone before anyone could observe the intent). Binary delta: 25,109 B → **25,101 B** (-8 B). `make test-repl` re-verified PASS 975 / FAIL 0 / SKIP 2. `make test-repl-banking` re-verified PASS × 3. `make test-repl-banking-skip` re-verified PASS × 3.
+- [x] [AI-Review][LOW] **L1 FIXED** — Task 7.1 rationale (story `:370`) updated. Original analysis only optimised the COLD call site in isolation (12 B inline vs 16 B CALL+helper); honest two-site comparison (COLD + DEFCODE body) shows subroutine saves 5 B and de-duplicates the body. Inline retained for layout simplicity (helper would cross `.asm` file boundary); trade-off now documented honestly with the corrected math.
+- [x] [AI-Review][MEDIUM] **M2 FIXED** — Run-3 hardware transcript captured 2026-05-15 20:43:25: `~/Downloads/beastty-20260515-204325.bin` (17,985 B). Re-verifies the M1-fixed build (banner `28915 bytes free` = 25,101 B binary); `BANK-MAPPING-OFF` lands `B>` directly. Single transcript captures the original bug + AC10 post-fix verify + review M1 post-fix verify in one contiguous session. AC10 verdict no longer rests on verbal-only evidence. See Task 11.2 / 11.3 updates.
+- [x] [AI-Review][MEDIUM] **M3 FIXED** — `_bmad-output/implementation-artifacts/epic-16-retro-2026-05-15.md` (NEW, 229 lines) was included in commit `a0829ab` but missing from the File List. Added below.
+- [ ] [AI-Review][LOW] **L2** — No probe in `tests/banking_tests.fth` asserts that the 29-entry × 6-byte bank-table[] is actually zeroed post-COLD. Next REPL-probe authoring pass should add a 2-line probe (e.g. `BANK_TABLE_BASE @ 0= BANK_TABLE_BASE 1+ C@ 0= AND IF PASS ELSE FAIL THEN`). Currently the contract is implicit; Stories 17.2-17.5 will exercise it indirectly but the regression surface is silent until then.
+- [ ] [AI-Review][LOW] **L3** — UserArea IY+d displacement headroom is now 20 B (`bank_mapping_state+1` = 107; signed-byte LD (IY+d), n cap = 127). Story 17.2's `BANK!` swap-state and Epic 19's per-bank dictionary cells will eat into this. Forward-inheritance note for 17.2's author: next cell-addition has a hard ceiling at 20 B before requiring re-plumbing via `LD HL, IY+nn` / indirect addressing.
+- [ ] [AI-Review][LOW] **L4** — Inline duplication of the BANK-MAPPING-ON body in COLD (`src/antforth.asm:157-160`) vs the DEFCODE word (`src/banking.asm:43-46`) has no AST-level safety net. Any future BANK-MAPPING-ON extension must be applied at both sites. See L1 rationale for the size-correct subroutine alternative if drift becomes an actual problem.
+- [ ] [AI-Review][LOW] **L5** — `tests/banking_tests.fth:67-71` Probe 2 SKIP message reads `readback=$0 expected=$1)` with only a trailing space separating the hex value from "expected"; a comma (`, expected=$1)`) would be more readable for debug surface drift. Minor cosmetic; address in next banking-probes pass.
 
 ## Dev Notes
 
@@ -684,7 +698,7 @@ The story-spec text "BANK-MAPPING-OFF BANK-MAPPING-ON round-trips cleanly" (AC5 
 
 **AC9 binary-delta itemisation (no "mirrors prior arm" rationale per B.2 / Lesson 13.5-C)**
 
-Measured Δ = **+114 B** (24,995 B → 25,109 B; post-AC10-bugfix). Per-component byte cost:
+Measured Δ = **+106 B** (24,995 B → 25,101 B; post-AC10-bugfix + post-review-M1-fix). Per-component byte cost:
 
 | Component | Cost | Notes |
 |-----------|-----:|-------|
@@ -697,26 +711,26 @@ Measured Δ = **+114 B** (24,995 B → 25,109 B; post-AC10-bugfix). Per-componen
 | `BANK-MAPPING-ON` DEFCODE header (hash_link + count_flags + 15-byte name) | 18 B | Per DEFCODE macro |
 | `BANK-MAPPING-ON` body (LD A,1 + OUT + 2 cell writes + NEXT) | ~19 B | Body 12 B + NEXT macro 7 B |
 | `BANK-MAPPING-OFF` DEFCODE header (16-byte name) | 19 B | |
-| `BANK-MAPPING-OFF` body (2 cell writes + `JP 0x0000`) — **post-bugfix** | 11 B | Was 18 B (XOR A + OUT + 2 cell writes + NEXT); -7 B from dropping the port-write + NEXT and replacing with JP 0 (BIOS WBOOT). See AC10 bug+fix block below. |
+| `BANK-MAPPING-OFF` body (`JP 0x0000` only) — **post-review-M1-fix** | 3 B | Was 11 B (2 cell writes + JP $0000); -8 B from dropping the dead `bank_mapping_state` writes (review fix M1; cells unobservable after BIOS WBOOT destroys runtime). Was 18 B pre-AC10-bugfix; -15 B total from spec wording (XOR A + OUT) and review M1. |
 | Memory-map edit: bytes-free thread `(sp_base - 512) - HERE` → `BANK_TABLE_BASE - HERE` | **-8 B** | 9 cells × 2 = 18 B → 5 cells × 2 = 10 B; AC2 audit savings |
-| **Total estimate** | **~106 B** | |
-| **Measured delta** | **+114 B** | +8 B estimation-noise — well within AC9 envelope (≤ ~150 B target, +20 B hard cap = +170 B) |
+| **Total estimate** | **~98 B** | |
+| **Measured delta** | **+106 B** | +8 B estimation-noise — well within AC9 envelope (≤ ~150 B target, +20 B hard cap = +170 B) |
 
-Per-component itemisation captured for B.2 compliance (no "mirrors prior arm" rationale; every component named with its opcode-level byte cost). Cumulative Epic-17 envelope = ~400 B; Story 17.1 consumed 114 B, remaining envelope for Stories 17.2-17.5 = **~286 B**.
+Per-component itemisation captured for B.2 compliance (no "mirrors prior arm" rationale; every component named with its opcode-level byte cost). Cumulative Epic-17 envelope = ~400 B; Story 17.1 consumed 106 B, remaining envelope for Stories 17.2-17.5 = **~294 B**.
 
 **AC8 compliance-doc row line numbers (re-derived at dev-pass close per B.3; **updated post-AC10-bugfix**)**
 
 - `BANK-MAPPING-ON` → `banking.asm:41` (unchanged by AC10 bugfix).
-- `BANK-MAPPING-OFF` → `banking.asm:80` (was `:57` pre-bugfix; shifted +23 lines by the expanded source-comment block documenting the cold-boot mechanism + the WBOOT-via-`JP 0x0000` design). Verified post-build via `grep -n "DEFCODE \"BANK"` on final `src/banking.asm`.
+- `BANK-MAPPING-OFF` → `banking.asm:76` (was `:80` before review M1 fix dropped the dead `bank_mapping_state` cell writes and tightened the source-comment block; was `:57` pre-AC10-bugfix). Verified post-build via `grep -n "DEFCODE \"BANK"` on final `src/banking.asm`. The compliance-doc row at `docs/ans-forth-core-compliance.md:870` was updated to `:76` as part of the review M1 cascade.
 - Both rows landed in `docs/ans-forth-core-compliance.md` table at `:858..870` after the existing 5 rows; format follows the "Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1)" pattern.
 
 **AC11 regression baseline (post-bugfix)**
 
-- `make test-repl` = **975 PASS / 0 FAIL / 2 SKIP** (= 977 tests; matches Epic-16 close-out baseline; the 2 SKIPs are 966/967 host-fs-bounded disk-full / directory-full probes, unchanged from pre-edit). 4.0 s wall-clock.
-- `make test-repl-banking` = PASS × 3 (banking-emu-probe / banking-mapping-on-idempotent / banking-mapping-on-port-74).
-- `make test-repl-banking-skip` = PASS × 3 (surface checks: 16.3 SKIP + port-74 SKIP + idempotent PASS under iz-cpm baseline).
+- `make test-repl` = **975 PASS / 0 FAIL / 2 SKIP** (= 977 tests; matches Epic-16 close-out baseline; the 2 SKIPs are 966/967 host-fs-bounded disk-full / directory-full probes, unchanged from pre-edit). Re-verified post-review-M1-fix.
+- `make test-repl-banking` = PASS × 3 (banking-emu-probe / banking-mapping-on-idempotent / banking-mapping-on-port-74). Re-verified post-review-M1-fix.
+- `make test-repl-banking-skip` = PASS × 3 (surface checks: 16.3 SKIP + port-74 SKIP + idempotent PASS under iz-cpm baseline). Re-verified post-review-M1-fix.
 - `make check-doc-sync` = exit 0, 31 advisories, 0 drift.
-- `wc -c build/antforth.com` = **25,109 B** (Δ +114 B from 24,995 B baseline; -7 B from bugfix vs the pre-fix 25,116 B). Cumulative Phase-4 cap = 25,200 B; 25,109 / 25,200 = 91 B headroom remaining. Epic-17 envelope 114/400 B = 28.5% consumed.
+- `wc -c build/antforth.com` = **25,101 B** (Δ +106 B from 24,995 B baseline; was 25,109 B pre-review-M1-fix; -8 B from dropping dead `bank_mapping_state` writes). Cumulative Phase-4 cap = 25,200 B; 25,101 / 25,200 = 99 B headroom remaining. Epic-17 envelope 106/400 B = 26.5% consumed.
 - iz-cpm test 643 (`*/` underflow recovery) re-verified PASS after the -7 B body shrink (layout-shift NOP at the end of cold_start step 8h still placing the binary at a safe offset).
 
 ### File List
@@ -730,6 +744,10 @@ Per-component itemisation captured for B.2 compliance (no "mirrors prior arm" ra
 - `Makefile` — extended `BANKING_PROBES` to include the new test file; updated `test-repl-banking` recipe to PASS-assert all three patterns; updated `test-repl-banking-skip` recipe to surface-check both old + new probes.
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — 17-1 row flipped `ready-for-dev` → `in-progress` (dev-pass start) → `review` (dev-pass close).
 - `_bmad-output/implementation-artifacts/17-1-bank-table-allocator-...-memory-map-edit.md` — this story file; Status flipped + Dev Agent Record / Completion Notes / File List / Change Log populated.
+- `_bmad-output/implementation-artifacts/epic-16-retro-2026-05-15.md` (NEW, 229 lines) — Epic 16 retrospective document, completed alongside the Story 17.1 dev-pass (Epic 16 closed at the same calendar date 2026-05-15 — see `feedback_no_preexisting_discharge.md` lineage). Bundled into the Story 17.1 commit pragmatically since both shipped together; called out here to avoid silent File-List omission (code-review M3 fix).
+- `_bmad-output/planning-artifacts/prd.md` — FR-P4-12 wording updated (review H1 fix): no longer claims `BANK-MAPPING-OFF` disables MMU mapping hardware; now correctly describes the BIOS-WBOOT-via-`JP $0000` mechanism.
+- `_bmad-output/planning-artifacts/epics-phase4-epics-16-22.md` — FR-P4-12 wording updated to match the PRD revision (review H1 fix cascade).
+- `docs/antforth-banking-redesign.md` — wordset table row for `BANK-MAPPING-OFF` updated to match the revised FR-P4-12 wording (review H1 fix cascade).
 
 ### Change Log
 
@@ -737,3 +755,4 @@ Per-component itemisation captured for B.2 compliance (no "mirrors prior arm" ra
 - 2026-05-15 — iz-cpm layout-sensitive hang on test 643 recurred mid-Task-10 and was resolved via a single-NOP layout shift in cold_start (Lesson 12-3-A precedent; emulator-side quirk, not antforth-side).
 - 2026-05-15 — **AC10 bug surfaced + fixed + re-verified on hardware**: run 1 (transcript `~/Downloads/beastty-20260515-193026.bin`) showed `BANK-MAPPING-OFF` triggering a full firmware cold-boot. Root cause: `OUT (0x74), A` disconnects RAM from running code in the next instruction-fetch, falling into firmware reset path. Fix: replaced `XOR A; OUT (0x74), A; ...; NEXT` with `LD (IY+...),0; LD (IY+...+1),0; JP 0x0000` (BIOS WBOOT vector per `firmware/beastos/bios.asm:55,164,173-176`). Run 2 confirmed `B>` directly post-`BANK-MAPPING-OFF` — user verdict *"All fixed! Works great."* PRD FR-P4-12 wording still flagged for Story-17 retro (spec-text drops "disables the MMU mapping hardware" clause, reframes as "triggers CP/M warm-boot escape").
 - 2026-05-15 — Story 17.1 dev-pass closed: software-side ACs PASS; hardware AC10 PASS post-bugfix; status flipped to `review`.
+- 2026-05-15 — **Code-review fixes applied (H1 + M1 + M2 + M3 + L1; L2-L5 logged as action items).** H1: PRD/epics/redesign-doc FR-P4-12 wording corrected per `feedback_no_accept_disposition_for_bugs.md` (spec-vs-implementation divergence is a BUG, not an architectural finding — fix in-PR rather than punting to retro). M1: dead `bank_mapping_state` writes dropped from `BANK-MAPPING-OFF` body (`src/banking.asm:81-84`); body now `JP 0x0000` only. Binary delta: 25,109 → **25,101 B** (-8 B; total Story 17.1 delta now +106 B from 24,995 baseline). Regression re-verified: `make test-repl` 975/0/2; `make test-repl-banking` PASS × 3; `make test-repl-banking-skip` PASS × 3. M2: Run-3 hardware transcript captured (`~/Downloads/beastty-20260515-204325.bin`, 17,985 B) — AC10 verdict no longer rests on verbal-only evidence; banner reads `28915 bytes free` confirming the M1-fixed build; `BANK-MAPPING-OFF` lands `B>` directly. M3: `epic-16-retro-2026-05-15.md` added to File List. L1: Task 7.1 inline-vs-subroutine rationale corrected (honest two-site comparison showed subroutine saves 5 B; inline retained for layout simplicity).
