@@ -871,6 +871,10 @@ antforth also defines words that are useful but outside the Core word sets:
 | `BANK@` | `banking.asm:99` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
 | `BANK!` | `banking.asm:148` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
 | `BANKS` | `banking.asm:252` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4; DEFCODE proxy for the `VALUE` specified in FR-P4-3 — `VALUE` / `TO` are `Deliberately-omitted` in v2.0 per §6.2.2295 + §6.2.2405) |
+| `+BANK` | `banking.asm:289` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; probe-on-add per FR-P4-7; ABORTs `probe?` on ROM/unmapped, `cap?` on 29-entry cap) |
+| `-BANK` | `banking.asm:380` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-8 — no-op on miss) |
+| `BANKS-CLEAR` | `banking.asm:432` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-9 — resets `bank_count` to 0; subsequent `BANK!` aborts `bank?`) |
+| `SET-BANK` | `banking.asm:453` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-10 — diagnostic only; bad arguments produce undefined hardware behaviour; does NOT update `current_bank` or `bank_count`) |
 
 ---
 

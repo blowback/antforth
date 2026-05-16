@@ -255,3 +255,224 @@ w_BANKS_cf:
         LD      C, (IY+UserArea.bank_count)
         LD      B, 0                                ; bank_count.high invariantly 0 (bounded by BANK_TABLE_CAP=29)
         NEXT
+
+; === +BANK ( page -- ) ===
+;   Probe-on-add + append to active_pages[]. Switches slot 2 (port 0x72)
+;   to the candidate page, writes two sentinels ($5A then $A5) to $8000,
+;   and reads back. If either round-trip fails (ROM, unmapped, unstable),
+;   the original $8000 byte and the caller's slot-2 mapping are restored
+;   and ABORT" probe?" fires. On success, the original $8000 byte +
+;   slot-2 mapping are restored, the candidate is appended to
+;   active_pages[bank_count], and bank_count is incremented.
+;
+;   Cap check (PD-P4-13 / §9.4 closure — architecture.md:386..402): if
+;   bank_count == BANK_TABLE_CAP (29), ABORT" cap?" fires BEFORE the
+;   probe. The active list is NOT modified on either ABORT path.
+;
+;   Probe correctness — two-sentinel sweep (Q1 dev-pass disposition,
+;   conservative). $5A alone would false-positive a ROM page whose
+;   byte at $8000 happens to equal $5A; $A5 catches that case because
+;   the original byte cannot equal both sentinels.
+;
+;   Saved caller slot-2 page is read via `IN A, (0x72)` (port readback —
+;   iz-cpm-banking cpm_machine.rs:138 returns bank_map[2]; real
+;   MicroBeast firmware exposes the same read-back). This avoids the
+;   chicken-and-egg of needing a populated active_pages[current_bank]
+;   on the FIRST +BANK call (when bank_count = 0 at boot).
+;
+;   No dedup at this surface (Q2 dev-pass disposition). Duplicate
+;   pages append; downstream -BANK removes the first match, leaving
+;   subsequent duplicates intact. CL parser (Story 17.4) owns
+;   surface-level dedup per PD-P4-14 (§9.3 closure).
+;
+; antforth extension +BANK — see docs/antforth-banking-redesign.md §1
+w_PLUS_BANK:
+        DEFCODE "+BANK", 0
+w_PLUS_BANK_cf:
+        ; --- Cap check (AC2 / PD-P4-13) ---
+        LD      A, (IY+UserArea.bank_count)
+        CP      BANK_TABLE_CAP
+        JP      Z, .abort_cap
+        ; DE = IP (inner-interpreter convention). The probe scratch path
+        ; uses D for caller_slot2_page and E for the saved $8000 byte —
+        ; preserve IP across the probe so NEXT resumes at the caller.
+        ; Precedent: BANK! (Story 17.2 review fix H1) wraps its LDIR
+        ; cascade with PUSH DE / POP DE for the same reason.
+        PUSH    DE                                  ; save IP
+        ; --- Save caller's slot-2 page via port readback ---
+        IN      A, (0x72)
+        LD      D, A                                ; D = caller_slot2_page
+        ; --- Switch slot 2 to candidate page (BC.low = page) ---
+        LD      A, C
+        OUT     (0x72), A
+        ; --- Save original $8000 byte ---
+        LD      HL, 0x8000
+        LD      E, (HL)                             ; E = saved_orig
+        ; --- Sentinel 1: write $5A, read back, compare ---
+        LD      A, 0x5A
+        LD      (HL), A
+        CP      (HL)
+        JR      NZ, .probe_fail
+        ; --- Sentinel 2: write $A5, read back, compare ---
+        LD      A, 0xA5
+        LD      (HL), A
+        CP      (HL)
+        JR      NZ, .probe_fail
+        ; --- Probe PASS: restore $8000 byte + slot 2 + append + increment ---
+        LD      (HL), E                             ; restore $8000
+        LD      A, D
+        OUT     (0x72), A                           ; restore caller's slot 2
+        POP     DE                                  ; restore IP
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      A, (IY+UserArea.bank_count)
+        ADD     A, L                                ; ACTIVE_PAGES_BASE.low = $AE; idx ≤ 28; $AE+28=$CA (no carry)
+        LD      L, A                                ; HL = &active_pages[bank_count]
+        LD      (HL), C                             ; store candidate page
+        INC     (IY+UserArea.bank_count)
+        POP     BC                                  ; new TOS
+        NEXT
+
+.probe_fail:
+        ; Restore $8000 (HL still = 0x8000), then slot 2, then ABORT" probe?".
+        ; THROW's caught-path restores SP from the CATCH frame, discarding
+        ; the saved IP we PUSH'd along with the rest of the user stack;
+        ; the uncaught path resets SP to sp_base. Either way no POP DE
+        ; is required on the failure path.
+        LD      (HL), E
+        LD      A, D
+        OUT     (0x72), A
+        LD      HL, str_probe_q
+        LD      B, str_probe_q_len
+        CALL    bdos_print_str
+        LD      BC, THROW_ABORT_QUOTE
+        JP      w_THROW_cf.kernel_entry
+
+.abort_cap:
+        LD      HL, str_cap_q
+        LD      B, str_cap_q_len
+        CALL    bdos_print_str
+        LD      BC, THROW_ABORT_QUOTE
+        JP      w_THROW_cf.kernel_entry
+
+str_probe_q:     DB "probe?"
+str_probe_q_len  EQU 6
+str_cap_q:       DB "cap?"
+str_cap_q_len    EQU 4
+
+; === -BANK ( page -- ) ===
+;   Linear-search active_pages[0..bank_count-1] for page; on hit, shift
+;   tail down by one byte via LDIR and decrement bank_count. On miss
+;   (or empty list), silent no-op (no THROW) per FR-P4-8.
+;
+;   -BANK does NOT touch the MMU port; the currently-mapped slot-2 page
+;   stays mapped. If the removed entry's logical index was below
+;   current_bank, current_bank is left unchanged — the kernel cell may
+;   now point to a different physical page than before, and the user
+;   is responsible for re-issuing BANK! to re-establish the intended
+;   mapping (Q3 dev-pass disposition (a) — no current_bank bookkeeping).
+;
+;   The vacated tail byte at the old active_pages[bank_count-1]
+;   position is NOT zeroed — it is unreachable post-decrement per the
+;   BANK! precondition, the -BANK search bounds, and .BANKS iteration
+;   cap (Q4 dev-pass disposition).
+;
+; antforth extension -BANK — see docs/antforth-banking-redesign.md §1
+w_MINUS_BANK:
+        DEFCODE "-BANK", 0
+w_MINUS_BANK_cf:
+        LD      A, (IY+UserArea.bank_count)
+        OR      A
+        JR      Z, .not_found                       ; empty list — no-op
+        LD      B, A                                ; B = bank_count (loop counter)
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      A, C                                ; A = page (TOS low byte)
+.search_loop:
+        CP      (HL)
+        JR      Z, .found
+        INC     HL
+        DJNZ    .search_loop
+.not_found:
+        POP     BC                                  ; new TOS
+        NEXT
+
+.found:
+        ; HL → &active_pages[k]; B = bank_count - k. Bytes to shift = B - 1.
+        DEC     B
+        JR      Z, .post_shift                      ; match at tail — skip LDIR
+        ; Save IP across LDIR — LDIR uses DE as the copy destination and
+        ; clobbers it (same shape as BANK! H1 fix).
+        PUSH    DE                                  ; save IP
+        LD      D, H
+        LD      E, L                                ; DE = match pos (dst)
+        INC     HL                                  ; HL = match+1 (src)
+        LD      C, B                                ; LDIR count → BC (B was bytes-to-shift)
+        LD      B, 0
+        LDIR
+        POP     DE                                  ; restore IP
+.post_shift:
+        DEC     (IY+UserArea.bank_count)
+        POP     BC                                  ; new TOS
+        NEXT
+
+; === BANKS-CLEAR ( -- ) ===
+;   Reset bank_count to 0. The active_pages[] byte array is NOT zeroed
+;   (Q4 dev-pass disposition) — the bytes become unreachable when
+;   bank_count == 0 because BANK!'s precondition `n < bank_count` fails
+;   for every n; -BANK's search loop bounds itself by bank_count; .BANKS
+;   (Story 17.5) iterates 0..bank_count-1. A subsequent +BANK rebuilds
+;   the list starting at index 0, overwriting the stale tail bytes as
+;   it goes.
+;
+;   current_bank is NOT updated — its stale value is benign until the
+;   next BANK!, which will ABORT" bank?" (precondition fails). After a
+;   +BANK rebuild, the user is expected to re-issue BANK! to map the
+;   intended logical index.
+;
+;   USER-FACING TRAP — call `0 BANK!` BEFORE BANKS-CLEAR when current_bank
+;   != 0. BANK!'s swap saves live HERE/LATEST/wordlist_head to
+;   bank-table[old] and loads bank-table[new]. After `N BANK!` (N != 0
+;   and bank N never visited before), the live HERE/LATEST cells hold
+;   bank-table[N]'s zero-init state. Calling BANKS-CLEAR while in that
+;   state leaves HERE = 0 / LATEST = 0; the next dictionary-extending
+;   word (`: FOO ... ;`, VARIABLE, CREATE) writes to address 0 and
+;   silently corrupts low memory. The safe rebuild sequence is:
+;     N BANK! ... 0 BANK! BANKS-CLEAR ... +BANK ... BANK!
+;   The 0 BANK! before BANKS-CLEAR swaps the kernel-snapshot triple back
+;   into the live cells, so the dictionary stays consistent across the
+;   clear-and-rebuild. Probes 7 + F (tests/banking_tests.fth) follow
+;   this pattern.
+;
+; antforth extension BANKS-CLEAR — see docs/antforth-banking-redesign.md §1
+w_BANKS_CLEAR:
+        DEFCODE "BANKS-CLEAR", 0
+w_BANKS_CLEAR_cf:
+        LD      (IY+UserArea.bank_count), 0
+        NEXT
+
+; === SET-BANK ( page slot -- ) ===
+;   Raw MMU port write: OUT (0x70+slot), page. Diagnostic-only escape
+;   hatch (FR-P4-10) for hardware investigation. Does NOT update
+;   (IY+UserArea.current_bank), does NOT update bank_count, does NOT
+;   touch active_pages[], does NOT probe. The user takes responsibility
+;   for the resulting machine state.
+;
+;   slot is NOT range-checked. FR-P4-10 explicit: "diagnostics only —
+;   bad arguments produce undefined hardware behaviour". Writing to
+;   slot 0 (port 0x70) disconnects the kernel from its own code in the
+;   next instruction fetch (Story 17.1 BANK-MAPPING-OFF analysis).
+;
+; antforth extension SET-BANK — see docs/antforth-banking-redesign.md §1;
+; diagnostics only — bad arguments produce undefined hardware behaviour;
+; does NOT update current_bank or bank_count.
+w_SET_BANK:
+        DEFCODE "SET-BANK", 0
+w_SET_BANK_cf:
+        LD      A, C                                ; A = slot (TOS low byte)
+        OR      0x70                                ; A = port (0x70 + slot)
+        LD      C, A                                ; C = port for OUT (C), A
+        LD      B, 0
+        POP     HL                                  ; HL = page (second-of-stack)
+        LD      A, L                                ; A = page low byte
+        OUT     (C), A                              ; raw MMU write
+        POP     BC                                  ; new TOS
+        NEXT

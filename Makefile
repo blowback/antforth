@@ -89,7 +89,7 @@ test-repl-banking: $(TARGET)
 	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'INFO: bank-store-t-states'; do \
+	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-1' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'PASS: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'PASS: plus-bank-cap' 'INFO: bank-store-t-states'; do \
 		if echo "$$OUTPUT" | grep -q "$$pat"; then \
 			echo "PASS: REPL banking test — $$pat under $(IZCPM_BANKING)"; \
 		else \
@@ -114,7 +114,7 @@ test-repl-banking-skip: $(TARGET)
 	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in '^SKIP: banking-emu-probe' '^SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0'; do \
+	for pat in '^SKIP: banking-emu-probe' '^SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'SKIP: plus-bank-known-good' 'SKIP: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'SKIP: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'SKIP: minus-bank-ldir-shift-data' 'PASS: plus-bank-cap'; do \
 		if echo "$$OUTPUT" | grep -q "$$pat"; then \
 			echo "PASS: banking probe surface check — '$$pat' present under $(IZCPM) baseline"; \
 		else \
