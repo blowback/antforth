@@ -101,6 +101,101 @@ test-repl-banking: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
+	@# Story 17.4 AC7 — per-CL-tail-variant probes (Q7=b: one recipe, per-
+	@# variant invocation loop). Each variant boots iz-cpm-banking with a
+	@# different CL tail, pipes `BANKS .` + BYE to stdin, and asserts the
+	@# expected post-CL state (BANKS count + banner-banks-clause + the
+	@# expected warning markers per PD-P4-14). Six binding probes per AC7;
+	@# CL Probe 8 (optional dup) included for completeness (8 probes total).
+	@echo "Running Story 17.4 CL-tail probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '12 banks available'; then \
+		echo "PASS: cl-probe-defaults — empty CL → BANKS=12 + '12 banks available' banner clause under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-defaults — expected BANKS=12 + '12 banks available' banner"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35-37" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^4  ok' && echo "$$OUTPUT" | grep -q '4 banks available'; then \
+		echo "PASS: cl-probe-single-range — '22 35-37' → BANKS=4 under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-single-range — expected BANKS=4"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35,36,3A" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^4  ok'; then \
+		echo "PASS: cl-probe-multi-list — '22 35,36,3A' → BANKS=4 under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-multi-list — expected BANKS=4"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 00-02" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^1  ok' && echo "$$OUTPUT" | grep -cE '^probe\? 0[0-2]' | grep -q '^3'; then \
+		echo "PASS: cl-probe-probe-fail — '22 00-02' → BANKS=1 + 3× probe? warnings under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-probe-fail — expected BANKS=1 + 3× probe? warnings"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "00 01-03" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^0  ok' && echo "$$OUTPUT" | grep -q '^empty?' && echo "$$OUTPUT" | grep -q '0 banks available'; then \
+		echo "PASS: cl-probe-empty-list — '00 01-03' → BANKS=0 + empty? warning + '0 banks available' banner under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-empty-list — expected BANKS=0 + empty? warning"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 XX,35" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^2  ok' && echo "$$OUTPUT" | grep -q '^bad?'; then \
+		echo "PASS: cl-probe-bad-token — '22 XX,35' → BANKS=2 + bad? warning under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-bad-token — expected BANKS=2 + bad? warning"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 3F-35" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^1  ok' && echo "$$OUTPUT" | grep -q '^range?'; then \
+		echo "PASS: cl-probe-reverse-range — '22 3F-35' → BANKS=1 + range? warning under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-reverse-range — expected BANKS=1 + range? warning"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35,35-3F" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '^dup? 35'; then \
+		echo "PASS: cl-probe-dup — '22 35,35-3F' → BANKS=12 + 'dup? 35' warning under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-dup — expected BANKS=12 + 'dup? 35'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@# Story 17.4 review CR fix H1 — AC2 edge case (i): all-whitespace tail
+	@# (non-zero length but only ws chars) MUST apply silent defaults, not
+	@# fall through to .post + empty?. Regression for the H1 finding.
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "    " 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '12 banks available' && ! echo "$$OUTPUT" | grep -q '^empty?'; then \
+		echo "PASS: cl-probe-all-whitespace (H1) — all-ws tail '    ' → AC2 silent defaults (BANKS=12, no empty?) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-all-whitespace (H1) — expected BANKS=12 + '12 banks available' + no empty?"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@# Story 17.4 review CR fix H2 — AC3: portal-page probe-fail MUST fall
+	@# into edge case (vi) (empty? + BANKS=0), not silently shift bank-list
+	@# pages into active_pages[0]. Regression for the H2 finding.
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "00 35-3F" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^0  ok' && echo "$$OUTPUT" | grep -q '^probe? 00' && echo "$$OUTPUT" | grep -q '^empty?' && echo "$$OUTPUT" | grep -q '0 banks available'; then \
+		echo "PASS: cl-probe-portal-fail (H2) — '00 35-3F' → AC3 vi-disposition (BANKS=0, probe? 00 + empty? + '0 banks available') under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-portal-fail (H2) — expected BANKS=0 + probe? 00 + empty? + '0 banks available'"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@# Story 17.4 review CR fix H3 — AC8 hardware-smoke regression. First-visit
+	@# BANK! to an unvisited bank must NOT load HERE=0 over the live cell (the
+	@# next WORD parse would overwrite the BIOS dispatch vectors at $0000-$0005
+	@# and the next BDOS call crashes the kernel). Fix: COLD clones bank-table[0]
+	@# to bank-table[1..28] so first-visit BANK! loads a valid HERE.
+	@OUTPUT=$$(printf 'BANKS .\r\n1 BANK!\r\nBANK@ .\r\n0 BANK!\r\nBANK@ .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "24 35-3F" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '^1  ok' && [ "$$(echo "$$OUTPUT" | grep -cE '^0  ok')" -ge 1 ]; then \
+		echo "PASS: cl-probe-bank-roundtrip (H3 AC8) — '24 35-3F' boot + 1 BANK! → BANK@ . → 0 BANK! → BANK@ . round-trip survives under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: cl-probe-bank-roundtrip (H3 AC8) — kernel crashed (BIOS dispatch corruption from HERE=0)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -125,6 +220,60 @@ test-repl-banking-skip: $(TARGET)
 	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
+	fi
+	@# Story 17.4 — CL-tail probes under iz-cpm baseline. Surface split:
+	@#   - Surface-AGNOSTIC (parser-state only, MMU-independent):
+	@#     bad-token + reverse-range + dup-detect → PASS under iz-cpm.
+	@#   - Surface-DEPENDENT (probe machinery → flat-memory false-PASSes):
+	@#     defaults / single-range / multi-list / probe-fail / empty-list
+	@#     produce different bank-counts than under iz-cpm-banking
+	@#     (flat memory accepts every probe). Annotate SKIP-with-rationale.
+	@echo "Verifying Story 17.4 CL-tail probes under $(IZCPM) baseline..."
+	@# Surface-DEPENDENT probes — assert binary boots cleanly + BANKS surfaces
+	@# something numeric (the specific value differs by surface; under iz-cpm
+	@# baseline all pages false-PASS so '22 00-02' gives BANKS=4 not 1).
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^[0-9]+  ok'; then \
+		echo "SKIP: cl-probe-defaults — '$(IZCPM)' baseline false-PASSes via flat memory; BANKS surfaces a number (load-bearing verdict deferred to $(IZCPM_BANKING))"; \
+	else \
+		echo "FAIL: cl-probe-defaults SKIP-surface — kernel crashed or BANKS missing"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 00-02" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^[0-9]+  ok'; then \
+		echo "SKIP: cl-probe-probe-fail — '$(IZCPM)' baseline false-PASSes via flat memory ($(IZCPM_BANKING) carries the load-bearing verdict for 'probe?' warnings + BANKS=1)"; \
+	else \
+		echo "FAIL: cl-probe-probe-fail SKIP-surface — kernel crashed"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "00 01-03" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '^[0-9]+  ok'; then \
+		echo "SKIP: cl-probe-empty-list — '$(IZCPM)' baseline false-PASSes via flat memory ($(IZCPM_BANKING) carries 'empty?' warning + BANKS=0)"; \
+	else \
+		echo "FAIL: cl-probe-empty-list SKIP-surface — kernel crashed"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@# Surface-AGNOSTIC probes — parser-state edge cases don't depend on MMU.
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 XX,35" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^2  ok' && echo "$$OUTPUT" | grep -q '^bad?'; then \
+		echo "PASS: cl-probe-bad-token (surface-agnostic) — '22 XX,35' → BANKS=2 + bad? warning under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: cl-probe-bad-token (surface-agnostic) — expected BANKS=2 + bad? warning under $(IZCPM)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 3F-35" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^1  ok' && echo "$$OUTPUT" | grep -q '^range?'; then \
+		echo "PASS: cl-probe-reverse-range (surface-agnostic) — '22 3F-35' → BANKS=1 + range? warning under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: cl-probe-reverse-range (surface-agnostic) — expected BANKS=1 + range? warning under $(IZCPM)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 35,35-3F" 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -q '^dup? 35'; then \
+		echo "PASS: cl-probe-dup (surface-agnostic) — '22 35,35-3F' produces 'dup? 35' warning under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: cl-probe-dup (surface-agnostic) — expected 'dup? 35' warning under $(IZCPM)"; \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
 
 $(TARGET): $(SRCS) | $(BUILDDIR)
@@ -809,10 +958,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v2.0.0'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v2.0.0'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.1'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.1'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v2.0.0' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.1' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \

@@ -293,54 +293,17 @@ w_PLUS_BANK_cf:
         LD      A, (IY+UserArea.bank_count)
         CP      BANK_TABLE_CAP
         JP      Z, .abort_cap
-        ; DE = IP (inner-interpreter convention). The probe scratch path
-        ; uses D for caller_slot2_page and E for the saved $8000 byte —
-        ; preserve IP across the probe so NEXT resumes at the caller.
-        ; Precedent: BANK! (Story 17.2 review fix H1) wraps its LDIR
-        ; cascade with PUSH DE / POP DE for the same reason.
-        PUSH    DE                                  ; save IP
-        ; --- Save caller's slot-2 page via port readback ---
-        IN      A, (0x72)
-        LD      D, A                                ; D = caller_slot2_page
-        ; --- Switch slot 2 to candidate page (BC.low = page) ---
-        LD      A, C
-        OUT     (0x72), A
-        ; --- Save original $8000 byte ---
-        LD      HL, 0x8000
-        LD      E, (HL)                             ; E = saved_orig
-        ; --- Sentinel 1: write $5A, read back, compare ---
-        LD      A, 0x5A
-        LD      (HL), A
-        CP      (HL)
-        JR      NZ, .probe_fail
-        ; --- Sentinel 2: write $A5, read back, compare ---
-        LD      A, 0xA5
-        LD      (HL), A
-        CP      (HL)
-        JR      NZ, .probe_fail
-        ; --- Probe PASS: restore $8000 byte + slot 2 + append + increment ---
-        LD      (HL), E                             ; restore $8000
-        LD      A, D
-        OUT     (0x72), A                           ; restore caller's slot 2
-        POP     DE                                  ; restore IP
-        LD      HL, ACTIVE_PAGES_BASE
-        LD      A, (IY+UserArea.bank_count)
-        ADD     A, L                                ; ACTIVE_PAGES_BASE.low = $AE; idx ≤ 28; $AE+28=$CA (no carry)
-        LD      L, A                                ; HL = &active_pages[bank_count]
-        LD      (HL), C                             ; store candidate page
-        INC     (IY+UserArea.bank_count)
+        ; --- Probe + append via shared helper (Story 17.4 refactor) ---
+        ; Helper preserves DE (IP) so no PUSH/POP DE wrap is needed; the
+        ; old D/E scratch arrangement (D=caller_slot2_page, E=saved_orig)
+        ; is replaced by B/AF-via-stack inside the helper.
+        LD      A, C                                ; A = candidate page (TOS.low)
+        CALL    cl_probe_and_add
+        JR      C, .abort_probe
         POP     BC                                  ; new TOS
         NEXT
 
-.probe_fail:
-        ; Restore $8000 (HL still = 0x8000), then slot 2, then ABORT" probe?".
-        ; THROW's caught-path restores SP from the CATCH frame, discarding
-        ; the saved IP we PUSH'd along with the rest of the user stack;
-        ; the uncaught path resets SP to sp_base. Either way no POP DE
-        ; is required on the failure path.
-        LD      (HL), E
-        LD      A, D
-        OUT     (0x72), A
+.abort_probe:
         LD      HL, str_probe_q
         LD      B, str_probe_q_len
         CALL    bdos_print_str
@@ -353,6 +316,66 @@ w_PLUS_BANK_cf:
         CALL    bdos_print_str
         LD      BC, THROW_ABORT_QUOTE
         JP      w_THROW_cf.kernel_entry
+
+; ============================================================
+; cl_probe_and_add — shared probe-and-append (Story 17.4 factoring).
+;
+;   Used by:
+;     - w_PLUS_BANK_cf (above): on CY=1, JPs to .abort_probe (ABORT" probe?").
+;     - cl_tail_parse  (src/antforth.asm): on CY=1, emits "probe? NN" +
+;       continues with the next CL-tail token (warn-and-continue per
+;       PD-P4-14 (v) / §9.3 closure).
+;
+;   Body identical to the post-cap-check, pre-NEXT section of the
+;   pre-17.4 w_PLUS_BANK_cf; refactored 2026-05-16 for Story 17.4 reuse.
+;
+;   Input:  A = candidate page byte.
+;   Output: CY=0 on PASS — page appended to active_pages[bank_count];
+;                          bank_count incremented; slot 2 restored to
+;                          caller's mapping; $8000 byte restored.
+;           CY=1 on FAIL — slot 2 restored; $8000 byte restored;
+;                          NO console output (caller owns warning text);
+;                          active_pages[] / bank_count unchanged.
+;   Clobbers: A, B, C, HL. DE preserved (callers may use DE as IP).
+;   Caller is responsible for the cap check (BANK_TABLE_CAP).
+; ============================================================
+cl_probe_and_add:
+        LD      C, A                                ; C = candidate page
+        IN      A, (0x72)                           ; A = caller_slot2_page
+        LD      B, A                                ; B = caller_slot2_page (saved)
+        LD      A, C
+        OUT     (0x72), A                           ; switch slot 2 to candidate
+        LD      HL, 0x8000
+        LD      A, (HL)
+        PUSH    AF                                  ; stash orig $8000 byte
+        LD      A, 0x5A
+        LD      (HL), A
+        CP      (HL)
+        JR      NZ, .cpa_fail
+        LD      A, 0xA5
+        LD      (HL), A
+        CP      (HL)
+        JR      NZ, .cpa_fail
+        ; --- PASS: restore $8000 + caller's slot 2 + append + increment ---
+        POP     AF                                  ; recover orig $8000 byte
+        LD      (HL), A                             ; restore $8000
+        LD      A, B
+        OUT     (0x72), A                           ; restore caller's slot 2
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      A, (IY+UserArea.bank_count)
+        ADD     A, L                                ; idx ≤ 28; $AE+28=$CA (no carry)
+        LD      L, A                                ; HL = &active_pages[bank_count]
+        LD      (HL), C                             ; store candidate
+        INC     (IY+UserArea.bank_count)
+        OR      A                                   ; clear CY (PASS)
+        RET
+.cpa_fail:
+        POP     AF                                  ; recover orig $8000 byte (in A)
+        LD      (HL), A                             ; restore $8000 (HL still = $8000)
+        LD      A, B
+        OUT     (0x72), A                           ; restore caller's slot 2
+        SCF                                         ; CY=1 (FAIL)
+        RET
 
 str_probe_q:     DB "probe?"
 str_probe_q_len  EQU 6
