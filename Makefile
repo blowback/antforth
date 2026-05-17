@@ -267,6 +267,23 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: plus-bank-cap — assertion text missing OR 'seeded: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT"; \
 		echo "  PROBE_G: $$PROBE_G"; exit 1; \
 	fi
+	@# Story 17.6 AC1..AC4 — iron-spike sentinel-bounded recipe. Mirrors
+	@# Story 17.5.1 probe-G pattern: awk-extract between ---iron-spike-start--- /
+	@# ---iron-spike-end--- sentinels, then assert (a) AC1 PASS literal
+	@# `iron-spike-sentinel-12345-returned` present in PROBE_IRONSPIKE (kernel
+	@# actually ran the banked code body and returned the sentinel value 12345),
+	@# (b) no FAIL: substring in PROBE_IRONSPIKE, (c) end-sentinel
+	@# `---iron-spike-end---` present on its own line in raw OUTPUT (Story
+	@# 17.5.1 M4 fix — independent of awk extraction, catches the missing-end-
+	@# sentinel false-PASS class).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-start---$$/{p=1; next} /---iron-spike-end---$$/{p=0} p') && \
+	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-end---$$'; then \
+		echo "PASS: iron-spike — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: iron-spike — sentinel literal missing OR FAIL: present in PROBE_IRONSPIKE OR end-sentinel missing from OUTPUT"; \
+		echo "  PROBE_IRONSPIKE: $$PROBE_IRONSPIKE"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -397,6 +414,23 @@ test-repl-banking-skip: $(TARGET)
 	else \
 		echo "FAIL: plus-bank-cap (surface-agnostic) — assertion text missing OR 'seeded: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT under $(IZCPM)"; \
 		echo "  PROBE_G: $$PROBE_G"; exit 1; \
+	fi
+	@# Story 17.6 AC8 (Task 3.2) — iron-spike sentinel-bounded recipe under
+	@# iz-cpm baseline. Surface disposition: PASS-on-both-surfaces per Story
+	@# 17.5.1 AC4 precedent. Under flat memory BANK! is a no-op port write
+	@# (port 0x72 unmodelled by base iz-cpm), but the kernel-cell per-bank
+	@# triple swap still moves HERE/LATEST in step with the BANK! calls; the
+	@# 9-byte hand-built body lands at HERE (some address in $8000-$BFFF
+	@# range), EXECUTE reaches it across the no-op bank-cycle, and the
+	@# sentinel returns. Identical assertion logic to the iz-cpm-banking
+	@# recipe; end-sentinel OUTPUT-presence clause per Story 17.5.1 M4 fix.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-start---$$/{p=1; next} /---iron-spike-end---$$/{p=0} p') && \
+	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-end---$$'; then \
+		echo "PASS: iron-spike (surface-agnostic) — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: iron-spike (surface-agnostic) — sentinel literal missing OR FAIL: present in PROBE_IRONSPIKE OR end-sentinel missing from OUTPUT under $(IZCPM)"; \
+		echo "  PROBE_IRONSPIKE: $$PROBE_IRONSPIKE"; exit 1; \
 	fi
 
 $(TARGET): $(SRCS) | $(BUILDDIR)

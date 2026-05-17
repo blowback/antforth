@@ -551,3 +551,158 @@ _dot-banks-probe-z
   ." ---dot-banks-probe-w-end---" CR
 ;
 _dot-banks-probe-w
+
+\ === Probe IRON-SPIKE: hand-built cross-bank call (Story 17.6 AC1..AC4) ===
+\ Epic 17 iron-spike — Story 17.6 AC1..AC4. Hand-built cross-bank call.
+\ No descriptor stub. No compiler integration. No sentinel-trampoline.
+\ Epic 18 (descriptor-stub mechanism γ + sentinel-trampoline S1 b) supersedes
+\ this probe. After Epic 18 ships, this probe is informational-only — keep as
+\ a banking-layer round-trip witness; the user-facing cross-bank call surface
+\ moves to descriptor-stub dispatch per docs/antforth-banking-redesign.md §3.
+\
+\ WARNING — interactive (typed-at-REPL) iron-spike forms are FRAGILE.
+\ Story 17.6 first-pass hardware-smoke run 2026-05-17 transcript
+\ ~/Downloads/beastty-20260517-092031.bin: kernel warm-booted on EXECUTE.
+\ Root cause: when typed interactively, the outer interpreter's WORD parses
+\ each token by writing its counted-string name at HERE+0 (count) +
+\ HERE+1.. (chars) BEFORE the token executes. With sequence `HERE ['] NEGATE
+\ HERE 3 MOVE 3 ALLOT`, MOVE writes JP DOCOL (C3 lo hi) at start-addr; the
+\ very next `3` parsed for ALLOT then writes [01 33] at start-addr..+1,
+\ clobbering the JP opcode. EXECUTE runs garbage → undefined → warm-boot.
+\ The colon-body form below is safe: at runtime, the threaded interpreter
+\ walks pre-resolved XTs without calling WORD between tokens. For typed
+\ hardware-smoke, either (a) INCLUDE this file, or (b) wrap the body in a
+\ ONE-LINE colon definition before invoking — see Story 17.6 hardware-smoke
+\ closing-message recipe (corrected after the 2026-05-17 first-pass failure).
+\
+\ Where does the body actually live? — CRITICAL CR clarification (Story 17.6
+\ code-review M1, 2026-05-17). Bank-5's per-bank HERE is LDIR-cloned from
+\ bank-0's COLD-time HERE at COLD per [[project-bank-table-clone-at-cold]];
+\ that COLD-time HERE is `kernel_end` (src/antforth.asm:51), which lives in
+\ MAIN RAM (~ $677D observed on real hardware, well below the $8000 portal
+\ lower bound). So when `5 BANK!` loads bank-5's saved (HERE, LATEST,
+\ wordlist_head) triple into the live cells on first visit, live HERE points
+\ at `kernel_end` — IN MAIN RAM — NOT at any address in the bank-5-mapped
+\ $8000-$BFFF portal window. The 9-byte body therefore lands in MAIN RAM at
+\ `kernel_end..kernel_end+8`, NOT in bank-5's banked RAM page $39.
+\
+\ What the round-trip actually validates:
+\   (a) BANK! port-0x72 write fires unconditionally (iz-cpm-banking + hw);
+\   (b) per-bank (here, latest, wordlist_head) swap is symmetric across a
+\       0 BANK! → 5 BANK! cycle (live state restores correctly);
+\   (c) EXECUTE on a hand-built JP-DOCOL-prefix body at a per-bank-saved
+\       HERE works as a cross-bank dispatch target — provided the body
+\       lives in main RAM (which is what this probe exercises).
+\
+\ What the round-trip does NOT validate:
+\   - Bytes written into a banked-RAM page (eg. an address IN $8000-$BFFF
+\     while bank N is mapped) surviving a swap-out / swap-in cycle. For
+\     Epic 18's descriptor-stub trampoline this gap is OK iff the stub
+\     lives in fixed memory per docs/antforth-banking-redesign.md §3. If
+\     any Epic-18 / Epic-19 design ends up needing banked-RAM-resident
+\     executable code, an iron-spike-2 (set HERE to a portal address like
+\     $A000 before the MOVE; verify the 9 bytes survive 0 BANK! → 5 BANK!)
+\     is owed BEFORE that design ships. Filed for the Epic-17 retro.
+\
+\ Destructive side-effect on bank 0's dictionary (CR M2):
+\   `5 BANK!` loads bank-5's cloned-COLD HERE (= `kernel_end`) into live;
+\   the 9-byte write therefore overwrites the physical-RAM bytes at
+\   `kernel_end..kernel_end+8`. Those are the same physical addresses
+\   bank 0 used for the first 9 bytes of the FIRST colon definition
+\   compiled at COLD-time HERE — i.e. the earliest probe's body. After
+\   `0 BANK!` restores bank-0's HERE = post-all-probes value, the
+\   corrupted region (`kernel_end..kernel_end+8`) sits below the
+\   restored HERE; future `,` / ALLOT in bank 0 do NOT touch it, but
+\   the bytes themselves are permanently mangled. Benign in the current
+\   pass because: this is the LAST probe in this file; final
+\   `BANKS-CLEAR` sets bank_count = 0 so no later BANK! succeeds; BYE
+\   follows. CONSTRAINT: iron-spike MUST remain the LAST probe in this
+\   file. Inserting a new probe AFTER iron-spike, or re-running
+\   `_iron-spike-test` interactively at the REPL during debugging, will
+\   surface the corruption (the earliest probe's dictionary entry now
+\   carries JP DOCOL / XT-LIT / 12345 / XT-EXIT instead of its
+\   intended body).
+\
+\ Shape (per Story 17.6 Task 1.2):
+\   1. Re-seed bank-table (probe G's tail BANKS-CLEAR left bank_count = 0):
+\        BANKS-CLEAR + $22 +BANK + $35..$39 +BANK  → 6 entries; bank 5 = $39
+\        (default-mapping bank-5 page per redesign §5.1).
+\   2. 5 BANK!  — MMU port-0x72 write maps page $39 into the $8000-$BFFF
+\      portal window AND per-bank (here, latest, wordlist_head) triple
+\      becomes current (cloned from bank-0 at COLD per
+\      [[project-bank-table-clone-at-cold]]). Live HERE = `kernel_end`,
+\      which is in MAIN RAM — see "Where does the body actually live?"
+\      block above.
+\   3. HERE → save start-addr (main-RAM `kernel_end`-vicinity address).
+\   4. Write a 9-byte colon body at the saved HERE (main RAM):
+\        bytes 0..2: JP DOCOL prefix (MOVE-copied from NEGATE's CFA;
+\                    NEGATE is DEFWORD per bootstrap.asm:9, so its CFA's
+\                    first 3 bytes are `C3 DOCOL_lo DOCOL_hi`)
+\        bytes 3..4: w_LIT_cf  (XT of LIT — pushes inline literal)
+\        bytes 5..6: 12345     (literal sentinel value, decimal)
+\        bytes 7..8: w_EXIT_cf (XT of EXIT — pops RS and NEXTs to caller)
+\   5. 0 BANK!  — swap state back to bank 0 (port 0x72 ← active_pages[0]
+\      = $22; live HERE restored from bank-table[0] = post-all-probes
+\      value). MAIN RAM at `kernel_end..kernel_end+8` is unaffected by
+\      the MMU port write and retains the 9 bytes we wrote.
+\   6. 5 BANK!  — swap back to bank 5 (live HERE restored from
+\      bank-table[5] = `kernel_end + 9`, the value we left). Main-RAM
+\      contents at `kernel_end..kernel_end+8` still intact.
+\   7. EXECUTE start-addr  — JP (HL) into our hand-built body:
+\        JP DOCOL → DOCOL pushes IP, sets new IP = body+3 (= w_LIT_cf cell),
+\        NEXT → LIT executes, reads literal 12345 from thread, pushes to data
+\        stack, NEXT → EXIT pops return stack, NEXT continues caller.
+\   8. Assert TOS = 12345 (kernel actually ran the hand-built body across
+\      the bank-cycle round-trip).
+\   9. 0 BANK! + BANKS-CLEAR  — restore probe-close state for hygiene.
+\      Order matters: 0 BANK! while bank_count = 6 is still valid; then
+\      BANKS-CLEAR drives bank_count → 0 (BANKS-CLEAR-before-0-BANK!
+\      would ABORT" bank?" — see Story 17.6 Dev Notes "probe-close
+\      ordering fix").
+\
+\ Sentinel: 12345 (decimal). PASS literal "iron-spike-sentinel-12345-returned"
+\ lacks "PASS:" prefix per Story 17.5.1 source-echo lesson — the Makefile
+\ recipe's awk-extract + grep handles verdict-label semantics; FAIL branches
+\ emit distinct "FAIL: iron-spike <reason>" strings (recipe negative-asserts).
+\
+\ Sentinel-bounded output (Story 17.5.1 AC2 + M4 fix): wrapped in
+\ ---iron-spike-start--- / ---iron-spike-end--- markers; the recipe asserts
+\ end-sentinel-on-own-line presence in raw OUTPUT independently of the awk
+\ extraction (catches the missing-end-sentinel false-PASS class).
+\
+\ Surface (Task 3 disposition): PASS-on-both-surfaces per Story 17.5.1 AC4
+\ precedent. Under iz-cpm-banking the iron-spike validates (a)+(b)+(c)
+\ above — including that the MMU port-0x72 page-map write does not
+\ disrupt main-RAM contents at `kernel_end..kernel_end+8`. Under iz-cpm
+\ baseline (flat memory), the MMU port write is unmodelled (no-op), but
+\ the per-bank state swap still fires (writes the bank-table at $D400
+\ which IS modelled as RAM); the 9-byte body still lands at the cloned-
+\ COLD HERE in flat RAM and EXECUTE reaches it. The iz-cpm-banking PASS
+\ is the binding evidence for the MMU-active case; the iz-cpm baseline
+\ PASS is a surface-agnostic round-trip witness for the per-bank-state
+\ swap mechanism alone.
+DECIMAL
+: _iron-spike-test ( -- )
+  DECIMAL
+  ." ---iron-spike-start---" CR
+  BANKS-CLEAR
+  $22 +BANK $35 +BANK $36 +BANK $37 +BANK $38 +BANK $39 +BANK
+  5 BANK!
+  HERE                            \ ( start-addr )
+  ['] NEGATE HERE 3 MOVE  3 ALLOT \ JP DOCOL prefix (3 bytes) at HERE..HERE+2
+  ['] LIT ,                       \ w_LIT_cf at HERE+3..HERE+4
+  12345 ,                         \ sentinel at HERE+5..HERE+6
+  ['] EXIT ,                      \ w_EXIT_cf at HERE+7..HERE+8
+  0 BANK!
+  5 BANK!
+  EXECUTE                         \ ( 12345 )  — kernel runs banked body
+  12345 = IF
+    ." iron-spike-sentinel-12345-returned" CR
+  ELSE
+    ." FAIL: iron-spike sentinel mismatch" CR
+  THEN
+  ." ---iron-spike-end---" CR
+  0 BANK!
+  BANKS-CLEAR
+;
+_iron-spike-test

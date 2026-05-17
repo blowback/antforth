@@ -11,13 +11,16 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 2.0.0
+## Version 3.0.1
 
-The 1.x series releases were a bit bare-bones, but 2.0 adds 
-some genuinely useful capabilities, such as a full Z80 assembler,
-custom wordlists, and CP/M file support.
+The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
+assembler, custom wordlists, and CP/M file support; 3.0.1 brings
+banked-memory support — the user-facing `BANK*` wordset that lets
+antforth address the MicroBeast's full 512 KB of RAM via the MMU
+portal at `$8000-$BFFF`. (Compiler integration of cross-bank colon
+definitions follows in antforth 3.1+.)
 
-V2.0.0 supports the following ANS Forth standard words:
+V3.0.1 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
@@ -57,7 +60,8 @@ primitives (`PUSH`, `POP`, `JR`, `NEXT,`).
 
 ## Coming up in the next version 
 
-- Banked memory support, and other {Micro,Nano}Beast hardware specific words 
+- Bank-aware compilation — cross-bank colon definitions transparent to the user (descriptor-stub mechanism; antforth 3.1+)
+- Per-bank dictionary search-order traversal and `WORDS`
 - Co-operative multi-tasking and event handlers
 - Local variable support 
 
