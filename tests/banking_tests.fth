@@ -372,35 +372,79 @@ _probe-e
 ;
 _probe-minus-bank-ldir
 
-\ Probe G (Code Review H2): +BANK cap check at bank_count == 29 — AC2 / PD-P4-13.
+\ Probe G (Story 17.5.1 rewrite, supersedes Story 17.3 Code Review H2):
+\ +BANK cap check at bank_count == 29 — AC2 / PD-P4-13.
 \
-\ Seeds 29 copies of $22 via +BANK (no-dedup per Q2 disposition), then
-\ asserts the 30th +BANK aborts with "cap?" (THROW -2 caught via CATCH).
+\ Reset-before-seed (Story 17.5.1 AC1): probe opens with BANKS-CLEAR so
+\ the seed loop starts from bank_count = 0 regardless of CL-parser boot
+\ defaults (Story 17.4 populates active_pages[] with 12 entries by
+\ default; the original Story-17.3 H2 probe assumed bank_count = 0 at
+\ entry and tripped the cap mid-seed-loop, leaving the probe's PASS
+\ branch unreached and the recipe-side grep false-PASSing on the
+\ source-echo of the ." PASS: ..." literal).
+\
+\ Sentinel-bounded output (Story 17.5.1 AC2): the Makefile recipes
+\ (test-repl-banking + test-repl-banking-skip) use awk to extract the
+\ runtime-output region between ---plus-bank-cap-start--- and
+\ ---plus-bank-cap-end--- sentinels, then grep within that region for
+\ assertion text ("cap-check-fired-after-29-seed") plus the seed-loop
+\ completion witness ("seeded: 29") and negative-assert on FAIL strings.
+\ The assertion text deliberately lacks a "PASS:" prefix — the
+\ recipe-side awk-extract handles verdict-label semantics, not the
+\ probe-side text.
+\
 \ Surface-agnostic: under iz-cpm baseline the probes succeed via flat
 \ memory; under iz-cpm-banking and real MB they succeed via the modelled
 \ RAM bank $22. The cap check itself is a kernel-cell comparison —
 \ surface-independent.
+\
+\ Two load-bearing BANKS-CLEAR sites: the HEAD one (AC1 reset-before-seed —
+\ removing it breaks every test run, since boot defaults populate 12
+\ entries and the seed loop would trip the cap mid-iteration) and the
+\ TAIL one (handoff guard for any probes added after probe G — leaves
+\ bank_count = 0 for the next probe's known state). Do not move either.
+\
+\ BASE residue note (Story 17.5.1 AC5 disposition (a) → probe-side fix):
+\ Probes 1 + 2 use top-level IF/ELSE/THEN, which fire THROW -14
+\ ("interpreting a compile-only word") and DO NOT branch — every token
+\ in BOTH branches executes sequentially. Probe 2's ELSE branch contains
+\ `BASE @ HEX SWAP . BASE !` (line 83); the unprotected `SWAP .` raises
+\ THROW -4 (stack underflow), so `BASE !` never runs to restore.
+\ Result: BASE = 16 leaks into all subsequent parse + execution. Within
+\ this story's scope (test-infra-only) the fix is local: bracket probe G
+\ with DECIMAL at BOTH file-parse time (literals `29` / `0` parsed in
+\ DECIMAL — otherwise `29` HEX = 41 makes the DO LOOP run 41 iterations
+\ and trip the cap mid-loop) AND probe-body entry (so runtime `.` prints
+\ the BANKS count in DECIMAL — recipe asserts `seeded: 29`). Refactoring
+\ probes 1+2 to use colon-body wrappers like probes 6+ is out of scope
+\ for Story 17.5.1; refile as a follow-up if/when the test-infra ceiling
+\ matters again.
+DECIMAL
 : _do-29-+bank ( -- )
   29 0 DO $22 +BANK LOOP
 ;
 : _do-one-more-+bank ( -- ) $22 +BANK ;
 : _probe-plus-bank-cap ( -- )
+  DECIMAL
+  BANKS-CLEAR
+  ." ---plus-bank-cap-start---" CR
   _do-29-+bank
+  ." seeded: " BANKS . CR
   BANKS DUP 29 = IF
     DROP
     ['] _do-one-more-+bank CATCH -2 = IF
       BANKS 29 = IF
-        ." PASS: plus-bank-cap — 30th +BANK aborts; BANKS stays at 29"
+        ." cap-check-fired-after-29-seed" CR
       ELSE
-        ." FAIL: plus-bank-cap — BANKS = " BANKS . ." (expected 29 after cap abort)"
+        ." FAIL: plus-bank-cap — BANKS = " BANKS . ." (expected 29 after cap abort)" CR
       THEN
     ELSE
-      ." FAIL: plus-bank-cap — 30th +BANK did not throw -2 (CATCH)"
+      ." FAIL: plus-bank-cap — 30th +BANK did not throw -2 (CATCH)" CR
     THEN
   ELSE
-    ." FAIL: plus-bank-cap — could not seed 29 entries; BANKS = " .
+    ." FAIL: plus-bank-cap — could not seed 29 entries; BANKS = " . CR
   THEN
-  CR
+  ." ---plus-bank-cap-end---" CR
   BANKS-CLEAR
 ;
 _probe-plus-bank-cap
@@ -424,3 +468,86 @@ _probe-plus-bank-cap
 \ + Epic-18 cross-bank-call work re-measures against the binding
 \ envelope.
 ." INFO: bank-store-t-states — paper-arithmetic estimate ~425 T-states (precondition ~24 + port-write ~22 + offset+LDIR cascades ~322 + tail ~57); NFR-P4-2 envelope (60 T) binds cross-bank dispatch (Epic 18), not BANK! itself" CR
+
+\ === Story 17.5: .BANKS probes (Probes X, Y, Z, W) ===
+\ Per Story 17.5 AC7 (4 binding probes) — surface-AGNOSTIC PASS on both
+\ iz-cpm baseline and iz-cpm-banking (`.BANKS` reads (IY+bank_count) +
+\ (IY+current_bank) + walks active_pages[]; no MMU port operations;
+\ output is identical on both surfaces). Q7=a sentinel-and-grep pattern:
+\ each probe prints `dot-banks-probe-<name>-start` + `.BANKS` + `dot-banks-
+\ probe-<name>-end` sentinels; the Makefile test-repl-banking recipe
+\ grep-asserts on the content between sentinels.
+\
+\ Reproducibility: probe G (_probe-plus-bank-cap) leaves the runtime with
+\ bank_count = 29 / BASE = 16 if its `_do-29-+bank` LOOP body trips the
+\ cap-check mid-loop (a pre-existing test-infra latent — surfaced during
+\ Story 17.5 dev-pass; the Makefile's grep for `PASS: plus-bank-cap`
+\ false-PASSes via the source-echo of the `." PASS: ..."` literal
+\ regardless of whether the PASS branch actually ran). To make THESE
+\ probes reproducible, each colon definition below opens with a
+\ `_dot-banks-setup` helper that asserts DECIMAL + BANKS-CLEAR + seeds
+\ exactly 12 entries via repeated `+BANK $22` (no DO LOOP — the polluted
+\ state from probe G makes a 12-iteration DO LOOP unreliable; manual
+\ unrolling sidesteps the issue). With this setup, .BANKS prints 12 rows
+\ all at PAGE 22, used=0, free=16384, totals free = 12*16384 = 196608.
+
+: _dot-banks-setup ( -- )
+  DECIMAL
+  BANKS-CLEAR
+  $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
+  $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
+  $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
+;
+
+\ Probe X — header + row-count + totals at 12 banks.
+\ Makefile grep targets: `BANK PAGE` header substring + `TOTAL` keyword
+\ + `196608` (= 12 * 16384) on the totals line.
+: _dot-banks-probe-x ( -- )
+  _dot-banks-setup
+  ." ---dot-banks-probe-x-start---" CR
+  .BANKS
+  ." ---dot-banks-probe-x-end---" CR
+;
+_dot-banks-probe-x
+
+\ Probe Y — current-bank marker tracking. Asserts `*` on row 0 at boot,
+\ then on row 1 after `1 BANK!`, then back to row 0 after `0 BANK!`.
+\ Makefile grep targets: between the start/mid1 sentinels, marker `*` on
+\ the row whose BANK col reads `   0`; between mid1/mid2, on the row whose
+\ BANK col reads `   1`; between mid2/end, back to row 0.
+: _dot-banks-probe-y ( -- )
+  _dot-banks-setup
+  ." ---dot-banks-probe-y-start---" CR
+  .BANKS
+  ." ---dot-banks-probe-y-mid1---" CR
+  1 BANK!
+  .BANKS
+  ." ---dot-banks-probe-y-mid2---" CR
+  0 BANK!
+  .BANKS
+  ." ---dot-banks-probe-y-end---" CR
+;
+_dot-banks-probe-y
+
+\ Probe Z — placeholder-values guard. Asserts every per-bank row carries
+\ the literal `0  16384` substring (i.e. no accidental scope creep into
+\ reading real per-bank-HERE values; Epic 19 owns the real-values upgrade).
+\ Makefile grep targets: between sentinels, at least 12 lines containing
+\ the substring `0  16384`.
+: _dot-banks-probe-z ( -- )
+  _dot-banks-setup
+  ." ---dot-banks-probe-z-start---" CR
+  .BANKS
+  ." ---dot-banks-probe-z-end---" CR
+;
+_dot-banks-probe-z
+
+\ Probe W — totals row. Asserts `TOTAL` keyword present and `196608`
+\ (= 12 * 16384) on the totals line.
+: _dot-banks-probe-w ( -- )
+  _dot-banks-setup
+  ." ---dot-banks-probe-w-start---" CR
+  .BANKS
+  ." ---dot-banks-probe-w-end---" CR
+;
+_dot-banks-probe-w

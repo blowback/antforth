@@ -89,7 +89,7 @@ test-repl-banking: $(TARGET)
 	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-1' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'PASS: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'PASS: plus-bank-cap' 'INFO: bank-store-t-states'; do \
+	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-1' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'PASS: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'INFO: bank-store-t-states'; do \
 		if echo "$$OUTPUT" | grep -q "$$pat"; then \
 			echo "PASS: REPL banking test — $$pat under $(IZCPM_BANKING)"; \
 		else \
@@ -196,6 +196,77 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: cl-probe-bank-roundtrip (H3 AC8) — kernel crashed (BIOS dispatch corruption from HERE=0)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
+	@# Story 17.5 AC7 — .BANKS probes X/Y/Z/W. Per-probe colon defs in
+	@# tests/banking_tests.fth open with _dot-banks-setup which forces
+	@# DECIMAL + BANKS-CLEAR + seeds 12 entries via 12 unrolled `$$22 +BANK`
+	@# (no DO LOOP — the polluted state from probe G makes a 12-iteration
+	@# DO LOOP unreliable). Greps below assert on output strings that only
+	@# .BANKS emits (e.g. `TOTAL          0 196608`); source comments and
+	@# sentinels don't collide.
+	@echo "Running Story 17.5 .BANKS probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | tr -d '\r' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
+	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && echo "$$PROBE_X" | grep -qE '^TOTAL[ ]+0 196608$$' && [ $$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') -ge 12 ]; then \
+		echo "PASS: dot-banks-probe-x — header + 12 rows at PAGE 22 + totals 196608 under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: dot-banks-probe-x — header/rows/totals missing"; \
+		echo "  PROBE_X: $$PROBE_X"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_Y1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-start---$$/{p=1; next} /---dot-banks-probe-y-mid1---$$/{p=0} p') && \
+	PROBE_Y2=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid1---$$/{p=1; next} /---dot-banks-probe-y-mid2---$$/{p=0} p') && \
+	PROBE_Y3=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid2---$$/{p=1; next} /---dot-banks-probe-y-end---$$/{p=0} p') && \
+	Y1_STAR_LINES=$$(echo "$$PROBE_Y1" | grep -cE '\*') && \
+	Y2_STAR_LINES=$$(echo "$$PROBE_Y2" | grep -cE '\*') && \
+	Y3_STAR_LINES=$$(echo "$$PROBE_Y3" | grep -cE '\*') && \
+	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+22 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
+	   [ "$$Y1_STAR_LINES" = "1" ] && [ "$$Y2_STAR_LINES" = "1" ] && [ "$$Y3_STAR_LINES" = "1" ]; then \
+		echo "PASS: dot-banks-probe-y — marker on row 0 → 1 → 0 tracks BANK! (exactly 1 * per phase) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: dot-banks-probe-y — marker did not track BANK! correctly (Y1/Y2/Y3 stars: $$Y1_STAR_LINES/$$Y2_STAR_LINES/$$Y3_STAR_LINES; expected 1/1/1)"; \
+		echo "  PROBE_Y1: $$PROBE_Y1"; \
+		echo "  PROBE_Y2: $$PROBE_Y2"; \
+		echo "  PROBE_Y3: $$PROBE_Y3"; \
+		exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_Z=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-z-start---$$/{p=1; next} /---dot-banks-probe-z-end---$$/{p=0} p') && \
+	if [ $$(echo "$$PROBE_Z" | grep -cE '0[ ]+16384$$') -ge 12 ]; then \
+		echo "PASS: dot-banks-probe-z — at least 12 rows carry the '0  16384' placeholder under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: dot-banks-probe-z — placeholder rows missing or wrong count (got $$(echo "$$PROBE_Z" | grep -cE '0[ ]+16384$$'))"; \
+		echo "  PROBE_Z: $$PROBE_Z"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_W=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-w-start---$$/{p=1; next} /---dot-banks-probe-w-end---$$/{p=0} p') && \
+	if echo "$$PROBE_W" | grep -qE '^TOTAL[ ]+0 196608$$'; then \
+		echo "PASS: dot-banks-probe-w — TOTAL row reports 196608 (= 12 × 16384) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: dot-banks-probe-w — TOTAL row missing or value wrong"; \
+		echo "  PROBE_W: $$PROBE_W"; exit 1; \
+	fi
+	@# Story 17.5.1 AC3 — sentinel-bounded probe G (+BANK cap check at
+	@# bank_count == 29). Replaces the prior `grep -q 'PASS: plus-bank-cap'`
+	@# substring match (false-PASSed on source-echo of the colon-body `."`
+	@# literal regardless of whether the probe's PASS branch executed).
+	@# Extract the runtime-output region between ---plus-bank-cap-start---
+	@# and ---plus-bank-cap-end--- sentinels, then assert (a) AC2 assertion
+	@# literal `cap-check-fired-after-29-seed` present, (b) seed-loop
+	@# completion witness `seeded: 29` present (sanity probe against silent
+	@# regressions where the seed loop early-aborts), (c) no FAIL: substring
+	@# in PROBE_G, (d) end-sentinel `---plus-bank-cap-end---` actually
+	@# present in OUTPUT (catches the case where the end sentinel goes
+	@# missing — awk extraction would otherwise swallow all downstream
+	@# probe output and false-PASS; surfaced by Story 17.5.1 code-review M4
+	@# live negative-test sweep).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_G=$$(echo "$$OUTPUT" | awk '/---plus-bank-cap-start---$$/{p=1; next} /---plus-bank-cap-end---$$/{p=0} p') && \
+	if echo "$$PROBE_G" | grep -q 'cap-check-fired-after-29-seed' && echo "$$PROBE_G" | grep -q 'seeded: 29' && ! echo "$$PROBE_G" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---plus-bank-cap-end---$$'; then \
+		echo "PASS: plus-bank-cap — cap-check fired after 29-entry seed under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: plus-bank-cap — assertion text missing OR 'seeded: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT"; \
+		echo "  PROBE_G: $$PROBE_G"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -209,7 +280,7 @@ test-repl-banking-skip: $(TARGET)
 	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in '^SKIP: banking-emu-probe' '^SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'SKIP: plus-bank-known-good' 'SKIP: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'SKIP: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'SKIP: minus-bank-ldir-shift-data' 'PASS: plus-bank-cap'; do \
+	for pat in '^SKIP: banking-emu-probe' '^SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'SKIP: plus-bank-known-good' 'SKIP: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'SKIP: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'SKIP: minus-bank-ldir-shift-data'; do \
 		if echo "$$OUTPUT" | grep -q "$$pat"; then \
 			echo "PASS: banking probe surface check — '$$pat' present under $(IZCPM) baseline"; \
 		else \
@@ -274,6 +345,58 @@ test-repl-banking-skip: $(TARGET)
 	else \
 		echo "FAIL: cl-probe-dup (surface-agnostic) — expected 'dup? 35' warning under $(IZCPM)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
+	fi
+	@# Story 17.5 AC10 — .BANKS probes are surface-AGNOSTIC: `.BANKS` only
+	@# reads UserArea cells + walks active_pages[], never touches port 0x72
+	@# or 0x74; output is identical on iz-cpm baseline and iz-cpm-banking
+	@# (the +BANK $$22 setup PASSes on iz-cpm baseline via flat memory).
+	@# Probes X / Y / W lift here as PASS-on-both-surfaces; probe Z is
+	@# surface-redundant (placeholder values are MMU-independent) and is
+	@# omitted from the baseline run to avoid noise.
+	@echo "Verifying Story 17.5 .BANKS probes under $(IZCPM) baseline..."
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
+	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && echo "$$PROBE_X" | grep -qE '^TOTAL[ ]+0 196608$$' && [ $$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') -ge 12 ]; then \
+		echo "PASS: dot-banks-probe-x (surface-agnostic) — header + 12 rows + totals 196608 under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: dot-banks-probe-x (surface-agnostic) — header/rows/totals missing under $(IZCPM)"; \
+		echo "  PROBE_X: $$PROBE_X"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_Y1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-start---$$/{p=1; next} /---dot-banks-probe-y-mid1---$$/{p=0} p') && \
+	PROBE_Y2=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid1---$$/{p=1; next} /---dot-banks-probe-y-mid2---$$/{p=0} p') && \
+	PROBE_Y3=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid2---$$/{p=1; next} /---dot-banks-probe-y-end---$$/{p=0} p') && \
+	Y1_STAR_LINES=$$(echo "$$PROBE_Y1" | grep -cE '\*') && \
+	Y2_STAR_LINES=$$(echo "$$PROBE_Y2" | grep -cE '\*') && \
+	Y3_STAR_LINES=$$(echo "$$PROBE_Y3" | grep -cE '\*') && \
+	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+22 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
+	   [ "$$Y1_STAR_LINES" = "1" ] && [ "$$Y2_STAR_LINES" = "1" ] && [ "$$Y3_STAR_LINES" = "1" ]; then \
+		echo "PASS: dot-banks-probe-y (surface-agnostic) — marker 0 → 1 → 0 tracks BANK! (exactly 1 * per phase) under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: dot-banks-probe-y (surface-agnostic) — marker did not track BANK! under $(IZCPM) (Y1/Y2/Y3 stars: $$Y1_STAR_LINES/$$Y2_STAR_LINES/$$Y3_STAR_LINES; expected 1/1/1)"; \
+		echo "  PROBE_Y1: $$PROBE_Y1"; echo "  PROBE_Y2: $$PROBE_Y2"; echo "  PROBE_Y3: $$PROBE_Y3"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_W=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-w-start---$$/{p=1; next} /---dot-banks-probe-w-end---$$/{p=0} p') && \
+	if echo "$$PROBE_W" | grep -qE '^TOTAL[ ]+0 196608$$'; then \
+		echo "PASS: dot-banks-probe-w (surface-agnostic) — TOTAL row reports 196608 under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: dot-banks-probe-w (surface-agnostic) — TOTAL row missing or value wrong under $(IZCPM)"; \
+		echo "  PROBE_W: $$PROBE_W"; exit 1; \
+	fi
+	@# Story 17.5.1 AC4 — sentinel-bounded probe G under iz-cpm baseline.
+	@# Cap-check is a kernel-cell comparison (bank_count == 29 in the
+	@# +BANK body), surface-independent: PASS-on-both-surfaces per the
+	@# Story-17.5 dual-recipe precedent. Identical assertion logic to
+	@# the iz-cpm-banking recipe (only the harness command differs);
+	@# end-sentinel OUTPUT-presence clause per Story 17.5.1 code-review M4.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_G=$$(echo "$$OUTPUT" | awk '/---plus-bank-cap-start---$$/{p=1; next} /---plus-bank-cap-end---$$/{p=0} p') && \
+	if echo "$$PROBE_G" | grep -q 'cap-check-fired-after-29-seed' && echo "$$PROBE_G" | grep -q 'seeded: 29' && ! echo "$$PROBE_G" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---plus-bank-cap-end---$$'; then \
+		echo "PASS: plus-bank-cap (surface-agnostic) — cap-check fired after 29-entry seed under $(IZCPM) baseline"; \
+	else \
+		echo "FAIL: plus-bank-cap (surface-agnostic) — assertion text missing OR 'seeded: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT under $(IZCPM)"; \
+		echo "  PROBE_G: $$PROBE_G"; exit 1; \
 	fi
 
 $(TARGET): $(SRCS) | $(BUILDDIR)

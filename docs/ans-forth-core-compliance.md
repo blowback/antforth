@@ -875,6 +875,7 @@ antforth also defines words that are useful but outside the Core word sets:
 | `-BANK` | `banking.asm:380` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-8 — no-op on miss) |
 | `BANKS-CLEAR` | `banking.asm:432` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-9 — resets `bank_count` to 0; subsequent `BANK!` aborts `bank?`) |
 | `SET-BANK` | `banking.asm:453` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-10 — diagnostic only; bad arguments produce undefined hardware behaviour; does NOT update `current_bank` or `bank_count`) |
+| `.BANKS` | `banking.asm:552` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-6 — minimal form; per-bank `used`/`free` are placeholders, Epic 19's bank-aware `:` makes them real, Epic 22 polishes formatting; totals row prints `bank_count * 16384` via D.R, follows current BASE) |
 
 ---
 

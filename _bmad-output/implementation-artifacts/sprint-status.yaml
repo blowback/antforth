@@ -306,7 +306,20 @@ development_status:
   17-2-bank-fetch-bank-store-banks-read-and-swap-primitives: review
   17-3-plus-bank-with-probe-on-add-minus-bank-banks-clear-set-bank: done
   17-4-cl-tail-parser-boot-configuration-banner-update: done
-  17-5-dot-banks-minimal-working-form: backlog
+  17-5-dot-banks-minimal-working-form: done
+  17-5-1-probe-g-plus-bank-cap-false-pass-fix: done
+  # Story 17.5.2 filed 2026-05-17 at 17.5.1 code-review M1 disposition:
+  # 17.5.1 fixed the BASE residue locally at probe G via DECIMAL bracketing
+  # but the root cause (probes 1+2 use top-level IF/ELSE/THEN which throw
+  # -14 and execute both branches; probe 2's ELSE underflows on SWAP after
+  # HEX, never reaching BASE !) still leaks BASE=16 forward on every test
+  # run. Any future probe inserted between probe 2 and probe G that uses
+  # BASE-sensitive operations (numeric output via . or literal parsing)
+  # will silently misbehave. Story 17.5.2 refactors probes 1+2 to
+  # colon-body wrappers (like probes 6+); root-cause fix; lets the
+  # defensive DECIMAL in _dot-banks-setup retire. Scope: test-infra only;
+  # zero kernel binary delta expected.
+  17-5-2-probes-1-2-colon-body-refactor-base-residue-root-cause-fix: backlog
   17-6-iron-spike-first-hand-built-cross-bank-call-on-real-microbeast-epic-17-close-out-antforth-3-x-1-tag: backlog
   epic-17-retrospective: optional
 

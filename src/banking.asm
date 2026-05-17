@@ -499,3 +499,223 @@ w_SET_BANK_cf:
         OUT     (C), A                              ; raw MMU write
         POP     BC                                  ; new TOS
         NEXT
+
+; ============================================================
+; === .BANKS ( -- ) ===
+;   Print a status table of the current banking configuration:
+;     header row + one row per active bank + totals row.
+;   Each row shows: logical-bank-index (decimal, right-aligned), physical-page
+;   (2-hex uppercase), current-bank marker ('*' for the row whose index
+;   matches BANK@; space otherwise), per-bank `used` and `free` columns.
+;
+;   Format (Q1=a compact form, 23 chars per row + CRLF):
+;     "BANK PAGE   USED   FREE\r\n"   ; header — USED right-edge col 15,
+;     "   0   22 *    0  16384\r\n"   ; FREE right-edge col 22; column
+;     "   1   35      0  16384\r\n"   ; right-edges aligned across header,
+;     ...                              ; per-bank rows, and totals row
+;     "TOTAL          0 196608\r\n"   ; (totals via D.R width-6).
+;
+;   Per-bank used = 0 and per-bank free = 16384 are PLACEHOLDERS (literal
+;   strings) per the AC2 minimal-form scope. Epic 19's bank-aware ':' makes
+;   the per-bank HERE real and updates .BANKS to read live values.
+;
+;   Totals: used = 0 (sum of zero placeholders); free = bank_count * 16384
+;   (sum of per-bank 16384 placeholders). Computed as 24-bit value via
+;   `bank_count << 14` then printed via D.R right-aligned in 6-char field.
+;
+; Q1=a (column layout): compact form. Per-row width 23 chars + CRLF; fits
+;   80 cols at the 29-bank cap (worst case "TOTAL          0 475136\r\n").
+; Q2=b (totals computation): post-loop, double-cell value
+;   d-low = (bank_count & 3) << 14, d-high = bank_count >> 2.
+;   The story Q2(b) print recommendation cites `w_U_DOT_R_cf` (~10-15 B);
+;   that is INFEASIBLE because (a) U.R is a DEFWORD not a DEFCODE, and
+;   (b) max free total = 29*16384 = 475136 overflows the 16-bit single-cell
+;   that U.R consumes. Fix: switch IP to a tiny inline thread that calls
+;   D.R (double-cell right-aligned) + CR + EXIT. Disposition documented
+;   here; no project-lead escalation needed — the computation formula is
+;   unchanged, only the print primitive switches single→double.
+; Q3=c (BANK-column print): hand-rolled inline decimal printer via small
+;   helper print_bank_col_4 (4-char right-aligned for 0..28).
+; Q4=a (PAGE col bare hex): re-uses cl_emit_hex_byte (Story 17.4 helper).
+; Q5=a (zero-bank case): zero per-bank rows, totals = 0; header + totals
+;   row only, no per-bank-row loop entry.
+; Q6=a-extended (envelope): accept-with-rationale forward per Story 17.4
+;   precedent ACCEPTED 2026-05-16; Epic-17 retro absorbs cumulative overage.
+; Q7=a (probes): sentinel-and-grep via Makefile (Story 17.4 pattern).
+;
+; antforth extension .BANKS — see docs/antforth-banking-redesign.md §1
+; .BANKS — Epic 17 minimal form. Per-bank used/free are placeholders
+; (literal "0" / "16384"); Epic 19's bank-aware ':' makes them real
+; (probe: `5 BANK!  : SOME-WORD ; ` → used in bank 5 should reflect body
+; byte-count). Epic 22 polishes column formatting + adds optional REPL
+; prompt indicator integration (see architecture.md:483 Epic-22 budget).
+w_DOT_BANKS:
+        DEFCODE ".BANKS", 0
+w_DOT_BANKS_cf:
+        ; --- Save caller's TOS + IP so the body can use BC/DE/HL freely. ---
+        ; Caller TOS → data stack (becomes SP-top-2 after we push d-low/d-high
+        ; for the totals D.R call; D.R consumes 3 cells and lands BC back on
+        ; the saved caller-TOS at exit).
+        ; Caller IP → R-stack (recovered by EXIT_CODE in the inline totals
+        ; thread; resumes caller's thread after the trailing CR).
+        PUSH    BC                                  ; save caller TOS
+        CALL    rpush_de                            ; save caller IP
+
+        ; --- Print header row ---
+        LD      HL, str_dot_banks_hdr
+        LD      B, str_dot_banks_hdr_len
+        CALL    bdos_print_str
+        CALL    bdos_crlf
+
+        ; --- Per-row loop ---
+        ; B = remaining row count (DJNZ); C = current logical index (counts up).
+        ; bank_count == 0: skip the loop (Q5=a edge case — header + totals only).
+        LD      A, (IY+UserArea.bank_count)
+        OR      A
+        JR      Z, .totals
+        LD      B, A
+        LD      C, 0
+.row_loop:
+        PUSH    BC                                  ; save loop state
+
+        ; 1. BANK col: 4-char right-aligned decimal for C value
+        LD      A, C
+        CALL    print_bank_col_4                    ; clobbers A/BC/DE/HL
+
+        ; 2. "   " sep (BANK → PAGE)
+        LD      HL, str_3sp
+        LD      B, 3
+        CALL    bdos_print_str
+
+        ; 3. PAGE col: load active_pages[C], emit as 2-hex via cl_emit_hex_byte.
+        ;    Compute marker char before cl_emit_hex_byte clobbers A.
+        POP     BC                                  ; recover B=count, C=index
+        PUSH    BC
+        LD      A, C
+        CP      (IY+UserArea.current_bank)          ; Z if this row's idx is current bank
+        LD      L, ' '
+        JR      NZ, .no_star
+        LD      L, '*'
+.no_star:
+        PUSH    HL                                  ; stash marker char (L) across page load
+        LD      A, C
+        ADD     A, LOW ACTIVE_PAGES_BASE            ; idx ≤ 28; $AE+28=$CA (no carry)
+        LD      L, A
+        LD      H, HIGH ACTIVE_PAGES_BASE
+        LD      A, (HL)                             ; A = active_pages[C]
+        CALL    cl_emit_hex_byte                    ; emits 2 ASCII hex chars; clobbers A/BC/DE/HL
+
+        ; 4. " " sep (PAGE → marker)
+        LD      E, ' '
+        CALL    bdos_putchar
+
+        ; 5. Marker char
+        POP     HL
+        LD      E, L
+        CALL    bdos_putchar
+
+        ; 6. USED + FREE placeholders + CRLF as one literal
+        LD      HL, str_used_free_crlf
+        LD      B, str_used_free_crlf_len
+        CALL    bdos_print_str
+
+        ; 7. Loop epilogue
+        POP     BC                                  ; recover B=count, C=index
+        INC     C
+        DJNZ    .row_loop
+
+.totals:
+        ; --- Totals row: "TOTAL          0 " prefix + 6-char right-aligned free ---
+        LD      HL, str_total_pfx
+        LD      B, str_total_pfx_len
+        CALL    bdos_print_str
+
+        ; Compute bank_count * 16384 as double:
+        ;   d-low  = (bank_count & 3) << 14  → high byte = (bank_count & 3) << 6, low = 0
+        ;   d-high = bank_count >> 2         (max 29 >> 2 = 7)
+        LD      A, (IY+UserArea.bank_count)
+        LD      D, A                                ; D = bank_count
+        AND     3                                   ; A = bank_count & 3
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A                                ; A = (bank_count & 3) << 6
+        LD      H, A
+        LD      L, 0                                ; HL = d-low
+        SRL     D
+        SRL     D                                   ; D = bank_count >> 2 = d-high
+        PUSH    HL                                  ; d-low → data stack
+        LD      C, D
+        LD      B, 0                                ; BC = d-high
+        PUSH    BC                                  ; d-high → data stack
+        LD      BC, 6                               ; TOS = +n field width
+
+        ; Switch IP to inline totals thread: NEXT will dispatch through
+        ; D.R (double-cell right-aligned) → CR → EXIT_CODE.
+        ; EXIT_CODE pops the caller's IP (saved at entry via rpush_de) and
+        ; resumes the caller's thread. D.R consumes (d-low d-high +n) and
+        ; lands BC on the caller TOS saved at the top of PUSH BC at entry,
+        ; satisfying the ( -- ) stack effect.
+        LD      DE, .totals_thread
+        NEXT
+
+.totals_thread:
+        DW      w_D_DOT_R_cf                        ; ( d-low d-high +n -- )
+        DW      w_CR_cf                             ; emit CRLF
+        DW      EXIT_CODE                           ; restore caller IP, return
+
+; print_bank_col_4 — Print A as decimal right-aligned in a 4-char field.
+;   Input:  A = value in [0..29] (logical bank index)
+;   Output: 4 chars emitted via BDOS ("   0".."  28")
+;   Clobbers: A, BC, DE, HL
+;
+;   Single call site (per-row BANK column); inline cost ~25 B inline-emit per
+;   row vs ~40 B via this helper + 3 B CALL = ~43 B helper-encapsulated. The
+;   helper form is preferred for readability + future re-use if .BANKS gains
+;   a second decimal column (Epic 22 polish).
+print_bank_col_4:
+        ; A is clobbered by bdos_putchar (BDOS func 2 returns through A);
+        ; stash via PUSH AF across the two leading-space emissions so the
+        ; tens/ones decode below sees the original index value.
+        PUSH    AF
+        LD      E, ' '
+        CALL    bdos_putchar
+        LD      E, ' '
+        CALL    bdos_putchar
+        POP     AF
+        ; Decide single vs two digits.
+        CP      10
+        JR      C, .pbc_single
+        ; Two-digit: peel tens via subtract-loop (max 2 iterations for 0..29).
+        LD      C, '0' - 1
+.pbc_tens:
+        INC     C
+        SUB     10
+        JR      NC, .pbc_tens
+        ADD     A, 10                               ; A = ones; C = tens char
+        PUSH    AF
+        LD      E, C
+        CALL    bdos_putchar
+        POP     AF
+        JR      .pbc_ones
+.pbc_single:
+        ; A also clobbered by bdos_putchar — re-stash across 3rd leading space.
+        PUSH    AF
+        LD      E, ' '
+        CALL    bdos_putchar                        ; 3rd leading space
+        POP     AF
+.pbc_ones:
+        ADD     A, '0'
+        LD      E, A
+        JP      bdos_putchar                        ; tail-call
+
+; --- .BANKS string literals ---
+str_dot_banks_hdr:     DB "BANK PAGE   USED   FREE"
+str_dot_banks_hdr_len  EQU 23
+str_3sp:               DB "   "
+str_used_free_crlf:    DB "    0  16384", 0x0D, 0x0A
+str_used_free_crlf_len EQU 14
+str_total_pfx:         DB "TOTAL          0 "
+str_total_pfx_len      EQU 17
