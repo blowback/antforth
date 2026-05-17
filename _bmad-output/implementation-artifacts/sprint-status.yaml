@@ -301,7 +301,7 @@ development_status:
   16-4-architecture-stage-open-questions-resolution-9-1-9-3-9-4-9-5-9-6: done
   epic-16-retrospective: done
 
-  epic-17: in-progress
+  epic-17: done
   17-1-bank-table-allocator-userarea-cells-bank-mapping-on-bank-mapping-off-ccp-eviction-memory-map-edit: done
   17-2-bank-fetch-bank-store-banks-read-and-swap-primitives: done
   17-3-plus-bank-with-probe-on-add-minus-bank-banks-clear-set-bank: done
@@ -321,7 +321,7 @@ development_status:
   # zero kernel binary delta expected.
   17-5-2-probes-1-2-colon-body-refactor-base-residue-root-cause-fix: backlog
   17-6-iron-spike-first-hand-built-cross-bank-call-on-real-microbeast-epic-17-close-out-antforth-3-x-1-tag: done
-  epic-17-retrospective: optional
+  epic-17-retrospective: done
 
   epic-18: backlog
   18-1-descriptor-stub-allocator-xt-as-stub-address-contract: backlog
