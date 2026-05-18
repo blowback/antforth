@@ -12,7 +12,7 @@
 ; the new frame address, and on normal return restores CATCH-TOP from
 ; the frame's prev-link slot at +6.
 ;
-; Frame layout (E11-D1, post-Story-11.4.1):
+; Frame layout (E11-D1, post-Story-11.4.1 + Story 18.5.1):
 ;   +6: previous CATCH-TOP   (chain link)
 ;   +4: catching-IP          (caller's IP at CATCH entry)
 ;   +2: saved BC             (i*x's TOS-cell value at CATCH entry; restored
@@ -29,6 +29,22 @@
 ;                             which left frame +0 pointing at a cell xt's
 ;                             first CALL would clobber with its return-
 ;                             address byte — the Story 11.4 Note A bug.)
+;
+; Story 18.5.1 (post-frame extension) — i*x deeper-cell preservation:
+;   -2: depth_bytes word     (= sp_base − SP_safe = bytes of i*x cells
+;                             below the TOS that need preservation; high
+;                             byte invariantly 0 since PS_SIZE = 256.)
+;   -2-depth_bytes..-3:  i*x stash zone (data-stack bytes copied from
+;                             [SP_safe..sp_base-1] at CATCH entry; LDIR'd
+;                             back to data stack on THROW caught path.
+;                             Closes the ANS §9.6.1.0875 cell-content
+;                             preservation gap exposed by Story 18.5 H1
+;                             disposition.)
+;   CATCH-TOP still points at frame +0 (saved-SP slot); the stash zone
+;   sits BELOW CATCH-TOP on IX rstack. THROW and catch_resume_cf both
+;   advance IX past frame + depth_word + stash via a variable-size
+;   ADD IX, BC = (8 + 2 + depth_bytes). See `w_CATCH_cf`, `catch_resume_cf`,
+;   and `w_THROW_cf.kernel_entry` caught path for the implementation.
 
 ; -----------------------------------------------
 ; CATCH-TOP ( -- a-addr )
@@ -169,6 +185,49 @@ w_CATCH_cf:
                                         ; wrote to +0; safe.
         LD      (IY+UserArea.catch_top), L
         LD      (IY+UserArea.catch_top+1), H
+        ; --- Story 18.5.1 option (b): stash i*x deeper cells on IX rstack ---
+        ; Copy [SP_safe..sp_base-1] into a new zone below the 8-byte frame,
+        ; preceded by a 2-byte depth_word, so that THROW caught path can
+        ; LDIR them back after restoring SP. Closes ANS §9.6.1.0875 cell-
+        ; content preservation gap exposed by Story 18.5 H1 disposition.
+        ; State here: IX = frame_base, BC = i*x's TOS, DE = caller's IP
+        ; (already saved to frame +2 / +4), system stack [SP+0] = xt spill.
+        ; Strategy: spill BC and SP_safe, compute depth, LDIR-push stash.
+        PUSH    BC                      ; spill i*x's TOS-cell across LDIR
+        LD      L, (IX+0)
+        LD      H, (IX+1)               ; HL = SP_safe
+        PUSH    HL                      ; spill SP_safe (recovered post-LDIR)
+        EX      DE, HL                  ; DE = SP_safe; HL = caller's IP (now dead)
+        LD      HL, (sp_base)
+        OR      A
+        SBC     HL, DE                  ; HL = sp_base - SP_safe = depth_bytes
+        ; --- Push depth_word at IX-2 UNCONDITIONALLY (catch_resume_cf and
+        ;     THROW caught path both read (IX-2) for variable IX advance,
+        ;     so the slot must hold the actual depth_bytes value even when
+        ;     depth = 0). ---
+        LD      B, H
+        LD      C, L                    ; BC = depth_bytes (count for LDIR)
+        DEC     IX
+        DEC     IX
+        LD      (IX+0), C
+        LD      (IX+1), B               ; (high byte invariantly 0 per PS_SIZE=256)
+        LD      A, B
+        OR      C
+        JR      Z, .catch_no_stash      ; depth_bytes = 0: skip LDIR (depth_word still written above)
+        ; --- Advance IX downward by depth_bytes: IX = (frame_base-2) - depth_bytes ---
+        PUSH    IX
+        POP     HL                      ; HL = IX (= frame_base - 2)
+        OR      A
+        SBC     HL, BC                  ; HL = stash_low addr
+        PUSH    HL
+        POP     IX                      ; IX = stash_low
+        ; --- LDIR: HL = SP_safe (source), DE = IX = stash_low (dest), BC = depth_bytes ---
+        EX      DE, HL                  ; HL = SP_safe (source), DE = stash_low (dest)
+        LDIR
+.catch_no_stash:
+        POP     HL                      ; drop SP_safe spill (clobbers HL — fine)
+        POP     BC                      ; restore i*x's TOS-cell value
+        ; --- end Story 18.5.1 option (b) ---
         POP     HL                      ; recover xt (matches PUSH HL above)
         ; --- DE = continuation thread (xt's terminal NEXT lands on (CATCH-RESUME)) ---
         LD      DE, catch_resume_thread
@@ -197,6 +256,17 @@ catch_resume_thread:
 ;             the value sits as second-on-stack after we install BC=0).
 ; -----------------------------------------------
 catch_resume_cf:
+        ; --- Story 18.5.1: re-anchor IX to frame_base via CATCH-TOP.
+        ;     Post-Story-18.5.1, w_CATCH_cf pushes a stash zone BELOW the
+        ;     8-byte frame on the IX rstack (depth_word + i*x deeper-cell
+        ;     stash), so IX at xt's terminal NEXT may be at stash_low
+        ;     (= frame_base − 2 − depth_bytes) rather than at frame_base.
+        ;     CATCH-TOP still points at frame +0 (= frame_base) by contract,
+        ;     so reload IX from CATCH-TOP before reading frame fields. ---
+        LD      L, (IY+UserArea.catch_top)
+        LD      H, (IY+UserArea.catch_top+1)
+        PUSH    HL
+        POP     IX                      ; IX = frame_base
         ; --- Restore CATCH-TOP from frame +6 ---
         LD      A, (IX+6)
         LD      (IY+UserArea.catch_top), A
@@ -213,7 +283,12 @@ catch_resume_cf:
         ;     THROW's caught path reads +0 from a target frame that is
         ;     by definition still live (catch_resume_cf bypassed). ---
         PUSH    BC
-        ; --- Pop 8-byte frame: IX += 8 (BC freely usable now) ---
+        ; --- Pop the 8-byte frame: IX += 8. The Story-18.5.1 stash zone
+        ;     (depth_word + i*x stash) lives at LOWER addresses than
+        ;     frame_base on the IX rstack; advancing IX past the frame
+        ;     leaves the stash bytes in the now-free region below IX
+        ;     (they will be overwritten by subsequent rstack pushes;
+        ;     no GC required — IX rstack is dynamic). ---
         ; ADD IX, BC = DD 09 (first kernel use of the IX-relative ADD; the
         ; user-level assembler dispatches the same opcode via
         ; .add16_dst_ixiy in src/assembler.asm).
@@ -371,41 +446,63 @@ w_THROW_cf:
         LD      D, (IX+5)
         ; --- Read saved-SP from frame +0 into HL (read while IX = base) ---
         LD      L, (IX+0)
-        LD      H, (IX+1)
-        ; --- Pop the 8-byte frame: IX = frame_base + 8.
-        ;     ADD IX, BC = DD 09 (second kernel use; first at
-        ;     catch_resume_cf src/exception.asm above). ---
+        LD      H, (IX+1)               ; HL = SP_safe
+        ; --- Read saved i*x's TOS-cell value from frame +2 (Story 11.4.1).
+        ;     Pre-Story-18.5.1 this read happened POST-ADD-IX-8 via
+        ;     (IX-6)/(IX-5); Story 18.5.1 reads it BEFORE the variable
+        ;     advance so the stash-restore LDIR can be sequenced cleanly. ---
+        LD      C, (IX+2)
+        LD      B, (IX+3)               ; BC = saved i*x's TOS-cell
+        ; --- Story 18.5.1 option (b): restore i*x deeper cells from IX-rstack
+        ;     stash zone (pushed by w_CATCH_cf above). Stash saved-BC and
+        ;     SP_safe to scratch cells; LDIR from stash to data stack at
+        ;     [SP_safe..sp_base-1]; advance IX past frame + depth_word +
+        ;     stash; recover saved-BC and SP_safe; LD SP, HL; PUSH BC;
+        ;     LD BC, n; NEXT. ---
+        LD      (throw_stash_hl), HL    ; spill SP_safe
+        LD      (throw_stash_bc), BC    ; spill saved-BC (i*x TOS)
+        LD      (throw_stash_de), DE    ; spill catching-IP. Use a kernel
+                                        ; scratch cell rather than the
+                                        ; system stack: if xt consumed cells
+                                        ; before THROW (SP > SP_safe at
+                                        ; THROW entry), a PUSH DE on the
+                                        ; system stack would land at an
+                                        ; address inside [SP_safe..sp_base-1]
+                                        ; which the LDIR below overwrites.
+                                        ; Scratch cell sidesteps the overlap.
+        LD      C, (IX-2)
+        LD      B, (IX-1)               ; BC = depth_bytes (high inv. 0)
+        LD      A, B
+        OR      C
+        JR      Z, .throw_no_unstash    ; depth_bytes = 0: skip LDIR
+        ; --- HL = stash_low = (frame_base - 2) - depth_bytes ---
+        PUSH    IX
+        POP     HL
+        DEC     HL
+        DEC     HL                      ; HL = frame_base - 2
+        OR      A
+        SBC     HL, BC                  ; HL = stash_low (source)
+        ; --- DE = SP_safe (dest) ---
+        LD      DE, (throw_stash_hl)
+        ; --- LDIR copy BC bytes from stash (HL) → data stack (DE) ---
+        LDIR
+.throw_no_unstash:
+        ; --- Advance IX past the 8-byte frame. The Story-18.5.1 stash
+        ;     zone (depth_word + i*x stash) at lower addrs is now in the
+        ;     freed rstack region below IX (parallel to catch_resume_cf
+        ;     above; no variable advance needed — stash sits BELOW frame_base). ---
         LD      BC, 8
         ADD     IX, BC
-        ; --- Read saved i*x's TOS-cell value from the popped frame's +2
-        ;     slot, now at IX-6 (since IX advanced 8 bytes, frame_base+2
-        ;     becomes IX-8+2 = IX-6). Story 11.4.1 i*x preservation.
-        ;
-        ;     Safe: the popped frame's memory is unwritten between
-        ;     ADD IX, BC and this read — only CATCH and INCLUDE write
-        ;     to the IX rstack (per CCD-1, architecture.md:166-191), and
-        ;     we hold the kernel until NEXT.
-        ;
-        ;     FUTURE-EDIT NOTE: any new instruction inserted between the
-        ;     ADD IX, BC above and this LD pair that writes IX-relative
-        ;     memory (or does any push/call that lands on the popped
-        ;     frame's bytes — the IX rstack is independent of SP, so
-        ;     SP-side traffic is fine) would corrupt the saved-BC read. ---
-        LD      C, (IX-6)
-        LD      B, (IX-5)               ; BC = saved i*x's TOS-cell value
-        ; --- Restore SP_safe (post-POP-BC SP at CATCH entry).
-        ;     SP_safe sits one cell above the original i*x's TOS-cell
-        ;     slot; xt's CALL/RET traffic during execution wrote its
-        ;     return-address byte at [SP_safe-2] but never at-or-above
-        ;     SP_safe (Z80 PUSH/CALL discipline). The cell at
-        ;     [SP_safe-2] may now hold stale return-address data — we
-        ;     restore it via PUSH BC below. ---
+        ; --- Recover saved-BC, SP_safe, and catching-IP from kernel scratch ---
+        LD      BC, (throw_stash_bc)    ; BC = saved i*x's TOS-cell
+        LD      HL, (throw_stash_hl)    ; HL = SP_safe
+        LD      DE, (throw_stash_de)    ; DE = catching-IP
+        ; --- Restore SP_safe; push i*x TOS at [SP_safe-2] (matches
+        ;     pre-Story-18.5.1 contract — Story 11.4.1 i*x preservation).
+        ;     With option (b), the data-stack cells [SP_safe..sp_base-1]
+        ;     have ALREADY been restored from stash above; this PUSH BC
+        ;     only restores the TOS-cell at the original slot. ---
         LD      SP, HL
-        ; --- PUSH BC: restore the i*x's TOS-cell value to the data
-        ;     stack at [SP_safe-2], overwriting whatever return-address
-        ;     garbage xt's CALLs may have left there. SP becomes
-        ;     SP_safe-2 — exactly where it was at CATCH entry, with
-        ;     i*x's TOS-cell back in its original slot. ---
         PUSH    BC
         ; --- Install BC = n (THROW code, new TOS) ---
         LD      BC, (throw_saved_n)
@@ -837,3 +934,18 @@ throw_desc_table:
 ;   simply means it starts as zero on every program load.
 ; -----------------------------------------------
 throw_saved_n:  DW      0
+
+; -----------------------------------------------
+; Story 18.5.1 option (b) THROW caught-path scratch cells.
+;   Spill SP_safe (= frame +0) and saved-BC (= frame +2) across the LDIR
+;   that restores i*x deeper cells from the IX-rstack stash zone. LDIR
+;   clobbers HL/DE/BC; the catching-IP is spilled to the system stack via
+;   PUSH DE / POP DE. Single-threaded invariant: never re-entered (caught-
+;   path runs atomically between THROW entry and NEXT).
+;
+;   Storage note: 2 bytes each of initialised data baked into the .COM
+;   image (parallel to throw_saved_n above).
+; -----------------------------------------------
+throw_stash_hl: DW      0
+throw_stash_bc: DW      0
+throw_stash_de: DW      0

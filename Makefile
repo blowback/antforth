@@ -492,6 +492,29 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-18.5-e — IN-BANK CATCH-safe stash witness failed"; \
 		echo "  PROBE_18_5_E: $$PROBE_18_5_E"; exit 1; \
 	fi
+	@# Story 18.5.1 — option (b) framework patch: i*x deeper-cell preservation
+	@# on caught THROW. Probes 18.5.1-A (Reproducer B, generic CATCH) and
+	@# 18.5.1-B (Reproducer A, IN-BANK exposure) witness ANS §9.6.1.0875
+	@# cell-content preservation across xt's stack writes / THROW caught-
+	@# path's scratch traffic. Pre-option-(b) both probes returned the
+	@# corrupted value at i*x's second-from-top; post-option-(b) the LDIR
+	@# stash-and-restore on the IX rstack closes the gap structurally.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_1_A=$$(echo "$$OUTPUT" | awk '/---probe-18.5.1-a-start---$$/{p=1; next} /---probe-18.5.1-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_1_A" | grep -q 'probe-18.5.1-a-pass-generic-catch-ix-preservation' && ! echo "$$PROBE_18_5_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5.1-a-end---$$'; then \
+		echo "PASS: probe-18.5.1-a — Reproducer B generic CATCH i*x deeper-cell preservation (100 200 ' SWAP-ABORT CATCH → ANS §9.6.1.0875) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5.1-a — generic CATCH i*x preservation failed"; \
+		echo "  PROBE_18_5_1_A: $$PROBE_18_5_1_A"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_1_B=$$(echo "$$OUTPUT" | awk '/---probe-18.5.1-b-start---$$/{p=1; next} /---probe-18.5.1-b-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_1_B" | grep -q 'probe-18.5.1-b-pass-in-bank-ix-preservation' && ! echo "$$PROBE_18_5_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5.1-b-end---$$'; then \
+		echo "PASS: probe-18.5.1-b — Reproducer A IN-BANK i*x deeper-cell preservation (1 ' ABORT ' IN-BANK CATCH → second-from-top preserved) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5.1-b — IN-BANK i*x preservation failed"; \
+		echo "  PROBE_18_5_1_B: $$PROBE_18_5_1_B"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel

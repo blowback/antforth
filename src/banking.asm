@@ -936,18 +936,23 @@ w_BANK_OF_cf:
 ;   deeper-cell-independent Probe-18.5-E witness this binding.
 ;
 ;   The i*x notation `( j*x 0 | i*x throw )` above is the ANS
-;   Forth CATCH stack effect. antforth's CATCH frame preserves
-;   the i*x TOS-cell value via the Story-11.4.1 saved-BC slot
-;   (frame +2) but does NOT preserve i*x's deeper cells: any xt
-;   that writes to [SP_safe] or higher (e.g., SWAP, which exchanges
-;   BC with [SP] = [SP_safe] when called with SP = SP_safe) will
-;   corrupt the second-from-top cell of i*x. IN-BANK's SWAP at
-;   the third cell of its body falls under this generic CATCH
-;   limitation. The depth-preservation invariant (ANS §9.3.5
-;   "same depth") still holds — only cell contents below TOS may
-;   shift. See Story 18.5 code-review §H1 and follow-up
-;   18-5-1-defwords-ix-preservation-on-caught-throw in
-;   sprint-status.yaml for the framework-level remediation plan.
+;   Forth CATCH stack effect. Story 18.5.1 (post-Story-18.5
+;   close, option (b) framework patch) extends antforth's CATCH
+;   frame with an IX-rstack stash zone (depth_word + i*x cells
+;   below frame_base; see docs/register-conventions.md §9 "Story
+;   18.5.1: i*x cell-content preservation scope") so that BOTH
+;   i*x's TOS-cell (via Story-11.4.1 saved-BC at frame +2) AND
+;   i*x's deeper cells (via the new LDIR-stash mechanism) are
+;   preserved across the caught-THROW boundary per ANS §9.6.1.0875.
+;   IN-BANK's body-cell-3 SWAP — which would have corrupted outer
+;   i*x's second-from-top under the pre-Story-18.5.1 framework
+;   (witnessed by the 18.5 H1 disposition Reproducer A trace) — is
+;   now harmless: outer CATCH stashes the deeper cells at its push,
+;   and the outer THROW caught-path LDIR restores them regardless
+;   of IN-BANK body's intermediate writes at [SP_safe + 0]. See
+;   `_bmad-output/implementation-artifacts/18-5-1-defwords-ix-
+;   preservation-on-caught-throw.md` for the dev-pass log and
+;   Probes 18.5.1-A/B for the empirical witnesses.
 ;
 ;   BANK!-on-bad-n contract: -2 THROW ("bank?") fires BEFORE the
 ;   bank switch commits (src/banking.asm:151..156). On bad n,

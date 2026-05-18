@@ -1526,3 +1526,88 @@ _p18-5e-check                          \ consumes -1; stashes carry the witness
 DROP DROP                              \ drop i*x residue ( 1 xt_ABORT )
 BANKS-CLEAR
 _p18-5e-end
+
+\ === Story 18.5.1 probes: i*x deeper-cell preservation on caught THROW ===
+\ Reproducer A and B from the Story 18.5 H1 disposition. Both are PASS-only
+\ under option (b) framework patch (this story); under option (a) they would
+\ have carried PARTIAL-with-rationale verdicts.
+\
+\ Probe-18.5.1-A (Reproducer B — generic CATCH framework): defines a
+\ SWAP-ABORT colon word and verifies `100 200 ' SWAP-ABORT CATCH` yields
+\ ANS §9.6.1.0875 cell-content preservation `<3> 100 200 -1`. Pre-option-(b)
+\ this returned `<3> 200 200 -1` (i*x's second-from-top corrupted by SWAP's
+\ POP HL / PUSH BC at [SP_safe + 0]). VARIABLE-stashed witness avoids
+\ data-stack arithmetic that would itself be subject to the same gap.
+\
+\ Probe-18.5.1-B (Reproducer A — IN-BANK exposure): verifies
+\ `1 ' ABORT ' IN-BANK CATCH` yields `<3> 1 17262 -1` (where 17262 is the
+\ xt_ABORT address restored from saved-BC at outer CATCH frame +2). The
+\ second-from-top cell "1" is preserved post-option-(b); pre-option-(b)
+\ it was overwritten with the outer CATCH frame_base leaked via THROW's
+\ PUSH HL / POP IX idiom.
+\
+\ Both probes use the _p18-5-1* variable-name disambiguation pattern
+\ (Story 18.4 CR-M1 precedent) and the SENTINEL-BOUNDED marker pattern.
+\ Lines kept ≤ TIB_SIZE=128 per feedback_tib_size_inline_comments.md.
+
+VARIABLE _p18-5-1a-c1
+VARIABLE _p18-5-1a-c2
+VARIABLE _p18-5-1a-tos
+VARIABLE _p18-5-1a-pass
+: _p18-5-1a-start ." ---probe-18.5.1-a-start---" CR ;
+: _p18-5-1a-end   ." ---probe-18.5.1-a-end---"   CR ;
+: SWAP-ABORT SWAP ABORT ;
+: _p18-5-1a-check ( c1 c2 tos -- )
+  -1 _p18-5-1a-pass !
+  _p18-5-1a-tos !
+  _p18-5-1a-c2  !
+  _p18-5-1a-c1  !
+  _p18-5-1a-c1  @ 100 = INVERT IF 0 _p18-5-1a-pass !
+    ." i*x-deepest-mismatch " THEN
+  _p18-5-1a-c2  @ 200 = INVERT IF 0 _p18-5-1a-pass !
+    ." i*x-second-mismatch " THEN
+  _p18-5-1a-tos @ -1  = INVERT IF 0 _p18-5-1a-pass !
+    ." throw-code-mismatch " THEN
+  _p18-5-1a-pass @ IF
+    ." probe-18.5.1-a-pass-generic-catch-ix-preservation"
+  ELSE
+    ." FAIL: probe-18.5.1-a generic SWAP-ABORT i*x preservation failed"
+  THEN CR ;
+
+_p18-5-1a-start
+100 200 ' SWAP-ABORT CATCH       \ ( 100 200 -1 expected post-option-(b) )
+_p18-5-1a-check                  \ consumes 3 cells; witness in VARIABLEs
+_p18-5-1a-end
+
+VARIABLE _p18-5-1b-c1
+VARIABLE _p18-5-1b-c2
+VARIABLE _p18-5-1b-tos
+VARIABLE _p18-5-1b-pass
+: _p18-5-1b-start ." ---probe-18.5.1-b-start---" CR ;
+: _p18-5-1b-end   ." ---probe-18.5.1-b-end---"   CR ;
+: _p18-5-1b-check ( c1 c2 tos -- )
+  -1 _p18-5-1b-pass !
+  _p18-5-1b-tos !
+  _p18-5-1b-c2  !
+  _p18-5-1b-c1  !
+  _p18-5-1b-c1  @ 1 = INVERT IF 0 _p18-5-1b-pass !
+    ." in-bank-i*x-deepest-mismatch " THEN
+  \ c2 is xt_ABORT (address-typed; we check non-zero rather than literal)
+  _p18-5-1b-c2  @ 0= IF 0 _p18-5-1b-pass !
+    ." in-bank-i*x-second-zero " THEN
+  _p18-5-1b-tos @ -1 = INVERT IF 0 _p18-5-1b-pass !
+    ." in-bank-throw-code-mismatch " THEN
+  _p18-5-1b-pass @ IF
+    ." probe-18.5.1-b-pass-in-bank-ix-preservation"
+  ELSE
+    ." FAIL: probe-18.5.1-b IN-BANK i*x preservation failed"
+  THEN CR ;
+
+_p18-5-1b-start
+BANKS-CLEAR
+$22 +BANK $35 +BANK
+0 BANK!
+1 ' ABORT ' IN-BANK CATCH        \ ( 1 xt_ABORT -1 expected post-option-(b) )
+_p18-5-1b-check                  \ consumes 3 cells; witness in VARIABLEs
+BANKS-CLEAR
+_p18-5-1b-end
