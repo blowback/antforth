@@ -327,7 +327,7 @@ development_status:
   18-1-descriptor-stub-allocator-xt-as-stub-address-contract: done
   18-2-sentinel-trampoline-cross-bank-return-kernel-exit-distinguishes-intra-bank-from-cross-bank: done
   18-3-kernel-execute-dispatches-through-stub-initial-compile-comma-stub-emission-wiring-dispatch-budget-verification: done
-  18-4-bank-of-one-byte-read-from-descriptor-stub: backlog
+  18-4-bank-of-one-byte-read-from-descriptor-stub: done
   18-5-in-bank-kernel-blessed-catch-safe-epic-18-close-out-antforth-3-x-2-tag: backlog
   epic-18-retrospective: optional
 

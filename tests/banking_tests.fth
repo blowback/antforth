@@ -1236,3 +1236,110 @@ EXECUTE                                \ ← CROSS-BANK DISPATCH FIRES HERE
 _p18f-check                            \ assert ( -42 ) on stack + BANK@=0
 BANKS-CLEAR
 _p18f-end
+
+\ === Probe-18.4-A/B/C — BANK-OF one-byte read of descriptor-stub byte 0 ===
+\ Story 18.4 (FR-P4-5). BANK-OF is a fixed-memory DEFCODE word that
+\ reads byte 0 of a stub (target_bank, signed) and returns it sign-
+\ extended into a single cell. No MMU writes, no R-stack pushes, no
+\ inner-interpreter excursion — Probes A + B are surface-agnostic
+\ (PASS on iz-cpm + iz-cpm-banking + hardware).
+\
+\ Probe-A: AC4(a). Allocate stub with target_bank = -1 (fixed-mem
+\ marker per FR-P4-13); BANK-OF must read $FF → sign-extend → -1.
+\ Probe-B: AC4(b). Allocate stub with target_bank = 5; BANK-OF
+\ must read $05 → 5.
+\ Probe-C: AC4(c) — xt portability (FR-P4-17). Pre-resolves the
+\ BANK-OF xt (a fixed-memory CFA) BEFORE the first BANK! so the
+\ cross-bank EXECUTE dispatches via the legacy-CFA path; reads the
+\ same stub byte 0 from bank-1 and bank-0 contexts. Q1 disposition:
+\ option (a) — interpret-mode pre-resolve-and-EXECUTE; falls back
+\ to deferral if the FIND-chain-in-slot-2 hazard fires (Story-18.3
+\ Probes B/C/D/E precedent at file line ~1117).
+
+\ Output helpers (colon-body sentinel printers — kept fixed-memory-
+\ free of cross-bank concerns since BANK-OF Probes A + B never swap
+\ banks).
+: _p18a-start  ." ---probe-18.4-a-start---" CR ;
+: _p18a-end    ." ---probe-18.4-a-end---"   CR ;
+: _p18b-start  ." ---probe-18.4-b-start---" CR ;
+: _p18b-end    ." ---probe-18.4-b-end---"   CR ;
+: _p18c-start  ." ---probe-18.4-c-start---" CR ;
+: _p18c-end    ." ---probe-18.4-c-end---"   CR ;
+
+: _p18-4a-check ( bank-of-result -- )
+  -1 = IF
+    ." probe-18.4-a-pass-fixed-mem-marker"
+  ELSE
+    ." FAIL: probe-18.4-a fixed-mem marker BANK-OF returned non-(-1)"
+  THEN CR
+;
+
+: _p18-4b-check ( bank-of-result -- )
+  5 = IF
+    ." probe-18.4-b-pass-banked-bank-5"
+  ELSE
+    ." FAIL: probe-18.4-b banked-bank-5 BANK-OF returned non-5"
+  THEN CR
+;
+
+\ Probe-18.4-A — fixed-memory marker. Interpret-mode (no enclosing
+\ body). ' BANK@ pushes xt of BANK@ (any fixed-memory xt works);
+\ (stub-allocate) stores target_bank = -1 → byte 0 = $FF.
+_p18a-start
+' BANK@ -1 (stub-allocate)             \ ( stub_xt )
+BANK-OF                                \ ( -1 expected )
+_p18-4a-check
+_p18a-end
+
+\ Probe-18.4-B — banked-bank-5 marker. (stub-allocate) stores
+\ target_bank = 5 → byte 0 = $05. No MMU activity invoked.
+_p18b-start
+0 5 (stub-allocate)                    \ ( stub_xt )  target_addr=0 placeholder
+BANK-OF                                \ ( 5 expected )
+_p18-4b-check
+_p18b-end
+
+\ Probe-18.4-C — DEFERRED to Epic 19. AC4(c) xt-portability across
+\ BANK! (FR-P4-17). Q1 disposition at dev-pass: option (b) — defer.
+\
+\ Rationale: A direct interpret-mode probe `1 BANK! ... <xt> EXECUTE
+\ ... 0 BANK!` requires the outer interpreter to FIND tokens (DUP,
+\ EXECUTE, BANK!, integer literals) WHILE bank=1 is active. BANK!'s
+\ triple swap (banking.asm:170..193) saves/loads HERE, LATEST, and
+\ the FORTH-WORDLIST WORDLIST_NEXT cell — but the FORTH-WORDLIST's
+\ hash-bucket array is NOT swapped (it is the kernel-resident
+\ canonical wordlist; src/wordlists.asm:328..343). Bucket cells
+\ already point at user-defined dict entries above $8000 by the
+\ time this test file has loaded (HERE has crossed $8000 well
+\ before line 1100; see Story-18.3 HAZARD note at file line
+\ ~1117). After `1 BANK!`, slot 2 is remapped to bank 1's page,
+\ and the next outer-interpreter FIND walks the SAME bucket
+\ cells, dereferencing pointers into slot 2 where bank-1's page
+\ holds either uninitialised bytes or unrelated content → wrong
+\ link / undefined word / hang.
+\
+\ Cross-bank-EXECUTE-through-BANK-OF doesn't work either: the
+\ cross-bank dispatch (inner_interpreter.asm:332..337) is
+\ DEFWORD-only — it relies on the callee's JP DOCOL pushing the
+\ sentinel return-address. BANK-OF is DEFCODE; its NEXT does not
+\ EXIT, so the sentinel-trampoline mechanism never fires for a
+\ cross-bank stub targeting BANK-OF.
+\
+\ Forward commitment to Epic 19: bank-aware `:` lands per-bank
+\ HERE / LATEST plumbing and (per Epic 19 spec) per-bank wordlist
+\ chains, which removes the FIND-walks-through-slot-2 hazard
+\ structurally. AC4(c)'s xt-portability witness is then a clean
+\ probe in that epic's test surface. The FR-P4-17 property is
+\ provable structurally in the meantime: stubs live in fixed
+\ memory ($D4CB+) which is unaffected by any slot-2 swap, so
+\ BANK-OF reading byte 0 from a stub xt returns the same value
+\ regardless of BANK@ — Probes A + B already exercise the read
+\ path; AC4(c) is the across-bank witness that the same xt
+\ value remains a valid argument across BANK!.
+\
+\ Marker block preserves M4 end-sentinel discipline so future
+\ Epic-19 dev pass can inject the real probe in-place.
+_p18c-start
+." probe-18.4-c-deferred-to-epic-19-xt-portability-witness"
+CR
+_p18c-end

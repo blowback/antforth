@@ -821,6 +821,51 @@ w_PAREN_STUB_ALLOCATE_cf:
         LD      C, L                                ; BC = HL = xt (new TOS)
         NEXT
 
+; === BANK-OF ( xt -- n ) ===
+;   One-byte read of descriptor-stub byte 0, sign-extended to a single
+;   cell. Returns the bank a word lives in: -1 for fixed-memory words
+;   (FR-P4-13 marker, stored as signed $FF), 0..28 for banked words
+;   (active-bank index per PD-P4-13).
+;
+;   Implementation contract:
+;     - Input: BC = xt = stub address (typically in [STUB_ALLOC_BASE,
+;       $DC00) = [$D4CB, $DC00)). No range check on xt — caller owns
+;       valid-stub-address discipline, matching the stub_allocate
+;       undefined-input contract at src/banking.asm:751..769.
+;     - Output: BC = n = sign-extended byte at xt+0.
+;       $FF → $FFFF (= -1); $00..$1C → $0000..$001C (= 0..28).
+;     - Sign-extension idiom: RLA / SBC A, A — bit 7 → carry; SBC A,A
+;       yields $FF if carry set, $00 if clear (Q2 decision: 2 B / 8 T;
+;       smallest + no branches; same idiom is widely used in Zilog
+;       programming guides).
+;     - EXX-hygiene audit (S7 / NFR-P4-34; docs/register-conventions.md
+;       §3 leaf-level rule + §7 EXX-using inventory): body reads only
+;       main-set BC / HL / A. No EXX. No EX DE,HL. No LDIR. No
+;       DE-as-temp. Lesson 17-D PUSH/POP DE wrap NOT required.
+;     - Stack effect: single-cell-in / single-cell-out — TOS replaced
+;       in BC, no PUSH BC / POP BC wraps.
+;
+;   "Essentially free" under PD-P4-1 / PD-P4-11: 7-instruction body
+;   (~7 B) consuming the byte 0 layout fixed by Story 18.1.
+;
+; antforth Phase-4 — FR-P4-5; PD-P4-1 (architecture.md:209, γ
+; descriptor-stub mechanism — "BANK-OF becomes a one-byte read from
+; the stub — essentially free"); PD-P4-11 (architecture.md:347..363,
+; 4-byte stub layout with byte 0 = signed target_bank); redesign §1
+; row at docs/antforth-banking-redesign.md:17. Forward-pointer:
+; Story 18.5 (IN-BANK + Epic 18 close-out + antforth 3.x.2 tag).
+w_BANK_OF:
+        DEFCODE "BANK-OF", 0
+w_BANK_OF_cf:
+        LD      H, B                                ; HL = xt
+        LD      L, C
+        LD      C, (HL)                             ; C = byte 0 (target_bank, signed)
+        LD      A, C
+        RLA                                         ; CF = bit 7 of byte 0
+        SBC     A, A                                ; A = $FF if CF else $00
+        LD      B, A                                ; BC = sign-extended cell
+        NEXT
+
 ; ============================================================
 ; cross_bank_return — Sentinel-trampoline for cross-bank EXIT.
 ;

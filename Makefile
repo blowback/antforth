@@ -388,6 +388,45 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-18.3-f — cross-bank EXECUTE round-trip failed"; \
 		echo "  PROBE_18_3_F: $$PROBE_18_3_F"; exit 1; \
 	fi
+	@# Story 18.4 Probe-18.4-A — BANK-OF one-byte read returns -1 for a
+	@# fixed-memory-marker stub (target_bank = $FF, sign-extended). Surface-
+	@# agnostic (no MMU writes, no inner-interpreter excursion).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_4_A=$$(echo "$$OUTPUT" | awk '/---probe-18.4-a-start---$$/{p=1; next} /---probe-18.4-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_4_A" | grep -q 'probe-18.4-a-pass-fixed-mem-marker' && ! echo "$$PROBE_18_4_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.4-a-end---$$'; then \
+		echo "PASS: probe-18.4-a — BANK-OF fixed-memory marker (target_bank=-1 → -1) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.4-a — BANK-OF fixed-memory marker read failed"; \
+		echo "  PROBE_18_4_A: $$PROBE_18_4_A"; exit 1; \
+	fi
+	@# Story 18.4 Probe-18.4-B — BANK-OF returns 5 for a banked-bank-5
+	@# stub (target_bank = $05). Same byte-0 read path as Probe-A; verifies
+	@# the positive sign-extension arm ($00..$7F → cell 0..127).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_4_B=$$(echo "$$OUTPUT" | awk '/---probe-18.4-b-start---$$/{p=1; next} /---probe-18.4-b-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_4_B" | grep -q 'probe-18.4-b-pass-banked-bank-5' && ! echo "$$PROBE_18_4_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.4-b-end---$$'; then \
+		echo "PASS: probe-18.4-b — BANK-OF banked-bank-5 marker (target_bank=5 → 5) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.4-b — BANK-OF banked-bank-5 marker read failed"; \
+		echo "  PROBE_18_4_B: $$PROBE_18_4_B"; exit 1; \
+	fi
+	@# Story 18.4 Probe-18.4-C — xt-portability witness DEFERRED to Epic 19.
+	@# Q1 dispositioned at dev-pass: the FORTH-WORDLIST hash-bucket array is
+	@# kernel-resident but its cell contents already point above $8000 after
+	@# the test file loads; BANK! does NOT swap the bucket array, so FIND
+	@# after `1 BANK!` walks into slot 2 → hazard (Story-18.3 documented).
+	@# Cross-bank EXECUTE-through-BANK-OF doesn't work either: the dispatch
+	@# is DEFWORD-only (inner_interpreter.asm:332..337). Marker block
+	@# preserves M4 end-sentinel discipline so Epic-19's bank-aware `:`
+	@# (per-bank wordlist plumbing) can inject the real probe in-place.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_4_C=$$(echo "$$OUTPUT" | awk '/---probe-18.4-c-start---$$/{p=1; next} /---probe-18.4-c-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_4_C" | grep -q 'probe-18.4-c-deferred-to-epic-19-xt-portability-witness' && ! echo "$$PROBE_18_4_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.4-c-end---$$'; then \
+		echo "SKIP: probe-18.4-c — AC4(c) xt-portability witness DEFERRED to Epic 19 (bank-aware FIND removes FIND-walks-through-slot-2 hazard) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.4-c — deferral marker not emitted (sentinel-block discipline broken)"; \
+		echo "  PROBE_18_4_C: $$PROBE_18_4_C"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
