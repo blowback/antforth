@@ -328,7 +328,26 @@ development_status:
   18-2-sentinel-trampoline-cross-bank-return-kernel-exit-distinguishes-intra-bank-from-cross-bank: done
   18-3-kernel-execute-dispatches-through-stub-initial-compile-comma-stub-emission-wiring-dispatch-budget-verification: done
   18-4-bank-of-one-byte-read-from-descriptor-stub: done
-  18-5-in-bank-kernel-blessed-catch-safe-epic-18-close-out-antforth-3-x-2-tag: backlog
+  18-5-in-bank-kernel-blessed-catch-safe-epic-18-close-out-antforth-3-x-2-tag: review
+  # Story 18-5-1 filed 2026-05-18 at Story 18.5 code-review close (H1
+  # disposition). Empirical finding: antforth's CATCH frame preserves the
+  # i*x TOS-cell via Story-11.4.1 saved-BC (frame +2) but does NOT
+  # preserve i*x's deeper cells; any xt that writes to [SP_safe] or
+  # higher (SWAP being the canonical example) corrupts i*x's
+  # second-from-top. IN-BANK exposes this via its body's SWAP (cell 3).
+  # The gap is generic to antforth-CATCH, not specific to IN-BANK or
+  # Story 18.5; reproduced independently via `: SWAP-ABORT SWAP ABORT ;`
+  # + `100 200 ' SWAP-ABORT CATCH` yielding `<3> 200 200 -1` (expected
+  # `<3> 100 200 -1`). FR-P4-4 / AC2 narrow binding (caller's bank
+  # restored on caught THROW) is unaffected — empirically witnessed by
+  # Probe-18.5-C (data-stack TOS check) AND Probe-18.5-E (USER-variable
+  # stash, deeper-cell-independent). ANS §9.3.5 depth-preservation
+  # invariant holds; cell-content preservation below TOS is the gap.
+  # Filed per feedback_no_preexisting_discharge.md "surface, file, fix"
+  # standing rule. Scope: framework-level fix to CATCH (e.g., save more
+  # of i*x at frame push) OR DEFWORD-pattern guidance to avoid SWAP at
+  # the body's pre-CATCH cells. Out-of-scope for Phase-4 close-out tag.
+  18-5-1-defwords-ix-preservation-on-caught-throw: backlog
   epic-18-retrospective: optional
 
   epic-19: backlog

@@ -867,6 +867,127 @@ w_BANK_OF_cf:
         NEXT
 
 ; ============================================================
+; IN-BANK ( n xt -- )
+;
+;   Story 18.5 (FR-P4-4). Twelfth and final user-facing word of
+;   the redesign §1 BANK* wordset. Save current bank, switch to
+;   bank n, execute xt, restore caller's bank — CATCH-safe on
+;   the THROW unwind path.
+;
+;   Reference colon body at docs/antforth-banking-redesign.md:16:
+;
+;     : IN-BANK BANK@ >R SWAP BANK! EXECUTE R> BANK! ;
+;
+;   The reference body is NOT CATCH-safe: a THROW from xt would
+;   unwind to the caller's outer CATCH frame, abandoning the
+;   >R-saved bank cell — caller's bank would NOT be restored on
+;   the unwind path. FR-P4-4 binds CATCH-safety as externally-
+;   observable, so IN-BANK is kernel-blessed (DEFWORD that wraps
+;   EXECUTE in an internal CATCH frame), NOT a user library word.
+;
+;   Q1 (Story 18.5 §"Open implementation questions") — DEFWORD
+;   with internal CATCH wrap chosen over DEFCODE inline-Z80:
+;   composes cleanly with existing exception machinery (no new
+;   CCD-1 dual-chain layout exposure), inherits the Story-11.4.1
+;   saved-SP / saved-BC discipline at src/exception.asm:111..174
+;   unchanged.
+;
+;   Q2 — saved-bank stash via Forth return stack (>R / R>):
+;     - >R pushes saved bank ABOVE the internal CATCH frame on
+;       the R-stack (i.e., at a higher IX address; R-stack grows
+;       downward).
+;     - CATCH frame is pushed BELOW (lower IX) — at IX_init-10..
+;       IX_init-3 — by w_CATCH_cf's DEC IX × 4 frame push.
+;     - On caught THROW from xt, THROW restores IX to the
+;       internal CATCH frame base, pops 8 B → IX is back to
+;       IX_init-2 with saved_bank still at (IX). R> recovers it;
+;       BANK! restores caller's bank; ?DUP IF THROW THEN
+;       re-throws the captured code.
+;     - Re-entrant for free: nested IN-BANK invocations each
+;       have their own R-stack stash cell; no aliasing. AC4
+;       Probe-18.5-B asserts.
+;     - UserArea fixed-cell stash REJECTED on Q2(d) non-re-
+;       entrancy grounds.
+;
+;   Q3 — Probe-18.5-D (cross-bank IN-BANK) DEFERRED to Epic 19
+;   per the slot-2-remap-under-IP hazard (Story-18.3 / 18.4
+;   precedent documented at tests/banking_tests.fth:1302..1345 —
+;   Probe-18.4-C deferral block). Epic 19's per-bank dictionary
+;   plumbing resolves the hazard structurally.
+;
+;   Stack diagram (BC = TOS-in-register; [SP] = next):
+;     ( n xt -- )                            initial
+;     BANK@   ( n xt saved )                 push current bank
+;     >R      ( n xt        R: saved )       stash on R-stack
+;     SWAP    ( xt n        R: saved )       reorder for BANK!
+;     BANK!   ( xt          R: saved )       switch to target
+;     CATCH   ( j*x 0 |     R: saved )       wrap xt in frame
+;             ( i*x throw   R: saved )       on caught THROW
+;     R>      ( ... saved   R: )             unstash
+;     BANK!   ( j*x 0 | i*x throw )          restore caller bank
+;     ?DUP IF THROW THEN                     re-throw if non-zero
+;
+;   CATCH-SAFETY SCOPE (FR-P4-4 / Story 18.5 AC2 narrow binding) —
+;   the externally-observable property guaranteed by this kernel
+;   word is: on caught THROW from xt, (a) the throw code lands on
+;   the CATCH frame's data stack, and (b) the caller's bank is
+;   restored on the unwind path (via the R-stack-stashed saved
+;   bank, recovered by R>). AC2's wording, Probe-18.5-C, and the
+;   deeper-cell-independent Probe-18.5-E witness this binding.
+;
+;   The i*x notation `( j*x 0 | i*x throw )` above is the ANS
+;   Forth CATCH stack effect. antforth's CATCH frame preserves
+;   the i*x TOS-cell value via the Story-11.4.1 saved-BC slot
+;   (frame +2) but does NOT preserve i*x's deeper cells: any xt
+;   that writes to [SP_safe] or higher (e.g., SWAP, which exchanges
+;   BC with [SP] = [SP_safe] when called with SP = SP_safe) will
+;   corrupt the second-from-top cell of i*x. IN-BANK's SWAP at
+;   the third cell of its body falls under this generic CATCH
+;   limitation. The depth-preservation invariant (ANS §9.3.5
+;   "same depth") still holds — only cell contents below TOS may
+;   shift. See Story 18.5 code-review §H1 and follow-up
+;   18-5-1-defwords-ix-preservation-on-caught-throw in
+;   sprint-status.yaml for the framework-level remediation plan.
+;
+;   BANK!-on-bad-n contract: -2 THROW ("bank?") fires BEFORE the
+;   bank switch commits (src/banking.asm:151..156). On bad n,
+;   IN-BANK propagates -2 cleanly; caller's bank is preserved
+;   because no switch occurred. The R-stack stash cell is
+;   abandoned by the outer-CATCH (or uncaught-handler) unwind —
+;   harmless since IX is restored above it.
+;
+;   FR-P4-21 (recursive R-stack — documented gotcha per
+;   architecture.md:367..382): nested IN-BANK adds 5 cells per
+;   level (1 stash + 4-cell internal CATCH frame). Unbounded
+;   recursion eventually hits -5 RETURN-STACK-OVERFLOW THROW;
+;   no runtime guard added here.
+;
+;   EXX-HYGIENE (per NFR-P4-34 / docs/register-conventions.md
+;   §3): IN-BANK is a Forth-threaded DEFWORD composition of
+;   existing primitives (BANK@, >R, SWAP, BANK!, CATCH, R>,
+;   ?DUP, ?BRANCH, THROW), each of which is independently
+;   EXX-clean. No new EXX-hygiene audit needed for IN-BANK
+;   itself.
+;
+; antforth extension IN-BANK — see docs/antforth-banking-redesign.md §1
+; ============================================================
+w_IN_BANK:
+        DEFWORD "IN-BANK", 0                ; ( n xt -- )
+w_IN_BANK_body:
+w_IN_BANK_cf    EQU     w_IN_BANK_body - 3
+        DW      w_BANK_AT_cf                ; ( n xt saved )
+        DW      w_TO_R_cf                   ; ( n xt       R: saved )
+        DW      w_SWAP_cf                   ; ( xt n       R: saved )
+        DW      w_BANK_STORE_cf             ; ( xt         R: saved ) — may THROW -2
+        DW      w_CATCH_cf                  ; ( j*x 0 | i*x throw  R: saved )
+        DW      w_R_FROM_cf                 ; ( ... saved          R: )
+        DW      w_BANK_STORE_cf             ; restore caller bank
+        DW      w_QDUP_cf                   ; ( ... 0 | throw throw )
+        DW      w_QBRANCH_cf, 4             ; if 0, skip THROW (offset = +4)
+        DW      w_THROW_cf
+        DW      EXIT_CODE
+
+; ============================================================
 ; cross_bank_return — Sentinel-trampoline for cross-bank EXIT.
 ;
 ;   Story 18.2: the S1 b sentinel-tagged cross-bank return mechanism

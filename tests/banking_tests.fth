@@ -1343,3 +1343,186 @@ _p18c-start
 ." probe-18.4-c-deferred-to-epic-19-xt-portability-witness"
 CR
 _p18c-end
+
+
+\ === Probe-18.5-A/B/C/D — IN-BANK kernel-blessed CATCH-safe ===
+\ Story 18.5 (FR-P4-4). IN-BANK ( n xt -- ) saves caller bank,
+\ switches to bank n, EXECUTEs xt, restores caller bank — with
+\ CATCH-safety on the THROW unwind path (DEFWORD with internal
+\ CATCH wrap; saved bank stashed via Forth return-stack >R / R>
+\ ABOVE the internal CATCH frame so it survives the unwind).
+\
+\ Probe-A: AC4(a) basic round-trip. Interpret-mode invocation
+\ (NOT a colon body) so the running interpreter is kernel-
+\ resident (< $8000) and unaffected by BANK!'s slot-2 swap —
+\ same shape as Probe-18.3-F (CR-H1 follow-up). xt is the
+\ fixed-memory DEFCODE BANK@ (CFA < $D400 main-RAM) so the
+\ EXECUTE'd body remains addressable across the bank switch.
+\ Target = bank 1 (page $35), caller = bank 0 (page $22); IN-
+\ BANK switches → BANK@ pushes 1 (current bank in target) →
+\ IN-BANK restores bank 0. Asserts (a) stack TOS after IN-BANK
+\ = 1, (b) BANK@ after IN-BANK = 0 (caller bank restored).
+\
+\ Probe-B: AC4(b) nested IN-BANK. DEFERRED to Epic 19 per the
+\ slot-2-remap-under-IP hazard (Probe-18.3-B/C/E / Probe-18.4-C
+\ precedent at file line ~1097 and ~1302). True nesting requires
+\ the outer xt to be a colon body that itself calls IN-BANK; at
+\ probe-time HERE has crossed $8000, so user-defined colon
+\ bodies sit in slot 2 — BANK! within them remaps slot 2 under
+\ the running IP → kernel halt. The re-entrancy property of
+\ Q2's R-stack stash discipline (each nested IN-BANK gets its
+\ own >R-stashed bank cell, isolated by the internal CATCH
+\ frame placement) is provable structurally: every IN-BANK
+\ invocation issues its OWN >R before its OWN CATCH, so the
+\ saved-bank cells form a LIFO matching the IN-BANK call
+\ nesting; Forth R-stack discipline guarantees no cross-call
+\ aliasing. Epic 19's per-bank dictionary plumbing puts user-
+\ defined colon bodies in per-bank HERE regions, naturally
+\ removing the hazard for empirical nesting validation.
+\
+\ Probe-C: AC4(c) CATCH-safe variant (FR-P4-4 binding case).
+\ Interpret-mode invocation (same hazard-avoidance pattern as
+\ Probe-A). xt = ' ABORT (DEFCODE, fixed-memory CFA < $D400);
+\ ABORT raises -1 THROW. CATCH wraps the IN-BANK call so the
+\ -1 is caught at the test-level CATCH, not the uncaught
+\ handler. Asserts (a) TOS after CATCH = -1 (throw code
+\ propagated), (b) BANK@ after CATCH = 0 (caller's bank
+\ restored via the >R / R> stash on the unwind path).
+\
+\ Probe-D: AC4(d) cross-bank IN-BANK xt-portability witness.
+\ DEFERRED to Epic 19 per Q3 disposition in story Dev Notes —
+\ slot-2-remap-under-IP hazard precludes empirical validation
+\ of the (xt portability across BANK!) property at this story
+\ scope; structurally provable per Probe-18.4-C precedent
+\ (stubs live in fixed memory $D4CB+ unaffected by any slot-2
+\ swap, so stub-xts remain valid arguments across BANK!).
+
+\ Output helpers (colon-body sentinel printers + check words).
+\ Names use _p18-5* per Story 18.4 CR-M1 disambiguation
+\ convention (avoids collision with prior 18.x probe names).
+: _p18-5a-start  ." ---probe-18.5-a-start---" CR ;
+: _p18-5a-end    ." ---probe-18.5-a-end---"   CR ;
+: _p18-5b-start  ." ---probe-18.5-b-start---" CR ;
+: _p18-5b-end    ." ---probe-18.5-b-end---"   CR ;
+: _p18-5c-start  ." ---probe-18.5-c-start---" CR ;
+: _p18-5c-end    ." ---probe-18.5-c-end---"   CR ;
+: _p18-5d-start  ." ---probe-18.5-d-start---" CR ;
+: _p18-5d-end    ." ---probe-18.5-d-end---"   CR ;
+
+VARIABLE _p18-5a-pass
+: _p18-5a-check ( inner_bank caller_bank_post -- )
+  -1 _p18-5a-pass !
+  0 = INVERT IF 0 _p18-5a-pass ! ." caller-bank-not-restored " THEN
+  1 = INVERT IF 0 _p18-5a-pass ! ." inner-bank-mismatch " THEN
+  _p18-5a-pass @ IF
+    ." probe-18.5-a-pass-in-bank-roundtrip"
+  ELSE
+    ." FAIL: probe-18.5-a IN-BANK round-trip failed"
+  THEN CR
+;
+
+VARIABLE _p18-5c-pass
+: _p18-5c-check ( throw_code caller_bank_post -- )
+  -1 _p18-5c-pass !
+  0 = INVERT IF 0 _p18-5c-pass ! ." caller-bank-not-restored " THEN
+  -1 = INVERT IF 0 _p18-5c-pass ! ." throw-code-mismatch " THEN
+  _p18-5c-pass @ IF
+    ." probe-18.5-c-pass-in-bank-catch-safe"
+  ELSE
+    ." FAIL: probe-18.5-c IN-BANK CATCH-safe THROW unwind failed"
+  THEN CR
+;
+
+\ Probe-18.5-A — basic round-trip. Interpret-mode invocation;
+\ target = bank 1, xt = ' BANK@ (fixed-memory DEFCODE). After
+\ IN-BANK: stack has 1 (BANK@'s output during the inner-bank
+\ context), BANK@ post = 0 (caller bank restored).
+_p18-5a-start
+BANKS-CLEAR
+$22 +BANK $35 +BANK                    \ active_pages[0]=$22, [1]=$35
+0 BANK!                                \ ensure caller is in bank 0
+1 ' BANK@ IN-BANK                      \ ← IN-BANK FIRES HERE; pushes 1
+BANK@                                  \ ( 1 0 expected )
+_p18-5a-check
+BANKS-CLEAR
+_p18-5a-end
+
+\ Probe-18.5-B — DEFERRED to Epic 19. See block comment above.
+\ Marker block preserves M4 end-sentinel discipline so Epic-19
+\ dev pass (per-bank dictionary plumbing) can inject the real
+\ nested-IN-BANK probe in-place.
+_p18-5b-start
+." probe-18.5-b-deferred-to-epic-19-nested-in-bank-re-entrancy-witness"
+CR
+_p18-5b-end
+
+\ Probe-18.5-C — CATCH-safe THROW unwind. Interpret-mode
+\ invocation; xt = ' ABORT (DEFCODE; raises -1 THROW). CATCH
+\ wraps IN-BANK so -1 lands on data stack; BANK@ post-CATCH
+\ must equal caller's pre-IN-BANK bank (= 0).
+_p18-5c-start
+BANKS-CLEAR
+$22 +BANK $35 +BANK                    \ same bank setup as Probe-A
+0 BANK!                                \ caller in bank 0
+1 ' ABORT ' IN-BANK CATCH              \ ( i*x -1 expected; i*x = ( 1 xt_ABORT ) )
+BANK@                                  \ ( i*x -1 0 expected )
+_p18-5c-check                          \ consumes top 2 ( -1 0 ); i*x residue remains
+2DROP                                  \ M1: drop i*x residue ( 1 xt_ABORT )
+BANKS-CLEAR
+_p18-5c-end
+
+\ Probe-18.5-D — DEFERRED to Epic 19. See block comment above.
+\ Marker block preserves M4 end-sentinel discipline so Epic-19
+\ dev pass can inject the cross-bank IN-BANK xt-portability
+\ witness in-place.
+_p18-5d-start
+." probe-18.5-d-deferred-to-epic-19-cross-bank-in-bank-xt-portability"
+CR
+_p18-5d-end
+
+
+\ Probe-18.5-E — AC2 narrow binding: caller's bank restored on
+\ caught THROW unwind, validated via a USER-variable stash so we
+\ are independent of antforth-CATCH's i*x deeper-cell preservation
+\ limitations (Story-18.5 code-review H1: antforth's CATCH frame
+\ preserves only the i*x TOS-cell via Story-11.4.1 saved-BC; deeper
+\ cells may be touched by xt's PUSH/POP/SWAP traffic at-or-above
+\ SP_safe). Probe-C's data-stack-only check is sufficient for AC2's
+\ wording, but Probe-E gives a deeper-cell-independent witness for
+\ readers tracing the H1 disposition.
+\
+\ Mechanism: stash pre-IN-BANK BANK@ into a VARIABLE; run IN-BANK
+\ inside CATCH with xt = ' ABORT (raises -1 THROW); after CATCH,
+\ stash post-CATCH BANK@ into a second VARIABLE. Compare the two
+\ via memory peek (no reliance on data stack contents below the
+\ TOS pair). PASS marker iff (a) stashed pre = stashed post AND
+\ (b) TOS = -1 (throw code propagated).
+VARIABLE _p18-5e-pre
+VARIABLE _p18-5e-post
+VARIABLE _p18-5e-pass
+: _p18-5e-start  ." ---probe-18.5-e-start---" CR ;
+: _p18-5e-end    ." ---probe-18.5-e-end---"   CR ;
+: _p18-5e-check ( throw_code -- )
+  -1 _p18-5e-pass !
+  -1 = INVERT IF 0 _p18-5e-pass ! ." throw-code-mismatch " THEN
+  _p18-5e-pre @ _p18-5e-post @ = INVERT IF
+    0 _p18-5e-pass !  ." caller-bank-not-restored-via-stash "
+  THEN
+  _p18-5e-pass @ IF
+    ." probe-18.5-e-pass-in-bank-catch-safe-stash-witness"
+  ELSE
+    ." FAIL: probe-18.5-e IN-BANK CATCH-safe stash witness failed"
+  THEN CR
+;
+
+_p18-5e-start
+BANKS-CLEAR
+$22 +BANK $35 +BANK                    \ active_pages[0]=$22, [1]=$35
+0 BANK!                                \ caller in bank 0
+BANK@ _p18-5e-pre !                    \ stash pre-IN-BANK bank
+1 ' ABORT ' IN-BANK CATCH              \ ( i*x -1 expected )
+BANK@ _p18-5e-post !                   \ stash post-CATCH bank
+_p18-5e-check                          \ consumes -1; stashes carry the witness
+DROP DROP                              \ drop i*x residue ( 1 xt_ABORT )
+BANKS-CLEAR
+_p18-5e-end

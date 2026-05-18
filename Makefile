@@ -427,6 +427,71 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-18.4-c — deferral marker not emitted (sentinel-block discipline broken)"; \
 		echo "  PROBE_18_4_C: $$PROBE_18_4_C"; exit 1; \
 	fi
+	@# Story 18.5 Probe-18.5-A — IN-BANK basic round-trip. Interpret-mode
+	@# invocation; target = bank 1, xt = ' BANK@. PASS marker asserts the
+	@# inner-bank value (= 1) is left on stack AND the caller's bank (= 0)
+	@# is restored after IN-BANK returns. See tests/banking_tests.fth:1349.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_A=$$(echo "$$OUTPUT" | awk '/---probe-18.5-a-start---$$/{p=1; next} /---probe-18.5-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_A" | grep -q 'probe-18.5-a-pass-in-bank-roundtrip' && ! echo "$$PROBE_18_5_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-a-end---$$'; then \
+		echo "PASS: probe-18.5-a — IN-BANK basic round-trip (target=1, xt=BANK@, caller bank restored) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5-a — IN-BANK round-trip did not restore caller bank or returned wrong inner-bank value"; \
+		echo "  PROBE_18_5_A: $$PROBE_18_5_A"; exit 1; \
+	fi
+	@# Story 18.5 Probe-18.5-B — nested IN-BANK re-entrancy witness DEFERRED
+	@# to Epic 19. The slot-2-remap-under-IP hazard precludes empirical
+	@# validation of nested IN-BANK from a colon body at xt > $8000 (the
+	@# inner colon body's bytes get remapped under the running IP). The
+	@# re-entrancy property of Q2's R-stack stash discipline is provable
+	@# structurally per the inline comment in tests/banking_tests.fth.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_B=$$(echo "$$OUTPUT" | awk '/---probe-18.5-b-start---$$/{p=1; next} /---probe-18.5-b-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_B" | grep -q 'probe-18.5-b-deferred-to-epic-19-nested-in-bank-re-entrancy-witness' && ! echo "$$PROBE_18_5_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-b-end---$$'; then \
+		echo "SKIP: probe-18.5-b — AC4(b) nested IN-BANK re-entrancy witness DEFERRED to Epic 19 (per-bank dictionary removes slot-2-remap-under-IP hazard) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5-b — deferral marker not emitted (sentinel-block discipline broken)"; \
+		echo "  PROBE_18_5_B: $$PROBE_18_5_B"; exit 1; \
+	fi
+	@# Story 18.5 Probe-18.5-C — IN-BANK CATCH-safe THROW unwind (FR-P4-4
+	@# binding case). Interpret-mode invocation with xt = ' ABORT (raises -1
+	@# THROW); CATCH wraps IN-BANK so -1 lands on data stack; PASS marker
+	@# asserts TOS = -1 (throw code propagated) AND BANK@ post-CATCH = 0
+	@# (caller's bank restored via the >R / R> stash on the unwind path).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_C=$$(echo "$$OUTPUT" | awk '/---probe-18.5-c-start---$$/{p=1; next} /---probe-18.5-c-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_C" | grep -q 'probe-18.5-c-pass-in-bank-catch-safe' && ! echo "$$PROBE_18_5_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-c-end---$$'; then \
+		echo "PASS: probe-18.5-c — IN-BANK CATCH-safe ('-1 THROW from xt unwinds with caller bank restored) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5-c — IN-BANK CATCH-safe THROW unwind failed (caller bank not restored or wrong throw code)"; \
+		echo "  PROBE_18_5_C: $$PROBE_18_5_C"; exit 1; \
+	fi
+	@# Story 18.5 Probe-18.5-D — cross-bank IN-BANK xt-portability witness
+	@# DEFERRED to Epic 19 per Q3 disposition in story Dev Notes. Same
+	@# slot-2-remap-under-IP hazard as Probe-18.4-C; structurally provable
+	@# meanwhile (stubs in fixed memory $D4CB+ are unaffected by slot-2 swap).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_D=$$(echo "$$OUTPUT" | awk '/---probe-18.5-d-start---$$/{p=1; next} /---probe-18.5-d-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_D" | grep -q 'probe-18.5-d-deferred-to-epic-19-cross-bank-in-bank-xt-portability' && ! echo "$$PROBE_18_5_D" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-d-end---$$'; then \
+		echo "SKIP: probe-18.5-d — AC4(d) cross-bank IN-BANK xt-portability witness DEFERRED to Epic 19 (per-bank dictionary removes slot-2-remap-under-IP hazard) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5-d — deferral marker not emitted (sentinel-block discipline broken)"; \
+		echo "  PROBE_18_5_D: $$PROBE_18_5_D"; exit 1; \
+	fi
+	@# Story 18.5 Probe-18.5-E — CR follow-up to H1: AC2 narrow binding
+	@# (caller's bank restored on caught THROW) witnessed via USER-variable
+	@# stash, independent of data-stack i*x deeper-cell preservation
+	@# (antforth CATCH frame preserves only TOS-cell per Story 11.4.1
+	@# saved-BC; deeper cells may be touched by xt). See
+	@# tests/banking_tests.fth:1483 for the comment-block rationale.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_5_E=$$(echo "$$OUTPUT" | awk '/---probe-18.5-e-start---$$/{p=1; next} /---probe-18.5-e-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_5_E" | grep -q 'probe-18.5-e-pass-in-bank-catch-safe-stash-witness' && ! echo "$$PROBE_18_5_E" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-e-end---$$'; then \
+		echo "PASS: probe-18.5-e — IN-BANK CATCH-safe stash witness (FR-P4-4 / AC2 narrow binding via USER-variable stash, deeper-cell-independent) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.5-e — IN-BANK CATCH-safe stash witness failed"; \
+		echo "  PROBE_18_5_E: $$PROBE_18_5_E"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -1258,10 +1323,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.1'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.1'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.2'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.2'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.1' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.2' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \
