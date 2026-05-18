@@ -821,6 +821,147 @@ w_PAREN_STUB_ALLOCATE_cf:
         LD      C, L                                ; BC = HL = xt (new TOS)
         NEXT
 
+; ============================================================
+; cross_bank_return — Sentinel-trampoline for cross-bank EXIT.
+;
+;   Story 18.2: the S1 b sentinel-tagged cross-bank return mechanism
+;   (PD-P4-2, architecture.md:215..227; redesign §2.2,
+;   docs/antforth-banking-redesign.md:44..48). The label is BOTH the
+;   trampoline entry point AND the sentinel address compared by
+;   EXIT_CODE (architecture's "Sentinel-trampoline labels" pattern at
+;   architecture.md:534..537 — one symbol does both jobs).
+;
+;   ENTRY CONTRACT (per AC1 / FR-P4-20):
+;     Reached via JP cross_bank_return from src/inner_interpreter.asm
+;     EXIT_CODE when the popped return-address matches this label.
+;     Register state at entry (= NEXT-time minus DE which is the
+;     just-popped sentinel value):
+;       BC = TOS                — user-visible data-stack TOS;
+;                                 PRESERVED through the body
+;       DE = cross_bank_return  — popped sentinel addr; discarded
+;       HL = scratch
+;       IX = R-stack pointer    — after the EXIT pop of the sentinel
+;       IY = UserArea base
+;     R-stack state at entry (top-to-bottom):
+;       (IX+0..1) = caller_bank   (low byte = logical index 0..28,
+;                                  high byte invariantly 0 per the
+;                                  Story-17.2 BANK! convention at
+;                                  src/banking.asm:142..144)
+;       (IX+2..3) = target_addr   (16-bit code address; typically a
+;                                  Forth IP or DEFCODE entry point in
+;                                  fixed memory or the now-active
+;                                  caller bank's $8000-$BFFF region)
+;
+;   BODY (per AC1):
+;     1. Save BC=TOS (PUSH BC).
+;     2. Pop caller_bank into BC (low byte; high byte forced 0).
+;        Advance IX by 2.
+;     3. Look up active_pages[caller_bank] via LD HL,
+;        ACTIVE_PAGES_BASE / ADD HL, BC / LD A, (HL). Same shape as
+;        BANK! at src/banking.asm:157..161.
+;     4. Write the physical page to MMU slot 2 via OUT (0x72), A.
+;        Port 0x72 = slot 2 per iz-cpm-banking cpm_machine.rs:13..14
+;        and Story 17.2's BANK! comment at src/banking.asm:125..133.
+;        UNLIKE port 0x74 (BANK-MAPPING-OFF, disconnects kernel —
+;        src/banking.asm:63..66), port 0x72 is safe from
+;        kernel-disconnect (the kernel binary lives in slot 0).
+;     5. Update (IY+UserArea.current_bank) ← caller_bank.low. High
+;        byte stays 0 per the Story-17.2 BANK! convention at
+;        src/banking.asm:142..144 (the high-byte write is elided to
+;        save 3 B).
+;     6. Restore BC=TOS (POP BC).
+;     7. Pop target_addr into HL. Advance IX by 2.
+;     8. JP (HL) to target_addr. The trampoline is leaf-with-respect-
+;        to-NEXT — it does not fall through to NEXT; the jump target
+;        is responsible for its own NEXT-resumption discipline.
+;
+;        target_addr is a Z80 CODE-FIELD address (executable opcodes
+;        at HL), NOT a Forth IP (a data cell holding a CFA). JP (HL)
+;        is a DIRECT JUMP — PC ← HL — so passing a Forth IP would
+;        execute IP-cell bytes as opcodes and crash. For the typical
+;        Forth-to-Forth cross-bank return, the pusher (Story 18.3)
+;        sets target_addr = xt(EXIT) (= address of `JP EXIT_CODE`);
+;        the chained EXIT_CODE then pops the actual caller-IP from
+;        the next R-stack cell and resumes the caller via NEXT in
+;        the standard way. Net R-stack consumption per cross-bank
+;        return is therefore 4 cells: this 3-cell sentinel frame
+;        (sentinel, caller_bank, target_addr=xt(EXIT)) PLUS the
+;        standard DOCOL-pushed caller-IP underneath. DEFCODE / raw-
+;        code targets supply their own NEXT in the body.
+;
+;   PRECONDITION owned by the pusher (Story 18.3's EXECUTE chokepoint):
+;     caller_bank ∈ [0..bank_count); target_addr is a Z80 code-field
+;     address (NOT a Forth IP — see step 8). The trampoline does NOT
+;     range-check (matches the stub_allocate undefined-input contract
+;     at src/banking.asm:751..769; range-checking is the pusher's
+;     responsibility).
+;
+;   EXX-HYGIENE AUDIT (per AC5 / NFR-P4-34 / docs/register-conventions.md
+;   §3 leaf-level rule + §7 EXX-using inventory):
+;     - The trampoline reads only main-set registers (BC, DE, HL, IX,
+;       IY, A). NO `EXX` instruction appears in the body. The trampoline
+;       is a leaf with respect to the EXX rule — its callers are
+;       EXIT-via-sentinel-match callers at NEXT-time main-set register
+;       state.
+;     - No DE-touching opcode (no `EX DE, HL`, no `LDIR`, no
+;       DE-as-temp). DE is read-only on entry (= sentinel value) and
+;       not preserved; Lesson 17-D PUSH/POP DE wrap NOT required.
+;     - Under normal operation the trampoline does NOT raise THROW
+;       (the OUT (0x72), A port write is hardware-deterministic; the
+;       R-stack pops are unguarded but caller-precondition'd; the
+;       JP (HL) is a raw jump). If a future PD-P4-12 disposition
+;       turns this site into a THROW raiser (e.g., a runtime guard
+;       for cross-bank R-stack overflow per FR-P4-21 — currently
+;       CHOSEN as documented-gotcha at architecture.md:367..382),
+;       the leaf-level EXX-hygiene re-walk must be re-applied.
+;
+;   PER-BANK TRIPLE SWAP (HERE / LATEST / wordlist_head) — DEFERRED:
+;     BANK! at src/banking.asm:165..196 swaps (HERE, LATEST,
+;     wordlist_head) to/from bank-table[old/new][0..5] via LDIR
+;     cascades; cross_bank_return DELIBERATELY omits this. Story 18.2
+;     restores ONLY the MMU port + current_bank cell — enough for
+;     the cross-bank EXIT dispatch substrate, but NOT enough for
+;     bank-local compile-time state (HERE/LATEST/wordlist_head stay
+;     pointed at the callee's bank-table[] slots after the trampoline
+;     returns). Full per-bank compile-time plumbing is FR-P4-22 / Epic
+;     19 scope; until then, callers that do compile-time work across
+;     a cross-bank boundary will see callee-bank HERE/LATEST values.
+;     This is intentional at Story 18.2's substrate-only level.
+;
+;   FR-P4-21 (RECURSIVE CROSS-BANK R-STACK; per AC6 / PD-P4-12
+;   architecture.md:367..382):
+;     CHOSEN disposition is documented-gotcha; NO runtime guard lands
+;     here. Cross-bank frames are 3 cells (vs intra-bank 1 cell) so
+;     recursive cross-bank calls exhaust the R-stack 3× faster, but
+;     the existing -5 RETURN-STACK-OVERFLOW THROW catches them. The
+;     F4 user-docs entry is slated for Epic 22 polish per
+;     architecture.md:378..382.
+;
+;   FORWARD POINTERS:
+;     - Story 18.3 EXECUTE chokepoint is the PRODUCTION PUSHER of the
+;       3-cell frame (sentinel_addr, caller_bank, target_addr).
+;     - Story 18.4 (BANK-OF) reads stub byte 0; not involved here.
+;     - Story 18.5 (IN-BANK + Epic 18 close-out) validates CATCH-safe
+;       cross-bank THROW unwind on top of this trampoline.
+; ============================================================
+cross_bank_return:
+        PUSH    BC                                  ; preserve TOS
+        LD      C, (IX+0)                           ; C = caller_bank.low
+        LD      B, 0                                ; high byte invariantly 0
+        INC     IX
+        INC     IX
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                              ; HL = &active_pages[caller_bank]
+        LD      A, (HL)
+        OUT     (0x72), A                           ; MMU slot 2 ← physical page
+        LD      (IY+UserArea.current_bank), C       ; current_bank.low ← caller_bank
+        POP     BC                                  ; restore TOS
+        LD      L, (IX+0)
+        LD      H, (IX+1)                           ; HL = target_addr
+        INC     IX
+        INC     IX
+        JP      (HL)                                ; transfer control; no NEXT here
+
 ; --- .BANKS string literals ---
 str_dot_banks_hdr:     DB "BANK PAGE   USED   FREE"
 str_dot_banks_hdr_len  EQU 23

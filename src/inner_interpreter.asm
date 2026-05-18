@@ -34,12 +34,39 @@ w_EXIT_cf:
         JP      EXIT_CODE
 
 ; === EXIT — Return from colon definition ===
+; Story 18.2 (PD-P4-2 / architecture.md:215..227; redesign §2.2 at
+; docs/antforth-banking-redesign.md:44..48) — sentinel-tagged
+; cross-bank returns. After the standard R-stack pop, DE = popped
+; return-address. A 16-bit CP against the constant `cross_bank_return`
+; (Layout A — explicit JP on match; the trampoline body lives in
+; src/banking.asm) decides intra-bank vs cross-bank:
+;   - miss (the common case) → standard NEXT runs; FR-P4-19
+;     zero-overhead invariant preserved up to the CP/JR-NZ overhead
+;     (~23 T-states worst-case miss-path penalty per dev-pass T-state
+;     accounting in Story 18.2 Dev Notes).
+;   - match (cross-bank return) → JP cross_bank_return; the trampoline
+;     pops caller_bank + target_addr from the R-stack, restores the
+;     caller's bank via OUT (0x72) + (IY+UserArea.current_bank), then
+;     JP (HL) to target_addr.
+; The 3-cell frame (sentinel_addr, caller_bank, target_addr) is
+; produced by Story 18.3's EXECUTE chokepoint when EXECUTE decodes
+; a cross-bank target from a descriptor stub (PD-P4-11 byte-0 =
+; signed bank index, architecture.md:347..365).
 EXIT_CODE:
         ; Pop IP from return stack
         LD      E, (IX+0)
         LD      D, (IX+1)
         INC     IX
         INC     IX
+        ; Story 18.2 — sentinel-trampoline cross-bank EXIT discriminator
+        LD      A, LOW cross_bank_return
+        CP      E
+        JR      NZ, .exit_normal
+        LD      A, HIGH cross_bank_return
+        CP      D
+        JR      NZ, .exit_normal
+        JP      cross_bank_return
+.exit_normal:
         NEXT
 
 ; === DOVAR — Push variable body address ===

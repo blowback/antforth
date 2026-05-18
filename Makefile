@@ -318,6 +318,36 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-18.1-b — stub-B byte layout assertion missing or mismatched"; \
 		echo "  PROBE_18_1_B: $$PROBE_18_1_B"; exit 1; \
 	fi
+	@# Story 18.2 AC7+AC8 — sentinel-trampoline + EXIT-sentinel probes
+	@# (Probe-18.2-A/B). Probe-18.2-A synthesizes a 3-cell sentinel frame
+	@# on the R-stack via three >R pushes; the implicit `;` EXIT pops the
+	@# sentinel and matches cross_bank_return, dispatching the trampoline.
+	@# The trampoline pops caller_bank + target_addr, restores the bank
+	@# (no-op since caller_bank == current_bank == 0), and JPs to
+	@# target_addr = xt of EXIT; the chained EXIT_CODE pops the DOCOL-
+	@# pushed _probe-18.2-a IP (CP no match → NEXT resumes caller).
+	@# Probe-18.2-B runs 100 intra-bank colon-body call/EXIT cycles and
+	@# asserts BANK@ unchanged across the loop (exercises AC3 miss-path +
+	@# AC4 intra-bank invariance — the deeper FR-P4-19 fitness witness is
+	@# the 975-PASS test-repl baseline which exercises EXIT_CODE on every
+	@# colon-body return). Sentinel-bounded greps follow the Story 17.5.1
+	@# pattern (M4 end-sentinel-on-its-own-line check).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_2_A=$$(echo "$$OUTPUT" | awk '/---probe-18.2-a-start---$$/{p=1; next} /---probe-18.2-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_2_A" | grep -q 'probe-18.2-a-pass-cross-bank-EXIT-trampoline-restored' && ! echo "$$PROBE_18_2_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.2-a-end---$$'; then \
+		echo "PASS: probe-18.2-a — sentinel-trampoline restored bank-0 and resumed caller under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.2-a — trampoline did not restore bank / EXIT chain did not resume cleanly"; \
+		echo "  PROBE_18_2_A: $$PROBE_18_2_A"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_2_B=$$(echo "$$OUTPUT" | awk '/---probe-18.2-b-start---$$/{p=1; next} /---probe-18.2-b-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_2_B" | grep -q 'probe-18.2-b-pass-intra-bank-EXIT-round-trip' && ! echo "$$PROBE_18_2_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.2-b-end---$$'; then \
+		echo "PASS: probe-18.2-b — 100× intra-bank EXIT round-trip clean (BANK@ unchanged) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.2-b — intra-bank EXIT loop changed BANK@ or did not complete"; \
+		echo "  PROBE_18_2_B: $$PROBE_18_2_B"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel

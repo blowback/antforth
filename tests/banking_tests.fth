@@ -841,3 +841,177 @@ VARIABLE _p18b-pass
   ." ---probe-18.1-b-end---" CR
 ;
 _probe-18.1-b
+
+\ === Story 18.2: sentinel-trampoline + EXIT-sentinel probes (A/B) ===
+\ Story 18.2 lands the (S1 b) cross-bank EXIT mechanism: a
+\ cross_bank_return: trampoline body in src/banking.asm + a sentinel
+\ comparison extended into src/inner_interpreter.asm's EXIT_CODE
+\ (PD-P4-2 / architecture.md:215..227; redesign §2.2 at
+\ docs/antforth-banking-redesign.md:44..48). On EXIT, the popped
+\ return-address is CP'd against cross_bank_return; a match dispatches
+\ the trampoline, which pops caller_bank + target_addr from the
+\ R-stack, restores the caller's bank via OUT (0x72) +
+\ (IY+UserArea.current_bank), then JP (HL) to target_addr. The
+\ intra-bank EXIT path (miss-path) is preserved at zero net behaviour
+\ change (FR-P4-19).
+\
+\ Probe-18.2-A — synthesized cross-bank-return frame fires the
+\ trampoline. Exercises AC1 (trampoline body) + AC2 (sentinel-IS-
+\ trampoline-label) + AC3 (EXIT sentinel comparison). caller_bank ==
+\ current_bank (= 0) so the bank-state-swap is a no-op (the trampoline
+\ alone does NOT do BANK!'s per-bank triple swap; that lives at the
+\ pusher side per Story 18.3 / Epic 19). The probe asserts that
+\ control flows through the trampoline + chains the post-restore
+\ JP-to-target via a second EXIT_CODE pop of the colon-body's DOCOL
+\ frame, and that BANK@ readback at probe-tail equals caller_bank.
+\
+\ Probe-18.2-B — intra-bank EXIT round-trip (100 colon-body call/EXIT
+\ cycles). Exercises AC3 miss-path + AC4 (intra-bank-invariance under
+\ the new sentinel comparison overhead). Asserts BANK@ unchanged
+\ across the loop and the round-trip completes cleanly (no orphan
+\ R-stack entry / no crash).
+\
+\ Per-probe surfaces:
+\   Probe-18.2-B is surface-agnostic — only exercises the intra-bank
+\   AC3-miss path which is identical behaviour across iz-cpm,
+\   iz-cpm-banking, and real hardware. Also implicitly exercised tens
+\   of thousands of times across the test-repl regression suite (every
+\   colon-body return goes through EXIT_CODE) — binding fitness witness
+\   for FR-P4-19 zero-overhead-up-to-CP behaviour.
+\   Probe-18.2-A is surface-degenerate by design: caller_bank ==
+\   current_bank == 0 so the MMU port-0x72 write + current_bank cell
+\   update execute but are observably idempotent. Under iz-cpm baseline
+\   port 0x72 is unmodelled (no-op); under iz-cpm-banking and real
+\   hardware the write is a same-page rewrite. The PASS verdict
+\   therefore looks the same on every surface — what's actually being
+\   tested is the SENTINEL DISPATCH PATH (EXIT_CODE detected the
+\   sentinel, JPed to the trampoline, the trampoline ran through to
+\   JP (HL), and the chained EXIT-via-xt(EXIT) popped the DOCOL-pushed
+\   caller IP cleanly). AC1 steps 3-5 (port write effect / cell-write
+\   effect under caller_bank ≠ current_bank) are observationally
+\   covered at Story 18.3 / 18.5 once the pusher-side per-bank state
+\   swap lands. Probe-18.2-A is NOT listed in test-repl-banking-skip
+\   because the surface-agnostic PASS shape makes the SKIP-with-
+\   rationale annotation moot at this story.
+\
+\ Per-probe state-leave: Probe-18.2-A ends in BANKS-CLEAR (empty bank
+\ table). Probe-18.2-B does not depend on a particular bank-table
+\ state and is positioned immediately after. Any future probe added
+\ below 18.2-B that needs a seeded bank-table must re-seed via
+\ BANKS-CLEAR / +BANK / 0 BANK!.
+
+\ Extract cross_bank_return address from EXIT_CODE byte sequence.
+\ ' EXIT  = address of `JP EXIT_CODE` opcode (3 B: C3 lo hi).
+\ ' EXIT 1+ @  = EXIT_CODE address (always a safe extraction — EXIT's
+\ DEFCODE shape is unconditional).
+\ EXIT_CODE offset +20 = $C3 (JP cross_bank_return opcode);
+\ EXIT_CODE offset +21..22 = cross_bank_return address (little-endian).
+\ Layout-sensitive: if a future story rearranges EXIT_CODE bytes the
+\ +21 fetch returns garbage. We defer the +21 read into a VARIABLE
+\ populated INSIDE _probe-18.2-a's runtime sanity-check IF-branch, so
+\ no garbage value is captured into the dictionary at load time and
+\ no garbage address gets pushed onto the R-stack on a layout shift.
+DECIMAL
+' EXIT 1+ @           CONSTANT _xbr-exit-code   \ EXIT_CODE address (safe)
+VARIABLE _xbr-addr-cell                         \ filled by _probe-18.2-a after sanity-pass
+
+\ Inner word that synthesizes the 3-cell sentinel frame on the R-stack
+\ then EXITs (the implicit `;` compiles EXIT). Field order on R-stack
+\ (top-to-bottom after the three >R pushes):
+\   ( sentinel, caller_bank, target_addr, _p18a-inner-DOCOL-IP, ... )
+\ The implicit `;` EXIT pops sentinel → CP match in EXIT_CODE → JP
+\ cross_bank_return → trampoline pops (caller_bank, target_addr) →
+\ JP (HL) to target_addr = xt of EXIT → JP EXIT_CODE pops the
+\ DOCOL-pushed IP (= caller's IP into _probe-18.2-a) → CP no-match
+\ → NEXT resumes the caller normally.
+\
+\ caller_bank = 0 (matches the outer body's current_bank): the
+\ trampoline's MMU port-0x72 write + current_bank update run in full
+\ but are observably idempotent. The trampoline body still executes
+\ every step in AC1 — the binding evidence that the dispatch path
+\ works is that control returns to _probe-18.2-a body at all. Without
+\ the sentinel mechanism, EXIT would interpret xbr-addr as a Forth IP
+\ via NEXT and crash on the resulting JP-to-garbage. The probe
+\ printing its PASS literal IS the witness that EXIT_CODE detected
+\ the sentinel, JPed to cross_bank_return, ran the trampoline body
+\ through to JP (HL), and the chained EXIT-via-target_addr popped
+\ the DOCOL-pushed caller IP cleanly.
+\
+\ Why not caller_bank ≠ current_bank? The trampoline alone does NOT do
+\ BANK!'s per-bank triple swap; that's Story 18.3's pusher-side scope.
+\ Under iz-cpm-banking, switching MMU slot 2 ($8000-$BFFF) to a
+\ different bank remaps any HERE-region content that lives there. By
+\ the time _probe-18.2-a is compiled at file load, HERE is past $8000,
+\ so the probe body itself sits in slot 2 — switching slot 2 underneath
+\ the running code remaps the body's bytes mid-execution and crashes.
+\ The "trampoline switched banks observable" test belongs at Story 18.3
+\ once the pusher-side state swap is in place.
+: _p18a-inner ( -- )
+  ['] EXIT       >R            \ target_addr (top resume point after trampoline)
+  0              >R            \ caller_bank = 0 (== current; trampoline no-op observable)
+  _xbr-addr-cell @ >R          \ sentinel = cross_bank_return address (gated above)
+;                              \ implicit EXIT fires sentinel-matching pop
+
+VARIABLE _p18a-pass
+
+: _probe-18.2-a ( -- )
+  DECIMAL
+  ." ---probe-18.2-a-start---" CR
+  -1 _p18a-pass !
+  \ Runtime sanity: EXIT_CODE+20 must be $C3 (JP opcode). On match,
+  \ capture the +21..22 cell into _xbr-addr-cell and run the trampoline-
+  \ firing inner word. On miss, the EXIT_CODE byte layout shifted —
+  \ report and SKIP the inner word entirely (firing _p18a-inner with a
+  \ stale sentinel would crash on JP-to-garbage after the CP miss).
+  _xbr-exit-code 20 + C@ 195 = IF
+    _xbr-exit-code 21 + @ _xbr-addr-cell !   \ cross_bank_return addr
+    \ Seed at least 2 banks so active_pages[0] is populated for the
+    \ trampoline's logical→physical lookup.
+    BANKS-CLEAR
+    $22 +BANK   $35 +BANK       \ active_pages[0]=$22, [1]=$35
+    0 BANK!                     \ stay in bank 0 (caller_bank == current)
+    \ Invoke trampoline-firing inner word; control returns here after
+    \ EXIT_CODE → trampoline → JP target_addr=xt of EXIT → second
+    \ EXIT_CODE pops the DOCOL-pushed _probe-18.2-a-IP → NEXT resumes.
+    _p18a-inner
+    \ Post-restore observable: BANK@ must equal caller_bank (= 0). The
+    \ binding witness that the trampoline ran is that we reached this
+    \ point at all (without the sentinel mechanism, the EXIT would
+    \ crash on JP-to-garbage interpreted from xbr-addr as a Forth IP).
+    BANK@ 0 = INVERT IF 0 _p18a-pass ! ." bank-not-0 " THEN
+  ELSE
+    0 _p18a-pass ! ." exit-code-layout-shift "
+  THEN
+  _p18a-pass @ IF
+    ." probe-18.2-a-pass-cross-bank-EXIT-trampoline-restored"
+  ELSE
+    ." FAIL: probe-18.2-a bank not restored to 0 after trampoline"
+  THEN CR
+  ." ---probe-18.2-a-end---" CR
+  BANKS-CLEAR
+;
+_probe-18.2-a
+
+: _p18b-noop ;                  \ minimal intra-bank colon body
+: _p18b-driver
+  100 0 DO _p18b-noop LOOP      \ 100 intra-bank call/EXIT cycles
+;
+
+VARIABLE _p18b-pass
+VARIABLE _p18b-bank-before
+
+: _probe-18.2-b ( -- )
+  DECIMAL
+  ." ---probe-18.2-b-start---" CR
+  -1 _p18b-pass !
+  BANK@ _p18b-bank-before !
+  _p18b-driver                  \ exercises EXIT_CODE miss-path × 100
+  BANK@ _p18b-bank-before @  = INVERT IF 0 _p18b-pass ! ." bank-changed " THEN
+  _p18b-pass @ IF
+    ." probe-18.2-b-pass-intra-bank-EXIT-round-trip"
+  ELSE
+    ." FAIL: probe-18.2-b BANK@ changed across intra-bank EXIT loop"
+  THEN CR
+  ." ---probe-18.2-b-end---" CR
+;
+_probe-18.2-b
