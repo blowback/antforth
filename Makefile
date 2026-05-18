@@ -284,6 +284,40 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: iron-spike — sentinel literal missing OR FAIL: present in PROBE_IRONSPIKE OR end-sentinel missing from OUTPUT"; \
 		echo "  PROBE_IRONSPIKE: $$PROBE_IRONSPIKE"; exit 1; \
 	fi
+	@# Story 18.1 AC7+AC8 — descriptor-stub allocator probes (Probe-18.1-A/B/C).
+	@# Probes are LAYOUT-ONLY: stubs are allocated via the kernel-internal
+	@# stub_allocate routine through the Forth-callable `(stub-allocate)`
+	@# wrapper, then inspected via C@. No execute-through (Story 18.3 owns
+	@# the EXECUTE switch). Probe order in tests/banking_tests.fth is C
+	@# first (asserts first stub at STUB_ALLOC_BASE=$D4CB and 10th at
+	@# $D4CB+36), then A (fixed-memory target_bank=-1), then B
+	@# (target_bank=5 banked target). Each probe is sentinel-bounded and
+	@# emits a unique PASS literal; awk-extract + grep follows the Story
+	@# 17.5.1 pattern (M4 end-sentinel-on-its-own-line check).
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_1_C=$$(echo "$$OUTPUT" | awk '/---probe-18.1-c-start---$$/{p=1; next} /---probe-18.1-c-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_1_C" | grep -q 'probe-18.1-c-pass-10-stubs-deltas-4-and-first-base-last-base+36' && ! echo "$$PROBE_18_1_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-c-end---$$'; then \
+		echo "PASS: probe-18.1-c — 10 stubs allocated at +4-stride starting at STUB_ALLOC_BASE under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.1-c — sequential allocation / 10th-at-+36 / STUB_ALLOC_BASE-first assertion missing"; \
+		echo "  PROBE_18_1_C: $$PROBE_18_1_C"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_1_A=$$(echo "$$OUTPUT" | awk '/---probe-18.1-a-start---$$/{p=1; next} /---probe-18.1-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_1_A" | grep -q 'probe-18.1-a-pass-stub-A-fixed-memory-layout-correct' && ! echo "$$PROBE_18_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-a-end---$$'; then \
+		echo "PASS: probe-18.1-a — stub-A byte layout (FF / C3 / lo / hi) correct for fixed-memory target under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.1-a — stub-A byte layout assertion missing or mismatched"; \
+		echo "  PROBE_18_1_A: $$PROBE_18_1_A"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_1_B=$$(echo "$$OUTPUT" | awk '/---probe-18.1-b-start---$$/{p=1; next} /---probe-18.1-b-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_1_B" | grep -q 'probe-18.1-b-pass-stub-B-banked-target-layout-correct' && ! echo "$$PROBE_18_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-b-end---$$'; then \
+		echo "PASS: probe-18.1-b — stub-B byte layout (05 / C3 / 00 / 82) correct for banked target under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.1-b — stub-B byte layout assertion missing or mismatched"; \
+		echo "  PROBE_18_1_B: $$PROBE_18_1_B"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel

@@ -711,6 +711,116 @@ print_bank_col_4:
         LD      E, A
         JP      bdos_putchar                        ; tail-call
 
+; ============================================================
+; === Descriptor-stub allocator (Story 18.1, the (γ) mechanism) ===
+;
+;   Allocates one 4-byte descriptor stub at (IY+UserArea.stub_alloc_tail)
+;   then advances the cell by 4. The stub's address IS the word's xt
+;   per PD-P4-1 + redesign §2.1 (`docs/antforth-banking-redesign.md:34..42`);
+;   xt portability across BANK! (FR-P4-17) is automatic because the stub
+;   lives in fixed memory (the CCP-evicted $D400-$DBFF annex; see
+;   PD-P4-6 / architecture.md:271..285).
+;
+;   Stub layout per PD-P4-11 (architecture.md:347..365):
+;     byte 0 — target_bank as a signed byte. $FF = -1 = fixed-memory
+;              marker per FR-P4-13; $00..$1C = active logical bank
+;              index 0..28 per PD-P4-13 (29-entry cap). Caller owns
+;              range-checking (the allocator does NOT validate).
+;     byte 1 — $C3 (Z80 absolute JP opcode).
+;     bytes 2..3 — target_addr lo/hi. Story 18.3's EXECUTE chokepoint
+;              reads byte 0, optionally writes the MMU port for slot 2,
+;              then jumps to stub_addr+1 to execute the JP.
+;
+;   No DS directive backs the output region — the bytes are claimed at
+;   constant addresses in the fixed-memory map (STUB_ALLOC_BASE = $D4CB,
+;   src/constants.asm). COLD (src/antforth.asm step 8h) seeds
+;   stub_alloc_tail = STUB_ALLOC_BASE; each allocation writes 4 B and
+;   advances the cell. Available region $D4CB..$DBFF = 1845 B = up to
+;   461 stubs in the CCP-evicted region alone (Epic 19+ may overflow
+;   into the HERE region — out of Story 18.1 scope).
+;
+;   Story 18.1 is layout-only: callers are the AC7 probes (via the
+;   (stub-allocate) wrapper below); execute-through is Story 18.3
+;   (EXECUTE switch) + Story 18.2 (cross_bank_return trampoline).
+;   Story 18.4 (BANK-OF) reads byte 0; Epic 19's `:` calls the
+;   allocator from `;`.
+;
+;   antforth Phase-4 — see docs/antforth-banking-redesign.md §2.1 (γ
+;   mechanism). Banking subsystem header at src/banking.asm:1..14.
+; ============================================================
+; stub_allocate — Kernel-internal allocator.
+;
+;   Input:  B  = target_bank as a signed byte (-1 = fixed-memory marker
+;                per FR-P4-13; 0..28 = logical bank index per PD-P4-13).
+;                Out-of-range values are UNDEFINED INPUT — caller owns
+;                the bounds check (Stories 18.3 / 19.x).
+;           DE = target_addr_in_bank (16-bit; for fixed-memory targets
+;                this is a fixed-memory address; for banked targets it
+;                is an address in the target bank's $8000-$BFFF body).
+;   Output: HL = stub address = the word's xt (per PD-P4-1 + redesign §2.1).
+;   Clobbers: HL is the output (was used as the write-cursor across the
+;                 4 bytes; restored to stub_addr via PUSH/POP). No other
+;                 main-set register is modified: A / B / C / D / E and
+;                 flags are all preserved. The alt-set is untouched
+;                 (no EXX in the body). Lesson 17-D PUSH/POP DE wrap
+;                 NOT required: no EX DE,HL / no LDIR / no DE-as-temp
+;                 — DE is read-only (used as the source for `LD (HL),E`
+;                 and `LD (HL),D` to emit bytes 2-3). BC.high unchanged
+;                 (only B.low = target_bank consumed).
+;
+;                 Callers in Stories 18.3 / 19.x can rely on the full
+;                 main-set preservation contract — no caller-save wrap
+;                 is needed around `CALL stub_allocate`.
+;   Side effect: writes 4 B at (stub_alloc_tail); advances
+;                stub_alloc_tail by 4. No range check on the upper
+;                bound of the output region — overflow into the HERE
+;                region is an Epic 21 / future concern (the
+;                CCP-evicted region holds 461 stubs; current Phase-4
+;                workloads stay well under).
+stub_allocate:
+        LD      L, (IY+UserArea.stub_alloc_tail)
+        LD      H, (IY+UserArea.stub_alloc_tail+1)
+        PUSH    HL                                  ; save stub_addr (= return value)
+        LD      (HL), B                             ; byte 0: target_bank
+        INC     HL
+        LD      (HL), 0xC3                          ; byte 1: JP opcode
+        INC     HL
+        LD      (HL), E                             ; byte 2: target_addr lo
+        INC     HL
+        LD      (HL), D                             ; byte 3: target_addr hi
+        INC     HL
+        LD      (IY+UserArea.stub_alloc_tail),   L  ; advance tail by 4
+        LD      (IY+UserArea.stub_alloc_tail+1), H
+        POP     HL                                  ; HL = stub_addr (xt)
+        RET
+
+; === (stub-allocate) ( target_addr target_bank -- xt ) ===
+;   Forth-callable wrapper around stub_allocate. Layout-only kernel
+;   surface for Story 18.1's AC7 probes (Probe-18.1-A/B/C) — keeps the
+;   4-byte layout knowledge in one place (the kernel) rather than
+;   spreading it into test code. Stories 18.3 / 19.x consume the
+;   allocator via direct CALL stub_allocate inside their own
+;   DEFCODE bodies; this (stub-allocate) wrapper is the only
+;   Forth-callable surface in Story 18.1.
+;
+;   target_bank is consumed as a signed byte (low byte of TOS); the
+;   high byte of TOS is discarded. target_addr is consumed as a 16-bit
+;   cell (the NOS at entry).
+;
+; antforth Phase-4 — see docs/antforth-banking-redesign.md §2.1
+w_PAREN_STUB_ALLOCATE:
+        DEFCODE "(stub-allocate)", 0
+w_PAREN_STUB_ALLOCATE_cf:
+        LD      B, C                                ; B = target_bank.low (signed byte)
+        POP     HL                                  ; HL = target_addr (NOS)
+        PUSH    DE                                  ; save IP across allocator call
+        EX      DE, HL                              ; DE = target_addr; HL = old IP (scratch)
+        CALL    stub_allocate                       ; in: B=bank, DE=addr; out: HL=xt; main-set preserved (see contract above)
+        POP     DE                                  ; restore IP
+        LD      B, H
+        LD      C, L                                ; BC = HL = xt (new TOS)
+        NEXT
+
 ; --- .BANKS string literals ---
 str_dot_banks_hdr:     DB "BANK PAGE   USED   FREE"
 str_dot_banks_hdr_len  EQU 23

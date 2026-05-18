@@ -48,4 +48,6 @@ bank_count          DW      0       ; FR-P4-3: count of active banks (= length o
                                     ; Story 17.2 declares the cell + COLD zero-init; +BANK / -BANK / BANKS-CLEAR (Story 17.3) update it.
                                     ; Implemented as a DEFCODE-readable kernel cell rather than an ANS VALUE (VALUE / TO are
                                     ; `Deliberately-omitted` in v2.0 per docs/ans-forth-core-compliance.md:453,458).
+stub_alloc_tail     DW      0       ; PD-P4-11 (architecture.md:347..365): descriptor-stub allocator next-free pointer; Story 18.1.
+                                    ; COLD sets to STUB_ALLOC_BASE = $D4CB (src/constants.asm); stub_allocate writes 4 B + advances cell.
     ENDS

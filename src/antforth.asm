@@ -159,6 +159,13 @@ cold_start:
         LD      (IY+UserArea.bank_table_base+1), HIGH BANK_TABLE_BASE
         LD      (IY+UserArea.bank_count),       0
         LD      (IY+UserArea.bank_count+1),     0
+        ; Story 18.1: seed stub_alloc_tail = STUB_ALLOC_BASE ($D4CB), the
+        ; first free byte after active_pages[] in the reclaimed $D400-$DBFF
+        ; CCP region. stub_allocate (src/banking.asm) writes 4 B per stub
+        ; and advances this cell. PD-P4-11 (architecture.md:347..365).
+        LD      HL, STUB_ALLOC_BASE
+        LD      (IY+UserArea.stub_alloc_tail),   L
+        LD      (IY+UserArea.stub_alloc_tail+1), H
         ; Snapshot live (HERE, LATEST, wordlist_head) → bank-table[0][0..5].
         ; HERE / LATEST live in UserArea (contiguous 4 bytes at offset
         ; UserArea.here); wordlist_head = the cell at `forth_wordlist` (the

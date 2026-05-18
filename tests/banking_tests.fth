@@ -706,3 +706,138 @@ DECIMAL
   BANKS-CLEAR
 ;
 _iron-spike-test
+
+\ === Story 18.1: descriptor-stub allocator probes (Probe-18.1-A/B/C) ===
+\ Story 18.1 lays the (γ) cross-bank dispatch foundation: a 4-byte
+\ descriptor stub per word in the CCP-evicted $D400-$DBFF region;
+\ stub address IS the word's xt (PD-P4-1 + redesign §2.1; PD-P4-11
+\ layout at architecture.md:347..365). Probes here are LAYOUT-ONLY —
+\ stubs are inspected via C@/@, NOT executed through (execute-through
+\ is Story 18.3's EXECUTE switch + Story 18.2's cross_bank_return).
+\
+\ ORDER NOTE: Probe-18.1-C runs FIRST among these probes. It asserts
+\ the first allocated stub lives at STUB_ALLOC_BASE ($D4CB = 54475)
+\ and the 10th at STUB_ALLOC_BASE + 36 ($D4EF = 54511). Probes A/B
+\ then allocate stubs 11 and 12 — their PASS criteria are on byte
+\ layout, not on stub address, so they run after C without issue.
+\
+\ CR-M2 (deferred 2026-05-18) — Probe-18.1-C's absolute-address
+\ assertion is brittle to allocator-call-order: if any future probe
+\ upstream of this block calls (stub-allocate), the assertion silently
+\ fails with a non-diagnostic "delta or first/last assertion mismatch"
+\ message. Current ordering (Probe-C first; no other banking probes
+\ use the allocator) satisfies the invariant; refactor to capture
+\ stub_alloc_tail at entry and assert relative-stride + a separate
+\ absolute-COLD-init verification is forward work for Story 18.2 or
+\ a CR-followup. Not fixed at Story 18.1 close.
+\
+\ stub_alloc_tail is a UserArea cell (not per-bank-swapped by BANK!);
+\ iron-spike above does not allocate stubs, so the cell still reads
+\ $D4CB when this block enters.
+\
+\ Per-probe surfaces: PASS under iz-cpm-banking AND iz-cpm baseline
+\ (allocator writes to fixed-memory CCP-evicted region $D4CB+ which
+\ is plain RAM on both surfaces; no MMU port operations).
+
+VARIABLE _p18c-buf  18 ALLOT   \ 10 cells × 2 B = 20 B total (cell at VARIABLE + 18 ALLOT)
+VARIABLE _p18c-pass
+
+: _probe-18.1-c ( -- )
+  DECIMAL
+  ." ---probe-18.1-c-start---" CR
+  -1 _p18c-pass !
+  \ Allocate 10 stubs with dummy target_addr=$1000, target_bank=1.
+  10 0 DO
+    4096 1 (stub-allocate)               \ ( -- xt_i )
+    _p18c-buf I CELLS + !                \ buf[i] := xt_i
+  LOOP
+  \ Walk pairwise deltas: buf[i] - buf[i-1] must equal 4 for i in 1..9.
+  10 1 DO
+    _p18c-buf I CELLS + @                \ ( -- buf[i] )
+    _p18c-buf I 1- CELLS + @ -           \ ( -- delta )
+    4 = INVERT IF 0 _p18c-pass ! THEN
+  LOOP
+  ." first-stub-addr="    _p18c-buf            @  U.
+  ." last-stub-addr="     _p18c-buf 9 CELLS +  @  U.
+  ." expected-first=54475 expected-last=54511 "
+  \ Absolute address assertions: first = $D4CB, last = $D4EF = first+36.
+  _p18c-buf           @ 54475 = INVERT IF 0 _p18c-pass ! THEN
+  _p18c-buf 9 CELLS + @ 54511 = INVERT IF 0 _p18c-pass ! THEN
+  _p18c-pass @ IF
+    ." probe-18.1-c-pass-10-stubs-deltas-4-and-first-base-last-base+36"
+  ELSE
+    ." FAIL: probe-18.1-c delta or first/last assertion mismatch"
+  THEN
+  CR
+  ." ---probe-18.1-c-end---" CR
+;
+_probe-18.1-c
+
+VARIABLE _p18a-xt
+VARIABLE _p18a-pass
+
+: _probe-18.1-a ( -- )
+  DECIMAL
+  ." ---probe-18.1-a-start---" CR
+  -1 _p18a-pass !
+  \ Stub A: fixed-memory target. target_bank = -1 ($FF marker per FR-P4-13),
+  \ target_addr = ['] BANK@ body (a known fixed-memory address in src/banking.asm).
+  ['] BANK@                              \ ( target_addr )
+  -1                                     \ ( target_addr target_bank )
+  (stub-allocate)                        \ ( xt )
+  _p18a-xt !
+  \ Read back the 4 bytes via C@ at xt+0..3.
+  \ Assertions: byte 0 = 255 = $FF = -1 fixed-mem marker (FR-P4-13); byte 1 = 195 = $C3 = JP opcode;
+  \ byte 2 = target_addr lo; byte 3 = target_addr hi. Lines stay ≤ TIB_SIZE (128) per CR-M3 fix 2026-05-18.
+  _p18a-xt @         C@   255 = INVERT IF 0 _p18a-pass ! ." byte0-bad " THEN
+  _p18a-xt @ 1+      C@   195 = INVERT IF 0 _p18a-pass ! ." byte1-bad " THEN
+  _p18a-xt @ 2 +     C@   ['] BANK@ 255 AND = INVERT IF 0 _p18a-pass ! ." byte2-bad " THEN
+  _p18a-xt @ 3 +     C@   ['] BANK@ 8 RSHIFT 255 AND = INVERT IF 0 _p18a-pass ! ." byte3-bad " THEN
+  ." stub-addr=" _p18a-xt @ U.
+  ." byte0="     _p18a-xt @     C@ U.
+  ." byte1="     _p18a-xt @ 1+  C@ U.
+  ." byte2="     _p18a-xt @ 2 + C@ U.
+  ." byte3="     _p18a-xt @ 3 + C@ U.
+  _p18a-pass @ IF
+    ." probe-18.1-a-pass-stub-A-fixed-memory-layout-correct"
+  ELSE
+    ." FAIL: probe-18.1-a stub-A byte layout mismatch"
+  THEN
+  CR
+  ." ---probe-18.1-a-end---" CR
+;
+_probe-18.1-a
+
+VARIABLE _p18b-xt
+VARIABLE _p18b-pass
+
+: _probe-18.1-b ( -- )
+  DECIMAL
+  ." ---probe-18.1-b-start---" CR
+  -1 _p18b-pass !
+  \ Stub B: banked target. target_bank = 5, target_addr = $8200 = 33280
+  \ (an address inside the $8000-$BFFF body region for any banked slot).
+  33280                                   \ ( target_addr=$8200 )
+  5                                       \ ( target_addr target_bank )
+  (stub-allocate)                         \ ( xt )
+  _p18b-xt !
+  \ Assertions: byte 0 = 5 = target_bank (logical bank index, PD-P4-13); byte 1 = 195 = $C3 = JP opcode;
+  \ byte 2 = 0 = $00 (lo of $8200); byte 3 = 130 = $82 (hi of $8200). Lines stay ≤ TIB_SIZE (128).
+  _p18b-xt @         C@   5   = INVERT IF 0 _p18b-pass ! ." byte0-bad " THEN
+  _p18b-xt @ 1+      C@   195 = INVERT IF 0 _p18b-pass ! ." byte1-bad " THEN
+  _p18b-xt @ 2 +     C@   0   = INVERT IF 0 _p18b-pass ! ." byte2-bad " THEN
+  _p18b-xt @ 3 +     C@   130 = INVERT IF 0 _p18b-pass ! ." byte3-bad " THEN
+  ." stub-addr=" _p18b-xt @ U.
+  ." byte0="     _p18b-xt @     C@ U.
+  ." byte1="     _p18b-xt @ 1+  C@ U.
+  ." byte2="     _p18b-xt @ 2 + C@ U.
+  ." byte3="     _p18b-xt @ 3 + C@ U.
+  _p18b-pass @ IF
+    ." probe-18.1-b-pass-stub-B-banked-target-layout-correct"
+  ELSE
+    ." FAIL: probe-18.1-b stub-B byte layout mismatch"
+  THEN
+  CR
+  ." ---probe-18.1-b-end---" CR
+;
+_probe-18.1-b

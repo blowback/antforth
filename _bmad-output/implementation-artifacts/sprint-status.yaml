@@ -323,8 +323,8 @@ development_status:
   17-6-iron-spike-first-hand-built-cross-bank-call-on-real-microbeast-epic-17-close-out-antforth-3-x-1-tag: done
   epic-17-retrospective: done
 
-  epic-18: backlog
-  18-1-descriptor-stub-allocator-xt-as-stub-address-contract: backlog
+  epic-18: in-progress
+  18-1-descriptor-stub-allocator-xt-as-stub-address-contract: done
   18-2-sentinel-trampoline-cross-bank-return-kernel-exit-distinguishes-intra-bank-from-cross-bank: backlog
   18-3-kernel-execute-dispatches-through-stub-initial-compile-comma-stub-emission-wiring-dispatch-budget-verification: backlog
   18-4-bank-of-one-byte-read-from-descriptor-stub: backlog
