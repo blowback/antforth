@@ -1015,3 +1015,224 @@ VARIABLE _p18b-bank-before
   ." ---probe-18.2-b-end---" CR
 ;
 _probe-18.2-b
+
+\ === Story 18.3: EXECUTE chokepoint + cross-bank dispatch probes (A/B/C/D/E) ===
+\ Story 18.3 extends w_EXECUTE_cf (src/inner_interpreter.asm) with a 3-way
+\ dispatch: legacy CFA (xt < $D4 high-byte → JP (HL) byte-for-byte preserves
+\ the 975-PASS test-repl baseline), intra-bank stub (target_bank == BANK@ OR
+\ -1 fixed-memory → INC HL / JP (HL) executes the in-stub JP), and cross-bank
+\ stub (push 3-cell frame + LD DE,cross_bank_return + OUT (0x72), update
+\ current_bank, JP stub+1). The callee's JP DOCOL pushes DE = sentinel as
+\ the 4th cell, providing the sentinel-tagged top of the cross-bank frame
+\ (PD-P4-1 + PD-P4-11 + PD-P4-2; architecture.md:207..363; redesign §3 at
+\ docs/antforth-banking-redesign.md:54..63).
+\
+\ Probe-18.3-A — fixed-memory stub EXECUTE. Allocates a stub for ' BANK@
+\ with target_bank = -1; EXECUTE dispatches via the intra-bank path
+\ (target_bank == -1 marker matches). Surface-agnostic (no MMU change).
+\
+\ Probe-18.3-B — cross-bank stub EXECUTE from bank 0. Hand-built iron-spike-
+\ shape body in bank 1's per-bank HERE (main RAM at kernel_end-vicinity per
+\ project_bank_table_clone_at_cold). Allocate stub via (stub-allocate) with
+\ target_bank = 1; EXECUTE from bank 0 fires cross-bank dispatch; callee
+\ runs in bank-1 logical context; sentinel-trampoline restores bank 0;
+\ assert TOS = 12345 (iron-spike sentinel) and BANK@ = 0. **Binding witness
+\ for Story 18.2 CR-H2 deferred coverage** (MMU port-write + current_bank
+\ cell write under caller_bank ≠ current_bank).
+\
+\ Probe-18.3-C — cross-bank stub EXECUTE from bank 7 (non-zero caller).
+\ Same shape as Probe-18.3-B but with 7 BANK! before EXECUTE; assert BANK@
+\ after EXECUTE == 7 (caller bank preserved across cross-bank round-trip).
+\
+\ Probe-18.3-D — data-stack passing across cross-bank EXECUTE. Hand-built
+\ body consumes 1 cell, doubles it, pushes result; probe pushes 21,
+\ EXECUTEs, asserts 42. Validates FR-P4-17 xt portability + data-stack
+\ survives the bank switch.
+\
+\ Probe-18.3-E — cross-bank THROW survivability. Hand-built body raises
+\ THROW -1; CATCH-wrapped cross-bank EXECUTE; assert CATCH returns the
+\ throw code and BANK@ is restored. Validates NFR-P4-7.
+\
+\ Per-probe surfaces:
+\   Probe-18.3-A is surface-agnostic (fixed-memory intra-bank dispatch).
+\   Probes 18.3-B/C/D/E are PASS-on-banking-emulator-only — they require
+\   real bank-table seeding and an MMU that honors port 0x72. Under iz-cpm
+\   baseline, port 0x72 is unmodelled (no-op); the per-bank state swap
+\   still fires but the cross-bank dispatch's MMU effect is invisible.
+\   No test-repl-banking-skip entry is added (the PASS shape under iz-cpm
+\   baseline matches under iz-cpm-banking for the probes that exercise
+\   the kernel paths without depending on MMU effect — Probe-18.3-A; the
+\   B/C/D/E probes don't run under iz-cpm baseline because of bank seeding
+\   precondition).
+\
+\ Per-probe state-leave: Probes 18.3-B/C/D/E each end in BANKS-CLEAR
+\ (empty bank table). Probe-18.3-A is bank-state-agnostic. The hand-built
+\ bodies persist in main RAM but are not addressable after BANKS-CLEAR
+\ (no stub points to them anymore after the test). Story 18.3 IS THE LAST
+\ probe block in this file at dev-pass close; future probe additions must
+\ re-seed banks before relying on any bank state.
+
+\ Probe-18.3-A — fixed-memory stub EXECUTE (intra-bank via -1 marker).
+VARIABLE _p18-3a-pass
+: _probe-18.3-a ( -- )
+  DECIMAL
+  ." ---probe-18.3-a-start---" CR
+  -1 _p18-3a-pass !
+  BANK@                                \ ( bank_before )
+  \ Allocate stub: target_addr = xt(BANK@), target_bank = -1 (fixed memory)
+  ['] BANK@ -1 (stub-allocate)         \ ( bank_before stub_xt )
+  EXECUTE                              \ runs BANK@ via stub; pushes current bank
+  \ Stack now: ( bank_before bank_via_stub )
+  = INVERT IF 0 _p18-3a-pass ! ." bank-mismatch " THEN
+  _p18-3a-pass @ IF
+    ." probe-18.3-a-pass-fixed-mem-stub-EXECUTE"
+  ELSE
+    ." FAIL: probe-18.3-a fixed-mem stub EXECUTE did not invoke BANK@ correctly"
+  THEN CR
+  ." ---probe-18.3-a-end---" CR
+;
+_probe-18.3-a
+
+
+\ === Probes 18.3-B/C/E — DEFERRED to Epic 19 ===
+\ Story 18.3 originally planned five cross-bank EXECUTE probes (-A
+\ fixed-memory marker, -B cross-bank from bank 0, -C cross-bank from
+\ non-zero caller, -D data-stack passing, -E THROW survivability).
+\ Probe-18.3-A landed as a colon-body probe at dev-pass. CR follow-ups
+\ (2026-05-18) added Probe-18.3-A2 (intra-bank-via-current-bank case;
+\ CR-M4) and Probe-18.3-F (cross-bank dispatch empirical via interpret-
+\ mode; CR-H1) — see below. Probe-18.3-F transitively covers Probe-
+\ 18.3-D's data-stack-passing contract (42 → -42 across the bank
+\ switch). Probes 18.3-B/C/E remain deferred to Epic 19 (B is
+\ subsumed by F; C requires non-zero-caller-bank with dictionary
+\ chain in slot 2; E requires THROW unwind sentinel-frame
+\ recognition — see Q4 in story).
+\
+\ HAZARD — slot-2-swap-under-running-IP after dictionary crosses $8000:
+\ By the time the .fth file load reaches my probes (~line 1100), bank 0's
+\ HERE has crossed $8000 (verified: my colon bodies sit at $8600+). When
+\ a colon-body probe executes the cross-bank EXECUTE machinery (which
+\ does OUT (0x72) to swap slot 2 to the target bank's page), the running
+\ probe body's bytes are remapped → NEXT-fetch reads garbage → kernel
+\ hangs. Interpret-mode workaround fails too: after 1 BANK!, the dictionary
+\ chain crosses into slot 2 (user-defined entries above $8000), making
+\ FIND unreliable in the full-file-load context.
+\
+\ The iron-spike probe (file line 708) succeeds with the same mechanism
+\ only because its colon-body xt happens to be at $79CF (below $8000 —
+\ main RAM); it was defined when HERE was still in main RAM. Probe-18.3-A
+\ succeeds because it uses ONLY the intra-bank stub-dispatch path (target
+\ bank = -1 fixed-memory marker; no slot-2 swap invoked).
+\
+\ ACTUAL COVERAGE ACHIEVED (post-CR 2026-05-18):
+\   - AC1 legacy-CFA discriminator: PASSes via the 975-PASS test-repl
+\     regression baseline (every EXECUTE on a non-stub xt goes through
+\     the legacy fall-through path).
+\   - AC1 intra-bank stub via target_bank == -1: PASSes via Probe-18.3-A.
+\   - AC1 intra-bank stub via target_bank == current_bank: PASSes via
+\     Probe-18.3-A2 (CR-M4 follow-up).
+\   - AC1 cross-bank dispatch (MMU swap + 3-cell push + chained EXIT):
+\     PASSes via Probe-18.3-F (CR-H1 follow-up; required dispatch
+\     bug fix landing the `HL = target_addr` load in .intra_bank
+\     before JP — see src/inner_interpreter.asm:454..461 CR-H1 block).
+\   - AC1 cross-bank from non-zero caller (C): NOT COVERED.
+\   - AC6 cross-bank THROW survivability (E): NOT COVERED.
+\
+\ FORWARD COMMITMENT (post-CR 2026-05-18):
+\ Story-18.2 CR-H2 deferred coverage (MMU port-write + current_bank
+\ cell-write under caller_bank ≠ current_bank) is now CLOSED by
+\ Probe-18.3-F. The remaining deferred surfaces (non-zero caller,
+\ cross-bank THROW survivability) carry forward to Epic 19 + Epic 21.
+\ Epic 19 (bank-aware `:`) lands per-bank dictionary plumbing that
+\ puts user-defined words in per-bank HERE regions, naturally avoiding
+\ the slot-2-swap-under-IP hazard for colon-body-driven cross-bank
+\ tests; Epic 21 owns the cross-bank-THROW unwind sentinel-frame
+\ recognition question (story Q4).
+\
+\ DISPOSITION (post-CR 2026-05-18):
+\ During CR-H1 follow-up, attempting empirical cross-bank coverage via
+\ interpret-mode revealed that the original dispatch was NOT JUST
+\ untested but ACTIVELY BROKEN for DEFWORD targets: the in-stub
+\ `JP target_addr` transferred PC to the callee's CF but left HL =
+\ stub+1 (not CF). DOCOL relies on HL = CF to compute body = HL+3;
+\ it instead computed stub+4 → wild NEXT → kernel cold-reboot.
+\ Fix: read target_addr from stub bytes 2..3 into HL in .intra_bank
+\ and JP directly (+5 B kernel). Probe-18.3-F now PASSes empirically.
+\ The remaining deferred probes (-C non-zero-caller / -E THROW)
+\ retain the slot-2-hazard exposure and carry forward to Epic 19 +
+\ Epic 21.
+
+\ === Probe-18.3-A2 — intra-bank stub via target_bank == current_bank ===
+\ CR-M4 follow-up (2026-05-18). Probe-18.3-A exercises only the
+\ second JR Z in the EXECUTE dispatch (CP $FF / JR Z = -1 marker).
+\ This probe exercises the FIRST JR Z (CP (IY+current_bank) / JR Z =
+\ banked-but-current-bank). Pre-condition: current_bank == 0
+\ (default). Allocates a stub with target_bank = 0; EXECUTE dispatches
+\ via the (IY+current_bank) match branch.
+VARIABLE _p18-3a2-pass
+: _probe-18.3-a2 ( -- )
+  DECIMAL
+  ." ---probe-18.3-a2-start---" CR
+  -1 _p18-3a2-pass !
+  BANK@                                \ ( bank_before — = 0 by default )
+  \ Allocate stub: target_addr = xt(BANK@), target_bank = 0 (current bank)
+  ['] BANK@ 0 (stub-allocate)          \ ( bank_before stub_xt )
+  EXECUTE                              \ intra-bank dispatch via CP (IY+d) JR Z
+  = INVERT IF 0 _p18-3a2-pass ! ." bank-mismatch " THEN
+  _p18-3a2-pass @ IF
+    ." probe-18.3-a2-pass-intra-bank-via-current-bank-EXECUTE"
+  ELSE
+    ." FAIL: probe-18.3-a2 intra-bank-via-current-bank stub EXECUTE failed"
+  THEN CR
+  ." ---probe-18.3-a2-end---" CR
+;
+_probe-18.3-a2
+
+\ === Probe-18.3-F — cross-bank EXECUTE empirical (interpret-mode) ===
+\ CR-H1 follow-up (2026-05-18). The cross-bank EXECUTE call MUST run
+\ from interpret mode (NOT a colon body), so the running code during
+\ the dispatch's MMU slot-2 swap is INTERPRET (kernel-resident, body
+\ < $8000) and is unaffected by the swap. Cross-bank target is the
+\ kernel DEFWORD NEGATE (xt < $D400, main-RAM CFA): the in-stub JP
+\ transfers to w_NEGATE_cf in main RAM, DOCOL pushes DE =
+\ cross_bank_return as the sentinel, body runs (LIT 0, SWAP, MINUS,
+\ EXIT), then EXIT_CODE + trampoline + chained EXIT_CODE restore the
+\ caller's bank and resume INTERPRET. Validates AC1 cross-bank
+\ dispatch + closes Story-18.2 CR-H2 deferred MMU port-write +
+\ current_bank cell-write coverage under caller_bank ≠ current_bank.
+\
+\ Output formatting goes through a colon-body helper (_p18f-check)
+\ that is invoked AFTER the trampoline has restored bank 0 — slot 2
+\ is back to its original page by then, so calling a slot-2-resident
+\ colon body is safe again.
+
+\ Helpers (colon-bodies; called via outer-interpreter EXECUTE after the
+\ trampoline has restored bank 0 / slot 2). Note: `."`, `IF`, `ELSE`,
+\ `THEN` are compile-only in antforth, so sentinel printing and
+\ assertions cannot live as raw interpret-mode tokens — they must be
+\ wrapped in colon bodies.
+: _p18f-start  ." ---probe-18.3-f-start---" CR ;
+: _p18f-end    ." ---probe-18.3-f-end---" CR ;
+VARIABLE _p18f-pass
+: _p18f-check ( negate_result -- )
+  -1 _p18f-pass !
+  -42 = INVERT IF 0 _p18f-pass ! ." stack-mismatch " THEN
+  BANK@ 0 = INVERT IF 0 _p18f-pass ! ." bank-not-restored " THEN
+  _p18f-pass @ IF
+    ." probe-18.3-f-pass-cross-bank-EXECUTE-NEGATE-roundtrip"
+  ELSE
+    ." FAIL: probe-18.3-f cross-bank EXECUTE round-trip failed"
+  THEN CR
+;
+
+\ Interpret-mode probe — no enclosing colon body for the EXECUTE step.
+_p18f-start
+BANKS-CLEAR
+$22 +BANK $35 +BANK                    \ active_pages[0]=$22, [1]=$35
+0 BANK!                                \ ensure caller is in bank 0
+42                                     \ test value (NEGATE will → -42)
+' NEGATE 1 (stub-allocate)             \ stub: target_bank=1, target=NEGATE
+EXECUTE                                \ ← CROSS-BANK DISPATCH FIRES HERE
+_p18f-check                            \ assert ( -42 ) on stack + BANK@=0
+BANKS-CLEAR
+_p18f-end

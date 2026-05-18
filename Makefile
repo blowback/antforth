@@ -348,6 +348,46 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-18.2-b — intra-bank EXIT loop changed BANK@ or did not complete"; \
 		echo "  PROBE_18_2_B: $$PROBE_18_2_B"; exit 1; \
 	fi
+	@# Story 18.3 AC5 — EXECUTE chokepoint dispatch probe (Probe-18.3-A only).
+	@# The originally-planned cross-bank probes B/C/D/E are DEFERRED to Epic
+	@# 19 — see "Probes 18.3-B/C/D/E — DEFERRED to Epic 19" note in
+	@# tests/banking_tests.fth. Probe-18.3-A exercises EXECUTE's intra-bank
+	@# fixed-memory marker path (target_bank = -1) which validates byte-0
+	@# read + discriminator + intra-bank fall-through.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_3_A=$$(echo "$$OUTPUT" | awk '/---probe-18.3-a-start---$$/{p=1; next} /---probe-18.3-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_3_A" | grep -q 'probe-18.3-a-pass-fixed-mem-stub-EXECUTE' && ! echo "$$PROBE_18_3_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.3-a-end---$$'; then \
+		echo "PASS: probe-18.3-a — fixed-mem stub EXECUTE via intra-bank path (target_bank = -1) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.3-a — fixed-mem stub EXECUTE dispatch failed"; \
+		echo "  PROBE_18_3_A: $$PROBE_18_3_A"; exit 1; \
+	fi
+	@# Story 18.3 CR-M4 — intra-bank stub via target_bank == current_bank.
+	@# Exercises the FIRST JR Z in the dispatch (CP (IY+current_bank) /
+	@# JR Z), distinct from Probe-18.3-A which exercises the -1 marker
+	@# JR Z. Target is BANK@ (DEFCODE in main RAM); current_bank == 0
+	@# at probe entry.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_3_A2=$$(echo "$$OUTPUT" | awk '/---probe-18.3-a2-start---$$/{p=1; next} /---probe-18.3-a2-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_3_A2" | grep -q 'probe-18.3-a2-pass-intra-bank-via-current-bank-EXECUTE' && ! echo "$$PROBE_18_3_A2" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.3-a2-end---$$'; then \
+		echo "PASS: probe-18.3-a2 — intra-bank stub EXECUTE via target_bank == current_bank under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.3-a2 — intra-bank stub EXECUTE failed"; \
+		echo "  PROBE_18_3_A2: $$PROBE_18_3_A2"; exit 1; \
+	fi
+	@# Story 18.3 CR-H1 — cross-bank stub EXECUTE empirical. Runs from
+	@# interpret-mode (NOT colon-body) so the dispatch's MMU swap doesn't
+	@# remap the running INTERPRET code (kernel-resident < $8000). Target
+	@# is the kernel DEFWORD NEGATE (xt < $D400, main-RAM CFA). Closes
+	@# the H1 coverage gap + the Story-18.2 CR-H2 carry-forward.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_18_3_F=$$(echo "$$OUTPUT" | awk '/---probe-18.3-f-start---$$/{p=1; next} /---probe-18.3-f-end---$$/{p=0} p') && \
+	if echo "$$PROBE_18_3_F" | grep -q 'probe-18.3-f-pass-cross-bank-EXECUTE-NEGATE-roundtrip' && ! echo "$$PROBE_18_3_F" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.3-f-end---$$'; then \
+		echo "PASS: probe-18.3-f — cross-bank EXECUTE round-trip via NEGATE in bank 1 under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-18.3-f — cross-bank EXECUTE round-trip failed"; \
+		echo "  PROBE_18_3_F: $$PROBE_18_3_F"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel

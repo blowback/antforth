@@ -337,7 +337,36 @@ w_POSTPONE_cf EQU w_POSTPONE_body - 3
 ; COMPILE, ( xt -- )
 ;   Compile execution token into the current definition at HERE
 ;   Functionally identical to , for direct-threaded Forth but
-;   semantically distinct per ANS standard
+;   semantically distinct per ANS standard.
+;
+;   Story 18.3 (FR-P4-14 initial stub-emission wiring; PD-P4-1 /
+;   architecture.md:207..211; PD-P4-11 / architecture.md:347..363):
+;   xt-as-stub-address contract. The 16-bit value written here is
+;   transparently treated as an xt — for Phase-1/2/3 fixed-memory
+;   words it is the code-field address (the legacy CFA-as-xt
+;   contract preserved by w_EXECUTE_cf's legacy-CFA discriminator);
+;   for Epic-18+ banked words it is the descriptor-stub address
+;   (PD-P4-11 4-byte stub layout in $D4CB+; the stub's address IS
+;   the word's xt per FR-P4-13). COMPILE, performs ZERO inspection
+;   of the value — same 16-bit store-and-advance whether the xt
+;   is a CFA or a stub. The discrimination happens at dispatch time
+;   (w_EXECUTE_cf at src/inner_interpreter.asm:285+), NOT at compile
+;   time.
+;
+;   This means COMPILE, requires NO functional code edit at Story
+;   18.3 — the current emit IS the xt-as-stub-address contract.
+;   Story 18.3's edit is documentation-only: this CCD-3 source
+;   comment block + a forward pointer to Epic 19 (where bank-aware
+;   `:` allocates the stub on `;` and COMPILE, is naturally consumed
+;   in the per-bank compile path).
+;
+;   FORWARD POINTERS:
+;     - Story 18.4 (BANK-OF) consumes xt-as-stub-address — BANK-OF
+;       reads byte 0 of the stub at xt.
+;     - Epic 19 (bank-aware `:`) is the load-bearing consumer:
+;       `:` allocates a stub for each banked word; the stub address
+;       is set as the word's xt; COMPILE, references via the
+;       compiled xt resolve to the stub address transparently.
 ; -----------------------------------------------
 w_COMPILE_COMMA:
         DEFCODE "COMPILE,", 0
