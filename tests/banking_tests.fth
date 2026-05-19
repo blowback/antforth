@@ -1635,3 +1635,123 @@ $22 +BANK $35 +BANK
 _p18-5-1b-check                  \ consumes 3 cells; witness in VARIABLEs
 BANKS-CLEAR
 _p18-5-1b-end
+
+\ === Story 19.1 — per-bank HERE / LATEST / , / C, / COMPILE, =================
+\
+\ Story 19.1's substantive new surface is the LATEST DEFCODE in
+\ src/memory.asm (variable-style: pushes the address of the LATEST cell
+\ in UserArea). AC1/AC3/AC4 are documentation-only ACs (no functional
+\ kernel code change): the existing UserArea.here / UserArea.latest
+\ read/write paths in src/memory.asm are per-bank-correct by construction
+\ via BANK!'s LDIR triple-swap at src/banking.asm:170..193 (PD-P4-3,
+\ architecture.md:229..241). The "extension" specified by the AC wording
+\ is a documentation closure rather than a kernel code edit; the source-
+\ citation comments per AC6 record the per-bank semantic at each touchpoint
+\ (HERE/LATEST/,/C,/COMPILE,).
+\
+\ Probe surface scope notes:
+\
+\   Probe-19.1-A (AC2) — LATEST as a Forth word: verifies LATEST returns
+\   the address of UserArea.latest (variable-style per Q1 dev-pass disposition),
+\   LATEST @ / LATEST ! round-trip. Bank-0-only test (no bank-switching);
+\   reliable under the post-18.5.1-baseline test-file state.
+\
+\   Probe-19.1-B (AC1/AC3/AC4 architectural witness) — bank-table[5] vs
+\   bank-table[0] divergence via raw memory read at $D400 / $D41E (the
+\   bank-table[] base + bank-5 offset). Confirms per-bank dictionary
+\   state exists in fixed memory and bank-table[0] has diverged from the
+\   COLD-LDIR-cloned bank-table[5] snapshot through the accumulated test
+\   probes' definitions. Bank-0-only test.
+\
+\ AC7 probes (a)/(b)/(c)/(d)/(e) — per-bank behavioural verification via
+\ direct bank-switching — DEFERRED to Story 19.2 (bank-aware `:` lands
+\ user-word bodies in the current bank's address space, fixing the test-
+\ surface limitation that user-word entries above $8000 become inaccessible
+\ after BANK!-switching). Same deferred-to-Epic-19 pattern as Story 18.5
+\ probes (b)/(d) which SKIP-deferred for the same root cause (per-bank
+\ dictionary not yet plumbed). See feedback_no_preexisting_discharge.md
+\ "surface, file, fix" — the underlying defect is the test-surface
+\ limitation, not the kernel; Story 19.2's bank-aware `:` is the structural
+\ fix.
+
+\ === Probe-19.1-A: LATEST DEFCODE word semantic (AC2 closure) ===
+\ Verifies LATEST returns the address of UserArea.latest (variable-style);
+\ verifies LATEST @ and LATEST ! round-trip. All in bank 0; no bank-switching.
+\ Tests:
+\   1. LATEST returns a non-zero cell address (specifically user_area + 6)
+\   2. LATEST ! followed by LATEST @ round-trips the value
+\   3. LATEST cell address is stable across multiple LATEST invocations
+VARIABLE _p19-1a-addr1
+VARIABLE _p19-1a-addr2
+VARIABLE _p19-1a-saved
+VARIABLE _p19-1a-readback
+VARIABLE _p19-1a-pass
+: _p19-1a-start ." ---probe-19.1-a-start---" CR ;
+: _p19-1a-end   ." ---probe-19.1-a-end---"   CR ;
+: _p19-1a-check
+  -1 _p19-1a-pass !
+  _p19-1a-addr1 @ 0= IF 0 _p19-1a-pass !
+    ." latest-addr-zero " THEN
+  _p19-1a-addr1 @ _p19-1a-addr2 @ = INVERT IF 0 _p19-1a-pass !
+    ." latest-addr-not-stable " THEN
+  _p19-1a-readback @ 12345 = INVERT IF 0 _p19-1a-pass !
+    ." latest-roundtrip-mismatch " THEN
+  _p19-1a-pass @ IF
+    ." probe-19.1-a-pass-latest-word-semantic"
+  ELSE
+    ." FAIL: probe-19.1-a LATEST word semantic test failed"
+  THEN CR ;
+_p19-1a-start
+LATEST _p19-1a-addr1 !
+LATEST _p19-1a-addr2 !
+LATEST @ _p19-1a-saved !
+12345 LATEST !
+LATEST @ _p19-1a-readback !
+_p19-1a-saved @ LATEST !
+_p19-1a-check
+_p19-1a-end
+
+\ === Probe-19.1-B: bank-table[] LDIR-clone witness (AC1/AC3/AC4) ===
+\ Reads bank-table[0].here (fixed memory at $D400) and bank-table[5].here
+\ (fixed memory at $D41E = $D400 + 5*6, since each entry is the 6-byte
+\ (here, latest, wordlist_head) triple per architecture.md:229..241).
+\ Asserts both are non-zero. This witnesses two architectural invariants:
+\   (i) COLD's snapshot of LIVE → bank-table[0] (antforth.asm:144..183)
+\       ran and produced a non-zero HERE for the portal page.
+\   (ii) COLD's LDIR-clone of bank-table[0] → bank-table[1..28]
+\        (antforth.asm:184..197) propagated to slot [5], so the per-bank
+\        triple infrastructure exists in fixed-memory storage at $D400+.
+\
+\ NB the probe was originally specified to also assert
+\ `bt0-here != bt5-here` (per-bank-divergence witness), but that
+\ property is *test-history-dependent* — it requires accumulated
+\ `5 BANK!`+compile+`0 BANK!` cycles from earlier test surfaces (e.g.,
+\ the iron-spike at tests/banking_tests.fth:705..728 writes bank-5),
+\ NOT a load-bearing invariant of Story 19.1. At fresh-boot (no test
+\ pollution), all 29 bank-table entries are LDIR-clones with identical
+\ HERE per src/antforth.asm:184..197 — so the divergence assertion
+\ would FAIL on a clean COLD. CR review H2/H3 (2026-05-19) dropped the
+\ divergence assertion to make this probe load-bearing-only. Per-bank
+\ behavioural witnesses (AC7 a/b/c/d/e) deferred to Story 19.2 + a
+\ fresh-test-fixture strategy per Dev Notes §"Probe scope revision".
+VARIABLE _p19-1b-bt0-here
+VARIABLE _p19-1b-bt5-here
+VARIABLE _p19-1b-pass
+: _p19-1b-start ." ---probe-19.1-b-start---" CR ;
+: _p19-1b-end   ." ---probe-19.1-b-end---"   CR ;
+: _p19-1b-check
+  -1 _p19-1b-pass !
+  _p19-1b-bt0-here @ 0= IF 0 _p19-1b-pass !
+    ." bt0-here-zero " THEN
+  _p19-1b-bt5-here @ 0= IF 0 _p19-1b-pass !
+    ." bt5-here-zero " THEN
+  _p19-1b-pass @ IF
+    ." probe-19.1-b-pass-bank-table-ldir-clone-witness"
+  ELSE
+    ." FAIL: probe-19.1-b bank-table LDIR-clone witness failed"
+  THEN CR ;
+_p19-1b-start
+$D400 @ _p19-1b-bt0-here !      \ bank-table[0].here
+$D41E @ _p19-1b-bt5-here !      \ bank-table[5].here = $D400 + 5*6
+_p19-1b-check
+_p19-1b-end

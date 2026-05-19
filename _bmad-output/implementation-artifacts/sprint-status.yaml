@@ -382,8 +382,8 @@ development_status:
   18-5-1-defwords-ix-preservation-on-caught-throw: done
   epic-18-retrospective: optional
 
-  epic-19: backlog
-  19-1-per-bank-here-latest-per-bank-comma-c-comma-compile-comma-full-cell-write-plumbing: backlog
+  epic-19: in-progress
+  19-1-per-bank-here-latest-per-bank-comma-c-comma-compile-comma-full-cell-write-plumbing: done
   19-2-colon-lands-body-in-current-bank-auto-emits-descriptor-stub-on-semicolon-compiler-transparent-banking: backlog
   19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: backlog
   19-4-epic-19-close-out-antforth-3-x-3-tag: backlog

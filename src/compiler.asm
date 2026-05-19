@@ -360,12 +360,22 @@ w_POSTPONE_cf EQU w_POSTPONE_body - 3
 ;   `:` allocates the stub on `;` and COMPILE, is naturally consumed
 ;   in the per-bank compile path).
 ;
-;   FORWARD POINTERS:
+;   Story 19.1 / FR-P4-14 (final integration; AC4 closure) — per-bank
+;   COMPILE,: writes through (IY+UserArea.here) into the current
+;   bank's `here` via BANK!'s LDIR triple-swap at
+;   src/banking.asm:170..193 (same per-bank-via-swap discipline as `,`
+;   in src/memory.asm). The Epic-19 forward-pointer below is CLOSED
+;   by this story; Story 19.2 will land bank-aware `:` on top of this
+;   per-bank cell-write foundation. See PD-P4-3
+;   (_bmad-output/planning-artifacts/architecture.md:229..241) and
+;   docs/antforth-banking-redesign.md §5.4.
+;
+;   DOWNSTREAM CONSUMERS (Epic 18+):
 ;     - Story 18.4 (BANK-OF) consumes xt-as-stub-address — BANK-OF
 ;       reads byte 0 of the stub at xt.
-;     - Epic 19 (bank-aware `:`) is the load-bearing consumer:
-;       `:` allocates a stub for each banked word; the stub address
-;       is set as the word's xt; COMPILE, references via the
+;     - Story 19.2 (bank-aware `:`) is the load-bearing consumer:
+;       `:` will allocate a stub for each banked word; the stub
+;       address is set as the word's xt; COMPILE, references via the
 ;       compiled xt resolve to the stub address transparently.
 ; -----------------------------------------------
 w_COMPILE_COMMA:

@@ -119,7 +119,21 @@ w_PLUS_STORE_cf:
 
 ; -----------------------------------------------
 ; HERE ( -- addr )
-;   Push current dictionary pointer
+;   Push current dictionary pointer.
+;
+;   Story 19.1 / FR-P4-26 — per-bank HERE: the read path through
+;   (IY+UserArea.here) is per-bank-correct by construction. BANK!
+;   (src/banking.asm:147..196) atomically LDIR-swaps the
+;   (HERE, LATEST, wordlist_head) triple between bank-table[old/new]
+;   and the live UserArea cells; the active cell is the read-cache,
+;   the swap is the consistency mechanism. See PD-P4-3
+;   (_bmad-output/planning-artifacts/architecture.md:229..241) and
+;   docs/antforth-banking-redesign.md §5.4.
+;
+;   Cross-bank pointer hazard (FR-P4-26, "doc-and-pray"): if the user
+;   holds HERE from bank A then BANK!s to B and writes there, the
+;   write lands in bank B's dictionary — undefined behaviour, no
+;   runtime guard. F4 user-docs entry lands in Epic 22 polish.
 ; -----------------------------------------------
 w_HERE:
         DEFCODE "HERE", 0
@@ -127,6 +141,32 @@ w_HERE_cf:
         PUSH    BC              ; Save old TOS
         LD      C, (IY+UserArea.here)
         LD      B, (IY+UserArea.here+1)   ; BC = HERE value
+        NEXT
+
+; -----------------------------------------------
+; LATEST ( -- a-addr )           antforth extension
+;   Push the address of the LATEST cell in UserArea. Read via
+;   `LATEST @` (returns the dictionary entry pointer of the most-
+;   recently-defined word in the current bank); write via `LATEST !`
+;   (interactive dictionary surgery — uncommon but standard Forth
+;   tradition).
+;
+;   Story 19.1 / AC2 / FR-P4-26 — per-bank LATEST: the cell at
+;   (user_area + UserArea.latest) is per-bank-correct by construction
+;   via BANK!'s LDIR triple-swap at src/banking.asm:170..193. See
+;   PD-P4-3 (_bmad-output/planning-artifacts/architecture.md:229..241)
+;   and docs/antforth-banking-redesign.md §5.4.
+;
+;   Variable-style ( -- a-addr ) chosen at Q1 disposition 2026-05-19
+;   (dev-pass AskUserQuestion); matches gforth/SwiftForth/pforth idiom
+;   and the existing antforth STATE / >IN convention. Probe AC7(d)
+;   `LATEST @` works as written.
+; -----------------------------------------------
+w_LATEST:
+        DEFCODE "LATEST", 0
+w_LATEST_cf:
+        PUSH    BC                                    ; save old TOS
+        LD      BC, user_area + UserArea.latest       ; BC = &LATEST cell
         NEXT
 
 ; -----------------------------------------------
@@ -157,7 +197,12 @@ w_PAD_cf:
 
 ; -----------------------------------------------
 ; ALLOT ( n -- )
-;   Advance HERE by n bytes
+;   Advance HERE by n bytes.
+;
+;   Story 19.1 / FR-P4-23 — per-bank ALLOT: read/write of
+;   (IY+UserArea.here) is per-bank via BANK!'s LDIR triple-swap. See
+;   PD-P4-3 (_bmad-output/planning-artifacts/architecture.md:229..241)
+;   and docs/antforth-banking-redesign.md §5.4.
 ; -----------------------------------------------
 w_ALLOT:
         DEFCODE "ALLOT", 0
@@ -172,7 +217,17 @@ w_ALLOT_cf:                             ; No underflow check — low-risk dictio
 
 ; -----------------------------------------------
 ; , (COMMA) ( x -- )
-;   Compile cell at HERE, advance HERE by 2
+;   Compile cell at HERE, advance HERE by 2.
+;
+;   Story 19.1 / FR-P4-23 — per-bank `,`: writes through
+;   (IY+UserArea.here) into the current bank's `here` via BANK!'s
+;   LDIR triple-swap at src/banking.asm:170..193. Cross-bank `,` is
+;   NOT exposed — user MUST `BANK!` to target bank before writing
+;   (explicit ergonomic decision, redesign §5.4). Cross-bank pointer
+;   hazard (FR-P4-26 "doc-and-pray"): holding HERE from bank A then
+;   `BANK!`ing to B and writing lands in B's dictionary — undefined;
+;   no runtime guard. See PD-P4-3
+;   (_bmad-output/planning-artifacts/architecture.md:229..241).
 ; -----------------------------------------------
 w_COMMA:
         DEFCODE ",", 0
@@ -190,7 +245,15 @@ w_COMMA_cf:                             ; No underflow check — low-risk dictio
 
 ; -----------------------------------------------
 ; C, ( char -- )
-;   Compile byte at HERE, advance HERE by 1
+;   Compile byte at HERE, advance HERE by 1.
+;
+;   Story 19.1 / FR-P4-23 — per-bank `C,`: same per-bank-via-swap
+;   discipline as `,` above. See PD-P4-3
+;   (_bmad-output/planning-artifacts/architecture.md:229..241).
+;
+;   Cross-bank pointer hazard (FR-P4-26 "doc-and-pray"): holding HERE
+;   from bank A then `BANK!`ing to B and writing lands in B's
+;   dictionary — undefined; no runtime guard. Same caveat as `,`.
 ; -----------------------------------------------
 w_C_COMMA:
         DEFCODE "C,", 0

@@ -515,6 +515,35 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-18.5.1-b — IN-BANK i*x preservation failed"; \
 		echo "  PROBE_18_5_1_B: $$PROBE_18_5_1_B"; exit 1; \
 	fi
+	@# Story 19.1 — AC2 LATEST DEFCODE word semantic (variable-style:
+	@# pushes user_area+UserArea.latest cell address; LATEST @ / LATEST !
+	@# round-trip). Bank-0-only test; per-bank behavioural probes (AC7
+	@# a/b/c/d/e) deferred to Story 19.2 per test-surface limitation
+	@# documented in tests/banking_tests.fth:1639+ block comment.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_19_1_A=$$(echo "$$OUTPUT" | awk '/---probe-19.1-a-start---$$/{p=1; next} /---probe-19.1-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_19_1_A" | grep -q 'probe-19.1-a-pass-latest-word-semantic' && ! echo "$$PROBE_19_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-19.1-a-end---$$'; then \
+		echo "PASS: probe-19.1-a — LATEST DEFCODE word semantic (variable-style; LATEST @ / LATEST ! round-trip; addr stable) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-19.1-a — LATEST word semantic test failed"; \
+		echo "  PROBE_19_1_A: $$PROBE_19_1_A"; exit 1; \
+	fi
+	@# Story 19.1 — AC1/AC3/AC4 architectural witness: bank-table[0] /
+	@# bank-table[5] LDIR-clone witness via raw memory read at $$D400 /
+	@# $$D41E. Asserts both non-zero — confirms COLD snapshot +
+	@# LDIR-clone of bank-table[0] → bank-table[1..28]
+	@# (antforth.asm:144..197). The original bt0 != bt5 divergence
+	@# assertion was test-history-dependent and fresh-boot-fragile;
+	@# dropped per CR review H2/H3 (2026-05-19). Behavioural per-bank
+	@# cell-write probes deferred to Story 19.2.
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_19_1_B=$$(echo "$$OUTPUT" | awk '/---probe-19.1-b-start---$$/{p=1; next} /---probe-19.1-b-end---$$/{p=0} p') && \
+	if echo "$$PROBE_19_1_B" | grep -q 'probe-19.1-b-pass-bank-table-ldir-clone-witness' && ! echo "$$PROBE_19_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-19.1-b-end---$$'; then \
+		echo "PASS: probe-19.1-b — bank-table[0] / bank-table[5] LDIR-clone witness (both non-zero) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-19.1-b — bank-table LDIR-clone witness failed"; \
+		echo "  PROBE_19_1_B: $$PROBE_19_1_B"; exit 1; \
+	fi
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
