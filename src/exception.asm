@@ -201,16 +201,27 @@ w_CATCH_cf:
         LD      HL, (sp_base)
         OR      A
         SBC     HL, DE                  ; HL = sp_base - SP_safe = depth_bytes
-        ; --- Push depth_word at IX-2 UNCONDITIONALLY (catch_resume_cf and
-        ;     THROW caught path both read (IX-2) for variable IX advance,
-        ;     so the slot must hold the actual depth_bytes value even when
-        ;     depth = 0). ---
+        ; --- Push depth_word at IX-2 UNCONDITIONALLY. The THROW caught
+        ;     path at `w_THROW_cf.kernel_entry` reads (IX-2)/(IX-1) into
+        ;     BC and uses it as both the LDIR byte-count and the JR Z
+        ;     short-circuit predicate (`LD A,B / OR C / JR Z`), so the
+        ;     slot must hold the actual depth_bytes value even when
+        ;     depth = 0 (Story-18.5.1 dev-pass iteration #1 bug: gating
+        ;     the write on depth>0 left (IX-2) holding rstack garbage,
+        ;     which THROW then attempted to LDIR-copy → crashes in test
+        ;     622 EVALUATE / test-repl-banking-skip).
+        ;     catch_resume_cf does NOT read (IX-2); it does a fixed +8
+        ;     advance after re-anchoring IX via CATCH-TOP. ---
         LD      B, H
         LD      C, L                    ; BC = depth_bytes (count for LDIR)
         DEC     IX
         DEC     IX
         LD      (IX+0), C
-        LD      (IX+1), B               ; (high byte invariantly 0 per PS_SIZE=256)
+        LD      (IX+1), B               ; high byte is 0 while PS_SIZE ≤ 256;
+                                        ; depth_word is stored as a full 2-byte
+                                        ; cell so a future PS_SIZE bump only
+                                        ; requires re-validating the LDIR cycle
+                                        ; budget, not the encoding.
         LD      A, B
         OR      C
         JR      Z, .catch_no_stash      ; depth_bytes = 0: skip LDIR (depth_word still written above)
@@ -937,11 +948,24 @@ throw_saved_n:  DW      0
 
 ; -----------------------------------------------
 ; Story 18.5.1 option (b) THROW caught-path scratch cells.
-;   Spill SP_safe (= frame +0) and saved-BC (= frame +2) across the LDIR
-;   that restores i*x deeper cells from the IX-rstack stash zone. LDIR
-;   clobbers HL/DE/BC; the catching-IP is spilled to the system stack via
-;   PUSH DE / POP DE. Single-threaded invariant: never re-entered (caught-
-;   path runs atomically between THROW entry and NEXT).
+;   Spill SP_safe, saved-BC (= i*x's TOS-cell, frame +2), and the
+;   catching-IP across the LDIR that restores i*x deeper cells from the
+;   IX-rstack stash zone. LDIR clobbers HL/DE/BC, so all three must be
+;   parked somewhere safe before the LDIR runs.
+;
+;   CRITICAL: the catching-IP is parked in `throw_stash_de` rather than
+;   spilled to the system stack via `PUSH DE`/`POP DE`. A `PUSH DE` here
+;   would land the catching-IP at [SP_throw − 2]; if xt consumed any
+;   cells before THROW (SP_throw > SP_safe), that address can fall inside
+;   the LDIR write range [SP_safe..sp_base-1], which the LDIR-restore
+;   below would then overwrite with stash bytes. POP DE would read garbage
+;   and NEXT would dispatch to a corrupted IP — empirically witnessed by
+;   the Story-18.5.1 dev-pass `DROP-ABORT` and `EVALUATE` crashes
+;   (Debug Log iteration #3). DO NOT revert `throw_stash_de` to a
+;   PUSH/POP pair; the kernel scratch cell sidesteps the SP/LDIR overlap.
+;
+;   Single-threaded invariant: never re-entered (caught-path runs
+;   atomically between THROW entry and NEXT).
 ;
 ;   Storage note: 2 bytes each of initialised data baked into the .COM
 ;   image (parallel to throw_saved_n above).

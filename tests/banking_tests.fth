@@ -1592,7 +1592,11 @@ VARIABLE _p18-5-1b-pass
   _p18-5-1b-c1  !
   _p18-5-1b-c1  @ 1 = INVERT IF 0 _p18-5-1b-pass !
     ." in-bank-i*x-deepest-mismatch " THEN
-  \ c2 is xt_ABORT (address-typed; we check non-zero rather than literal)
+  \ c1 (deepest) is the load-bearing assertion for Story 18.5.1: pre-
+  \ option-(b) it leaked the outer CATCH frame_base. c2 (= i*x's TOS-cell,
+  \ = xt_ABORT) is preserved by Story 11.4.1's saved-BC slot regardless of
+  \ this story — we soft-check non-zero only (a literal-address check
+  \ would couple the probe to dictionary layout for no extra coverage).
   _p18-5-1b-c2  @ 0= IF 0 _p18-5-1b-pass !
     ." in-bank-i*x-second-zero " THEN
   _p18-5-1b-tos @ -1 = INVERT IF 0 _p18-5-1b-pass !

@@ -347,7 +347,7 @@ development_status:
   # standing rule. Scope: framework-level fix to CATCH (e.g., save more
   # of i*x at frame push) OR DEFWORD-pattern guidance to avoid SWAP at
   # the body's pre-CATCH cells. Out-of-scope for Phase-4 close-out tag.
-  18-5-1-defwords-ix-preservation-on-caught-throw: review
+  18-5-1-defwords-ix-preservation-on-caught-throw: done
   epic-18-retrospective: optional
 
   epic-19: backlog
