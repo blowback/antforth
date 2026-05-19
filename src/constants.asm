@@ -75,6 +75,18 @@ PIC_BUF_SIZE    EQU     40
 ; === Dictionary Entry Flags ===
 F_IMMEDIATE     EQU     0x80            ; Bit 7: IMMEDIATE flag
 F_SMUDGE        EQU     0x40            ; Bit 6: SMUDGE flag (hidden)
+F_HAS_STUB_XT_CELL EQU  0x20            ; Bit 5: Story 19.2 (Q1-α): entry has a 2-byte
+                                        ; stub-xt cell between name and CFA. Set on every
+                                        ; runtime-built entry by build_header; cleared on
+                                        ; kernel-assembled DEFCODE/DEFWORD entries (which
+                                        ; keep the legacy post-name = CFA layout to avoid
+                                        ; +2 B per kernel word ≈ +740 B that would blow
+                                        ; the AC9 80-B envelope). FIND's match-success
+                                        ; exit at src/dictionary.asm reads the cell only
+                                        ; when this bit is set. F_LENMASK below masks
+                                        ; bits 5-7, so length-extraction paths in
+                                        ; src/dictionary.asm + src/strings.asm are
+                                        ; unaffected.
 F_LENMASK       EQU     0x1F            ; Bits 0-4: name length (max 31)
 
 ; === ANS THROW Codes ===

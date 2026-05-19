@@ -161,7 +161,30 @@ search_wid_for_name:
         INC     HL
         INC     DE
         DJNZ    .sw_compare
-        ; Match — HL points past the name = code field address (xt).
+        ; Match — HL points past the name. Story 19.2 (Q1-α): runtime-built
+        ; entries (every build_header consumer: `:`, CREATE, CONSTANT,
+        ; MARKER, CODE, LABEL) carry a 2-byte stub-xt cell between name and
+        ; CFA, flagged by F_HAS_STUB_XT_CELL in count_flags. Kernel-assembled
+        ; DEFCODE/DEFWORD/DEFIMMED entries keep the legacy post-name = CFA
+        ; layout (no cell, flag clear). Discriminate on the flag:
+        ;   - flag set: read 2-byte cell at HL → HL = xt. Bank-0 / Phase-1/2/3
+        ;     entries' cell holds the CFA address (initial-fill from
+        ;     build_header → FIND returns CFA, legacy-equivalent dispatch
+        ;     via w_EXECUTE_cf.legacy_dispatch at xt < $D400); bank-N>0
+        ;     colon entries' cell holds the descriptor-stub address
+        ;     (overwritten by w_SEMICOLON_cf → FIND returns stub-xt, stub
+        ;     dispatch at xt ≥ $D400 per PD-P4-1 / FR-P4-13 / FR-P4-17).
+        ;   - flag clear: HL is post-name = CFA directly (legacy layout).
+        ; architecture.md:200..211 + 347..363; redesign §2.1.
+        LD      A, (sw_match_cf)
+        AND     F_HAS_STUB_XT_CELL
+        JR      Z, .sw_match_legacy
+        ; flag set: extract xt from 2-byte cell
+        LD      A, (HL)                 ; cell.lo
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                    ; HL = cell value = xt
+.sw_match_legacy:
         POP     DE                      ; discard saved entry-start (DE clobbered next)
         LD      A, (sw_match_cf)        ; A = count_flags
         OR      A                       ; clear CF (NC = hit)

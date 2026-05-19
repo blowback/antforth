@@ -857,6 +857,17 @@ w_PAREN_STUB_ALLOCATE_cf:
 w_BANK_OF:
         DEFCODE "BANK-OF", 0
 w_BANK_OF_cf:
+        ; --- Story 19.2 (Q3-β consequence) — legacy-CFA xt discriminator ---
+        ; Bank-0 `:` keeps the legacy CFA-as-xt path (no descriptor stub
+        ; allocated; preserves NFR-P4-1 test surface). BANK-OF on such an
+        ; xt would otherwise read the JP opcode byte ($C3 = 195, out of
+        ; signed [-1..28] range). Discriminate on xt.high < $D4: legacy
+        ; CFA xt → return -1 (fixed-memory marker per FR-P4-13). Same
+        ; threshold as w_EXECUTE_cf's legacy-CFA discriminator at
+        ; src/inner_interpreter.asm:391..393. STUB_ALLOC_BASE = $D4CB.
+        LD      A, B                                ; A = xt.high
+        CP      $D4
+        JR      C, .bank_of_legacy_fixed
         LD      H, B                                ; HL = xt
         LD      L, C
         LD      C, (HL)                             ; C = byte 0 (target_bank, signed)
@@ -864,6 +875,9 @@ w_BANK_OF_cf:
         RLA                                         ; CF = bit 7 of byte 0
         SBC     A, A                                ; A = $FF if CF else $00
         LD      B, A                                ; BC = sign-extended cell
+        NEXT
+.bank_of_legacy_fixed:
+        LD      BC, -1                               ; legacy CFA xt → -1 (fixed-mem marker)
         NEXT
 
 ; ============================================================

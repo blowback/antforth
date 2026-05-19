@@ -481,21 +481,37 @@ w_RECURSE_cf:
         LD      A, (IY+UserArea.state)
         OR      (IY+UserArea.state+1)
         JP      Z, w_QCOMP_cf
-        ; HL = LATEST (dict entry start)
+        ; HL = LATEST (dict entry start — `:` always builds a runtime entry
+        ; via build_header so this is the entry the user is mid-defining)
         LD      L, (IY+UserArea.latest)
         LD      H, (IY+UserArea.latest+1)
         ; Skip hash_link (2 bytes) → HL -> count_flags
         INC     HL
         INC     HL
         LD      A, (HL)              ; A = count_flags
+        LD      (recurse_scratch), A ; stash for cell discriminator below
         AND     F_LENMASK            ; A = name length
         INC     HL                   ; HL -> first name byte
-        ; HL += A (name length) → HL = code-field address
+        ; HL += A (name length) → HL = post-name address
         ADD     A, L
         LD      L, A
         JR      NC, .rec_no_carry
         INC     H
 .rec_no_carry:
+        ; Story 19.2 (Q1-α): discriminate on F_HAS_STUB_XT_CELL in count_flags.
+        ; Bank-0 entries: legacy layout — HL = post-name = CFA directly.
+        ; Bank-N>0 entries: 2-byte stub-xt cell at HL → read it as CFA addr
+        ; (initial-fill from build_header; w_SEMICOLON_cf hasn't run yet so
+        ; the cell still holds CFA, not the stub address — RECURSE compiles
+        ; CFA so intra-bank DTC dispatch via direct JP works).
+        LD      A, (recurse_scratch)
+        AND     F_HAS_STUB_XT_CELL
+        JR      Z, .rec_no_cell
+        LD      A, (HL)              ; cell.lo
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                 ; HL = cell value = CFA address
+.rec_no_cell:
         ; Save cfa in a scratch cell, then compile it at HERE.
         LD      (recurse_scratch), HL
         ; HL = HERE

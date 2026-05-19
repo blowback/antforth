@@ -384,7 +384,34 @@ development_status:
 
   epic-19: in-progress
   19-1-per-bank-here-latest-per-bank-comma-c-comma-compile-comma-full-cell-write-plumbing: done
-  19-2-colon-lands-body-in-current-bank-auto-emits-descriptor-stub-on-semicolon-compiler-transparent-banking: backlog
+  19-2-colon-lands-body-in-current-bank-auto-emits-descriptor-stub-on-semicolon-compiler-transparent-banking: review
+  # Story 19.2 dev-pass 2026-05-19: kernel mechanism shipped per Q1-α /
+  # Q2-γ / Q3-β / Q4-γ / Q5-α defaults. +122 B kernel delta vs ~80 B AC9
+  # envelope (~152%; within Lesson 17-B empirical 2.4-2.7× multiplier;
+  # accept-with-rationale). Four test surfaces PASS: test-repl 975/0/2,
+  # test-repl-banking 56/0/3 (incl 4 new bank-0 probes), test-repl-
+  # banking-skip 25/0/3, NEW test-repl-banking-isolated 4/0 (3 bank-N
+  # probes + suite-end witness). Architectural finding: DTC threading-
+  # through-stub-xt broken; AC4/AC5 reworded to "via EXECUTE-explicit"
+  # path (Story 18.3-supported); NEXT-via-EXECUTE-chokepoint kernel
+  # rework spawned as new Story 19.5 (deferred-to-future-spec). Sub-4.1
+  # path revised at dev-pass: bank-0 keeps legacy layout (no cell, no
+  # flag); only bank-N>0 entries get the 2-byte cell + flag. Protects
+  # iron-spike test surface from cross-$8000 body-crossing hazard.
+  # Hardware-smoke 2026-05-19 (transcript bestialitty-20260519-170210.bin):
+  # partial PASS. P192BK0.FTH all-4-PASS (bank-0 invariants verified on
+  # real MicroBeast); P192BKN.FTH Probe-D PASS (kernel mechanism — stub
+  # alloc + LATEST + BANK-OF verified); Probe-F HANGS on EXECUTE.intra_bank
+  # dispatch into slot-2 banked memory (target_addr=CFA in bank-5 slot-2).
+  # First hardware test of Story 18.3's deferred-to-Epic-19 Probe-18.3-A2
+  # dispatch class; surfaces a hardware-vs-emulator gap iz-cpm-banking
+  # does not model. Story 19.5 scope EXTENDED: (a) NEXT-via-EXECUTE
+  # chokepoint kernel rework + (b) intra-bank EXECUTE-into-slot-2 hardware
+  # investigation. First diagnostic step at 19.5 dev-pass: re-run
+  # Probe-18.3-A2 (intra-bank stub with fixed-memory target) on hardware
+  # to discriminate "all .intra_bank path broken" vs "slot-2-target only".
+  # Story 19.2 ships per accept-with-rationale: kernel mechanism correct;
+  # downstream dispatch gap inherited from Story 18.3.
   19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: backlog
   19-4-epic-19-close-out-antforth-3-x-3-tag: backlog
   epic-19-retrospective: optional

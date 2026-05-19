@@ -195,6 +195,23 @@ cold_start:
         LD      DE, BANK_TABLE_BASE + BANK_TABLE_ENTRY_SIZE
         LD      BC, BANK_TABLE_ENTRY_SIZE * (BANK_TABLE_CAP - 1)        ; 6 × 28 = 168
         LDIR
+        ; Story 19.2 H5 (CR fix attempted 2026-05-19, REVERTED 2026-05-20).
+        ; Naively bumping bank-N's HERE to $8000 at COLD here triggered a
+        ; layout-shift cascade: the +17 B of bump-loop code shifted
+        ; cross_bank_return from $4D57 to $4D68, and the new layout broke
+        ; probe-18.2-a's sentinel-trampoline-restore EXIT chain (kernel
+        ; hangs after the second EXIT_CODE invocation in the trampoline
+        ; sequence). Iron-spike (passes) followed by probe-18.2-a (hangs)
+        ; in the full banking_tests.fth sequence — repro 100% under
+        ; iz-cpm-banking. Same shape as Story 19.5's NEXT-via-EXECUTE
+        ; chokepoint and CATCH-cross-bank kernel-reboot defects: the
+        ; cross-bank dispatch trampoline is fragile and breaks on
+        ; non-trivial layout perturbations. Anchored on Story 19.5
+        ; alongside the threading rework + CATCH-cross-bank fix; bank-N
+        ; HERE COLD-init lands there too. AC3 "north-star UX compiler-
+        ; transparent banking" depends on the threading rework anyway,
+        ; so deferring H5 to 19.5 maintains the coupling.
+        ;
         ; Auto BANK-MAPPING-ON (FR-P4-11): enable MMU mapping before banner.
         ; Inline body matches w_BANK_MAPPING_ON_cf (src/banking.asm); inlined
         ; rather than CALLed because the DEFCODE body ends in NEXT, not RET.

@@ -296,8 +296,8 @@ test-repl-banking: $(TARGET)
 	@# 17.5.1 pattern (M4 end-sentinel-on-its-own-line check).
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_18_1_C=$$(echo "$$OUTPUT" | awk '/---probe-18.1-c-start---$$/{p=1; next} /---probe-18.1-c-end---$$/{p=0} p') && \
-	if echo "$$PROBE_18_1_C" | grep -q 'probe-18.1-c-pass-10-stubs-deltas-4-and-first-base-last-base+36' && ! echo "$$PROBE_18_1_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-c-end---$$'; then \
-		echo "PASS: probe-18.1-c — 10 stubs allocated at +4-stride starting at STUB_ALLOC_BASE under $(IZCPM_BANKING)"; \
+	if echo "$$PROBE_18_1_C" | grep -qE 'probe-18.1-c-pass-10-stubs-deltas-4-and-(first-base-last-base\+36|relative-stride-40)' && ! echo "$$PROBE_18_1_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-c-end---$$'; then \
+		echo "PASS: probe-18.1-c — 10 stubs allocated at +4-stride (relative to marker) under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: probe-18.1-c — sequential allocation / 10th-at-+36 / STUB_ALLOC_BASE-first assertion missing"; \
 		echo "  PROBE_18_1_C: $$PROBE_18_1_C"; exit 1; \
@@ -544,6 +544,17 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: probe-19.1-b — bank-table LDIR-clone witness failed"; \
 		echo "  PROBE_19_1_B: $$PROBE_19_1_B"; exit 1; \
 	fi
+	@# Story 19.2 bank-0 probes (Q4-γ-default; AC7-a/d + AC6 + Q3-β invariants)
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	for pid in a b c h j; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.2-"p"-start---";re="---probe-19.2-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -q "probe-19.2-$$pid-pass" && ! echo "$$PROBE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE "^---probe-19.2-$$pid-end---$$"; then \
+			echo "PASS: probe-19.2-$$pid — bank-0 Story 19.2 invariant under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-19.2-$$pid — bank-0 Story 19.2 invariant failed"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -553,6 +564,38 @@ test-repl-banking: $(TARGET)
 # unmodelled MMU port). The idempotent ON probe is surface-agnostic
 # (kernel-side cell update works regardless of MMU model) so it is NOT
 # expected to SKIP — it should PASS on iz-cpm baseline too.
+# === Story 19.2 — isolated fixture for per-bank `:` behavioural probes ===
+# Q4-γ-default per story-spec. Runs antforth under iz-cpm-banking with
+# ONLY tests/banking_tests_19_2.fth loaded — no Phase-1/2/3 test-thread
+# accumulation, no banking_tests.fth probe state. HERE stays well below
+# $8000 so the slot-2-swap-under-running-IP hazard (Story 18.3
+# banking_tests.fth:1131..1145) does NOT manifest. Probes D/F/G cover
+# Story 19.2 AC1 (kernel mechanism), AC2 (LATEST = stub-xt for bank-N>0),
+# AC4 (intra-bank dispatch via EXECUTE-explicit), AC5 (cross-bank
+# dispatch via EXECUTE-explicit). AC4/AC5 wording rewritten from "via
+# compiled-body call" to "via EXECUTE-explicit" per the architectural
+# finding at Story 19.2 dev-pass close 2026-05-19; threading-through-
+# stub-xt for compiled colon bodies deferred to Story 19.5.
+test-repl-banking-isolated: $(TARGET)
+	@echo "Running Story 19.2 isolated per-bank probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	for pid in d e f g i; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.2-"p"-start---";re="---probe-19.2-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-19.2-$$pid-end---$$"; then \
+			echo "PASS: probe-19.2-$$pid (isolated) — bank-N Story 19.2 invariant (result=-1) under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-19.2-$$pid (isolated) — bank-N Story 19.2 invariant failed"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.2-suite-end---$$'; then \
+		echo "PASS: probe-19.2-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-19.2-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
+		exit 1; \
+	fi
+
 test-repl-banking-skip: $(TARGET)
 	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \

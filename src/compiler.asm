@@ -88,6 +88,28 @@ bh_count_flags_addr: DW 0   ; Address of count_flags byte (for unsmudging)
 bh_flags:            DB 0   ; Flags to OR into count_flags
 bh_code_field:       DW 0   ; Code field position (saved for return)
 bh_wid:              DW 0   ; Wid used for header insertion (Story 12.4 — for error recovery)
+bh_stub_xt_addr:     DW 0   ; Story 19.2 (Q1-α): address of the 2-byte stub-xt cell
+                            ; inserted between name and CFA. build_header initial-fills
+                            ; with the CFA address (so FIND extraction returns CFA for
+                            ; legacy bank-0 / Phase-1/2/3 entries unchanged);
+                            ; w_SEMICOLON_cf overwrites for bank-N>0 colon definitions
+                            ; with the descriptor-stub address (PD-P4-1; architecture.md:200..211).
+
+; Story 19.2 (Q2-γ) — fixed-memory scratch read by w_IMMEDIATE_cf so the
+; IMMEDIATE bit lands on the right count_flags byte even after w_SEMICOLON_cf
+; has overwritten LATEST with a stub-xt (bank-N>0 path). Mirror-written at
+; the tail of every successful build_header (covers `:`, CREATE, CONSTANT,
+; MARKER, CODE, LABEL). See PD-P4-1 (architecture.md:200..211) + redesign §2.1.
+;
+; CR fix (Story 19.2 review): assembly-time initial value points at a
+; sentinel sink so IMMEDIATE invoked before any build_header consumer has
+; run no-ops on the sink instead of writing F_IMMEDIATE into the CP/M
+; zero-page (the DW 0 form wrote the bit into $0002 = BDOS dispatch).
+; Pre-Story 19.2 IMMEDIATE walked LATEST (= 0 at COLD) and hit the same
+; $0002 corruption; the sink + assembly-time init closes that latent
+; degenerate-input bug as well.
+latest_count_flags_addr: DW latest_count_flags_sink
+latest_count_flags_sink: DB 0
 
 ; === COLON error recovery variables ===
 ; (Used by SEMICOLON and COMP-ERROR — populated from bh_* after build_header)
@@ -96,6 +118,10 @@ colon_smudge_addr:   DW 0
 colon_saved_bucket:  DB 0
 colon_saved_head:    DW 0
 colon_saved_wid:     DW 0   ; Wid the colon header was inserted into (Story 12.4)
+colon_saved_xt_cell: DW 0   ; Story 19.2 (Q1-α): bh_stub_xt_addr snapshot for SEMICOLON
+                            ; to overwrite the cell with the descriptor-stub address
+                            ; on the bank-N>0 path (intervening build_header calls
+                            ; would otherwise clobber bh_stub_xt_addr).
 
 ; -----------------------------------------------
 ; build_header — Shared subroutine for :, CREATE, CONSTANT
@@ -273,8 +299,62 @@ build_header:
         INC     HL
         DJNZ    .bh_copy_name
 
-        ; HL = code field position — save it
-        LD      (bh_code_field), HL
+        ; --- Story 19.2 (Q1-α + Q3-β) — bank-aware stub-xt cell reservation ---
+        ; Bank-0 entries: legacy layout (HL = post-name = CFA; no cell, no
+        ; flag). Preserves NFR-P4-16 byte-identical bank-0 dispatch + protects
+        ; iron-spike (tests/banking_tests.fth:705..728) which crosses the
+        ; slot-1/slot-2 boundary at $8000 — extra cells per bank-0 entry
+        ; would push iron-spike's body into bank-0's slot-2 and break it on
+        ; `5 BANK!` mid-execution. Bank-N>0 entries: reserve 2-byte cell
+        ; between name and CFA; set F_HAS_STUB_XT_CELL bit in count_flags;
+        ; initial-fill the cell with the CFA address (overwritten by
+        ; w_SEMICOLON_cf with descriptor-stub address per PD-P4-1; FIND
+        ; discriminates on the flag at src/dictionary.asm).
+        ; architecture.md:200..211 + 347..363; redesign §2.1.
+        LD      A, (IY+UserArea.current_bank)
+        OR      A
+        JR      Z, .bh_skip_cell                  ; bank-0: legacy layout
+        ; bank-N>0: set F_HAS_STUB_XT_CELL flag in count_flags
+        PUSH    HL                                ; save HL = post-name
+        LD      HL, (bh_count_flags_addr)
+        LD      A, (HL)
+        OR      F_HAS_STUB_XT_CELL
+        LD      (HL), A
+        POP     HL                                ; HL = post-name = cell address
+        LD      (bh_stub_xt_addr), HL
+        INC     HL
+        INC     HL                                ; HL = CFA position (post-cell)
+        ; Write CFA address (HL) into the 2-byte cell at (bh_stub_xt_addr).
+        ; Preserve DE — EXX'd callers (w_COLON_cf at :424; CREATE at :638;
+        ; CONSTANT at :681; CODE at :1248; MARKER at :36; LABEL at :2275)
+        ; hold IP in shadow-DE across the call; an EX DE,HL here would
+        ; clobber that and the final caller-side EXX would restore garbage
+        ; into main DE → NEXT crashes. Use A-via-load idiom to write cell.
+        PUSH    HL                                ; save CFA address (return value)
+        LD      A, L                              ; A = CFA.lo
+        LD      HL, (bh_stub_xt_addr)             ; HL = cell address
+        LD      (HL), A                           ; cell.lo = CFA.lo
+        INC     HL
+        POP     BC                                ; BC = saved CFA address (temp)
+        LD      (HL), B                           ; cell.hi = CFA.hi
+        LD      H, B
+        LD      L, C                              ; HL = CFA address (restored)
+.bh_skip_cell:
+        ; HL = CFA position (post-name for bank-0; post-cell for bank-N>0)
+        LD      (bh_code_field), HL               ; save CFA position for return
+
+        ; --- Story 19.2 (Q2-γ) — latest_count_flags_addr mirror ---
+        ; Mirror count_flags address so w_IMMEDIATE_cf reaches the right
+        ; byte even after w_SEMICOLON_cf has overwritten LATEST with a
+        ; stub-xt (bank-N>0 path). Always-mirror covers `:`, CREATE,
+        ; CONSTANT, MARKER, CODE, LABEL — every build_header consumer in
+        ; either bank-0 (LATEST = entry-start, +2 = count_flags) or
+        ; bank-N>0 (LATEST = stub-xt post-SEMICOLON, no longer +2 to
+        ; count_flags).
+        PUSH    HL
+        LD      HL, (bh_count_flags_addr)
+        LD      (latest_count_flags_addr), HL
+        POP     HL                                ; restore HL = CFA address
 
         ; --- Update hash bucket head to point to new entry ---
         LD      HL, (bh_bucket_addr)
@@ -394,18 +474,20 @@ w_COMPILE_COMMA_cf:
 
 ; -----------------------------------------------
 ; IMMEDIATE ( -- )
-;   Set the IMMEDIATE flag (bit 7) on the most recently defined word
+;   Set the IMMEDIATE flag (bit 7) on the most recently defined word.
+;
+;   Story 19.2 (Q2-γ): reads through latest_count_flags_addr (mirrored at
+;   build_header tail) instead of walking from LATEST. Required because
+;   w_SEMICOLON_cf overwrites LATEST with a stub-xt for bank-N>0 colon
+;   definitions (PD-P4-1 / FR-P4-13 stub-as-xt) — a stub-xt + 2 lands
+;   inside the stub body (target_addr.lo), not on the count_flags byte.
+;   The scratch covers all build_header consumers (`:`, CREATE, CONSTANT,
+;   MARKER, CODE, LABEL). architecture.md:200..211; redesign §2.1.
 ; -----------------------------------------------
 w_IMMEDIATE:
         DEFCODE "IMMEDIATE", 0
 w_IMMEDIATE_cf:
-        ; Load LATEST pointer
-        LD      L, (IY+UserArea.latest)
-        LD      H, (IY+UserArea.latest+1)
-        ; Skip hash_link (2 bytes) to reach count_flags
-        INC     HL
-        INC     HL
-        ; Set F_IMMEDIATE bit
+        LD      HL, (latest_count_flags_addr)
         LD      A, (HL)
         OR      F_IMMEDIATE
         LD      (HL), A
@@ -438,6 +520,9 @@ w_COLON_cf:
         LD      (colon_smudge_addr), BC
         LD      BC, (bh_wid)                     ; Story 12.4 — save wid for COMP-ERROR rollback
         LD      (colon_saved_wid), BC
+        LD      BC, (bh_stub_xt_addr)            ; Story 19.2 — save cell addr for SEMICOLON
+        LD      (colon_saved_xt_cell), BC        ; (intervening CREATE inside colon body
+                                                 ; could clobber bh_stub_xt_addr; defensive)
 
         ; HL = code field position — emit JP DOCOL
         LD      (HL), 0xC3                       ; JP opcode
@@ -562,6 +647,57 @@ w_SEMICOLON_cf:
         INC     HL
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
+
+        ; --- Story 19.2 (Q3-β / FR-P4-13..17) — bank-aware stub allocation ---
+        ; If current_bank == 0: skip stub_allocate. LATEST stays at the
+        ; entry-start value the build_header tail wrote (= hash_link
+        ; address, NOT CFA — bank-0 entries take the .bh_skip_cell branch
+        ; and have no cell; xt extraction is the legacy
+        ; post-name-= CFA path at src/dictionary.asm:187). Preserves
+        ; NFR-P4-1 (Phase-2/3 test surface; 975 PASS) and NFR-P4-16
+        ; (byte-identical bank-0 dispatch).
+        ; If current_bank > 0: call stub_allocate (src/banking.asm:780);
+        ; overwrite the reserved cell with the returned stub_addr; update
+        ; LATEST to stub_addr. The stub's address IS the word's xt
+        ; (PD-P4-1; architecture.md:200..211 + 347..363; redesign §2.1).
+        ; Cross-bank dispatch consumes via w_EXECUTE_cf's 3-way path at
+        ; src/inner_interpreter.asm:384..463 (FR-P4-15/16).
+        ; PUSH/POP DE wrap IS required: the bank-N>0 body uses DE as a
+        ; scratch (EX DE,HL to set up stub_allocate's target_addr input
+        ; and again to extract the stub_addr return). Without the wrap,
+        ; the caller-side EXX would restore garbage into main DE → NEXT
+        ; crashes. stub_allocate itself preserves main-set (its contract
+        ; at src/banking.asm:760..773) so the wrap is only protecting
+        ; against SEMICOLON's own DE-scratch usage.
+        LD      A, (IY+UserArea.current_bank)
+        OR      A
+        JR      Z, .semi_skip_stub
+        ; CR fix (Story 19.2 review): PUSH BC required — BC is TOS-in-register
+        ; and `LD B, A` below clobbers it for stub_allocate's target_bank
+        ; input. Without this wrap, defining a SECOND banked colon while a
+        ; previous banked xt sits on the data stack corrupts xt.high to
+        ; current_bank (e.g., xt $D4CB → $05CB after `: _p192e-b 22 ;`
+        ; with 5 BANK! active and the stash from `: _p192e-a 11 ;` on
+        ; stack). Probe-19.2-E surfaced this; pre-edit dev pass missed it
+        ; because Probes D/F/G each held only one bank-N xt on the stack.
+        PUSH    BC                                ; save TOS
+        PUSH    DE                                ; save IP across stub_allocate
+        LD      HL, (colon_saved_xt_cell)
+        INC     HL
+        INC     HL                                ; HL = CFA address
+        EX      DE, HL                             ; DE = CFA = stub target_addr
+        LD      B, A                               ; B = target_bank (A still = current_bank)
+        CALL    stub_allocate                     ; HL = stub_addr (= xt); main-set preserved
+        LD      DE, (colon_saved_xt_cell)         ; DE = cell address
+        EX      DE, HL                             ; HL = cell address; DE = stub_addr
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                            ; cell ← stub_addr (overwrite CFA fill)
+        LD      (IY+UserArea.latest), E
+        LD      (IY+UserArea.latest+1), D          ; LATEST ← stub_addr (xt-as-stub-address)
+        POP     DE                                 ; restore IP
+        POP     BC                                 ; restore TOS
+.semi_skip_stub:
 
         ; --- 3.2: Clear SMUDGE flag ---
         LD      HL, (colon_smudge_addr)
