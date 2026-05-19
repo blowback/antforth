@@ -319,7 +319,39 @@ development_status:
   # colon-body wrappers (like probes 6+); root-cause fix; lets the
   # defensive DECIMAL in _dot-banks-setup retire. Scope: test-infra only;
   # zero kernel binary delta expected.
-  17-5-2-probes-1-2-colon-body-refactor-base-residue-root-cause-fix: backlog
+  #
+  # Story-drafted 2026-05-19 by create-story workflow. Draft-time scope
+  # expansion: inspection of tests/banking_tests.fth surfaced that
+  # probes 3, 4, 5 (lines 88..143) use the same top-level IF/ELSE/THEN
+  # mechanism as probes 1+2 — each compile-only word THROWs -14 at the
+  # top level; both branches execute sequentially; recipe greps match
+  # source-echo regardless of branch outcome. Probes 3-5 don't touch
+  # BASE so the leak symptom isn't visible, but they're the same
+  # silent-false-PASS defect class. Per feedback_no_preexisting_discharge
+  # (Lesson 13-B) "surface, file, fix" once known. Scope EXPANDED to
+  # probes 1-5 with project-lead approval (AskUserQuestion 2026-05-19).
+  # Sprint-status row file-name key preserved as immutable identifier;
+  # story title + ACs reflect expanded scope (5 colon-body wraps + 3
+  # defensive DECIMAL retirements + 2 inline comment-block updates).
+  # See 17-5-2-probes-1-2-colon-body-refactor-base-residue-root-cause-
+  # fix.md §Context for full rationale.
+  #
+  # Dev-pass-time scope expansion 2026-05-19 (project-lead approved via
+  # AskUserQuestion × 2): probe 4 (banks-zero) and probe C (minus-bank-
+  # present-absent) silently false-PASSed via source-echo because their
+  # predicates assumed BANKS = 0 at boot — that was true pre-Story-17.4
+  # but stale post-17.4-CL-parser (default tail populates 12 entries).
+  # Probe 4's own inline comment had already flagged "This probe's
+  # assertion changes to the default-count at Story 17.4 close" but the
+  # probe text was never updated. Colon-body wrap (this story's AC1-AC3)
+  # made the run-time FAIL emit fire, surfacing the stale assertion.
+  # Per Lesson 13-B "surface, file, fix once known": both probes rewritten
+  # with BANKS-CLEAR at head + check 0. Probe 4 in scope per AC3; probe C
+  # adopted into scope as same-defect-class batch-fix. Recipe verdict
+  # count unchanged at 50/0 (test-repl-banking) + 25/0 (test-repl-banking-
+  # skip); behavioural change is that both probes now run-time PASS where
+  # previously source-echo alone satisfied the substring grep.
+  17-5-2-probes-1-2-colon-body-refactor-base-residue-root-cause-fix: done
   17-6-iron-spike-first-hand-built-cross-bank-call-on-real-microbeast-epic-17-close-out-antforth-3-x-1-tag: done
   epic-17-retrospective: done
 
@@ -328,7 +360,7 @@ development_status:
   18-2-sentinel-trampoline-cross-bank-return-kernel-exit-distinguishes-intra-bank-from-cross-bank: done
   18-3-kernel-execute-dispatches-through-stub-initial-compile-comma-stub-emission-wiring-dispatch-budget-verification: done
   18-4-bank-of-one-byte-read-from-descriptor-stub: done
-  18-5-in-bank-kernel-blessed-catch-safe-epic-18-close-out-antforth-3-x-2-tag: review
+  18-5-in-bank-kernel-blessed-catch-safe-epic-18-close-out-antforth-3-x-2-tag: done
   # Story 18-5-1 filed 2026-05-18 at Story 18.5 code-review close (H1
   # disposition). Empirical finding: antforth's CATCH frame preserves the
   # i*x TOS-cell via Story-11.4.1 saved-BC (frame +2) but does NOT

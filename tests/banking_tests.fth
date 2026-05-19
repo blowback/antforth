@@ -55,13 +55,16 @@ END-CODE
 \ ON are silent re-writes of the same bit pattern). Idempotent under
 \ iz-cpm baseline (port 0x74 is unmodelled — OUT is a no-op trace, but
 \ the kernel-side bank_mapping_state cell still updates correctly).
-BANK-MAPPING-ON  BANK-MAPPING-ON  BANK-MAPPING-ON
-DEPTH 0 = IF
-  ." PASS: banking-mapping-on-idempotent — BANK-MAPPING-ON ×3 leaves stack empty"
-ELSE
-  ." FAIL: banking-mapping-on-idempotent — DEPTH = " DEPTH .
-THEN
-CR
+: _probe-1 ( -- )
+  BANK-MAPPING-ON  BANK-MAPPING-ON  BANK-MAPPING-ON
+  DEPTH 0 = IF
+    ." PASS: banking-mapping-on-idempotent — BANK-MAPPING-ON ×3 leaves stack empty"
+  ELSE
+    ." FAIL: banking-mapping-on-idempotent — DEPTH = " DEPTH .
+  THEN
+  CR
+;
+_probe-1
 
 \ === Probe 2: port 0x74 readback after BANK-MAPPING-ON ===
 \ Surface: iz-cpm-SKIP (no MMU model — port 0x74 unmodelled, returns 0)
@@ -73,17 +76,20 @@ CR
 \ baseline the readback is 0 (no MMU model) — probe declares SKIP
 \ with rationale per the Story 16.3 convention; on iz-cpm-banking and
 \ real MicroBeast the load-bearing assertion (readback = 1) fires PASS.
-BANK-MAPPING-ON
-FETCH-74
-DUP 1 = IF
-  ." PASS: banking-mapping-on-port-74 — port 0x74 reads back 1 (mapping enabled)"
-  DROP
-ELSE
-  ." SKIP: banking-mapping-on-port-74 — iz-cpm does not model MMU port 0x74 (readback=$"
-  BASE @ HEX SWAP . BASE !
-  ." expected=$1)"
-THEN
-CR
+: _probe-2 ( -- )
+  BANK-MAPPING-ON
+  FETCH-74
+  DUP 1 = IF
+    ." PASS: banking-mapping-on-port-74 — port 0x74 reads back 1 (mapping enabled)"
+    DROP
+  ELSE
+    ." SKIP: banking-mapping-on-port-74 — iz-cpm does not model MMU port 0x74 (readback=$"
+    BASE @ HEX SWAP . BASE !
+    ." expected=$1)"
+  THEN
+  CR
+;
+_probe-2
 
 \ === Probe 3: BANK@ at boot returns 0 (Story 17.2 AC6 Probe 1) ===
 \ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
@@ -91,34 +97,48 @@ CR
 \ Verifies (IY+UserArea.current_bank) is zero-initialised in COLD per
 \ Story 17.1 step 8h. Surface-agnostic: the cell read does not touch
 \ the MMU; passes on all three test surfaces.
-BANK@
-DUP 0 = IF
-  ." PASS: bank-at-zero — BANK@ returns 0 at boot"
-  DROP
-ELSE
-  ." FAIL: bank-at-zero — BANK@ returned " .
-THEN
-CR
+: _probe-3 ( -- )
+  BANK@
+  DUP 0 = IF
+    ." PASS: bank-at-zero — BANK@ returns 0 at boot"
+    DROP
+  ELSE
+    ." FAIL: bank-at-zero — BANK@ returned " .
+  THEN
+  CR
+;
+_probe-3
 
-\ === Probe 4: BANKS at boot returns 0 (Story 17.2 AC6 Probe 2) ===
+\ === Probe 4: BANKS-CLEAR drives BANKS to 0 (Story 17.2 AC6 Probe 2; Story 17.5.2 rewrite) ===
 \ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
 \
-\ Verifies (IY+UserArea.bank_count) is zero-initialised in COLD. The
-\ active list is empty at Story 17.2 close — Story 17.3's +BANK
-\ populates it; Story 17.4's CL parser auto-populates at boot. This
-\ probe's assertion changes to the default-count at Story 17.4 close
-\ (epic AC6 text says "BANKS . returns the configured-banks count
-\ (initially 12 with defaults)" — that PASSes post-17.4; 0 at 17.2
-\ close per the sequencing in story 17-2 §"AC6 probe sequencing" Q2).
+\ Verifies BANKS-CLEAR resets (IY+UserArea.bank_count) to 0. The
+\ original Story-17.2 assertion was "BANKS = 0 at boot" — that PASSed
+\ pre-CL-parser, and the inline comment at the time noted "This
+\ probe's assertion changes to the default-count at Story 17.4 close"
+\ since Story 17.4's CL parser auto-populates 12 entries by default.
+\ The assertion was never updated and the probe silently false-PASSed
+\ via source-echo (Story 17.5.2 §"Consequence A"). Story 17.5.2
+\ surfaced the run-time FAIL once probe 4 was colon-body-wrapped, and
+\ rewrote the probe to BANKS-CLEAR + check 0 (project-lead-approved
+\ scope expansion 2026-05-19 — Lesson 13-B "surface, file, fix once
+\ known"). Side effect: BANKS-CLEAR at probe-4 head leaves bank_count=0
+\ for probes 5+, which they all tolerate (probes 6/7/8/A explicitly
+\ +BANK their own pages; probes 5/B/D/G all start from a defined
+\ BANKS=0 head or are insensitive to it).
 \ Surface-agnostic: kernel cell read, no MMU touch.
-BANKS
-DUP 0 = IF
-  ." PASS: banks-zero — BANKS returns 0 at boot (active list empty until Story 17.3/17.4)"
-  DROP
-ELSE
-  ." FAIL: banks-zero — BANKS returned " .
-THEN
-CR
+: _probe-4 ( -- )
+  BANKS-CLEAR
+  BANKS
+  DUP 0 = IF
+    ." PASS: banks-zero — BANKS-CLEAR drives BANKS to 0"
+    DROP
+  ELSE
+    ." FAIL: banks-zero — BANKS returned " .
+  THEN
+  CR
+;
+_probe-4
 
 \ === Probe 5: 99 BANK! raises ABORT" bank?" (Story 17.2 AC6 Probe 3) ===
 \ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
@@ -127,20 +147,32 @@ CR
 \ out-of-range argument. At Story 17.2 close, bank_count = 0 so every
 \ BANK! invocation aborts; the precondition path is the only path
 \ exercised on the dev-pass test surface. ABORT" routes through
-\ THROW -2 (kernel-internal entry); REPL recovers to the prompt with
-\ DEPTH = 0 (stack reset wholesale by uncaught-THROW handler). The
-\ probe asserts DEPTH = 0 after the abort, NOT the printed message
-\ (the message text "bank?" + the THROW-decoded "error -2: ABORT\""
-\ both land in the upstream-pipe stdout pre-prompt, but verifying via
-\ DEPTH avoids the brittleness of an inline string match).
+\ THROW -2 (kernel-internal entry).
+\
+\ Wrapped via CATCH (Story 17.5.2 root-cause fix) — THROW -2 from
+\ `99 BANK!` is caught inside the probe so the DEPTH check inspects
+\ the post-recovery state (CATCH restores i*x to pre-execute depth
+\ and pushes the throw value; DEPTH = 0 after `-2 =` consumes it).
+\ The probe asserts DEPTH = 0 after the abort, NOT the printed
+\ message (the message text "bank?" + the THROW-decoded "error -2:
+\ ABORT\"" both land in the upstream-pipe stdout pre-prompt, but
+\ verifying via DEPTH avoids the brittleness of an inline string
+\ match).
 \ Surface-agnostic: no MMU touch on the precondition-fail path.
-99 BANK!
-DEPTH 0 = IF
-  ." PASS: bank-store-abort-bank-q — 99 BANK! aborts; REPL recovers; DEPTH = 0"
-ELSE
-  ." FAIL: bank-store-abort-bank-q — DEPTH after abort = " DEPTH .
-THEN
-CR
+: _99-bank-store ( -- ) 99 BANK! ;
+: _probe-5 ( -- )
+  ['] _99-bank-store CATCH -2 = IF
+    DEPTH 0 = IF
+      ." PASS: bank-store-abort-bank-q — 99 BANK! throws -2 (CATCH); DEPTH = 0"
+    ELSE
+      ." FAIL: bank-store-abort-bank-q — DEPTH after CATCH = " DEPTH .
+    THEN
+  ELSE
+    ." FAIL: bank-store-abort-bank-q — 99 BANK! did not throw -2 (CATCH)"
+  THEN
+  CR
+;
+_probe-5
 
 \ === Story 17.3 probe block (Probes 6 rewrite + 7+8 re-enable + A..E) ===
 \
@@ -264,7 +296,15 @@ _probe-b
 \ Probe C (Story 17.3): -BANK present + absent.
 \ Surface-agnostic (no MMU touch in -BANK): iz-cpm-PASS / iz-cpm-banking-PASS
 \ / real-MicroBeast-PASS
+\
+\ Story 17.5.2 added BANKS-CLEAR at head — Story-17.3 authoring assumed
+\ BANKS=0 at entry (pre-17.4 CL parser); post-17.4 the active list starts
+\ at 12 entries so the predicate `BANKS = 0` after `+BANK -BANK` was
+\ stale. Run-time FAIL was masked by source-echo until Story 17.5.2
+\ surfaced it; project-lead-approved scope expansion 2026-05-19 per
+\ Lesson 13-B "surface, file, fix once known".
 : _probe-c ( -- )
+  BANKS-CLEAR
   $22 +BANK
   $22 -BANK BANKS DUP 0 = IF
     DROP
@@ -404,28 +444,14 @@ _probe-minus-bank-ldir
 \ TAIL one (handoff guard for any probes added after probe G — leaves
 \ bank_count = 0 for the next probe's known state). Do not move either.
 \
-\ BASE residue note (Story 17.5.1 AC5 disposition (a) → probe-side fix):
-\ Probes 1 + 2 use top-level IF/ELSE/THEN, which fire THROW -14
-\ ("interpreting a compile-only word") and DO NOT branch — every token
-\ in BOTH branches executes sequentially. Probe 2's ELSE branch contains
-\ `BASE @ HEX SWAP . BASE !` (line 83); the unprotected `SWAP .` raises
-\ THROW -4 (stack underflow), so `BASE !` never runs to restore.
-\ Result: BASE = 16 leaks into all subsequent parse + execution. Within
-\ this story's scope (test-infra-only) the fix is local: bracket probe G
-\ with DECIMAL at BOTH file-parse time (literals `29` / `0` parsed in
-\ DECIMAL — otherwise `29` HEX = 41 makes the DO LOOP run 41 iterations
-\ and trip the cap mid-loop) AND probe-body entry (so runtime `.` prints
-\ the BANKS count in DECIMAL — recipe asserts `seeded: 29`). Refactoring
-\ probes 1+2 to use colon-body wrappers like probes 6+ is out of scope
-\ for Story 17.5.1; refile as a follow-up if/when the test-infra ceiling
-\ matters again.
-DECIMAL
+\ Story 17.5.2 root-cause-fixed probes 1-5 (top-level IF/ELSE/THEN →
+\ colon-body wrappers); BASE residue from probe 2 eliminated;
+\ defensive DECIMAL brackets retired here + at _dot-banks-setup.
 : _do-29-+bank ( -- )
   29 0 DO $22 +BANK LOOP
 ;
 : _do-one-more-+bank ( -- ) $22 +BANK ;
 : _probe-plus-bank-cap ( -- )
-  DECIMAL
   BANKS-CLEAR
   ." ---plus-bank-cap-start---" CR
   _do-29-+bank
@@ -478,21 +504,15 @@ _probe-plus-bank-cap
 \ probe-<name>-end` sentinels; the Makefile test-repl-banking recipe
 \ grep-asserts on the content between sentinels.
 \
-\ Reproducibility: probe G (_probe-plus-bank-cap) leaves the runtime with
-\ bank_count = 29 / BASE = 16 if its `_do-29-+bank` LOOP body trips the
-\ cap-check mid-loop (a pre-existing test-infra latent — surfaced during
-\ Story 17.5 dev-pass; the Makefile's grep for `PASS: plus-bank-cap`
-\ false-PASSes via the source-echo of the `." PASS: ..."` literal
-\ regardless of whether the PASS branch actually ran). To make THESE
-\ probes reproducible, each colon definition below opens with a
-\ `_dot-banks-setup` helper that asserts DECIMAL + BANKS-CLEAR + seeds
-\ exactly 12 entries via repeated `+BANK $22` (no DO LOOP — the polluted
-\ state from probe G makes a 12-iteration DO LOOP unreliable; manual
-\ unrolling sidesteps the issue). With this setup, .BANKS prints 12 rows
-\ all at PAGE 22, used=0, free=16384, totals free = 12*16384 = 196608.
+\ Story 17.5.2 root-cause-fixed the BASE residue (probes 1-5 colon-body
+\ wrap); the defensive DECIMAL reset retired. BANKS-CLEAR + manual 12×
+\ $22 +BANK unroll stay load-bearing — sets up the dot-banks probes'
+\ kernel-cell state at a known shape (12 entries all at PAGE 22, used=0,
+\ free=16384, totals free = 12 * 16384 = 196608). The manual unroll is
+\ defensive-but-cheap; replacing it with `12 0 DO $22 +BANK LOOP` is an
+\ Epic-22 polish item, not in scope here.
 
 : _dot-banks-setup ( -- )
-  DECIMAL
   BANKS-CLEAR
   $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
   $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
