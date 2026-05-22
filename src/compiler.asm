@@ -792,6 +792,42 @@ w_CREATE_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
+        ; --- Story 19.3 (Q1-α / FR-P4-25) — bank-aware doer-stub allocation ---
+        ; Re-applied 2026-05-20 for the real-hardware iron-spike layout test
+        ; (see _bmad-output/implementation-artifacts/19-3-*.md §"Dev-Pass
+        ; Deferral 2026-05-20"). If hardware iron-spike PASSes at this
+        ; +30 B layout, the iz-cpm-banking hang is emulator-quirk-class
+        ; (similar to project_phase4_banking_off_emulator) and Story 19.3
+        ; can ship with hardware as load-bearing verdict. If hardware
+        ; also hangs, there's a real kernel defect to root-cause.
+        ;
+        ; If current_bank == 0: skip stub_allocate (NFR-P4-16 byte-identical
+        ; bank-0 dispatch). If current_bank > 0: call stub_allocate
+        ; (src/banking.asm:780); overwrite the reserved cell at
+        ; (bh_stub_xt_addr) with the returned stub_addr; update LATEST.
+        ; PD-P4-1 (architecture.md:200..211); PD-P4-11 (:347..363);
+        ; FR-P4-13/17/25; redesign §2.1.
+        ;
+        ; NO PUSH BC / PUSH DE required — w_CREATE_cf EXX'd at entry,
+        ; so BC/DE inside the body are alt-set scratch (not TOS/IP).
+        LD      A, (IY+UserArea.current_bank)
+        OR      A
+        JR      Z, .create_skip_stub
+        LD      B, A                              ; B = target_bank
+        LD      HL, (bh_stub_xt_addr)             ; HL = cell address
+        INC     HL
+        INC     HL                                ; HL = CFA address (post-cell)
+        EX      DE, HL                            ; DE = CFA = stub target_addr
+        CALL    stub_allocate                     ; HL = stub_addr (= xt)
+        LD      DE, (bh_stub_xt_addr)             ; DE = cell address
+        EX      DE, HL                            ; HL = cell addr; DE = stub_addr
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                           ; cell ← stub_addr
+        LD      (IY+UserArea.latest), E
+        LD      (IY+UserArea.latest+1), D         ; LATEST ← stub_addr
+.create_skip_stub:
+
         EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
 
@@ -903,20 +939,39 @@ w_PAREN_DOES:
         DEFCODE "(DOES>)", 0
 w_PAREN_DOES_cf:
         ; DE = IP = address of DOES> body (right after this word in the thread)
-        ; Find LATEST word's code field
-        LD      L, (IY+UserArea.latest)
-        LD      H, (IY+UserArea.latest+1)   ; HL = LATEST (dict entry)
-        INC     HL
-        INC     HL                           ; HL = &count_flags
+        ;
+        ; --- Story 19.3 (Q2-α / FR-P4-25) — bank-aware CFA walk ---
+        ; Re-applied 2026-05-20 for the real-hardware iron-spike layout test.
+        ; Pre-Story-19.3 walked LATEST → +2 → count_flags. That breaks for
+        ; bank-N>0 entries because Story 19.2 SEMICOLON Q3-β overwrites
+        ; LATEST with the descriptor-stub address (stub_xt, not entry-
+        ; start); LATEST+2 lands inside the stub body, not on count_flags.
+        ; Read (latest_count_flags_addr) — Story 19.2 Q2-γ scratch mirrored
+        ; at build_header tail — for the count_flags byte address directly.
+        ; If F_HAS_STUB_XT_CELL set (bank-N>0), skip 2-byte cell to reach
+        ; CFA; else (bank-0/legacy) HL = post-name = CFA bit-identical to
+        ; pre-edit. DE = IP preserved (does-addr write below uses DE).
+        ; PUSH BC wrap: BC is TOS-in-register; `LD B, A` below uses B as
+        ; scratch for count_flags. Same CR-fix pattern as SEMICOLON
+        ; bank-N stub block at :683.
+        PUSH    BC                           ; save TOS
+        LD      HL, (latest_count_flags_addr)
         LD      A, (HL)
+        LD      B, A                         ; B = saved count_flags
         AND     F_LENMASK                    ; A = name length
         INC     HL                           ; HL = &name[0]
-        ; Skip name bytes to reach code field
         ADD     A, L
         LD      L, A
         JR      NC, .pdoes_no_carry
         INC     H
-.pdoes_no_carry:                             ; HL = code field address
+.pdoes_no_carry:                             ; HL = post-name
+        LD      A, B
+        POP     BC                           ; restore TOS
+        AND     F_HAS_STUB_XT_CELL
+        JR      Z, .pdoes_cfa_ready
+        INC     HL
+        INC     HL                           ; HL = CFA (skip stub-xt cell)
+.pdoes_cfa_ready:                            ; HL = CFA address
         ; Overwrite code field with JP DODOES
         LD      (HL), 0xC3                   ; JP opcode
         INC     HL

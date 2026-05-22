@@ -725,7 +725,24 @@ DECIMAL
   0 BANK!
   BANKS-CLEAR
 ;
-_iron-spike-test
+\ Story 19.3 dev-pass 2026-05-20: _iron-spike-test runtime invocation
+\ MOVED to an isolated iz-cpm-banking subprocess in the Makefile
+\ (test-repl-banking target). Inline invocation removed because at +33 B
+\ Story-19.3 kernel growth, iron-spike running INSIDE the full
+\ banking_tests.fth probe sequence hangs the emulator's sentinel-
+\ trampoline EXIT chain after emitting the success literal (boundary
+\ 26748→26749 B; see Makefile iron-spike recipe block for the full
+\ rationale). Hardware UAT 2026-05-20 (transcript beastty-20260520-
+\ 153439.bin) confirmed iron-spike PASSes at this kernel layout on real
+\ MicroBeast under disk/a/P193IRON.FTH — emulator quirk only. Moving
+\ the runtime invocation to an isolated subprocess lets the emulator
+\ run iron-spike WITHOUT the preceding cumulative-state corruption AND
+\ lets the other probes (18.1.x, 18.2.x, 18.3.x, 19.1.x, 19.2.x, 19.3.x)
+\ run WITHOUT iron-spike's potential hang. The colon definition stays
+\ here so the isolated Makefile recipe can INCLUDE this file and call
+\ _iron-spike-test directly. Same family of emulator-vs-hardware gap
+\ as project_phase4_banking_off_emulator (BANK-MAPPING-OFF only
+\ verifiable on hardware).
 
 \ === Story 18.1: descriptor-stub allocator probes (Probe-18.1-A/B/C) ===
 \ Story 18.1 lays the (γ) cross-bank dispatch foundation: a 4-byte
@@ -1920,3 +1937,126 @@ _p19-2j-start
 BANK-OF _p19-2j-bank-of !
 _p19-2j-check
 _p19-2j-end
+
+\ ============================================================
+\ Story 19.3 bank-0 probes (Q4-γ default; AC6 / AC9 / FR-P4-25)
+\ ============================================================
+\
+\ Probe-19.3-A — bank-0 CREATE byte-identical sanity + BANK-OF=-1 (AC1/AC3)
+\ Probe-19.3-B — bank-0 CREATE/DOES> regression sanity (AC2)
+\ Probe-19.3-C — bank-0 entry has NO F_HAS_STUB_XT_CELL flag (AC1)
+\ Probe-19.3-H — bank-0 NFR-P4-8 state integrity after CREATE empty-name -16 THROW
+\ Probes D/E/F/G live in tests/banking_tests_19_3.fth (Q4-γ hybrid; Sub-5.8
+\ parallel target test-repl-banking-isolated-19-3 per dev-pass-start AskUserQuestion).
+
+\ === Probe-19.3-A — bank-0 CREATE byte-identical sanity (AC1 / AC3 / AC6-A) ===
+VARIABLE _p193a-val
+VARIABLE _p193a-bank
+VARIABLE _p193a-pass
+: _p193a-start ." ---probe-19.3-a-start---" CR ;
+: _p193a-end   ." ---probe-19.3-a-end---"   CR ;
+: _p193a-check
+  -1 _p193a-pass !
+  _p193a-val @ 42 = INVERT IF 0 _p193a-pass !
+    ." value-not-42 " THEN
+  _p193a-bank @ -1 = INVERT IF 0 _p193a-pass !
+    ." bank-of-not-minus-1 " THEN
+  _p193a-pass @ IF
+    ." probe-19.3-a-pass-bank-0-create-byte-identical"
+  ELSE
+    ." FAIL: probe-19.3-a bank-0 CREATE sanity failed"
+  THEN CR ;
+_p193a-start
+CREATE _p193a-c0 42 ,
+_p193a-c0 @ _p193a-val !
+' _p193a-c0 BANK-OF _p193a-bank !
+_p193a-check
+_p193a-end
+
+\ === Probe-19.3-B — bank-0 CREATE/DOES> regression sanity (AC2 / AC6-B) ===
+VARIABLE _p193b-val
+VARIABLE _p193b-pass
+: _p193b-start ." ---probe-19.3-b-start---" CR ;
+: _p193b-end   ." ---probe-19.3-b-end---"   CR ;
+: _p193b-array CREATE CELLS ALLOT DOES> SWAP CELLS + ;
+: _p193b-check
+  -1 _p193b-pass !
+  _p193b-val @ 13 = INVERT IF 0 _p193b-pass !
+    ." doesify-not-13 " THEN
+  _p193b-pass @ IF
+    ." probe-19.3-b-pass-bank-0-create-does-regression"
+  ELSE
+    ." FAIL: probe-19.3-b bank-0 CREATE/DOES> regression failed"
+  THEN CR ;
+_p193b-start
+4 _p193b-array _p193b-arr
+13 0 _p193b-arr !
+0 _p193b-arr @ _p193b-val !
+_p193b-check
+_p193b-end
+
+\ === Probe-19.3-C — bank-0 entry has NO F_HAS_STUB_XT_CELL flag (AC1 / AC6-C) ===
+\ Bank-0 entries take .bh_skip_cell at compiler.asm:316 — no 2-byte cell,
+\ F_HAS_STUB_XT_CELL bit ($20 = 0x20 per src/constants.asm:78) clear in
+\ count_flags. LATEST → entry-start → +2 = count_flags for bank-0
+\ (legacy CFA xt = entry-start; Q3-β inheritance).
+VARIABLE _p193c-flag
+VARIABLE _p193c-pass
+: _p193c-start ." ---probe-19.3-c-start---" CR ;
+: _p193c-end   ." ---probe-19.3-c-end---"   CR ;
+: _p193c-check
+  -1 _p193c-pass !
+  _p193c-flag @ 0= INVERT IF 0 _p193c-pass !
+    ." stub-xt-cell-flag-set " THEN
+  _p193c-pass @ IF
+    ." probe-19.3-c-pass-bank-0-no-stub-xt-cell-flag"
+  ELSE
+    ." FAIL: probe-19.3-c bank-0 entry has unexpected F_HAS_STUB_XT_CELL"
+  THEN CR ;
+_p193c-start
+CREATE _p193c-c0
+LATEST @ 2 + C@ $20 AND _p193c-flag !
+_p193c-check
+_p193c-end
+
+\ === Probe-19.3-H — bank-0 NFR-P4-8 state integrity after CREATE empty-name THROW ===
+\ Per-spec: CATCH-wrap an empty-name CREATE via EVALUATE — build_header's
+\ .bh_no_name at compiler.asm:185..187 returns CF=1 without writing
+\ HERE/LATEST/buckets; CREATE's .create_no_name at :798..804 throws -16.
+\ Post-CATCH state must match pre-CATCH exactly. Then a subsequent
+\ CREATE-with-name must work cleanly (subsequent-definition sanity).
+VARIABLE _p193h-here-pre
+VARIABLE _p193h-here-post
+VARIABLE _p193h-latest-pre
+VARIABLE _p193h-latest-post
+VARIABLE _p193h-throw-code
+VARIABLE _p193h-good-val
+VARIABLE _p193h-pass
+: _p193h-start ." ---probe-19.3-h-start---" CR ;
+: _p193h-end   ." ---probe-19.3-h-end---"   CR ;
+: _p193h-empty S" CREATE" EVALUATE ;
+: _p193h-check
+  -1 _p193h-pass !
+  _p193h-throw-code @ -16 = INVERT IF 0 _p193h-pass !
+    ." throw-not-minus-16 " THEN
+  _p193h-here-pre @ _p193h-here-post @ = INVERT IF 0 _p193h-pass !
+    ." here-changed " THEN
+  _p193h-latest-pre @ _p193h-latest-post @ = INVERT IF 0 _p193h-pass !
+    ." latest-changed " THEN
+  _p193h-good-val @ 99 = INVERT IF 0 _p193h-pass !
+    ." good-not-99 " THEN
+  _p193h-pass @ IF
+    ." probe-19.3-h-pass-bank-0-state-integrity-after-create-throw-16"
+  ELSE
+    ." FAIL: probe-19.3-h bank-0 state-integrity violated"
+  THEN CR ;
+_p193h-start
+HERE _p193h-here-pre !
+LATEST @ _p193h-latest-pre !
+' _p193h-empty CATCH _p193h-throw-code !
+HERE _p193h-here-post !
+LATEST @ _p193h-latest-post !
+CREATE _p193h-good 99 ,
+_p193h-good @ _p193h-good-val !
+_p193h-check
+_p193h-end

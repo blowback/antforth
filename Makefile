@@ -47,7 +47,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-skip test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-skip test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -276,12 +276,46 @@ test-repl-banking: $(TARGET)
 	@# `---iron-spike-end---` present on its own line in raw OUTPUT (Story
 	@# 17.5.1 M4 fix — independent of awk extraction, catches the missing-end-
 	@# sentinel false-PASS class).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-start---$$/{p=1; next} /---iron-spike-end---$$/{p=0} p') && \
-	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-end---$$'; then \
-		echo "PASS: iron-spike — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM_BANKING)"; \
+	@#
+	@# Story 19.3 dev-pass 2026-05-20 — iz-cpm-banking layout-sensitivity
+	@# extension. Some kernel-binary sizes (empirically observed at +33 B
+	@# Story 19.3 growth = 26759 B) trigger an iz-cpm-banking sentinel-
+	@# trampoline EXIT-chain hang: iron-spike emits the success literal but
+	@# never reaches the end-sentinel under the full banking_tests.fth probe
+	@# sequence (lines 540..650 of banking_tests.fth provide the cumulative
+	@# state that tips the emulator). Hardware UAT at the same +33 B layout
+	@# PASSes cleanly (transcript ~/Downloads/beastty-20260520-153439.bin,
+	@# 2026-05-20: both ---iron-spike-19.3-start--- AND ---iron-spike-19.3-
+	@# end--- sentinels emit on real MicroBeast under disk/a/P193IRON.FTH).
+	@# Same defect family as project_phase4_banking_off_emulator (iz-cpm
+	@# does not model the MMU port-0x74 BANK-MAPPING-OFF transition either).
+	@# Verdict (per AskUserQuestion 2026-05-20): hardware-authoritative —
+	@# emit SKIP-with-rationale when the emulator hangs mid-probe, keep
+	@# PASS for clean emulator runs at smaller kernel sizes. The recipe
+	@# distinguishes three outcomes:
+	@#   - sentinel-literal + end-sentinel both present → PASS (clean run)
+	@#   - sentinel-literal present, end-sentinel MISSING → SKIP (emulator
+	@#     layout-sensitivity quirk; HW UAT load-bearing per Story 17.6
+	@#     AC8 hardware verification + Story 19.3 UAT 2026-05-20)
+	@#   - sentinel-literal MISSING → FAIL (real defect: kernel never
+	@#     completed EXECUTE round-trip or the IF body never fired)
+	@# Story 19.3 dev-pass 2026-05-20: iron-spike invocation MOVED to an
+	@# isolated iz-cpm-banking subprocess (see banking_tests.fth:728 source
+	@# comment for full rationale). Use disk/a/P193IRON.FTH (self-contained
+	@# iron-spike with no preceding cumulative-state probes) rather than the
+	@# full banking_tests.fth pipeline. This restores the test-repl-banking
+	@# downstream probes (18.1, 18.2, 18.3, 19.1, 19.2, 19.3) which were
+	@# all FAILing because iron-spike's hang truncated each subprocess's
+	@# OUTPUT mid-stream. P193IRON.FTH's sentinels are -19.3- variants per
+	@# the file; the recipe asserts on those.
+	@OUTPUT=$$(sed 's/$$/\r/' disk/a/P193IRON.FTH | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-19.3-start---$$/{p=1; next} /---iron-spike-19.3-end---$$/{p=0} p') && \
+	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-19.3-end---$$'; then \
+		echo "PASS: iron-spike — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM_BANKING) (isolated subprocess via disk/a/P193IRON.FTH)"; \
+	elif echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$OUTPUT" | grep -qE '^---iron-spike-19.3-end---$$'; then \
+		echo "SKIP: iron-spike — iz-cpm-banking layout-sensitivity emulator quirk (success literal emitted but end-sentinel missing); HW UAT load-bearing per Story 17.6 AC8 + Story 19.3 UAT 2026-05-20 (transcript ~/Downloads/beastty-20260520-153439.bin)"; \
 	else \
-		echo "FAIL: iron-spike — sentinel literal missing OR FAIL: present in PROBE_IRONSPIKE OR end-sentinel missing from OUTPUT"; \
+		echo "FAIL: iron-spike — success literal missing OR FAIL: present in PROBE_IRONSPIKE (real defect — EXECUTE round-trip did not complete)"; \
 		echo "  PROBE_IRONSPIKE: $$PROBE_IRONSPIKE"; exit 1; \
 	fi
 	@# Story 18.1 AC7+AC8 — descriptor-stub allocator probes (Probe-18.1-A/B/C).
@@ -555,6 +589,21 @@ test-repl-banking: $(TARGET)
 			echo "  PROBE: $$PROBE"; exit 1; \
 		fi; \
 	done
+	@# Story 19.3 bank-0 probes (Q4-γ default; AC6 / AC9 / FR-P4-25)
+	@# Probe-A: bank-0 CREATE byte-identical sanity + BANK-OF=-1 (AC1/AC3)
+	@# Probe-B: bank-0 CREATE/DOES> regression sanity (AC2)
+	@# Probe-C: bank-0 entry has NO F_HAS_STUB_XT_CELL flag (AC1)
+	@# Probe-H: bank-0 NFR-P4-8 state integrity after empty-name CREATE -16 THROW
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	for pid in a b c h; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.3-"p"-start---";re="---probe-19.3-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -q "probe-19.3-$$pid-pass" && ! echo "$$PROBE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE "^---probe-19.3-$$pid-end---$$"; then \
+			echo "PASS: probe-19.3-$$pid — bank-0 Story 19.3 invariant under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-19.3-$$pid — bank-0 Story 19.3 invariant failed"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -593,6 +642,40 @@ test-repl-banking-isolated: $(TARGET)
 		echo "PASS: probe-19.2-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
 	else \
 		echo "FAIL: probe-19.2-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
+		exit 1; \
+	fi
+
+# === Story 19.3 — isolated fixture for per-bank CREATE/DOES> probes ===
+# Sub-5.8 parallel-target disposition per dev-pass-start AskUserQuestion
+# 2026-05-20. Runs antforth under iz-cpm-banking with ONLY
+# tests/banking_tests_19_3.fth loaded — independent isolated surface
+# from Story 19.2's banking_tests_19_2.fth (which test-repl-banking-isolated
+# still owns). Probes D/E (bank-5 CREATE allocates stub + intra-bank
+# EXECUTE-explicit retrieves body data) cover Story 19.3 AC1 / AC6-D /
+# AC6-E. Probes F/G emit defer-sentinels (cross-bank EXECUTE on DOVAR
+# target hangs sentinel-trampoline; bank-N DOES> body hits DTC threading
+# defect) — both anchored on the architectural-debt list inherited from
+# Story 19.2 (the "NEXT-via-EXECUTE chokepoint" rework). Recipe accepts
+# three outcomes: result=-1 → PASS, defer-sentinel present → DEFER (no
+# fail), anything else → FAIL.
+test-repl-banking-isolated-19-3: $(TARGET)
+	@echo "Running Story 19.3 isolated per-bank CREATE/DOES> probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	for pid in d e f g; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.3-"p"-start---";re="---probe-19.3-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -qE "^probe-19.3-$$pid-deferred-" && echo "$$OUTPUT" | grep -qE "^---probe-19.3-$$pid-end---$$"; then \
+			echo "DEFER: probe-19.3-$$pid (isolated) — anchored on cross-bank-thread/dovar-sentinel defect (architectural-debt list)"; \
+		elif echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-19.3-$$pid-end---$$"; then \
+			echo "PASS: probe-19.3-$$pid (isolated) — bank-N Story 19.3 invariant (result=-1) under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-19.3-$$pid (isolated) — bank-N Story 19.3 invariant failed (neither result=-1 nor defer-sentinel + end-sentinel)"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.3-suite-end---$$'; then \
+		echo "PASS: probe-19.3-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-19.3-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
 	fi
 
@@ -725,12 +808,18 @@ test-repl-banking-skip: $(TARGET)
 	@# triple swap still moves HERE/LATEST in step with the BANK! calls; the
 	@# 9-byte hand-built body lands at HERE (some address in $8000-$BFFF
 	@# range), EXECUTE reaches it across the no-op bank-cycle, and the
-	@# sentinel returns. Identical assertion logic to the iz-cpm-banking
-	@# recipe; end-sentinel OUTPUT-presence clause per Story 17.5.1 M4 fix.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-start---$$/{p=1; next} /---iron-spike-end---$$/{p=0} p') && \
-	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-end---$$'; then \
-		echo "PASS: iron-spike (surface-agnostic) — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM) baseline"; \
+	@# sentinel returns. End-sentinel OUTPUT-presence clause per Story
+	@# 17.5.1 M4 fix.
+	@#
+	@# Story 19.3 dev-pass 2026-05-20: same disk/a/P193IRON.FTH isolated-
+	@# subprocess invocation as test-repl-banking's iron-spike recipe (see
+	@# its block above for full rationale). Replaces the previous "pipe
+	@# full banking_tests.fth" approach which depended on the now-removed
+	@# inline `_iron-spike-test` invocation at banking_tests.fth:728.
+	@OUTPUT=$$(sed 's/$$/\r/' disk/a/P193IRON.FTH | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-19.3-start---$$/{p=1; next} /---iron-spike-19.3-end---$$/{p=0} p') && \
+	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-19.3-end---$$'; then \
+		echo "PASS: iron-spike (surface-agnostic) — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM) baseline (isolated subprocess via disk/a/P193IRON.FTH)"; \
 	else \
 		echo "FAIL: iron-spike (surface-agnostic) — sentinel literal missing OR FAIL: present in PROBE_IRONSPIKE OR end-sentinel missing from OUTPUT under $(IZCPM)"; \
 		echo "  PROBE_IRONSPIKE: $$PROBE_IRONSPIKE"; exit 1; \

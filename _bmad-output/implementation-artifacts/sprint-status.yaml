@@ -412,7 +412,50 @@ development_status:
   # to discriminate "all .intra_bank path broken" vs "slot-2-target only".
   # Story 19.2 ships per accept-with-rationale: kernel mechanism correct;
   # downstream dispatch gap inherited from Story 18.3.
-  19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: backlog
+  # Story 19.3 dev-pass closed 2026-05-20 → review. Kernel +33 B (CREATE
+  # bank-N stub allocation 30 B + DOES> bank-N CFA walk 3 B; build size
+  # 26759 B = baseline 26726 + 33). Hardware UAT 2026-05-20 (transcript
+  # beastty-20260520-153439.bin) confirms iron-spike PASSes at +33 B on
+  # real MicroBeast (P193IRON.FTH); iz-cpm-banking's hang in the full
+  # banking_tests.fth pipeline is an emulator-only layout-sensitivity
+  # quirk (same family as project_phase4_banking_off_emulator).
+  # iron-spike runtime invocation MOVED to an isolated subprocess via
+  # disk/a/P193IRON.FTH (Makefile recipes both test-repl-banking +
+  # test-repl-banking-skip). New Makefile target
+  # test-repl-banking-isolated-19-3 runs the bank-N CREATE probes in
+  # isolation. Architectural-debt items: cross-bank EXECUTE on DOVAR-
+  # target (Probe-19.3-F) hangs sentinel-trampoline; bank-N CREATE/DOES>
+  # (Probe-19.3-G) hits DTC threading defect. Both deferred to the
+  # forward-work "NEXT-via-EXECUTE chokepoint" rework (no new story
+  # spawned — Epic 19.4 close-out follows next; the forward-work item
+  # is captured in the architectural-debt list in Story 19.3 Dev Notes
+  # + Story 19.2 close-out notes). Test surfaces at close: test-repl
+  # 975/0/2; test-repl-banking 61/0/3; test-repl-banking-isolated 6/0;
+  # test-repl-banking-isolated-19-3 3 PASS + 2 DEFER; test-repl-banking-
+  # skip 25/0/3; check-doc-sync 31 advisory / 0 drift.
+  19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: review
+  # Story 19.3.1 filed 2026-05-22 at Story 19.3 hardware-UAT close
+  # (project-lead disposition per feedback_no_accept_disposition_for_bugs.md
+  # STRONG rule + AskUserQuestion: "file as one combined defect story" +
+  # "iron-spike + bank-0 is sufficient"). Combined defect story covering
+  # TWO hardware-only findings from transcript beastty-20260522-103928.bin
+  # that did NOT reproduce under iz-cpm-banking:
+  #  Defect-1 (INCLUDE-EOF buffer overrun): post-EOF garbage tokens +
+  #    -13 error after each `INCLUDE` of a SLIDE-loaded .FTH file on
+  #    real MicroBeast. Affects any disk/a/*.FTH from Stories ≥17.
+  #  Defect-2 (post-`0 BANK!` kernel-dictionary visibility): Probe-
+  #    19.3-D got through `." result=" .` (PASS encoding emitted) but
+  #    the following `CR` token reported as -13 undefined; suite halted
+  #    before Probes E/F/G. Suggests search-order/wordlist scoping not
+  #    fully restored on the 5→0 BANK! transition, OR stream-buffer
+  #    pointer corruption tied to bank-table-clone semantics
+  #    (project_bank_table_clone_at_cold).
+  # Iron-spike (2026-05-20) + bank-0 probes A/B/C/H (2026-05-22) PASS
+  # on hardware → Story 19.3's hardware AC7 verdict stands; bank-N HW
+  # UAT verdict belongs to Story 19.3.1. Spec to be drafted via
+  # /bmad-bmm-create-story in a fresh context. Slots before 19.4 epic
+  # close-out (or explicitly deferred to a Phase-4-tail position).
+  19-3-1-hw-only-bank-n-include-defects-from-19-3-hw-uat: backlog
   19-4-epic-19-close-out-antforth-3-x-3-tag: backlog
   epic-19-retrospective: optional
 
