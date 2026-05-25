@@ -135,6 +135,22 @@ fcb_fam:            DS FCB_POOL_COUNT
 ; hardening (mirror of fcb_fam reset at line 280-282).
 fcb_has_written:    DS FCB_POOL_COUNT
 
+; Story 19.3.1 — per-FCB "soft-EOF seen" flag. Set when (file-refill)
+; encounters a 0x1A byte (CP/M 2.2 §"Function 20" soft EOF). Checked at
+; file_byte_read entry to short-circuit subsequent reads to clean EOF,
+; so a 0x1A in the file content terminates the stream even if the
+; physical record contains more bytes (real MicroBeast doesn't pad
+; partial-record tails with 0x1A per spec).
+fcb_eof_seen:       DS FCB_POOL_COUNT
+
+; Story 19.3.1 — per-FCB "last refill ended on clean LF/0x1A" flag.
+; (file-refill) sets it at .fr_terminator and reads it at .fr_eof: if
+; the previous line was clean-terminated and the current refill hits
+; F_READ_SEQ EOF mid-buffer, treat the accumulated bytes as partial-
+; record padding and discard. Per-FCB scope (not global) so nested
+; INCLUDE doesn't leak state across source frames.
+fcb_last_was_clean: DS FCB_POOL_COUNT
+
 ; Story 13.5.1 — per-FCB "dirty" bit; consulted by file_flush + by
 ; w_FILE_POSITION_cf (TD-1, mid-read accuracy on R/W FIDs). Encoding:
 ;   0 = clean (DMA holds no uncommitted bytes — read-loaded after a
@@ -290,6 +306,18 @@ pool_acquire:
         LD      DE, fcb_dirty
         ADD     HL, DE
         LD      (HL), 0
+        ; Story 19.3.1 — clear fcb_eof_seen[B] and fcb_last_was_clean[B]:
+        ; a fresh FCB has not yet seen 0x1A and has no prior refill state.
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_eof_seen
+        ADD     HL, DE
+        LD      (HL), 0
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_last_was_clean
+        ADD     HL, DE
+        LD      (HL), 0
         POP     BC
         POP     HL
         RET
@@ -376,6 +404,18 @@ pool_release:
         LD      H, 0
         LD      L, B
         LD      DE, fcb_dirty
+        ADD     HL, DE
+        LD      (HL), 0
+        ; Story 19.3.1 — reset fcb_eof_seen[index] and
+        ; fcb_last_was_clean[index] for stale-FID hardening.
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_eof_seen
+        ADD     HL, DE
+        LD      (HL), 0
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_last_was_clean
         ADD     HL, DE
         LD      (HL), 0
         ; Zero the FCB record (36 bytes starting at the FCB ptr).
@@ -712,7 +752,19 @@ file_byte_read:
         CALL    fcb_idx_from_ptr        ; B = index
         LD      A, B
         LD      (.fbr_idx), A
-        ; HL = &fcb_byte_pos[index]
+        ; Story 19.3.1 — if (file-refill) has seen 0x1A on this FCB,
+        ; short-circuit to clean EOF without calling F_READ_SEQ.
+        ; Uses B (index, preserved from fcb_idx_from_ptr) so A is free
+        ; to be clobbered by the load without forcing a scratch reload.
+        LD      H, 0
+        LD      L, B
+        LD      DE, fcb_eof_seen
+        ADD     HL, DE
+        LD      A, (HL)
+        OR      A
+        JR      NZ, .fbr_soft_eof
+        ; HL = &fcb_byte_pos[index]  (B still holds index)
+        LD      A, B
         LD      H, 0
         LD      L, A
         LD      DE, fcb_byte_pos
@@ -801,6 +853,13 @@ file_byte_read:
         LD      A, (.fbr_err)
         DEC     A                       ; A=1 (BDOS EOF) → 0; A>1 (BDOS error) → A-1
         SCF                             ; CY = 1 (no byte; DEC A does not touch CY)
+        RET
+.fbr_soft_eof:
+        ; Story 19.3.1 — soft-EOF short-circuit return: same tri-state
+        ; shape as .fbr_eof clean-EOF (CY=1, A=0, Z=1).
+        POP     DE                      ; restore caller's FCB ptr
+        XOR     A                       ; A = 0 (clean EOF discriminator)
+        SCF                             ; CY = 1 (no byte)
         RET
 .fbr_idx:       DB 0
 .fbr_err:       DB 0                    ; Story 13.5.2 — BDOS F_READ A return stash; the
@@ -2527,6 +2586,9 @@ w_FILE_SIZE_cf:
 fr_fid:         DW 0                    ; (file-refill) current FID
 fr_slab:        DW 0                    ; (file-refill) per-FCB slab address
 fr_pos:         DB 0                    ; (file-refill) current line-byte count
+fr_fcb_idx:     DB 0                    ; (file-refill) cached FCB index for the current call;
+                                        ; set at entry from slab_from_fid; reused by .fr_terminator
+                                        ; / .fr_eof / .fr_soft_eof_seen to address per-FCB flags.
 ifp_src_id:     DW 0                    ; (input-frame-push) source-id arg
 ifp_u:          DW 0                    ; (input-frame-push) tib_len arg
 ifp_caddr:      DW 0                    ; (input-frame-push) tib_addr arg
@@ -2803,8 +2865,12 @@ w_PAREN_FILE_REFILL_cf:
         JP      Z, .fr_invalid_src      ; HL == 0xFFFF → EVALUATE → invalid
         ; HL = FID. Save and derive slab.
         LD      (fr_fid), HL
-        CALL    slab_from_fid           ; HL = slab address
+        CALL    slab_from_fid           ; HL = slab; B = FCB index (Story 19.3.1)
         LD      (fr_slab), HL
+        ; Story 19.3.1 — cache FCB index for cheap per-FCB-flag access in
+        ; .fr_terminator / .fr_eof / .fr_soft_eof_seen without re-deriving.
+        LD      A, B
+        LD      (fr_fcb_idx), A
         LD      (IY+UserArea.tib_addr), L
         LD      (IY+UserArea.tib_addr+1), H
         ; pos = 0; >IN = 0
@@ -2820,7 +2886,7 @@ w_PAREN_FILE_REFILL_cf:
         CP      0x0A
         JR      Z, .fr_terminator
         CP      0x1A
-        JR      Z, .fr_terminator
+        JR      Z, .fr_soft_eof_seen    ; Story 19.3.1 D1 v3 — CP/M soft-EOF marker
         CP      0x0D
         JR      Z, .fr_loop             ; CR — drop silently
         ; Regular byte. Store if pos < TIB_SIZE.
@@ -2847,8 +2913,26 @@ w_PAREN_FILE_REFILL_cf:
         CP      0x0A
         JR      Z, .fr_terminator
         CP      0x1A
-        JR      Z, .fr_terminator
+        JR      Z, .fr_soft_eof_seen    ; Story 19.3.1 D1 v3 — CP/M soft-EOF marker
         JR      .fr_truncate
+.fr_soft_eof_seen:
+        ; Story 19.3.1 — CP/M 2.2 §"Function 20" 0x1A soft-EOF marker
+        ; consumed. Sets fcb_eof_seen[idx] so subsequent file_byte_read
+        ; calls short-circuit to clean EOF (file's logical content ends
+        ; here even if more physical record bytes exist). Then routes by
+        ; fr_pos: bytes accumulated → return as last line; else immediate
+        ; EOF. fr_fcb_idx was cached at routine entry.
+        LD      A, (fr_fcb_idx)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_eof_seen
+        ADD     HL, DE
+        LD      (HL), 1                 ; fcb_eof_seen[idx] = 1
+        ; Route: if fr_pos > 0, return accumulated line; else immediate EOF.
+        LD      A, (fr_pos)
+        OR      A
+        JR      NZ, .fr_terminator
+        JR      .fr_immediate_eof
 .fr_loop_no_byte:
         ; Helper signalled CY=1; Z (set by helper's DEC A; SCF preserves Z)
         ; discriminates clean EOF (Z=1, A=0) vs I/O error (Z=0, A!=0).
@@ -2864,8 +2948,36 @@ w_PAREN_FILE_REFILL_cf:
         LD      A, (fr_pos)
         OR      A
         JR      Z, .fr_immediate_eof
+        ; Story 19.3.1 — partial-record padding discard. If the previous
+        ; refill on THIS FCB was clean-terminated (LF or 0x1A), the bytes
+        ; accumulated in this cycle are post-terminator padding (BDOS is
+        ; supposed to 0x1A-fill the unused portion of the last record but
+        ; MicroBeast firmware / SLIDE transfer don't honour that on real
+        ; hardware). Discard rather than hand garbage to INTERPRET. A
+        ; file ending without a final LF still works: its first refill
+        ; reaches this fall-through with the flag still 0 (initial state
+        ; from pool_acquire) and the content is returned.
+        LD      A, (fr_fcb_idx)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_last_was_clean
+        ADD     HL, DE
+        LD      A, (HL)
+        OR      A
+        JR      NZ, .fr_immediate_eof   ; previous line was LF/1A-clean → discard
         ; Fall through to .fr_terminator with bytes-read=true
 .fr_terminator:
+        ; Story 19.3.1 — mark this refill exit as clean-terminator so the
+        ; next refill's EOF-with-bytes (if any) is treated as padding.
+        ; Set even when reached via .fr_eof fall-through (last line
+        ; without LF) — harmless because subsequent reads return immediate
+        ; EOF (fcb_byte_pos sentinel = 128 after F_READ_SEQ EOF).
+        LD      A, (fr_fcb_idx)
+        LD      H, 0
+        LD      L, A
+        LD      DE, fcb_last_was_clean
+        ADD     HL, DE
+        LD      (HL), 1
         ; Set tib_len = pos; flag = -1.
         LD      A, (fr_pos)
         LD      (IY+UserArea.tib_len), A

@@ -455,7 +455,7 @@ development_status:
   # UAT verdict belongs to Story 19.3.1. Spec to be drafted via
   # /bmad-bmm-create-story in a fresh context. Slots before 19.4 epic
   # close-out (or explicitly deferred to a Phase-4-tail position).
-  19-3-1-hw-only-bank-n-include-defects-from-19-3-hw-uat: backlog
+  19-3-1-hw-only-bank-n-include-defects-from-19-3-hw-uat: review
   19-4-epic-19-close-out-antforth-3-x-3-tag: backlog
   epic-19-retrospective: optional
 

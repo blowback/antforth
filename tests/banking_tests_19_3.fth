@@ -121,4 +121,29 @@ EXECUTE                           \ ( body-addr )
 ." ---probe-19.3-g-end---" CR
 
 ." ---probe-19.3-suite-end---" CR
+
+\ === Probe-19.3.1-A — Defect-2 fix: bucket-head unchanged after bank-N CREATE
+\ Validates Story 19.3.1 Defect-2 fix at src/compiler.asm:359..396: CREATE
+\ in bank-N>0 must NOT update the shared FORTH-WORDLIST bucket array.
+\ Pre-fix: bucket[hash(name)] head was updated to bank-N HERE address
+\ (slot-2 / bank-N RAM), polluting the chain across BANK! cycles per
+\ feedback_phase4_probe_bank_switch_limitation. Hardware-only failure mode
+\ on real MicroBeast (2026-05-22 transcript ~/Downloads/beastty-20260522-
+\ 103928.bin: post-`5 BANK! ... 0 BANK!` `CR` -13 undefined word).
+\ Post-fix: bucket-head invariant pre=post; verifies the structural fix
+\ under iz-cpm-banking in the clean isolated-fixture context (no cumulative
+\ state, HERE stays below $8000, kernel-word FIND reliable post-cycle).
+\ Hash of `_p1931a-tgt` = 24; bucket addr = FORTH-WORDLIST + 2 + 24*CELLS.
+." ---probe-19.3.1-a-start---" CR
+FORTH-WORDLIST 2 + 24 CELLS + @     \ ( bucket24-pre )
+5 BANK!
+HERE $9000 SWAP - ALLOT
+CREATE _p1931a-tgt 42 ,
+0 BANK!
+FORTH-WORDLIST 2 + 24 CELLS + @     \ ( bucket24-pre bucket24-post )
+=                                   \ ( verdict-flag: -1=PASS iff unchanged )
+." result=" . CR
+." ---probe-19.3.1-a-end---" CR
+
+." ---probe-19.3.1-suite-end---" CR
 BYE

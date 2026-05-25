@@ -677,6 +677,19 @@ test-repl-banking-isolated-19-3: $(TARGET)
 	else \
 		echo "FAIL: probe-19.3-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
+	fi && \
+	PROBE_1931A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-19.3.1-a-start---";re="---probe-19.3.1-a-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+	if echo "$$PROBE_1931A" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE_1931A" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE '^---probe-19.3.1-a-end---$$'; then \
+		echo "PASS: probe-19.3.1-a (isolated) — Defect-2 fix: bucket-head unchanged after bank-N CREATE"; \
+	else \
+		echo "FAIL: probe-19.3.1-a (isolated) — Defect-2 fix regression: bucket head changed"; \
+		echo "  PROBE: $$PROBE_1931A"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.3.1-suite-end---$$'; then \
+		echo "PASS: probe-19.3.1-suite (isolated) — Story 19.3.1 suite end-sentinel present"; \
+	else \
+		echo "FAIL: probe-19.3.1-suite (isolated) — Story 19.3.1 end-sentinel missing"; \
+		exit 1; \
 	fi
 
 test-repl-banking-skip: $(TARGET)

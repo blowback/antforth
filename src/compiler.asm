@@ -356,16 +356,34 @@ build_header:
         LD      (latest_count_flags_addr), HL
         POP     HL                                ; restore HL = CFA address
 
-        ; --- Update hash bucket head to point to new entry ---
-        LD      HL, (bh_bucket_addr)
+        ; --- Update LATEST (always, regardless of bank) ---
+        ; LATEST is per-bank state (architecture.md PD-P4-3). Bank-0 keeps
+        ; legacy semantics (LATEST = entry_start). The bank-N>0 callers in
+        ; w_CREATE_cf / w_COLON_cf overwrite LATEST with the stub-xt after
+        ; stub_allocate runs, so the value written here is just the
+        ; bank-0 default that bank-N paths replace.
         LD      BC, (bh_entry_start)
+        LD      (IY+UserArea.latest), C
+        LD      (IY+UserArea.latest+1), B
+
+        ; --- Update hash bucket head to point to new entry ---
+        ; Story 19.3.1 — skip the bucket-head update when current_bank > 0.
+        ; The FORTH-WORDLIST bucket array lives in always-mapped slot-1
+        ; and is SHARED across all banks; writing a bank-N HERE address
+        ; (slot-2, bank-N RAM) into a bucket leaves a dangling pointer
+        ; after `0 BANK!` reverts slot-2 to bank-0 RAM. FIND walks would
+        ; dereference into bank-0 slot-2 garbage and rot every word
+        ; sharing the polluted bucket. Bank-N CREATEd entries remain
+        ; reachable via post-CREATE `LATEST @` (the stub-xt capture
+        ; pattern); bank-N FIND-by-name is deferred to Epic 20.
+        LD      A, (IY+UserArea.current_bank)
+        OR      A
+        JR      NZ, .bh_skip_bucket_update
+        LD      HL, (bh_bucket_addr)
         LD      (HL), C
         INC     HL
         LD      (HL), B
-
-        ; --- Update LATEST ---
-        LD      (IY+UserArea.latest), C
-        LD      (IY+UserArea.latest+1), B
+.bh_skip_bucket_update:
 
         ; Restore HL = code field position, clear carry = success
         LD      HL, (bh_code_field)
