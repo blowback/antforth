@@ -482,6 +482,26 @@ development_status:
   19-4-epic-19-close-out-antforth-3-x-3-tag: done
   epic-19-retrospective: optional
 
+  # Epic 19.5 — Cross-bank dispatch stabilization interlude (ADR-first; epics file
+  # :875..902). Story shape is provisional: 19.5.1+ are finalized BY the locked
+  # ADR from 19.5.0. Own envelope (~+130-250 B); ships its own 3.x point tag.
+  epic-19-5: in-progress
+  19-5-0-adr-spike-trampoline-layout-fragility-root-cause-dtc-dispatch-architecture: review
+  # Rows 19-5-1 / 19-5-3 RENAMED 2026-06-04 at 19.5.1 create-story time per
+  # the ADR's flagged disposition (docs/adr-19-5-cross-bank-dispatch.md
+  # status line; Ant sign-off at 19.5.0 Sub-3.3): DR-1 found no trampoline
+  # defect — 19.5.1 is now the DR-1 fix proposal (F1 BANK! window guard +
+  # F2 bank-N HERE COLD-init H5 + F3 straddle-reproducer regression slot);
+  # H5 moved out of 19.5.3 (now compiled-body verification + banked-CATCH
+  # NFR-P4-8 variant). Was: 19-5-1-trampoline-stabilization-layout-
+  # fragility-fix / 19-5-3-compiled-body-verification-bank-n-here-cold-
+  # init-h5.
+  19-5-1-portal-aliasing-guards-bank-n-here-cold-init-h5-reproducer-regression-slot: ready-for-dev
+  19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: backlog
+  19-5-3-compiled-body-verification-banked-catch-variant: backlog
+  19-5-4-hw-investigation-epic-close-out-tag: backlog
+  epic-19-5-retrospective: optional
+
   epic-20: backlog
   20-1-per-wordlist-bank-field-find-save-switch-walk-restore: backlog
   20-2-words-traverses-banks-lookup-failure-error-messages-name-source-bank: backlog
