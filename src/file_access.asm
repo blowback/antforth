@@ -529,10 +529,13 @@ INCLUDE_FRAME_SIZE              EQU 10
 ;   Entry: HL = FID (FCB ptr).
 ;   Exit:  HL = include_line_pool + (idx << 7) where idx = fcb_idx_from_ptr(HL).
 ;   Clobbers: A, BC, DE, HL, F. Preserves: IX, IY.
+;   Second entry slab_from_idx: B = index already derived (skips the
+;     fcb_idx_from_ptr division; B preserved through to exit).
 ;   antforth internal  slab_from_fid  — derive per-FCB source-line buffer addr (asm helper)
 ; -----------------------------------------------
 slab_from_fid:
         CALL    fcb_idx_from_ptr        ; B = index (0..7), or 0xFF if OOR
+slab_from_idx:
         LD      A, B
         AND     1
         RRCA                            ; A = 0x80 if odd, 0x00 if even
@@ -1194,9 +1197,11 @@ fcb_set_byte_pos:
 ; fid_validate — Verify a fileid points at an in-use FCB pool slot;
 ;   raise -70 THROW if not. AC #8 invariant.
 ;   Entry: HL = FID (FCB ptr from caller).
-;   Exit:  returns normally if valid; otherwise JP w_THROW_cf.kernel_entry
-;     with BC = -70.
-;   Clobbers: A, BC, DE, F (HL preserved on success path).
+;   Exit:  returns normally if valid, with B = FCB index (0..7);
+;     otherwise JP w_THROW_cf.kernel_entry with BC = -70.
+;   Clobbers: A, C, DE, F (HL preserved on success path; B = index
+;     returned — 19.4 CR follow-up: lets (file-refill) feed slab_from_idx
+;     without a second fcb_idx_from_ptr division).
 ;   Discipline: every File-Access word that takes a fileid (CLOSE-FILE,
 ;     READ-FILE, WRITE-FILE — and Story 13.3 FILE-POSITION etc.) calls
 ;     this BEFORE any FCB-byte access or BDOS call. Use-after-free of
@@ -1209,16 +1214,16 @@ fid_validate:
         CP      FCB_POOL_COUNT
         JR      NC, .fv_invalid         ; pointer not in pool / not aligned
         ; Mask = 1 << index. Bit set in bitmap means "free" (released);
-        ; in-use slot must have its bit clear.
+        ; in-use slot must have its bit clear. Counter runs in A so B
+        ; (the index) survives to the caller (see Exit contract).
         LD      C, 1
-        OR      A                       ; clear CY for the rotate
-.fv_shift:
         LD      A, B
         OR      A
         JR      Z, .fv_check
+.fv_shift:
         SLA     C
-        DEC     B
-        JR      .fv_shift
+        DEC     A
+        JR      NZ, .fv_shift
 .fv_check:
         LD      A, (fcb_pool_bitmap)
         AND     C
@@ -2866,8 +2871,11 @@ w_PAREN_FILE_REFILL_cf:
         ; which pops); that cell is reclaimed by the caller's CATCH-frame SP
         ; restore — the same recovery contract documented at .fr_io_error.
         LD      (fr_fid), HL
-        CALL    fid_validate            ; -70 THROW on non-pool / stale FID; HL preserved
-        CALL    slab_from_fid           ; HL = slab; B = FCB index (0..7, validated)
+        CALL    fid_validate            ; -70 THROW on non-pool / stale FID;
+                                        ; HL preserved, B = index (0..7)
+        CALL    slab_from_idx           ; HL = slab from B (19.4 CR follow-up:
+                                        ; index divided once per line, not
+                                        ; re-derived by slab_from_fid)
         LD      A, B
         LD      (fr_fcb_idx), A         ; cache index
         LD      (fr_slab), HL
@@ -2889,7 +2897,7 @@ w_PAREN_FILE_REFILL_cf:
         ; the still-open FID continues physically from there (pre-19.3.1
         ; semantics); REPOSITION-FILE clears the latch and re-anchors.
         LD      H, 0
-        LD      L, B                    ; B = index, live since slab_from_fid
+        LD      L, B                    ; B = index, live since fid_validate
                                         ; (19.4 CR fix: was a 3-byte reload
                                         ; of fr_fcb_idx the register made
                                         ; redundant on this per-line path)
