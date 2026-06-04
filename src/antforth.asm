@@ -767,9 +767,10 @@ sp_base:        DW      0               ; Initial SP value, set during cold star
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
 ; Banner-version advances v2.0.0 → v3.0.1 at Story 17.4 close (AC11 / S11
 ; per NFR-P4-38), then v3.0.1 → v3.0.2 at Story 18.5 close (AC5 / S11 per
-; NFR-P4-38). Same-length swap → zero binary cost for the version bump.
+; NFR-P4-38), then v3.0.2 → v3.0.3 at Story 19.4 close (Epic 19 close-out;
+; AC1 / S11 per NFR-P4-38). Same-length swap → zero binary cost for the bump.
 ; Each tag's close-out story owns the README + memory-`description` sync.
-str_banner1:    DB      "AntForth v3.0.2 (C) ant.org 2026"
+str_banner1:    DB      "AntForth v3.0.3 (C) ant.org 2026"
 STR_BANNER1_LEN EQU     32
 str_banner2:    DB      "MicroBeast - "
 STR_BANNER2_LEN EQU     13

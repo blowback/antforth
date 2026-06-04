@@ -289,6 +289,18 @@ The 7-epic Phase-4 outline is locked by `docs/antforth-banking-redesign.md` §8 
 
 ---
 
+### Epic 19.5: Cross-bank dispatch stabilization (DTC threading rework) — interlude
+
+**Goal:** Make the north-star UX *actually* compiler-transparent. Epic 19 shipped the bank-aware compiler mechanism (`:` / `CREATE` / `COMPILE,` land bodies + stubs correctly, verified on emulator + bank-0/hardware), but compiled-body dispatch of a banked word is blocked by a root defect: the inner-interpreter `NEXT` (`src/macros.asm` `NEXTHL`) does a blind `JP (HL)` to each fetched thread cell, and a banked word's cell is a descriptor-stub xt whose byte 0 = `target_bank` decodes as a Z80 opcode — bypassing the MMU swap + sentinel trampoline that `w_EXECUTE_cf`'s 3-way dispatch performs correctly. This interlude epic teaches `NEXT` about stubs. It **leads with an Architecture-Decision-Record (ADR) spike** — no kernel edit until two decisions are locked: (1) root-cause + fix for the sentinel-trampoline layout-fragility (a +17–33 B kernel shift currently hangs the EXIT chain under iz-cpm-banking — the prerequisite that blocked landing/verifying every prior attempt, per [[iz-cpm-trampoline-fragility]]); (2) the DTC-dispatch architecture (A inline-`NEXTHL`-discriminator / B shared-dispatcher-subroutine / C self-dispatching-stub), chosen on envelope + T-state evidence against NFR-P4-1/3, including whether C's reopening of Epic-18's locked 4-byte stub contract is warranted. Implementation stories are authored FROM the locked ADR.
+
+**FRs covered:** none new — completes the *behavioural* delivery of FR-P4-15 / FR-P4-16 / FR-P4-24 / FR-P4-25 (compiled-body intra-/cross-bank dispatch) that Epic 18/19 wired structurally but left blocked. Discharges the Epic-19 architectural debt (19.2 AC4/AC5, 19.3 AC3/DOES>, banked NFR-P4-8).
+
+**Standalone:** ✅ After Epic 19.5, `5 BANK! : MYWORD ... ;` then calling `MYWORD` from a compiled definition in any bank dispatches correctly (the Epic-19 north-star UX, which today requires a manual `ALLOT` workaround and only works via explicit `EXECUTE`). The HW intra-bank-into-slot-2 gap (Probe-19.2-F) and the bank-N HERE COLD-init collision (H5) are closed here too.
+
+**Depends on:** Epic 19 (the bank-aware compiler mechanism whose compiled-body dispatch this epic unblocks). Framed as an explicit stabilization interlude per the Epic-11.5 / Epic-13.5 precedent — debt-cleanup is not smuggled into a feature epic.
+
+---
+
 ### Epic 20: Bank-aware FIND + `WORDS` + interpreter-loop attribution
 
 **Goal:** Make `FIND` / `WORDS` traverse banks invisibly. Wordlist header extends with a `bank` field; system wordlists (FORTH, ASSEMBLER) are tagged `bank=fixed` (-1) at kernel build time so the everyday lookup case incurs no MMU switch (the (b) decision in PD-P4-4); `FIND` saves the current bank, switches only if the wordlist is non-fixed, walks the chain, restores on the way out; `WORDS` traverses banks per the search-order's wordlists; lookup-failure error messages name the source bank where appropriate. After Epic 20 ships, the user can define a word in bank 5, switch to bank 7, and `FIND` resolves the bank-5 word transparently if the bank-5 wordlist is in the search order; failed lookups report bank context.
@@ -332,6 +344,7 @@ Epic 16 (prework, gates Epic 17+ via emulator pick + spike resolutions)
   └─ Epic 17 (bank primitives + CL config; first observable banking surface)
        └─ Epic 18 (cross-bank dispatch + EXIT + IN-BANK + BANK-OF)
             ├─ Epic 19 (bank-aware compiler — depends on Epic 18 stub allocator)
+            │    ├─ Epic 19.5 (DTC dispatch stabilization interlude — ADR-first; unblocks compiled-body banked dispatch)
             │    └─ Epic 21 (MARKER/FORGET + ABORT/QUIT bank-state restore)
             ├─ Epic 20 (bank-aware FIND — parallelable with Epic 19)
             └─ Epic 21 (also depends on Epic 18 trampoline)
@@ -854,6 +867,39 @@ So that Phase 4's compiler-transparent banking promise (the north-star UX) is sh
 ---
 
 **Epic 19 summary:** 4 stories. Cumulative binary delta target ≤ ~300 B. Ships antforth 3.x.3. After close-out, the north-star UX is observable at the REPL: `5 BANK! : MYWORD ... ;` defines into bank 5 transparently and calls from any bank dispatch correctly. The banked-word stub-count metric becomes a per-epic CCD-4 close-out line item from Story 19.4 forward (F2 mitigation operational).
+
+**Close-out reframing (DECISION 2026-06-03):** Epic 19 closes shipping the *verified* bank-aware compiler **mechanism** (`:` / `CREATE` / `COMPILE,` allocate bodies + stubs correctly; emulator + bank-0/Probe-D hardware PASS). The *behavioural* north-star claim in the summary above — calling a banked word **from a compiled definition** in another bank — is BLOCKED by the DTC-threading-through-stub-xt root defect and is descoped to **Epic 19.5** (the stabilization interlude). Concretely for Story 19.4: AC5's `0 BANK! FROM-FIVE .` (compiled-body cross-bank) must be reworded to the EXECUTE-explicit form (`' FROM-FIVE EXECUTE`) when 19.4 is drafted — mirroring the 19.2/19.3 CR-pass rewording — and AC7's ≤300 B envelope check needs reconciling: the DTC rework is out-of-Epic-19 (lands in Epic 19.5's own envelope), **but Epic 19's own shipped cumulative is already +303 B (19.1 +20, 19.2 +123, 19.3 +35, 19.3.1 +125 — the last verified by CR rebuild 2026-06-03, correcting the dev-pass's +89), just over the ~300 B line.** Story 19.4's AC7 must record an accept-with-rationale + SCP envelope re-baseline (Epic-19's realistic envelope is ~720–810 B per the [[project_epic17_envelope]] 2.4–2.7× pattern; 303 B sits comfortably inside that), not a clean ≤300 B pass. Architectural debt anchored on Epic 19.5: DTC dispatch rework · **cross-bank trampoline assumes a DOCOL/EXIT pair** (non-DOCOL targets — `DOVAR`/`DOCON`/`VARIABLE`/code-words — hang because the pre-loaded `cross_bank_return` sentinel is never pushed/popped; surfaced by Probe-19.3-F; a *distinct* root cause from the DTC defect) · sentinel-trampoline layout-fragility · intra-bank-EXECUTE-into-slot-2 HW gap (Probe-19.2-F) · CATCH-cross-bank reboot · bank-N HERE COLD-init (H5).
+
+---
+
+## Epic 19.5: Cross-bank dispatch stabilization (DTC threading rework) — interlude
+
+**Goal:** Discharge the Epic-19 architectural debt and make compiled-body banked dispatch actually work. Epic 18/19 wired the descriptor-stub mechanism structurally and verified it via explicit `EXECUTE` + on the bank-0/hardware paths, but a banked word **called from a compiled definition** corrupts the kernel: the inner-interpreter `NEXT` (`src/macros.asm` `NEXTHL` — `LD E,(HL)/INC/LD D,(HL)/INC/EX DE,HL/JP (HL)`) dispatches the fetched thread cell with a blind `JP (HL)`, and a banked word's cell is a descriptor-stub xt whose byte 0 = `target_bank` decodes as a Z80 opcode (e.g. `$05` = `DEC B`), so the stub's raw `JP target_addr` runs **without** the MMU swap + sentinel trampoline that `w_EXECUTE_cf`'s 3-way dispatch (`src/inner_interpreter.asm:387..463`) performs. `NEXT` is the dispatch chokepoint that was never taught about stubs. **There are TWO distinct dispatch root causes** the ADR must address, not one: (a) the DTC-threading defect above (`NEXT`'s blind `JP (HL)` into a stub); and (b) the cross-bank **sentinel-trampoline assumes a DOCOL/EXIT pair** — `w_EXECUTE_cf.cross_bank` pre-loads `DE = cross_bank_return` and relies on the target pushing it via DOCOL and popping it via EXIT, so `DOVAR`/`DOCON`/`VARIABLE`/code-word targets (which push data and `NEXT` directly, no R-stack frame) dereference the sentinel address as a thread cell → hang (surfaced by Probe-19.3-F). The fix for (b) may be subsumed by the (a) rework or may need its own trampoline-entry change; the ADR decides. This is an explicit **stabilization interlude epic** (own number + own envelope) per the Epic-11.5 / Epic-13.5 precedent.
+
+**This epic leads with an ADR spike — no kernel edit until two decisions are locked.**
+
+**User outcomes at epic close-out:**
+- Marc (OG user) types `5 BANK! : MYWORD ... ;` with no manual `ALLOT` workaround, then calls `MYWORD` from a compiled definition in any bank — it dispatches correctly (intra-bank one extra `JP`; cross-bank via MMU swap + sentinel trampoline). This is the Epic-19 north-star UX, finally behavioural.
+- The HW intra-bank-EXECUTE-into-slot-2 dispatch (Probe-19.2-F, which hangs on real MicroBeast) runs cleanly; `CATCH` around a cross-bank `EXECUTE` no longer reboots the kernel.
+
+**Stories (authored FROM the locked ADR — provisional shape):**
+- **Story 19.5.0 — ADR spike (zero binary delta).** Two decision records: (1) **sentinel-trampoline layout-fragility** root-cause + fix — why a +17–33 B kernel shift hangs the cross-bank EXIT chain under iz-cpm-banking (the gating prerequisite: no large rework can be *landed or verified* until this is understood); (2) **DTC-dispatch architecture** — choose A (inline `NEXTHL` discriminator, ~+250 B, hot-path T-state cost), B (shared `next_dispatch` subroutine, ~+130 B, +1 JP/step), or C (self-dispatching stub — zero `NEXT` cost, reopens Epic-18's locked 4-byte stub contract, can fold `EXECUTE`'s 3-way into the stub), with measured envelope + T-state evidence against NFR-P4-1/3.
+- **Story 19.5.1 — trampoline stabilization.** Land the layout-fragility fix from the ADR so subsequent growth stops hanging the EXIT chain (unblocks H5 and any rework byte-cost).
+- **Story 19.5.2 — dispatch rework.** Implement the chosen architecture; route stub-xt thread dispatch through the EXECUTE-equivalent 3-way logic (root cause (a)), AND fix the cross-bank trampoline so non-DOCOL targets — `DOVAR`/`DOCON`/`VARIABLE`/code-words — return correctly (root cause (b), Probe-19.3-F). Both must land for compiled-body banked `CREATE`/`DOES>`/`VARIABLE` to work.
+- **Story 19.5.3 — compiled-body verification + bank-N HERE COLD-init (H5).** Re-enable + verify 19.2 AC4/AC5 + 19.3 AC3/DOES> compiled-body probes (remove the `EXECUTE`-explicit reword + the manual `ALLOT`); banked NFR-P4-8 (CATCH-cross-bank) variant.
+- **Story 19.5.4 — HW investigation + epic close-out.** Real-MicroBeast intra-bank-into-slot-2 dispatch (first diagnostic: re-run Probe-18.3-A2 with a fixed-memory target to bisect slot-2-specific vs whole-`intra_bank`-path); full three-surface sweep; tag.
+
+**FRs covered:** none new — completes the *behavioural* delivery of FR-P4-15 / FR-P4-16 / FR-P4-24 / FR-P4-25 that Epic 18/19 wired structurally but left blocked.
+
+**NFRs codified:** NFR-P4-1 (Phase-2 envelopes — the DTC rework's hot-path cost is the load-bearing risk), NFR-P4-3 (cross-bank overhead ≤ 60 T-states + MMU), NFR-P4-8 (state integrity after error — banked CATCH variant), NFR-P4-11 (S9 hardware smoke — the Probe-19.2-F gap is the reason this epic exists).
+
+**Standalone:** ✅ After Epic 19.5, compiled-body banked dispatch works end-to-end (the Epic-19 north-star UX, behaviourally). Epics 20–22 do not depend on it for *their* surfaces, but Epic 21 (`ABORT`/`QUIT` cross-bank unwind) benefits from the stabilized trampoline.
+
+**Depends on:** Epic 19 (the bank-aware compiler mechanism whose compiled-body dispatch this epic unblocks).
+
+---
+
+**Epic 19.5 summary:** ADR-first stabilization interlude. 5 provisional stories (19.5.0 ADR spike → 19.5.1 trampoline stabilization → 19.5.2 DTC rework → 19.5.3 compiled-body verification + H5 → 19.5.4 HW + close-out); story shape is finalized BY the ADR. Own binary envelope (~+130–250 B depending on the A/B/C choice; not charged to Epic 19's ~300 B). Discharges all five Epic-19 architectural-debt anchors. Ships its own antforth 3.x point-release on close-out.
 
 ---
 

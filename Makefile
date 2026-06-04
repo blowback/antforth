@@ -47,7 +47,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-skip test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-skip test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -689,6 +689,32 @@ test-repl-banking-isolated-19-3: $(TARGET)
 		echo "PASS: probe-19.3.1-suite (isolated) — Story 19.3.1 suite end-sentinel present"; \
 	else \
 		echo "FAIL: probe-19.3.1-suite (isolated) — Story 19.3.1 end-sentinel missing"; \
+		exit 1; \
+	fi
+
+# === Story 19.4 — Epic-19 close-out integration probe (AC5) ===
+# Runs antforth under iz-cpm-banking with ONLY tests/banking_tests_19_4.fth
+# loaded. ONE probe (Probe-19.4-A) exercises the verified Epic-19 mechanism
+# end-to-end via EXECUTE-explicit dispatch only: bank-aware `:` lands a colon
+# body in bank 5 + auto-emits a descriptor stub on `;`; LATEST = stub-xt;
+# BANK-OF = 5; intra-bank EXECUTE -> 100; cross-bank EXECUTE (sentinel-
+# trampoline) -> 100 with caller bank restored. The compiled-body symbolic-
+# invocation north-star UX (`0 BANK! <name> .`) is OUT OF SCOPE for Epic 19
+# (blocked by the DTC + non-DOCOL-trampoline defects anchored on Epic 19.5).
+test-repl-banking-isolated-19-4: $(TARGET)
+	@echo "Running Story 19.4 Epic-19 close-out integration probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_4.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-19.4-a-start---";re="---probe-19.4-a-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+	if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE '^---probe-19.4-a-end---$$'; then \
+		echo "PASS: probe-19.4-a (isolated) — Epic-19 verified mechanism end-to-end (BANK-OF + intra-bank + cross-bank EXECUTE) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-19.4-a (isolated) — Epic-19 integration probe failed"; \
+		echo "  PROBE: $$PROBE"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.4-suite-end---$$'; then \
+		echo "PASS: probe-19.4-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-19.4-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
 	fi
 
@@ -1520,10 +1546,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.2'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.2'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.3'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.3'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.2' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.3' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \

@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.0.2
+## Version 3.0.3
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -21,10 +21,15 @@ portal at `$8000-$BFFF`. 3.0.2 completes the 12-word `BANK*` wordset
 with the descriptor-stub mechanism + cross-bank `EXIT` sentinel-
 trampoline + `BANK-OF` (descriptor-stub byte-0 read) + `IN-BANK`
 (kernel-blessed, CATCH-safe save/switch/EXECUTE/restore wrapper).
-(Compiler integration of cross-bank colon definitions follows in
-antforth 3.0.3+.)
+3.0.3 ships the verified bank-aware compiler mechanism: per-bank
+`HERE`/`LATEST`/`,`/`COMPILE,`, bank-aware `:` with an automatic
+descriptor-stub emitted on `;`, and bank-aware `CREATE`/`DOES>`.
+(The behavioural compiler-transparent-banking promise — calling a
+banked word from a compiled definition by name — is deferred to a
+forthcoming cross-bank-dispatch stabilization release; in 3.0.3
+banked words dispatch via the explicit `EXECUTE` path.)
 
-V3.0.2 supports the following ANS Forth standard words:
+V3.0.3 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|

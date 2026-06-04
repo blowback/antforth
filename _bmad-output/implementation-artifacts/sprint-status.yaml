@@ -382,9 +382,14 @@ development_status:
   18-5-1-defwords-ix-preservation-on-caught-throw: done
   epic-18-retrospective: optional
 
-  epic-19: in-progress
+  epic-19: done
   19-1-per-bank-here-latest-per-bank-comma-c-comma-compile-comma-full-cell-write-plumbing: done
-  19-2-colon-lands-body-in-current-bank-auto-emits-descriptor-stub-on-semicolon-compiler-transparent-banking: review
+  # Story 19.4 close-out 2026-06-04 (Q1-α, verified-mechanism basis): 19.2
+  # review → done. Kernel mechanism CR-verified-correct 2026-06-03 (bank-aware
+  # `:` + descriptor-stub-on-`;`); behavioural compiled-body AC4/AC5 carried to
+  # the Epic 19.5 stabilization interlude (DTC threading-through-stub-xt +
+  # non-DOCOL trampoline). See 19.4 Dev Notes verdict-table walk.
+  19-2-colon-lands-body-in-current-bank-auto-emits-descriptor-stub-on-semicolon-compiler-transparent-banking: done
   # Story 19.2 dev-pass 2026-05-19: kernel mechanism shipped per Q1-α /
   # Q2-γ / Q3-β / Q4-γ / Q5-α defaults. +122 B kernel delta vs ~80 B AC9
   # envelope (~152%; within Lesson 17-B empirical 2.4-2.7× multiplier;
@@ -433,7 +438,11 @@ development_status:
   # 975/0/2; test-repl-banking 61/0/3; test-repl-banking-isolated 6/0;
   # test-repl-banking-isolated-19-3 3 PASS + 2 DEFER; test-repl-banking-
   # skip 25/0/3; check-doc-sync 31 advisory / 0 drift.
-  19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: review
+  # Story 19.4 close-out 2026-06-04 (Q1-α): 19.3 review → done. Kernel
+  # mechanism CR-verified-correct 2026-06-03 (bank-aware CREATE/DOES> +35 B,
+  # CR-corrected from +33); behavioural compiled-body AC3/DOES> + DOVAR-target
+  # cross-bank carried to Epic 19.5.
+  19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: done
   # Story 19.3.1 filed 2026-05-22 at Story 19.3 hardware-UAT close
   # (project-lead disposition per feedback_no_accept_disposition_for_bugs.md
   # STRONG rule + AskUserQuestion: "file as one combined defect story" +
@@ -455,8 +464,22 @@ development_status:
   # UAT verdict belongs to Story 19.3.1. Spec to be drafted via
   # /bmad-bmm-create-story in a fresh context. Slots before 19.4 epic
   # close-out (or explicitly deferred to a Phase-4-tail position).
-  19-3-1-hw-only-bank-n-include-defects-from-19-3-hw-uat: review
-  19-4-epic-19-close-out-antforth-3-x-3-tag: backlog
+  # Story 19.4 close-out 2026-06-04 (Q1-α): 19.3.1 review → done. CR-verified-
+  # correct 2026-06-03 (INCLUDE-EOF Defect-1 + bucket-pollution Defect-2 fixes,
+  # +125 B CR-corrected from +89); CR-noted Defect-2's specific CR-symptom root
+  # cause unconfirmed (bucket-pollution hardened).
+  19-3-1-hw-only-bank-n-include-defects-from-19-3-hw-uat: done
+  # 19.4 dev-pass 2026-06-04 → review. Epic-19 close-out: banner/README/memory
+  # v3.0.3 surface aligned (0 B kernel — same-length banner swap; HEAD 26886 B);
+  # AC5 EXECUTE-explicit integration probe added (test-repl-banking-isolated-19-4,
+  # 2 PASS); four-test-surface sweep clean (975/0/2 · 61/0/3 · 6/0 · 5+2DEFER ·
+  # 25/0/3); CCD-4 stub metric captured (0 stubs at boot, 4 B/stub, 0/461 region);
+  # AC7 +303 B SCP re-baseline filed (sprint-change-proposal-2026-06-04.md).
+  # CR-pass 2026-06-04: 7 findings fixed (see 19.3.1 artifact §CR-pass 2026-06-04);
+  # post-CR binary 26834 B → Epic-19 cumulative +251 B, back under the ~300 B
+  # envelope. User-authorized close-out: commit + v3.0.2 (0aab73b) + v3.0.3 tags
+  # applied 2026-06-04; push deferred. (Sub-9.3/9.4 / Task-8 Sub-8.2.)
+  19-4-epic-19-close-out-antforth-3-x-3-tag: done
   epic-19-retrospective: optional
 
   epic-20: backlog

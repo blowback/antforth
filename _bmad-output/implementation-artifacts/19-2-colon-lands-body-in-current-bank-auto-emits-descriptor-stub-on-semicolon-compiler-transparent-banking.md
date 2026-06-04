@@ -2,6 +2,8 @@
 
 Status: review
 
+> **⮕ Architectural-debt re-homing (2026-06-03):** every "Story 19.5" anchor in this file now resolves to **Epic 19.5 — Cross-bank dispatch stabilization (DTC threading rework)**, defined in `_bmad-output/planning-artifacts/epics-phase4-epics-16-22.md`. "Story 19.5" was a placeholder catch-all that was never spawned; the DTC-threading + trampoline-fragility + HW-slot-2 + CATCH-cross-bank + bank-N-HERE-init debt is now an explicit ADR-first stabilization interlude epic. Epic 19 closes via Story 19.4 (antforth 3.0.3) shipping the verified *mechanism* with this debt documented as out-of-epic. Historical references below are preserved as-written.
+
 <!-- Drafted 2026-05-19 by create-story workflow on the Story 19.2 turn.
      Story 19.2 is the load-bearing Epic 19 deliverable: the north-star
      UX `5 BANK! : MYWORD ... ;` lands here. Per FR-P4-24, `:` must
