@@ -140,6 +140,9 @@ THROW_FCB_EXHAUSTED     EQU -69  ; ANS Forth 1994 §9.3.5 (post-1994 extension; 
 THROW_FILE_INVALID_FID  EQU -70  ; antforth extension — see docs/throw-codes.md §b.1 (Story 13.2)
 
 ; --- antforth extensions: assembler-error codes (-258..-272) ---
+; (Story 19.5.1: the antforth-extension series is no longer assembler-
+; only — it continues past -272 with banking-error codes; see the
+; -273 block below.)
 ; Allocated as one contiguous block for grep-ability; one code per error
 ; entry point in src/assembler.asm. The block starts at -258 (not -256)
 ; to leave -256 reserved for future use and -257 reserved for
@@ -167,3 +170,12 @@ THROW_ASM_ALREADY_FIXED     EQU -269 ; antforth extension — see docs/throw-cod
 THROW_ASM_NOT_IN_CODE       EQU -270 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_DISP_RANGE        EQU -271 ; antforth extension — see docs/throw-codes.md
 THROW_ASM_BIT_RANGE         EQU -272 ; antforth extension — see docs/throw-codes.md
+
+; --- antforth extensions: banking-error codes (-273..) ---
+; Continues the contiguous antforth-extension series past the assembler
+; block. Story 19.5.1 (ADR 19.5 DR-1 fix F1): BANK! raises -273 when a
+; foreign-bank switch is attempted from window-resident code (caller IP
+; in $8000..$BFFF) — converting the portal-aliasing corruption class
+; into a catchable THROW. Raised from banking.asm w_BANK_STORE_cf via
+; the kernel-internal w_THROW_cf.kernel_entry path.
+THROW_BANK_FROM_BANKED      EQU -273 ; antforth extension — see docs/throw-codes.md (Story 19.5.1)

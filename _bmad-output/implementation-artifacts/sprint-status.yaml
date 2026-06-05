@@ -496,13 +496,19 @@ development_status:
   # NFR-P4-8 variant). Was: 19-5-1-trampoline-stabilization-layout-
   # fragility-fix / 19-5-3-compiled-body-verification-bank-n-here-cold-
   # init-h5.
-  19-5-1-portal-aliasing-guards-bank-n-here-cold-init-h5-reproducer-regression-slot: ready-for-dev
+  19-5-1-portal-aliasing-guards-bank-n-here-cold-init-h5-reproducer-regression-slot: done
   19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: backlog
   19-5-3-compiled-body-verification-banked-catch-variant: backlog
   19-5-4-hw-investigation-epic-close-out-tag: backlog
   epic-19-5-retrospective: optional
 
   epic-20: backlog
+  # 20-1 evidence anchor (19.5.1 CR, 2026-06-04): the dev-pass surfaced a
+  # LIVE lookup-path variant of ADR 19.5 DR-1 — bank-shared bucket chains
+  # with window-resident entries strand FIND at -13 under a foreign
+  # mapping (retro-explains 19.3.1 Defect-2). F1 guards the threading
+  # path only; 20-1's per-wordlist bank field is the owning fix. Interim
+  # user-facing gotcha documented at redesign §5.5.
   20-1-per-wordlist-bank-field-find-save-switch-walk-restore: backlog
   20-2-words-traverses-banks-lookup-failure-error-messages-name-source-bank: backlog
   20-3-epic-20-close-out-antforth-3-x-4-tag: backlog

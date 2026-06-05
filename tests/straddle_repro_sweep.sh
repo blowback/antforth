@@ -65,6 +65,16 @@ for PAD in "$@"; do
     printf '%s\n' "$CLEAN" | grep -aq "^\[$M\]" && MARKS="$MARKS $M"
   done
   printf '%s\n' "$CLEAN" | grep -aq '^survived' && MARKS="$MARKS survived"
+  # Story 19.5.1 F1 witness: BANK!'s portal-window guard surfaces THROW
+  # -273 ("bank switch from banked code") when the caller IP (the cell
+  # after the BANK! xt) sits at >= $8000. Recorded as a pseudo-marker so
+  # make test-straddle-regression can assert the GUARD configuration
+  # from the marker table alone. Matched as the uncaught-THROW printer's
+  # 'error -273' line (src/exception.asm str_throw_prefix + signed code),
+  # not a bare '-273' substring — corruption-class garbage output that
+  # happens to contain '-273' bytes must not set the marker in rows
+  # whose assertion requires its absence (e.g. the HANG config).
+  printf '%s\n' "$CLEAN" | grep -aq 'error -273' && MARKS="$MARKS e273"
   [ -z "$MARKS" ] && MARKS=" none"
   printf '%-5s %-6s %-6s %-7s %-7s %s\n' "$K" "$PAD" "$H0" "$H1" "$H2" "${MARKS# }"
 done

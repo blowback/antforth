@@ -412,8 +412,10 @@ w_THROW_cf:
         ; pop a stale frame byte and corrupt the user stack. Today no
         ; site does this (post-Epic-11 the codes raised from the
         ; kernel-internal entry are -1, -2, -4, -10, -13, -14, -16,
-        ; -17, -22, -58, -258..-271 — all non-zero); flagging for any
-        ; future migration that wishes to raise THROW 0 from the kernel.
+        ; -17, -22, -58, -258..-272, -273 — all non-zero; -272 added by
+        ; Story 11.5.6's split, -273 by Story 19.5.1's BANK! window
+        ; guard); flagging for any future migration that wishes to
+        ; raise THROW 0 from the kernel.
         ; -----------------------------------------------
 .kernel_entry:
         ; --- n = 0 no-op (Forth 2014 §9.6.1.2275: "If any bits of n are
@@ -927,6 +929,12 @@ throw_desc_table:
         DW      THROW_ASM_BIT_RANGE         ; -272
         DB      9
         DB      "bit range"
+        ; --- antforth extension code -273 (banking — Story 19.5.1) ---
+        ; BANK! portal-window guard (ADR 19.5 DR-1 F1): foreign-bank
+        ; switch attempted from window-resident code ($8000..$BFFF IP).
+        DW      THROW_BANK_FROM_BANKED      ; -273
+        DB      28
+        DB      "bank switch from banked code"
         DW      0                       ; terminator
 
 ; -----------------------------------------------

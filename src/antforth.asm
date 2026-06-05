@@ -195,22 +195,43 @@ cold_start:
         LD      DE, BANK_TABLE_BASE + BANK_TABLE_ENTRY_SIZE
         LD      BC, BANK_TABLE_ENTRY_SIZE * (BANK_TABLE_CAP - 1)        ; 6 × 28 = 168
         LDIR
-        ; Story 19.2 H5 (CR fix attempted 2026-05-19, REVERTED 2026-05-20).
-        ; Naively bumping bank-N's HERE to $8000 at COLD here triggered a
-        ; layout-shift cascade: the +17 B of bump-loop code shifted
-        ; cross_bank_return from $4D57 to $4D68, and the new layout broke
-        ; probe-18.2-a's sentinel-trampoline-restore EXIT chain (kernel
-        ; hangs after the second EXIT_CODE invocation in the trampoline
-        ; sequence). Iron-spike (passes) followed by probe-18.2-a (hangs)
-        ; in the full banking_tests.fth sequence — repro 100% under
-        ; iz-cpm-banking. Same shape as Story 19.5's NEXT-via-EXECUTE
-        ; chokepoint and CATCH-cross-bank kernel-reboot defects: the
-        ; cross-bank dispatch trampoline is fragile and breaks on
-        ; non-trivial layout perturbations. Anchored on Story 19.5
-        ; alongside the threading rework + CATCH-cross-bank fix; bank-N
-        ; HERE COLD-init lands there too. AC3 "north-star UX compiler-
-        ; transparent banking" depends on the threading rework anyway,
-        ; so deferring H5 to 19.5 maintains the coupling.
+        ; Bank-N HERE COLD-init (Story 19.5.1 F2 — the 19.2-H5 fix,
+        ; re-landed). Override the cloned `here` field of bank-table
+        ; entries 1..28 to $8000 so every bank-N>0 dictionary starts
+        ; page-resident at the slot-2 window base: bodies compiled there
+        ; never straddle the $8000 boundary and never alias once
+        ; 19.5.2's dispatch enters them with their own page mapped.
+        ; LATEST + wordlist_head clone semantics are UNCHANGED — kernel
+        ; words stay findable in bank N per the 19.3.1 bucket-skip
+        ; contract; only `here` is overridden.
+        ;
+        ; History: this fix first landed 2026-05-19 (Story 19.2 CR H5)
+        ; and was REVERTED 2026-05-20 when its +17 B layout shift made
+        ; probe-18.2-a hang, attributed at the time to "fragile cross-
+        ; bank dispatch trampoline". ADR 19.5 DR-1 (2026-06-04) proved
+        ; that attribution wrong: the hang class is portal-window
+        ; dictionary aliasing — a test body compiled at/above $8000
+        ; fetched under a foreign mapping after its own BANK!. The
+        ; revert was against a test-configuration hazard, not a defect
+        ; in this fix; kernel size only moves the dictionary's $8000
+        ; crossing point (PASS→HANG transition invariant at body-start
+        ; 32696/32697, ADR evidence E4). Re-landing is unblocked because
+        ; the mechanism is explained, guarded (BANK! -273 window guard,
+        ; src/banking.asm) and regression-gated (make
+        ; test-straddle-regression). See docs/adr-19-5-cross-bank-dispatch.md.
+        ;
+        ; Loop shape: entry stride 6 ([here:2][latest:2][wordlist_head:2]);
+        ; from entry's byte 1 (here.high) to the next entry's byte 0
+        ; (here.low) is +5 = BANK_TABLE_ENTRY_SIZE - 1.
+        LD      HL, BANK_TABLE_BASE + BANK_TABLE_ENTRY_SIZE     ; &bank-table[1].here
+        LD      DE, BANK_TABLE_ENTRY_SIZE - 1                   ; stride 5 after INC
+        LD      B, BANK_TABLE_CAP - 1                           ; 28 entries
+.bank_here_init:
+        LD      (HL), $00                                       ; here.low
+        INC     HL
+        LD      (HL), $80                                       ; here.high → $8000
+        ADD     HL, DE
+        DJNZ    .bank_here_init
         ;
         ; Auto BANK-MAPPING-ON (FR-P4-11): enable MMU mapping before banner.
         ; Inline body matches w_BANK_MAPPING_ON_cf (src/banking.asm); inlined

@@ -121,6 +121,33 @@ w_BANK_AT_cf:
 ;     mechanism wired below is dormant in 17.2 — verified active by
 ;     Story 17.3 / Epic 19.
 ;
+;     Portal-window guard (Story 19.5.1, ADR 19.5 DR-1 fix F1): a
+;     foreign-bank switch (n != current_bank) attempted from window-
+;     resident code — caller IP in $8000..$BFFF, the MMU slot-2 portal
+;     window — raises THROW -273 (THROW_BANK_FROM_BANKED) BEFORE any
+;     MMU or state mutation. Rationale: a threaded body physically
+;     resident in the window keeps fetching cells from whatever page is
+;     mapped; switching the page under itself makes subsequent fetches
+;     read the foreign page (portal-window dictionary aliasing — the
+;     DR-1 corruption class: opcode soup or JP $0000 warm boot). Same-
+;     bank switches from window code stay legal, as do all switches
+;     with caller IP < $8000 or >= $C000 (interpreted-mode BANK! runs
+;     via the outer-interpreter EXECUTE chokepoint with IP in kernel
+;     space, so the guard never fires on interactive use).
+;
+;     Residual exposure (documented limit, ADR DR-1 honest-coverage
+;     note): the guard checks the caller IP only — DE at DEFCODE
+;     entry, i.e. the address of the cell AFTER the invoking BANK! xt
+;     (NEXT has already advanced IP), which is exactly the cell the
+;     post-swap NEXT would fetch from the foreign page. A bank-0 body
+;     whose post-BANK! cell sits below $8000 but whose later cells
+;     straddle into the window still corrupts (R-stack walking was
+;     rejected on cost). Boundary note: a BANK! xt cell at $7FFE has
+;     caller IP $8000 and IS guarded — the check is on the next-fetch
+;     address, not the xt cell itself. The straddle reproducer
+;     (tests/straddle_repro.fth.in + make test-straddle-regression)
+;     pins the residual class as a regression signature.
+;
 ;   Effects on success:
 ;     1. MMU port write: OUT (0x72), active_pages[n]. Port 0x72 = slot 2
 ;        per iz-cpm-banking cpm_machine.rs:13-14 (PORT_BANK0..3 =
@@ -154,6 +181,28 @@ w_BANK_STORE_cf:
         LD      A, C
         CP      (IY+UserArea.bank_count)
         JR      NC, .abort_bank
+        ; --- F1 portal-window guard (ADR 19.5 DR-1, Story 19.5.1):
+        ;     foreign-bank switch from window-resident code (caller IP in
+        ;     $8000..$BFFF) THROWs -273 BEFORE any MMU/state mutation.
+        ;     Same-bank switches stay legal (probe-18.2-a's `0 BANK!`
+        ;     while in bank 0). DE = caller IP at DEFCODE entry
+        ;     (src/inner_interpreter.asm:7); only D is read — no save
+        ;     needed at this point (the swap's PUSH DE comes later).
+        ;     Residual (documented in the docstring above): only the
+        ;     caller IP — the cell AFTER the invoking BANK! xt, i.e.
+        ;     the post-swap NEXT fetch address — is checked; later
+        ;     body cells are not. ---
+        ; A still holds C (target bank) from the precondition above — the
+        ; CP doesn't modify A, so the sketch's `LD A, C` is elided (-1 B).
+        CP      (IY+UserArea.current_bank)
+        JR      Z, .window_ok                       ; same-bank → legal
+        LD      A, D                                ; caller IP high byte
+        AND     $C0                                 ; window high byte $80..$BF
+        CP      $80                                 ;   <=> bit7=1 AND bit6=0
+        JR      NZ, .window_ok                      ; IP < $8000 or >= $C000 → legal
+        LD      BC, THROW_BANK_FROM_BANKED          ; -273
+        JP      w_THROW_cf.kernel_entry
+.window_ok:
         ; --- MMU port write: OUT (0x72), active_pages[n] ---
         LD      HL, ACTIVE_PAGES_BASE
         ADD     HL, BC                              ; BC.high == 0 validated
@@ -453,17 +502,23 @@ w_MINUS_BANK_cf:
 ;
 ;   USER-FACING TRAP — call `0 BANK!` BEFORE BANKS-CLEAR when current_bank
 ;   != 0. BANK!'s swap saves live HERE/LATEST/wordlist_head to
-;   bank-table[old] and loads bank-table[new]. After `N BANK!` (N != 0
-;   and bank N never visited before), the live HERE/LATEST cells hold
-;   bank-table[N]'s zero-init state. Calling BANKS-CLEAR while in that
-;   state leaves HERE = 0 / LATEST = 0; the next dictionary-extending
-;   word (`: FOO ... ;`, VARIABLE, CREATE) writes to address 0 and
-;   silently corrupts low memory. The safe rebuild sequence is:
+;   bank-table[old] and loads bank-table[new]. Calling BANKS-CLEAR while
+;   a bank N != 0 is live strands the live cells on bank-N's triple
+;   (HERE at/above $8000 — the window compile point per the 19.5.1 F2
+;   COLD-init) with no BANK! route back: the precondition fails for
+;   every n until a +BANK rebuild, so dictionary-extending words run
+;   before the rebuild compile into the window under whatever page is
+;   still mapped. The safe rebuild sequence is:
 ;     N BANK! ... 0 BANK! BANKS-CLEAR ... +BANK ... BANK!
 ;   The 0 BANK! before BANKS-CLEAR swaps the kernel-snapshot triple back
 ;   into the live cells, so the dictionary stays consistent across the
 ;   clear-and-rebuild. Probes 7 + F (tests/banking_tests.fth) follow
 ;   this pattern.
+;   (History: pre-19.5.1 this trap was harsher — bank-table[N!=0] was
+;   zero-init until the 19.2 clone, so the stranded HERE was 0 and the
+;   next CREATE corrupted low memory. The 19.2 clone, then 19.5.1 F2's
+;   $8000 override, retired that HERE=0 class; the strand itself
+;   remains.)
 ;
 ; antforth extension BANKS-CLEAR — see docs/antforth-banking-redesign.md §1
 w_BANKS_CLEAR:

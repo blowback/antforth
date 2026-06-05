@@ -1761,9 +1761,11 @@ _p19-1a-end
 \ `5 BANK!`+compile+`0 BANK!` cycles from earlier test surfaces (e.g.,
 \ the iron-spike at tests/banking_tests.fth:705..728 writes bank-5),
 \ NOT a load-bearing invariant of Story 19.1. At fresh-boot (no test
-\ pollution), all 29 bank-table entries are LDIR-clones with identical
-\ HERE per src/antforth.asm:184..197 — so the divergence assertion
-\ would FAIL on a clean COLD. CR review H2/H3 (2026-05-19) dropped the
+\ pollution), bank-table[1..28] are LDIR-clones of bank-table[0] with
+\ the `here` field overridden to $8000 (Story 19.5.1 F2 COLD-init per
+\ src/antforth.asm — LATEST/wordlist_head still cloned) — both reads
+\ are non-zero but bt0 != bt5, so the divergence assertion direction
+\ is moot. CR review H2/H3 (2026-05-19) dropped the
 \ divergence assertion to make this probe load-bearing-only. Per-bank
 \ behavioural witnesses (AC7 a/b/c/d/e) deferred to Story 19.2 + a
 \ fresh-test-fixture strategy per Dev Notes §"Probe scope revision".
@@ -2060,3 +2062,95 @@ CREATE _p193h-good 99 ,
 _p193h-good @ _p193h-good-val !
 _p193h-check
 _p193h-end
+
+\ === Story 19.5.1 — F1/F2 portal-aliasing guard probes (AC5) ===
+DECIMAL
+
+\ === Probe-19.5.1-A — F1 BANK! window guard: CATCH -273, state unchanged (AC5a) ===
+\ A colon body compiled at/above $8000 (window-resident) attempting a
+\ foreign-bank BANK! must CATCH -273 (THROW_BANK_FROM_BANKED) with
+\ current bank + window content unchanged -- the guard fires BEFORE any
+\ MMU/state mutation (src/banking.asm w_BANK_STORE_cf; ADR 19.5 DR-1 F1).
+\ Precondition asserted at run time: the victim's compile point is at or
+\ above $8000 (true this late in the suite -- the dictionary crossed
+\ $8000 around the probe-18.2-a region). If a future re-layout drops it
+\ below, the probe emits SKIP + reason rather than false-grading.
+\ Window-content witness: the cell at the victim's xt (>= $8000) must
+\ read back identically post-CATCH -- under a leaked MMU switch that
+\ read would hit the foreign page.
+VARIABLE _p1951a-precond
+VARIABLE _p1951a-xt
+VARIABLE _p1951a-cell-pre
+VARIABLE _p1951a-cell-post
+VARIABLE _p1951a-bank-pre
+VARIABLE _p1951a-bank-post
+VARIABLE _p1951a-throw
+VARIABLE _p1951a-pass
+: _p1951a-start ." ---probe-19.5.1-a-start---" CR ;
+: _p1951a-end   ." ---probe-19.5.1-a-end---"   CR ;
+: _p1951a-check
+  _p1951a-precond @ 0= IF
+    ." SKIP: probe-19.5.1-a precondition - compile point below $8000 (window residency lost)" CR
+    EXIT THEN
+  -1 _p1951a-pass !
+  _p1951a-throw @ -273 = INVERT IF 0 _p1951a-pass !
+    ." throw-not-273 " THEN
+  _p1951a-bank-pre @ _p1951a-bank-post @ = INVERT IF 0 _p1951a-pass !
+    ." bank-changed " THEN
+  _p1951a-bank-post @ 0= INVERT IF 0 _p1951a-pass !
+    ." bank-not-zero " THEN
+  _p1951a-cell-pre @ _p1951a-cell-post @ = INVERT IF 0 _p1951a-pass !
+    ." window-cell-changed " THEN
+  _p1951a-pass @ IF
+    ." probe-19.5.1-a-pass-window-guard-catch-273-state-unchanged"
+  ELSE
+    ." FAIL: probe-19.5.1-a window-guard CATCH/state check failed"
+  THEN CR ;
+_p1951a-start
+BANKS-CLEAR  $22 +BANK  $35 +BANK
+0 BANK!
+HERE $8000 U< INVERT _p1951a-precond !
+: _p1951a-victim 1 BANK! ;
+' _p1951a-victim DUP _p1951a-xt ! @ _p1951a-cell-pre !
+BANK@ _p1951a-bank-pre !
+' _p1951a-victim CATCH _p1951a-throw !
+BANK@ _p1951a-bank-post !
+_p1951a-xt @ @ _p1951a-cell-post !
+_p1951a-check
+BANKS-CLEAR
+_p1951a-end
+
+\ === Probe-19.5.1-B — F2 bank-table[1].here COLD-init = $8000 (AC5b, table-read witness) ===
+\ COLD initialises bank-table[1..28].here = $8000 (src/antforth.asm,
+\ Story 19.5.1 F2 -- the re-landed 19.2-H5 fix): bank-N>0 bodies are
+\ page-resident from byte 0 and can never straddle the window boundary.
+\ Witnessed here by a DIRECT fixed-memory read of bank-table[1].here at
+\ $D406 (= BANK_TABLE_BASE $D400 + entry stride 6; same raw-read
+\ precedent as probe-19.1-b's $D400/$D41E). Bank 1's table cell still
+\ holds the COLD value this late in the suite: earlier probes visit
+\ bank 1 (probe-7, dot-banks-y) but never compile in it, and BANK!
+\ cycles save the unchanged HERE straight back.
+\ NB this is deliberately NOT a behavioural `1 BANK! HERE` probe: the
+\ main-suite dictionary crosses $8000 mid-file, so its (bank-shared)
+\ hash-bucket chains contain window-resident entries -- any token
+\ lookup while bank 1 is mapped can walk a chain through the window
+\ and read the foreign page (-13 strand; observed at dev-pass). The
+\ behavioural first-visit witness lives in the isolated fixture
+\ tests/banking_tests_19_5_1.fth (make test-repl-banking-isolated-19-5-1).
+VARIABLE _p1951b-here
+VARIABLE _p1951b-pass
+: _p1951b-start ." ---probe-19.5.1-b-start---" CR ;
+: _p1951b-end   ." ---probe-19.5.1-b-end---"   CR ;
+: _p1951b-check
+  -1 _p1951b-pass !
+  _p1951b-here @ $8000 = INVERT IF 0 _p1951b-pass !
+    ." here-not-8000 " THEN
+  _p1951b-pass @ IF
+    ." probe-19.5.1-b-pass-bank-table-1-here-cold-init-8000"
+  ELSE
+    ." FAIL: probe-19.5.1-b bank-table[1].here COLD-init check failed - got " _p1951b-here @ U.
+  THEN CR ;
+_p1951b-start
+$D406 @ _p1951b-here !
+_p1951b-check
+_p1951b-end

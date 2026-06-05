@@ -47,7 +47,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-skip test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-skip test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -604,6 +604,25 @@ test-repl-banking: $(TARGET)
 			echo "  PROBE: $$PROBE"; exit 1; \
 		fi; \
 	done
+	@# Story 19.5.1 — F1/F2 portal-aliasing guard probes (AC5)
+	@# Probe-A: window-resident foreign BANK! CATCHes -273; current bank +
+	@#          window content unchanged (guard fires pre-mutation).
+	@#          Carries its own run-time precondition (compile point >=
+	@#          $8000); a SKIP surfaces as SKIP here, not PASS or FAIL.
+	@# Probe-B: bank-N first-visit HERE = $8000 (F2 COLD-init —
+	@#          page-resident from byte 0; the re-landed 19.2-H5 fix)
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	for pid in a b; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.5.1-"p"-start---";re="---probe-19.5.1-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -q "probe-19.5.1-$$pid-pass" && ! echo "$$PROBE" | grep -q 'FAIL:' && ! echo "$$PROBE" | grep -q 'SKIP:' && echo "$$OUTPUT" | grep -qE "^---probe-19.5.1-$$pid-end---$$"; then \
+			echo "PASS: probe-19.5.1-$$pid — Story 19.5.1 portal-aliasing guard invariant under $(IZCPM_BANKING)"; \
+		elif echo "$$PROBE" | grep -q 'SKIP:' && echo "$$OUTPUT" | grep -qE "^---probe-19.5.1-$$pid-end---$$"; then \
+			echo "SKIP: probe-19.5.1-$$pid — probe self-reported unmet precondition (see suite output)"; \
+		else \
+			echo "FAIL: probe-19.5.1-$$pid — Story 19.5.1 guard probe failed"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done
 
 # Companion to `test-repl-banking`: assert the surface-conditional probes
 # SKIP cleanly under the non-banking iz-cpm baseline (no FAIL, no kernel
@@ -717,6 +736,95 @@ test-repl-banking-isolated-19-4: $(TARGET)
 		echo "FAIL: probe-19.4-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
 	fi
+
+# === Story 19.5.1 — isolated fixture for the F2 behavioural first-visit probe ===
+# Behavioural variant of main-suite probe-19.5.1-b: an actual
+# `1 BANK! HERE 0 BANK!` cycle must surface HERE = $8000 on the first
+# visit to a fresh bank N>0 (F2 COLD-init — the re-landed 19.2-H5 fix).
+# Isolated because the main suite's dictionary crosses $8000 mid-file
+# and its bank-shared bucket chains then contain window-resident
+# entries — token lookups while a foreign bank is mapped strand at -13
+# (the ADR 19.5 DR-1 aliasing mechanism on the lookup path). See the
+# fixture header in tests/banking_tests_19_5_1.fth.
+test-repl-banking-isolated-19-5-1: $(TARGET)
+	@echo "Running Story 19.5.1 isolated F2 first-visit probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_5_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-19.5.1-c-start---";re="---probe-19.5.1-c-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+	if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE '^---probe-19.5.1-c-end---$$'; then \
+		echo "PASS: probe-19.5.1-c (isolated) — bank-1 first-visit HERE = \$$8000 (F2 COLD-init, behavioural) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-19.5.1-c (isolated) — bank-N first-visit HERE probe failed"; \
+		echo "  PROBE: $$PROBE"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.5.1-suite-end---$$'; then \
+		echo "PASS: probe-19.5.1-suite (isolated) — suite end-sentinel present (no foreign-bank strand / kernel halt)"; \
+	else \
+		echo "FAIL: probe-19.5.1-suite (isolated) — end-sentinel missing (mid-suite strand or halt)"; \
+		exit 1; \
+	fi
+
+# --- Story 19.5.1 F3 — portal-aliasing straddle regression gate (ADR 19.5 DR-1) ---
+# Drives tests/straddle_repro_sweep.sh at K=0 (NO kernel-source mutation;
+# the K>0 kernel-size knob stays sweep-only/diagnostic) and asserts the
+# DR-1 PASS/HANG signature plus the F1 window-guard witness:
+#   PASS  (victim body fully below $8000):  all of m1..m5 + survived
+#   HANG  (mid-straddle: 1 BANK! switch-site cell below $8000, later
+#         body cells above — the class F1 cannot guard): markers
+#         truncate; survived never emitted; e273 absent (guard must
+#         NOT fire in the residual class)
+#   GUARD (body fully above $8000): F1 fires THROW -273 before any MMU
+#         mutation — m1 + e273 + survived; m2 never reached
+# Pads are SELF-CALIBRATING against layout drift: a calibration run with
+# pad 64 derives the pad base + victim footprint from the fixture's
+# in-band HERE U. outputs, then computes the three pads from the
+# absolute $8000 boundary (PASS/HANG transition is invariant at absolute
+# body addresses per ADR evidence E4 — kernel growth shifts pad values,
+# never the boundary). Any calibration mismatch fails LOUDLY
+# (STRADDLE-CALIBRATION-FAILED) rather than false-PASSing via wrong pad
+# placement — same discipline as the sweep script's ANCHOR-NOT-FOUND.
+# FIXTURE-SHAPE CAVEAT (CR finding, 2026-06-04): the HANG config's "no
+# e273" assertion has a finite margin — at PAD_HANG the cell after the
+# victim's `1 BANK!` xt sits ~18 B below $8000 (as-built). The margin is
+# immune to kernel growth (boundary-relative pads) but NOT to fixture
+# edits: lengthening tests/straddle_repro.fth.in's pre-switch content
+# (e.g. a marker-string rename) by more than the margin pushes the
+# post-BANK! cell across $8000, the F1 guard fires, and straddle-hang-
+# config FAILs with e273 present. That failure means RE-DERIVE THE +24
+# OFFSET for the new victim geometry — it is not a kernel regression.
+# Not in the default `test` chain: the sweep script builds its own
+# kernel into /tmp (safe in any working tree, including dirty ones).
+test-straddle-regression:
+	@echo "Running Story 19.5.1 F3 straddle regression gate (K=0, self-calibrating pads)..."
+	@CAL=$$(tests/straddle_repro_sweep.sh 0 64 | awk 'NR==2{print $$3, $$4, $$5}') && \
+	set -- $$CAL; H0=$${1:-x}; H1=$${2:-x}; H2=$${3:-x}; \
+	case "$$H0$$H1$$H2" in *[!0-9]*) \
+		echo "STRADDLE-CALIBRATION-FAILED: non-numeric HERE outputs from calibration run (H0='$$H0' H1='$$H1' H2='$$H2') — fixture or sweep script changed"; exit 1;; esac; \
+	FOOT=$$((H2 - H1)); PADBASE=$$((H1 - 64)); \
+	if [ $$FOOT -lt 40 ] || [ $$FOOT -gt 120 ]; then \
+		echo "STRADDLE-CALIBRATION-FAILED: victim footprint $$FOOT B outside sane range 40..120 — fixture changed; re-derive margins"; exit 1; fi; \
+	PAD_PASS=$$((32768 - FOOT - 32 - PADBASE)); \
+	PAD_HANG=$$((32768 - FOOT + 24 - PADBASE)); \
+	PAD_GUARD=$$((32768 + 32 - PADBASE)); \
+	if [ $$PAD_PASS -lt 1 ]; then \
+		echo "STRADDLE-CALIBRATION-FAILED: PAD_PASS=$$PAD_PASS not positive — dictionary base now too close to \$$8000; rethink the gate"; exit 1; fi; \
+	echo "  calibration: footprint=$$FOOT padbase=$$PADBASE pads: pass=$$PAD_PASS hang=$$PAD_HANG guard=$$PAD_GUARD" && \
+	TABLE=$$(tests/straddle_repro_sweep.sh 0 $$PAD_PASS $$PAD_HANG $$PAD_GUARD) && \
+	echo "$$TABLE" | sed 's/^/  /' && \
+	ROW_PASS=$$(echo "$$TABLE" | awk -v p=$$PAD_PASS '$$2==p {$$1=$$2=$$3=$$4=$$5=""; print}') && \
+	ROW_HANG=$$(echo "$$TABLE" | awk -v p=$$PAD_HANG '$$2==p {$$1=$$2=$$3=$$4=$$5=""; print}') && \
+	ROW_GUARD=$$(echo "$$TABLE" | awk -v p=$$PAD_GUARD '$$2==p {$$1=$$2=$$3=$$4=$$5=""; print}') && \
+	if echo "$$ROW_PASS" | grep -q 'm1 m2 m3 m4 m5 survived'; then \
+		echo "PASS: straddle-pass-config — body fully below \$$8000: all markers + survived"; \
+	else \
+		echo "FAIL: straddle-pass-config — expected m1..m5 + survived, got:$$ROW_PASS"; exit 1; fi; \
+	if echo "$$ROW_HANG" | grep -q 'm1' && ! echo "$$ROW_HANG" | grep -q 'survived' && ! echo "$$ROW_HANG" | grep -q 'e273'; then \
+		echo "PASS: straddle-hang-config — mid-straddle (F1-unguardable class): markers truncate, no survived"; \
+	else \
+		echo "FAIL: straddle-hang-config — expected truncated markers without survived/e273, got:$$ROW_HANG"; exit 1; fi; \
+	if echo "$$ROW_GUARD" | grep -q 'm1' && echo "$$ROW_GUARD" | grep -q 'e273' && echo "$$ROW_GUARD" | grep -q 'survived' && ! echo "$$ROW_GUARD" | grep -q 'm2'; then \
+		echo "PASS: straddle-guard-config — body above \$$8000: F1 THROW -273 pre-mutation, interpreter survives"; \
+	else \
+		echo "FAIL: straddle-guard-config — expected m1 + e273 + survived without m2, got:$$ROW_GUARD"; exit 1; fi
 
 test-repl-banking-skip: $(TARGET)
 	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."

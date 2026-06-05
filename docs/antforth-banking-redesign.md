@@ -11,7 +11,7 @@ This document is the authoritative banked-RAM design for antforth Phase 4. Where
 | Category | Word | Stack effect | Semantics |
 |---|---|---|---|
 | Core | `BANK@` | `( -- n )` | Current logical bank index. |
-| Core | `BANK!` | `( n -- )` | Switch logical bank. `ABORT" bank?"` if `n` is not in the active list. |
+| Core | `BANK!` | `( n -- )` | Switch logical bank. `ABORT" bank?"` if `n` is not in the active list. `THROW -273` on a foreign-bank switch from window-resident code (caller IP `$8000..$BFFF`) — see §5.4 portal-window guard (Story 19.5.1). |
 | Core | `BANKS` | `( -- n )` | Count of available banks (a `VALUE`, derived from list length). |
 | Core | `IN-BANK` | `( n xt -- )` | Execute `xt` with bank `n` active; restore prior bank on exit; `CATCH`-safe. **Kernel-blessed** (not a user library word). Reference body: `: IN-BANK BANK@ >R SWAP BANK! EXECUTE R> BANK! ;`. |
 | Introspection | `BANK-OF` | `( xt -- n )` | Bank a word lives in (`-1` for fixed memory). One-byte read from the descriptor stub at `xt` — essentially free under the (γ) mechanism. |
@@ -102,9 +102,52 @@ No banked code is reachable from an interrupt vector. ISR bodies live in fixed m
 
 Each bank carries its own `(here, latest, wordlist-heads)` triple in a fixed-memory `bank-table[]`, swapped on `BANK!`. Cross-bank pointer hazards (e.g. holding a `HERE` value from one bank then `BANK!`-ing to another) are accepted as "doc-and-pray" — documented gotcha, no runtime guard.
 
+**Portal-window guard (Story 19.5.1, ADR 19.5 DR-1 fix F1).** `BANK!`
+raises `THROW -273` (`THROW_BANK_FROM_BANKED`, "bank switch from banked
+code") when a foreign-bank switch is attempted from window-resident
+code — caller IP in `$8000..$BFFF` — **before** any MMU or state
+mutation. Rationale: a threaded body physically resident in the slot-2
+window keeps fetching its cells from whatever page is mapped; switching
+the page under itself aliases subsequent fetches onto the foreign page
+(the DR-1 corruption class — opcode soup or `JP $0000` warm boot).
+Same-bank switches from window code stay legal, as does every
+interactive `BANK!` (the outer-interpreter EXECUTE chokepoint keeps IP
+in kernel space). *Residual exposure (documented limit):* the guard
+checks the caller IP only — the address of the cell **after** the
+invoking `BANK!` xt (NEXT has already advanced IP), which is exactly
+the cell the post-swap NEXT would fetch from the foreign page. A
+bank-0 body whose post-`BANK!` cell sits below `$8000` but whose later
+cells straddle into the window still corrupts (R-stack walking
+rejected on cost); conversely a `BANK!` xt cell at `$7FFE` IS guarded
+(its next-fetch address is `$8000`). The residual class is pinned as a
+regression signature by `make test-straddle-regression`
+(tests/straddle_repro_sweep.sh, K=0).
+
+**Page-resident-from-first-byte (Story 19.5.1, fix F2 — the re-landed
+19.2-H5).** COLD initialises `bank-table[1..28].here = $8000`, so every
+bank-N>0 dictionary starts at the window base: banked bodies occupy
+their own page from byte 0, never straddle the `$8000` boundary, and
+never alias once dispatch enters them with their own page mapped.
+LATEST/wordlist-head clone semantics are unchanged (kernel words remain
+findable from bank N).
+
 ### 5.5 Bank-aware FIND (S3 resolution)
 
 Each wordlist gets a `bank` field. `FIND` saves current bank, switches, walks the chain, restores. System wordlists (FORTH, ASSEMBLER) are tagged `bank=fixed` so the common case incurs no MMU switch.
+
+**INTERIM GOTCHA (until Epic 20 / story 20-1 lands).** The hash-bucket
+chains are shared across banks (only `here`/`latest`/`wordlist_head`
+swap on `BANK!`), and FIND walks them under whatever page is mapped.
+Once the bank-0 dictionary has grown past `$8000`, its chains contain
+window-resident entries; any token lookup while a foreign bank is
+mapped can walk such a chain into the window and read the foreign page
+— the DR-1 aliasing mechanism on the *lookup* path (observed at the
+19.5.1 dev-pass: interactive `1 BANK!` then any word → `-13` strand;
+retro-explains 19.3.1 Defect-2). The F1 `BANK!` guard (§5.4) covers
+only the threading path; until the per-wordlist bank field ships,
+interpret across a `BANK!` cycle only while the bank-0 dictionary is
+below `$8000`, or restrict foreign-bank interpretation to kernel words
+(the isolated-fixture discipline in tests/banking_tests_19_5_1.fth).
 
 ### 5.6 ABORT/QUIT bank-state restore (S5 resolution)
 
