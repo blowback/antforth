@@ -12,7 +12,15 @@
 ; the new frame address, and on normal return restores CATCH-TOP from
 ; the frame's prev-link slot at +6.
 ;
-; Frame layout (E11-D1, post-Story-11.4.1 + Story 18.5.1):
+; Frame layout (E11-D1, post-Story-11.4.1 + Story 18.5.1 + Story 19.5.2):
+;   +8: current_bank          (Story 19.5.2 AC6, Q1=α: catcher's bank at
+;                             CATCH entry, low byte only — high byte slot
+;                             is not written; readers force 0 since bank
+;                             ≤ 28. Pushed FIRST so all pre-existing
+;                             field offsets below are untouched. THROW's
+;                             caught path MMU-restores from this slot so
+;                             a THROW across an abandoned cross-bank
+;                             thunk frame lands in the catcher's bank.)
 ;   +6: previous CATCH-TOP   (chain link)
 ;   +4: catching-IP          (caller's IP at CATCH entry)
 ;   +2: saved BC             (i*x's TOS-cell value at CATCH entry; restored
@@ -42,9 +50,10 @@
 ;                             disposition.)
 ;   CATCH-TOP still points at frame +0 (saved-SP slot); the stash zone
 ;   sits BELOW CATCH-TOP on IX rstack. THROW and catch_resume_cf both
-;   advance IX past frame + depth_word + stash via a variable-size
-;   ADD IX, BC = (8 + 2 + depth_bytes). See `w_CATCH_cf`, `catch_resume_cf`,
-;   and `w_THROW_cf.kernel_entry` caught path for the implementation.
+;   advance IX past the (post-19.5.2) 10-byte frame; the depth_word +
+;   stash below frame base are left in the freed rstack region. See
+;   `w_CATCH_cf`, `catch_resume_cf`, and `w_THROW_cf.kernel_entry`
+;   caught path for the implementation.
 
 ; -----------------------------------------------
 ; CATCH-TOP ( -- a-addr )
@@ -81,8 +90,10 @@ w_INCLUDE_TOP_cf:
 ;   On normal return: push 0 onto the parameter stack as the success code.
 ;   On THROW: (Story 11.3 — not implemented here) restore SP/IX, push n.
 ;
-;   Frame layout (E11-D1, post-Story-11.4.1) — pushed in highest-addr-
-;   first order so the final IX matches the frame base:
+;   Frame layout (E11-D1, post-Story-11.4.1 + 19.5.2) — pushed in
+;   highest-addr-first order so the final IX matches the frame base:
+;       +8: current_bank (Story 19.5.2 AC6: catcher's bank, low byte;
+;                       readers force the high byte to 0)
 ;       +6: prev CATCH-TOP
 ;       +4: catching-IP (caller's IP at CATCH entry)
 ;       +2: saved BC   (i*x's TOS-cell value, captured from BC immediately
@@ -155,7 +166,21 @@ w_CATCH_cf:
         PUSH    HL                      ; spill xt across SP capture
         LD      HL, 2
         ADD     HL, SP                  ; HL = SP_safe (post-POP-BC SP)
-        ; --- Push 8-byte frame (highest addr first; IX grows downward) ---
+        ; --- Push 10-byte frame (highest addr first; IX grows downward) ---
+        ; +8: current_bank (Story 19.5.2 AC6, Q1=α — pushed FIRST so the
+        ;     pre-existing +0/+2/+4/+6 offsets and CATCH-TOP = frame base
+        ;     are untouched). Low byte only — readers force 0, bank ≤ 28.
+        ; +9: triple_owner (19.5.2 CR-F1 — the bank owning the live
+        ;     HERE/LATEST/wordlist_head triple at CATCH time; the caught
+        ;     path swaps the triple back when a real BANK! ran between
+        ;     CATCH and THROW). Re-purposes the formerly-unwritten
+        ;     high-byte slot; frame stays 10 bytes.
+        DEC     IX
+        DEC     IX
+        LD      A, (IY+UserArea.current_bank)
+        LD      (IX+0), A
+        LD      A, (IY+UserArea.triple_owner)
+        LD      (IX+1), A
         ; +6: prev CATCH-TOP (read from IY+catch_top)
         DEC     IX
         DEC     IX
@@ -294,16 +319,20 @@ catch_resume_cf:
         ;     THROW's caught path reads +0 from a target frame that is
         ;     by definition still live (catch_resume_cf bypassed). ---
         PUSH    BC
-        ; --- Pop the 8-byte frame: IX += 8. The Story-18.5.1 stash zone
-        ;     (depth_word + i*x stash) lives at LOWER addresses than
-        ;     frame_base on the IX rstack; advancing IX past the frame
-        ;     leaves the stash bytes in the now-free region below IX
-        ;     (they will be overwritten by subsequent rstack pushes;
-        ;     no GC required — IX rstack is dynamic). ---
+        ; --- Pop the 10-byte frame: IX += 10 (8 + the Story-19.5.2 bank
+        ;     slot at +8 — no bank restore needed on THIS path: the
+        ;     xbank_thunk balances every cross-bank entry on the
+        ;     non-THROW path, so current_bank is already the catcher's).
+        ;     The Story-18.5.1 stash zone (depth_word + i*x stash) lives
+        ;     at LOWER addresses than frame_base on the IX rstack;
+        ;     advancing IX past the frame leaves the stash bytes in the
+        ;     now-free region below IX (they will be overwritten by
+        ;     subsequent rstack pushes; no GC required — IX rstack is
+        ;     dynamic). ---
         ; ADD IX, BC = DD 09 (first kernel use of the IX-relative ADD; the
         ; user-level assembler dispatches the same opcode via
         ; .add16_dst_ixiy in src/assembler.asm).
-        LD      BC, 8
+        LD      BC, 10
         ADD     IX, BC
         ; --- Install success code in BC ---
         LD      BC, 0
@@ -422,17 +451,18 @@ w_THROW_cf:
         ;     non-zero, ..." — zero is silent, only consumes the zero) ---
         LD      A, B
         OR      C
-        JR      Z, .throw_zero
+        JP      Z, .throw_zero          ; (JP, not JR: 19.5.2 AC6 bank restore
+                                        ; pushed .throw_zero past +127. +1 B.)
         ; --- Read CATCH-TOP into HL ---
         LD      L, (IY+UserArea.catch_top)
         LD      H, (IY+UserArea.catch_top+1)
         LD      A, H
         OR      L
-        JR      Z, .throw_uncaught       ; CATCH-TOP = 0: no enclosing CATCH
-                                         ; (caught-path body is ~76 bytes; in
-                                         ; JR range. If future edits push the
-                                         ; uncaught label past +127, switch back
-                                         ; to JP Z.)
+        JP      Z, .throw_uncaught       ; CATCH-TOP = 0: no enclosing CATCH
+                                         ; (JP, not JR: Story 19.5.2's AC6 bank
+                                         ; restore pushed the uncaught label past
+                                         ; JR's +127 range — the switch-back the
+                                         ; original JR comment anticipated. +1 B.)
         ; --- Caught path. HL = target frame base.
         ;     Stash n in throw_saved_n so BC is free for ADD IX, BC. ---
         LD      (throw_saved_n), BC
@@ -447,6 +477,44 @@ w_THROW_cf:
         ;     base for the unsigned `<` compare. See architecture.md
         ;     E11-D2 (THROW algorithm) and E13-D2 (frame layout). ---
         CALL    throw_chain_walk_caught
+        ; --- Story 19.5.2 AC6: restore the catcher's bank from frame +8
+        ;     (MMU port + current_bank cell) during snap-back. A THROW
+        ;     across an abandoned cross-bank thunk frame (stub_dispatch's
+        ;     2-cell frame + xbank_thunk, src/banking.asm) must land in
+        ;     the catcher's bank — the abandoned frame's xbank_restore
+        ;     never runs (E11-D2 wholesale R-stack abandonment).
+        ;     Sequenced HERE, before the frame-field reads below, while
+        ;     HL/BC/DE are all free (n is parked in throw_saved_n; the
+        ;     reads at +6/+4/+0/+2 come after). High byte forced 0
+        ;     (bank ≤ 28; the +9 slot holds triple_owner — below). ---
+        LD      C, (IX+8)               ; C = catcher's bank.low
+        LD      B, 0
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                  ; HL = &active_pages[catcher's bank]
+        LD      A, (HL)
+        OUT     (0x72), A               ; MMU slot 2 ← catcher's page
+        LD      (IY+UserArea.current_bank), C
+        ; --- 19.5.2 CR-F1: restore the CATCH-time triple owner from
+        ;     frame +9. A real BANK! between CATCH and THROW leaves the
+        ;     live (HERE, LATEST, wordlist_head) triple keyed to a bank
+        ;     other than the one saved at CATCH; the MMU restore above
+        ;     does not touch the triple (stub_dispatch parity), so the
+        ;     next `:`/CREATE would compile against the foreign HERE —
+        ;     sticky corruption (a later same-bank BANK! early-exits the
+        ;     guard but still saves the foreign triple over the table
+        ;     slot). Swap back via bank_triple_swap (save live →
+        ;     table[owner], load table[frame +9] → live; transient
+        ;     PUSH BC only — the stash-restore LDIR below is untouched).
+        ;     Same-owner case (incl. plain cross-bank dispatch, which
+        ;     never swaps the triple) skips: probe-19.5.2-d witnesses
+        ;     the swap shape, probe-19.5.2-c the skip shape. ---
+        LD      A, (IY+UserArea.triple_owner)
+        CP      (IX+9)
+        JR      Z, .throw_owner_ok
+        LD      C, (IX+9)               ; C = CATCH-time owner (load target)
+        LD      (IY+UserArea.triple_owner), C
+        CALL    bank_triple_swap        ; A = current owner (save target)
+.throw_owner_ok:
         ; --- Restore CATCH-TOP from frame +6 (read while IX = base) ---
         LD      A, (IX+6)
         LD      (IY+UserArea.catch_top), A
@@ -500,11 +568,12 @@ w_THROW_cf:
         ; --- LDIR copy BC bytes from stash (HL) → data stack (DE) ---
         LDIR
 .throw_no_unstash:
-        ; --- Advance IX past the 8-byte frame. The Story-18.5.1 stash
-        ;     zone (depth_word + i*x stash) at lower addrs is now in the
-        ;     freed rstack region below IX (parallel to catch_resume_cf
-        ;     above; no variable advance needed — stash sits BELOW frame_base). ---
-        LD      BC, 8
+        ; --- Advance IX past the 10-byte frame (8 + the Story-19.5.2
+        ;     bank slot at +8). The Story-18.5.1 stash zone (depth_word +
+        ;     i*x stash) at lower addrs is now in the freed rstack region
+        ;     below IX (parallel to catch_resume_cf above; no variable
+        ;     advance needed — stash sits BELOW frame_base). ---
+        LD      BC, 10
         ADD     IX, BC
         ; --- Recover saved-BC, SP_safe, and catching-IP from kernel scratch ---
         LD      BC, (throw_stash_bc)    ; BC = saved i*x's TOS-cell
@@ -531,6 +600,12 @@ w_THROW_cf:
         NEXT
 
 .throw_uncaught:
+        ; SCOPE FENCE (Story 19.5.2 AC6): bank restore on the UNCAUGHT
+        ; path is Epic 21 scope (sprint row 21-2: QUIT re-asserts the
+        ; saved bank; ABORT/ABORT" pass-through). An uncaught THROW from
+        ; cross-bank code currently leaves current_bank/MMU at the
+        ; throwing bank; the caught path above restores from frame +8.
+        ;
         ; Stash n; it's needed across bdos_print_str calls (BDOS helper
         ; takes the length arg in B, clobbering BC).
         LD      (throw_saved_n), BC

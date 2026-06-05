@@ -497,7 +497,34 @@ development_status:
   # fragility-fix / 19-5-3-compiled-body-verification-bank-n-here-cold-
   # init-h5.
   19-5-1-portal-aliasing-guards-bank-n-here-cold-init-h5-reproducer-regression-slot: done
-  19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: backlog
+  # 19.5.2 dev-pass 2026-06-05 → review. ADR 19.5 DR-2 option C shipped:
+  # stub layout v2 ($EF RST-$28 self-dispatch) + $0028 vector + stub_dispatch
+  # /xbank_thunk/xbank_restore; EXIT_CODE discriminator + cross_bank_return
+  # + EXECUTE 3-way retired (−118 B); BANK-OF byte-1; CATCH +8 bank slot +
+  # THROW caught-path bank restore. +23 B (26898 → 26921; ≤ +35 gate; epic
+  # cumulative 88/100). Root causes (a)+(b) dead: probe-19.5.2-b runs the
+  # exact 19.3-F hang shape (cross-bank EXECUTE of bank-5 CREATE'd word)
+  # and returns cleanly through the thunk; probe-19.5.2-c witnesses caught
+  # cross-bank THROW landing in the catcher's bank. Nine surfaces green:
+  # 975/0/2 · 63/0/3 · 6/0 · 8+2DEFER (F/G stay DEFER — 19.5.3 scope) ·
+  # 2/0 · 2/0 · 25/0 · straddle 3/3 · doc-sync 0 drift. Sweep anchors
+  # migrated to xbank_restore:. HW smoke (A2 $0028 claimability + A3
+  # Probe-19.2-F re-test) defers to 19.5.4 per ADR named assumptions.
+  # CR pass 2026-06-06: 18 candidates, 11 refuted, 7 fixed. CR-F1
+  # (CONFIRMED defect): THROW caught path restored MMU/current_bank but
+  # not the live HERE/LATEST/wordlist_head triple after a real BANK!
+  # between CATCH and THROW → sticky compile-state corruption. Fix:
+  # triple_owner UserArea byte + CATCH frame +9 slot + caught-path
+  # bank_triple_swap (factored out of BANK!); witnessed by new
+  # probe-19.5.2-d. Also: stub_dispatch frame pushes routed through
+  # rpush_de (−13 B); SLOT2_WINDOW_BASE EQU; handler DE-contract
+  # documented (DODOES included); stale trampoline comments in
+  # banking_tests_19_4.fth updated. +19 B (26921 → 26940); story total
+  # +42 B; epic cumulative 107 B — EXCEEDS the ~100 B ADR guidance by
+  # 7 B (correctness fix; flag at epic close / NFR-P4-3 re-baseline).
+  # NOP slot re-tuned 4→5 (flat 643). All nine surfaces re-green incl.
+  # probe-19.5.2-d.
+  19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: review
   19-5-3-compiled-body-verification-banked-catch-variant: backlog
   19-5-4-hw-investigation-epic-close-out-tag: backlog
   epic-19-5-retrospective: optional

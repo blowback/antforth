@@ -2,7 +2,8 @@
 # Story 19.5.0 DR-1 — driver for tests/straddle_repro.fth.in.
 #
 # Sweeps the dictionary-position knob (@PAD@ ALLOT) and, optionally, a
-# kernel-size knob (DS K inserted before cross_bank_return, which
+# kernel-size knob (DS K inserted before xbank_restore — anchor
+# migrated from the retired cross_bank_return at Story 19.5.2 — which
 # shifts kernel_end and therefore the dictionary base by +K), then
 # records which output markers survive. Under the portal-window
 # aliasing mechanism the verdict depends ONLY on the absolute address
@@ -38,13 +39,13 @@ cp "$SRC" "$BAK"
 trap 'cp "$BAK" "$SRC"' EXIT INT TERM
 
 if [ "$K" -gt 0 ]; then
-  awk -v n="$K" '/^cross_bank_return:/{printf "        DS      %s              ; STRADDLE-SWEEP KNOB (19.5.0)\n", n} {print}' \
+  awk -v n="$K" '/^xbank_restore:/{printf "        DS      %s              ; STRADDLE-SWEEP KNOB (19.5.0)\n", n} {print}' \
       "$BAK" > "$SRC"
-  # Fail loudly if the anchor vanished (e.g. 19.5.2 retires the
-  # cross_bank_return trampoline body) — a silent no-match would sweep
-  # the UNMODIFIED kernel at every K and report a meaningless table.
+  # Fail loudly if the anchor vanished (e.g. a future story renames or
+  # moves xbank_restore) — a silent no-match would sweep the UNMODIFIED
+  # kernel at every K and report a meaningless table.
   cmp -s "$BAK" "$SRC" && {
-    echo "ANCHOR-NOT-FOUND: '^cross_bank_return:' in $SRC — knob not inserted; update the anchor" >&2
+    echo "ANCHOR-NOT-FOUND: '^xbank_restore:' in $SRC — knob not inserted; update the anchor" >&2
     exit 1; }
 fi
 ( cd src && sjasmplus --fullpath --nologo antforth.asm --raw="$COM" >/dev/null 2>&1 ) || {

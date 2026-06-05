@@ -169,11 +169,12 @@ search_wid_for_name:
         ; layout (no cell, flag clear). Discriminate on the flag:
         ;   - flag set: read 2-byte cell at HL → HL = xt. Bank-0 / Phase-1/2/3
         ;     entries' cell holds the CFA address (initial-fill from
-        ;     build_header → FIND returns CFA, legacy-equivalent dispatch
-        ;     via w_EXECUTE_cf.legacy_dispatch at xt < $D400); bank-N>0
+        ;     build_header → FIND returns CFA; the folded EXECUTE's
+        ;     JP (HL) executes it directly — Story 19.5.2); bank-N>0
         ;     colon entries' cell holds the descriptor-stub address
-        ;     (overwritten by w_SEMICOLON_cf → FIND returns stub-xt, stub
-        ;     dispatch at xt ≥ $D400 per PD-P4-1 / FR-P4-13 / FR-P4-17).
+        ;     (overwritten by w_SEMICOLON_cf → FIND returns stub-xt; the
+        ;     stub self-dispatches via RST $28 / stub_dispatch per
+        ;     PD-P4-1 / FR-P4-13 / FR-P4-17 / ADR 19.5 DR-2).
         ;   - flag clear: HL is post-name = CFA directly (legacy layout).
         ; architecture.md:200..211 + 347..363; redesign §2.1.
         LD      A, (sw_match_cf)

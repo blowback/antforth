@@ -214,6 +214,8 @@ The §-level compliance-doc row schema (CCD-P3-1) and the process-discipline-in-
 
 #### PD-P4-2: (S1 b) Sentinel-tagged cross-bank returns
 
+> **SUPERSEDED by ADR 19.5 DR-2 (Epic 19.5 dispatch-rework story, 2026-06-05).** The sentinel mechanism below shipped at Epic 18 and was retired wholesale by the option-C dispatch rework: descriptor stubs are now self-dispatching (`RST $28` at stub byte 0 → `stub_dispatch` handler), cross-bank entry pushes a 2-cell frame `(caller_bank, caller_IP)` at the dispatch site, and returns route uniformly through the fixed-memory `xbank_thunk` / `xbank_restore` — for DOCOL **and** non-DOCOL targets alike. `EXIT` is back to the plain pop + NEXT (FR-P4-19 exact); the `cross_bank_return` trampoline and the EXECUTE 3-way are deleted. See `docs/adr-19-5-cross-bank-dispatch.md` §DR-2 and `docs/antforth-banking-redesign.md` §2.2/§3. The record below is retained for decision history.
+
 **Question:** How does `EXIT` distinguish an intra-bank return from a cross-bank return so it can restore the caller's bank only when needed?
 
 **Options considered:**
@@ -355,6 +357,8 @@ The §-level compliance-doc row schema (CCD-P3-1) and the process-discipline-in-
 - **5 bytes (`(target_bank: 1B) + (JP target_addr: 3B) + (slack: 1B)`).** 5 KB per 1000 words. Same dispatch as 4 B with a defensive padding byte for future extension (e.g., flags, checksum, redirect-on-FORGET marker). Phase-5+ can extend the 4-byte stub without breaking xt stability since each new word gets a fresh stub allocation; the slack byte buys nothing concrete in Phase 4.
 
 **Decision:** 4 bytes. Stub layout `(target_bank: 1B) + (JP target_addr: 3B)`.
+
+> **Layout v2 (Epic 19.5 dispatch-rework story / ADR 19.5 DR-2, 2026-06-05):** the 4-byte size pin, the stub-address-IS-xt contract (PD-P4-1), and the $D4CB..$DBFF region / 461-stub capacity all stand; the **byte semantics** changed to make the stub self-dispatching: byte 0 = `$EF` (`RST $28` opcode — live code; NEXT's blind `JP (HL)` and the folded EXECUTE land here), byte 1 = signed `target_bank` (-1 = fixed memory per FR-P4-13), bytes 2..3 = `target_addr` lo/hi. The `RST $28` vector ($0028, COLD-installed `JP stub_dispatch`) performs the bank-aware dispatch for every dispatch site uniformly. `BANK-OF` is a one-byte read at xt+1 (+1 B vs v1's xt+0 — the "essentially free" property survives).
 
 **Rationale:** 4 B is the smallest contiguous layout that satisfies both FR-P4-13 (stub carries `(target_bank, target_addr_in_bank)`) and FR-P4-15 (intra-bank dispatch = one extra `JP` overhead). The 3-byte option requires a parallel bank-lookup table that recovers the saved byte and adds allocator complexity; the 5-byte option burns 1 KB per 1000 words for slack with no concrete Phase-4 use. Per-1000-words cost = 4 KB out of NFR-P4-5's ≤8 KB envelope (PRD `:600`); leaves ~4 KB headroom for the CL parser (~200 B), bank-table[] (29 entries × ~16 B = ~448 B), `cross_bank_return` trampoline (~80 B), descriptor-stub allocator (~150 B), banking-word bodies (~120 B) — comfortably under cap at 1000 banked words.
 

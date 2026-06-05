@@ -17,23 +17,28 @@
 \   5. `LATEST @ EXECUTE` (intra-bank, still in bank 5) dispatches the
 \      body and returns 100 (src/inner_interpreter.asm intra_bank path);
 \   6. `0 BANK!` then `<xt> EXECUTE` (cross-bank) dispatches via the
-\      sentinel-trampoline (Story 18.2/18.3) and returns 100 with the
-\      caller's bank restored to 0.
+\      RST-$28 stub + xbank_thunk/xbank_restore (Story 19.5.2; the
+\      Story 18.2/18.3 sentinel-trampoline this probe originally rode
+\      is RETIRED) and returns 100 with the caller's bank restored to 0.
 \
 \ NORTH-STAR UX SCOPE NOTE: the compiled-body symbolic-invocation form
 \ `0 BANK! _p194a-tgt .` (calling a banked word *by name* from a compiled
 \ definition / the REPL) is **OUT OF SCOPE for Epic 19** and is NOT
-\ exercised here. It is blocked by TWO root defects anchored on the
-\ Epic 19.5 stabilization interlude: (a) the DTC threading-through-stub-xt
-\ defect (`NEXT`'s blind `JP (HL)` into a stub-xt whose byte 0 decodes as
-\ an opcode), and (b) the cross-bank trampoline assuming a DOCOL/EXIT pair.
-\ The behavioural compiler-transparent-banking promise lands in Epic 19.5,
-\ NOT here. Epic 19 ships the verified MECHANISM via EXECUTE-explicit.
+\ exercised here. At Epic-19 close it was blocked by TWO root defects
+\ anchored on the Epic 19.5 stabilization interlude — (a) the DTC
+\ threading-through-stub-xt defect and (b) the cross-bank trampoline
+\ assuming a DOCOL/EXIT pair. Story 19.5.2 retired both (RST-$28
+\ self-dispatching stubs; trampoline replaced by xbank_thunk/
+\ xbank_restore — see src/banking.asm stub_dispatch); behavioural
+\ re-verification of the by-name UX is Story 19.5.3 scope. Epic 19
+\ shipped the verified MECHANISM via EXECUTE-explicit, asserted here.
 \
-\ COLON-BODY (not CREATE) is deliberate: cross-bank EXECUTE of a CREATE'd
-\ DOVAR target hangs the sentinel-trampoline (Probe-19.3-F, Epic-19.5
-\ root cause (b)); a `:`/`;` body goes through DOCOL/EXIT and so round-
-\ trips the trampoline correctly.
+\ COLON-BODY (not CREATE) was deliberate at Epic-19 close: cross-bank
+\ EXECUTE of a CREATE'd DOVAR target hung the then-live sentinel-
+\ trampoline (Probe-19.3-F, root cause (b) above). Post-19.5.2 the
+\ non-DOCOL shape is witnessed by probe-19.5.2-b
+\ (tests/banking_tests_19_3.fth); this probe keeps the colon body as
+\ the Epic-19 close-out signature.
 \
 \ Verdict: single integer printed via `.` — -1 (TRUE) = PASS, 0 = FAIL.
 \ The Makefile recipe greps `result=-1` inside the sentinel window. Bank-N
@@ -54,7 +59,7 @@ OVER $D400 U< 0= AND               \ ( xt v12 )     stub-xt in $D400+ region
 OVER EXECUTE 100 = AND             \ ( xt v123 )    intra-bank EXECUTE -> 100 (still bank 5)
 SWAP                               \ ( v123 xt )
 0 BANK!                            \ caller now bank 0; stub-xt portable (FR-P4-17)
-EXECUTE                            \ ( v123 100 )   cross-bank EXECUTE via sentinel-trampoline
+EXECUTE                            \ ( v123 100 )   cross-bank EXECUTE via RST-$28 stub (19.5.2)
 100 =                              \ ( v123 v4a )
 BANK@ 0 = AND                      \ ( v123 v4 )    result=100 AND caller bank restored to 0
 AND                                \ ( verdict-flag: -1=PASS iff all four legs pass )

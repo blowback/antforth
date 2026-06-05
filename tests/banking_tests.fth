@@ -749,8 +749,11 @@ DECIMAL
 \ descriptor stub per word in the CCP-evicted $D400-$DBFF region;
 \ stub address IS the word's xt (PD-P4-1 + redesign §2.1; PD-P4-11
 \ layout at architecture.md:347..365). Probes here are LAYOUT-ONLY —
-\ stubs are inspected via C@/@, NOT executed through (execute-through
-\ is Story 18.3's EXECUTE switch + Story 18.2's cross_bank_return).
+\ stubs are inspected via C@/@. Post-Story-19.5.2 (ADR 19.5 DR-2,
+\ layout v2) stubs are genuinely executable: byte 0 = $EF (RST $28)
+\ self-dispatches via the kernel stub_dispatch handler; the
+\ execute-through witnesses are probe-19.5.2-a below + the 18.3/19.x
+\ EXECUTE probes.
 \
 \ ORDER NOTE: Probe-18.1-C runs FIRST among these probes. It asserts
 \ the first allocated stub lives at STUB_ALLOC_BASE ($D4CB = 54475)
@@ -839,11 +842,11 @@ VARIABLE _p18a-pass
   -1                                     \ ( target_addr target_bank )
   (stub-allocate)                        \ ( xt )
   _p18a-xt !
-  \ Read back the 4 bytes via C@ at xt+0..3.
-  \ Assertions: byte 0 = 255 = $FF = -1 fixed-mem marker (FR-P4-13); byte 1 = 195 = $C3 = JP opcode;
+  \ Read back the 4 bytes via C@ at xt+0..3 (stub layout v2, Story 19.5.2).
+  \ Assertions: byte 0 = 239 = $EF = RST $28 opcode; byte 1 = 255 = $FF = -1 fixed-mem marker (FR-P4-13);
   \ byte 2 = target_addr lo; byte 3 = target_addr hi. Lines stay ≤ TIB_SIZE (128) per CR-M3 fix 2026-05-18.
-  _p18a-xt @         C@   255 = INVERT IF 0 _p18a-pass ! ." byte0-bad " THEN
-  _p18a-xt @ 1+      C@   195 = INVERT IF 0 _p18a-pass ! ." byte1-bad " THEN
+  _p18a-xt @         C@   239 = INVERT IF 0 _p18a-pass ! ." byte0-bad " THEN
+  _p18a-xt @ 1+      C@   255 = INVERT IF 0 _p18a-pass ! ." byte1-bad " THEN
   _p18a-xt @ 2 +     C@   ['] BANK@ 255 AND = INVERT IF 0 _p18a-pass ! ." byte2-bad " THEN
   _p18a-xt @ 3 +     C@   ['] BANK@ 8 RSHIFT 255 AND = INVERT IF 0 _p18a-pass ! ." byte3-bad " THEN
   ." stub-addr=" _p18a-xt @ U.
@@ -874,10 +877,10 @@ VARIABLE _p18b-pass
   5                                       \ ( target_addr target_bank )
   (stub-allocate)                         \ ( xt )
   _p18b-xt !
-  \ Assertions: byte 0 = 5 = target_bank (logical bank index, PD-P4-13); byte 1 = 195 = $C3 = JP opcode;
+  \ Assertions (stub layout v2, Story 19.5.2): byte 0 = 239 = $EF = RST $28; byte 1 = 5 = target_bank (PD-P4-13);
   \ byte 2 = 0 = $00 (lo of $8200); byte 3 = 130 = $82 (hi of $8200). Lines stay ≤ TIB_SIZE (128).
-  _p18b-xt @         C@   5   = INVERT IF 0 _p18b-pass ! ." byte0-bad " THEN
-  _p18b-xt @ 1+      C@   195 = INVERT IF 0 _p18b-pass ! ." byte1-bad " THEN
+  _p18b-xt @         C@   239 = INVERT IF 0 _p18b-pass ! ." byte0-bad " THEN
+  _p18b-xt @ 1+      C@   5   = INVERT IF 0 _p18b-pass ! ." byte1-bad " THEN
   _p18b-xt @ 2 +     C@   0   = INVERT IF 0 _p18b-pass ! ." byte2-bad " THEN
   _p18b-xt @ 3 +     C@   130 = INVERT IF 0 _p18b-pass ! ." byte3-bad " THEN
   ." stub-addr=" _p18b-xt @ U.
@@ -895,155 +898,56 @@ VARIABLE _p18b-pass
 ;
 _probe-18.1-b
 
-\ === Story 18.2: sentinel-trampoline + EXIT-sentinel probes (A/B) ===
-\ Story 18.2 lands the (S1 b) cross-bank EXIT mechanism: a
-\ cross_bank_return: trampoline body in src/banking.asm + a sentinel
-\ comparison extended into src/inner_interpreter.asm's EXIT_CODE
-\ (PD-P4-2 / architecture.md:215..227; redesign §2.2 at
-\ docs/antforth-banking-redesign.md:44..48). On EXIT, the popped
-\ return-address is CP'd against cross_bank_return; a match dispatches
-\ the trampoline, which pops caller_bank + target_addr from the
-\ R-stack, restores the caller's bank via OUT (0x72) +
-\ (IY+UserArea.current_bank), then JP (HL) to target_addr. The
-\ intra-bank EXIT path (miss-path) is preserved at zero net behaviour
-\ change (FR-P4-19).
+\ === Story 18.2 slot — RST-dispatch witness + intra-bank EXIT round-trip ===
+\ Probe-18.2-A is RETIRED-AND-REPLACED (Story 19.5.2, ADR 19.5 DR-2):
+\ it synthesized the old 3-cell sentinel frame via >R pushes and read
+\ the JP cross_bank_return bytes out of EXIT_CODE+20..22 — BOTH
+\ mechanisms ceased to exist when option C landed (EXIT_CODE is back
+\ to plain pop + NEXT; the trampoline is deleted; cross-bank returns
+\ route through stub_dispatch's 2-cell frame + xbank_thunk /
+\ xbank_restore in src/banking.asm). Its replacement in the same
+\ slot is probe-19.5.2-a below.
 \
-\ Probe-18.2-A — synthesized cross-bank-return frame fires the
-\ trampoline. Exercises AC1 (trampoline body) + AC2 (sentinel-IS-
-\ trampoline-label) + AC3 (EXIT sentinel comparison). caller_bank ==
-\ current_bank (= 0) so the bank-state-swap is a no-op (the trampoline
-\ alone does NOT do BANK!'s per-bank triple swap; that lives at the
-\ pusher side per Story 18.3 / Epic 19). The probe asserts that
-\ control flows through the trampoline + chains the post-restore
-\ JP-to-target via a second EXIT_CODE pop of the colon-body's DOCOL
-\ frame, and that BANK@ readback at probe-tail equals caller_bank.
+\ Probe-19.5.2-A — RST self-dispatch witness, end-to-end: a
+\ (stub-allocate)-built fixed-memory stub ($FF marker) for a colon
+\ word, invoked via EXECUTE. The folded EXECUTE (4 B, Story 19.5.2)
+\ does a blind JP (HL) onto stub byte 0 = $EF = RST $28 → vector at
+\ $0028 → stub_dispatch intra path (marker matches) → JP DOCOL with
+\ HL = target CF → body runs → EXIT → NEXT resumes. The 12345 result
+\ on the stack is the witness that the whole chain dispatched and
+\ returned. Surface-agnostic (fixed-memory target; no MMU change) —
+\ the cross-bank half of the handler is witnessed by probe-19.4-a
+\ (isolated fixture) + the Q2 non-DOCOL witness in
+\ tests/banking_tests_19_3.fth.
 \
 \ Probe-18.2-B — intra-bank EXIT round-trip (100 colon-body call/EXIT
-\ cycles). Exercises AC3 miss-path + AC4 (intra-bank-invariance under
-\ the new sentinel comparison overhead). Asserts BANK@ unchanged
-\ across the loop and the round-trip completes cleanly (no orphan
-\ R-stack entry / no crash).
-\
-\ Per-probe surfaces:
-\   Probe-18.2-B is surface-agnostic — only exercises the intra-bank
-\   AC3-miss path which is identical behaviour across iz-cpm,
-\   iz-cpm-banking, and real hardware. Also implicitly exercised tens
-\   of thousands of times across the test-repl regression suite (every
-\   colon-body return goes through EXIT_CODE) — binding fitness witness
-\   for FR-P4-19 zero-overhead-up-to-CP behaviour.
-\   Probe-18.2-A is surface-degenerate by design: caller_bank ==
-\   current_bank == 0 so the MMU port-0x72 write + current_bank cell
-\   update execute but are observably idempotent. Under iz-cpm baseline
-\   port 0x72 is unmodelled (no-op); under iz-cpm-banking and real
-\   hardware the write is a same-page rewrite. The PASS verdict
-\   therefore looks the same on every surface — what's actually being
-\   tested is the SENTINEL DISPATCH PATH (EXIT_CODE detected the
-\   sentinel, JPed to the trampoline, the trampoline ran through to
-\   JP (HL), and the chained EXIT-via-xt(EXIT) popped the DOCOL-pushed
-\   caller IP cleanly). AC1 steps 3-5 (port write effect / cell-write
-\   effect under caller_bank ≠ current_bank) are observationally
-\   covered at Story 18.3 / 18.5 once the pusher-side per-bank state
-\   swap lands. Probe-18.2-A is NOT listed in test-repl-banking-skip
-\   because the surface-agnostic PASS shape makes the SKIP-with-
-\   rationale annotation moot at this story.
-\
-\ Per-probe state-leave: Probe-18.2-A ends in BANKS-CLEAR (empty bank
-\ table). Probe-18.2-B does not depend on a particular bank-table
-\ state and is positioned immediately after. Any future probe added
-\ below 18.2-B that needs a seeded bank-table must re-seed via
-\ BANKS-CLEAR / +BANK / 0 BANK!.
-
-\ Extract cross_bank_return address from EXIT_CODE byte sequence.
-\ ' EXIT  = address of `JP EXIT_CODE` opcode (3 B: C3 lo hi).
-\ ' EXIT 1+ @  = EXIT_CODE address (always a safe extraction — EXIT's
-\ DEFCODE shape is unconditional).
-\ EXIT_CODE offset +20 = $C3 (JP cross_bank_return opcode);
-\ EXIT_CODE offset +21..22 = cross_bank_return address (little-endian).
-\ Layout-sensitive: if a future story rearranges EXIT_CODE bytes the
-\ +21 fetch returns garbage. We defer the +21 read into a VARIABLE
-\ populated INSIDE _probe-18.2-a's runtime sanity-check IF-branch, so
-\ no garbage value is captured into the dictionary at load time and
-\ no garbage address gets pushed onto the R-stack on a layout shift.
+\ cycles), KEPT as-is: post-19.5.2 the plain pop + NEXT is the ONLY
+\ EXIT path (the sentinel CP miss-path it used to witness is retired;
+\ the probe now witnesses the plain path + BANK@ invariance). Also
+\ implicitly exercised tens of thousands of times across the
+\ test-repl regression suite — binding fitness witness for FR-P4-19
+\ exact-zero-overhead behaviour.
 DECIMAL
-' EXIT 1+ @           CONSTANT _xbr-exit-code   \ EXIT_CODE address (safe)
-VARIABLE _xbr-addr-cell                         \ filled by _probe-18.2-a after sanity-pass
 
-\ Inner word that synthesizes the 3-cell sentinel frame on the R-stack
-\ then EXITs (the implicit `;` compiles EXIT). Field order on R-stack
-\ (top-to-bottom after the three >R pushes):
-\   ( sentinel, caller_bank, target_addr, _p18a-inner-DOCOL-IP, ... )
-\ The implicit `;` EXIT pops sentinel → CP match in EXIT_CODE → JP
-\ cross_bank_return → trampoline pops (caller_bank, target_addr) →
-\ JP (HL) to target_addr = xt of EXIT → JP EXIT_CODE pops the
-\ DOCOL-pushed IP (= caller's IP into _probe-18.2-a) → CP no-match
-\ → NEXT resumes the caller normally.
-\
-\ caller_bank = 0 (matches the outer body's current_bank): the
-\ trampoline's MMU port-0x72 write + current_bank update run in full
-\ but are observably idempotent. The trampoline body still executes
-\ every step in AC1 — the binding evidence that the dispatch path
-\ works is that control returns to _probe-18.2-a body at all. Without
-\ the sentinel mechanism, EXIT would interpret xbr-addr as a Forth IP
-\ via NEXT and crash on the resulting JP-to-garbage. The probe
-\ printing its PASS literal IS the witness that EXIT_CODE detected
-\ the sentinel, JPed to cross_bank_return, ran the trampoline body
-\ through to JP (HL), and the chained EXIT-via-target_addr popped
-\ the DOCOL-pushed caller IP cleanly.
-\
-\ Why not caller_bank ≠ current_bank? The trampoline alone does NOT do
-\ BANK!'s per-bank triple swap; that's Story 18.3's pusher-side scope.
-\ Under iz-cpm-banking, switching MMU slot 2 ($8000-$BFFF) to a
-\ different bank remaps any HERE-region content that lives there. By
-\ the time _probe-18.2-a is compiled at file load, HERE is past $8000,
-\ so the probe body itself sits in slot 2 — switching slot 2 underneath
-\ the running code remaps the body's bytes mid-execution and crashes.
-\ The "trampoline switched banks observable" test belongs at Story 18.3
-\ once the pusher-side state swap is in place.
-: _p18a-inner ( -- )
-  ['] EXIT       >R            \ target_addr (top resume point after trampoline)
-  0              >R            \ caller_bank = 0 (== current; trampoline no-op observable)
-  _xbr-addr-cell @ >R          \ sentinel = cross_bank_return address (gated above)
-;                              \ implicit EXIT fires sentinel-matching pop
+VARIABLE _p1952a-pass
+: _p1952a-target 12345 ;       \ DOCOL body reached through the RST chain
 
-VARIABLE _p18a-pass
-
-: _probe-18.2-a ( -- )
+: _probe-19.5.2-a ( -- )
   DECIMAL
-  ." ---probe-18.2-a-start---" CR
-  -1 _p18a-pass !
-  \ Runtime sanity: EXIT_CODE+20 must be $C3 (JP opcode). On match,
-  \ capture the +21..22 cell into _xbr-addr-cell and run the trampoline-
-  \ firing inner word. On miss, the EXIT_CODE byte layout shifted —
-  \ report and SKIP the inner word entirely (firing _p18a-inner with a
-  \ stale sentinel would crash on JP-to-garbage after the CP miss).
-  _xbr-exit-code 20 + C@ 195 = IF
-    _xbr-exit-code 21 + @ _xbr-addr-cell !   \ cross_bank_return addr
-    \ Seed at least 2 banks so active_pages[0] is populated for the
-    \ trampoline's logical→physical lookup.
-    BANKS-CLEAR
-    $22 +BANK   $35 +BANK       \ active_pages[0]=$22, [1]=$35
-    0 BANK!                     \ stay in bank 0 (caller_bank == current)
-    \ Invoke trampoline-firing inner word; control returns here after
-    \ EXIT_CODE → trampoline → JP target_addr=xt of EXIT → second
-    \ EXIT_CODE pops the DOCOL-pushed _probe-18.2-a-IP → NEXT resumes.
-    _p18a-inner
-    \ Post-restore observable: BANK@ must equal caller_bank (= 0). The
-    \ binding witness that the trampoline ran is that we reached this
-    \ point at all (without the sentinel mechanism, the EXIT would
-    \ crash on JP-to-garbage interpreted from xbr-addr as a Forth IP).
-    BANK@ 0 = INVERT IF 0 _p18a-pass ! ." bank-not-0 " THEN
+  ." ---probe-19.5.2-a-start---" CR
+  -1 _p1952a-pass !
+  \ Build a fixed-memory stub for the target's CFA; EXECUTE the stub xt.
+  ['] _p1952a-target -1 (stub-allocate)   \ ( xt ) — byte0=$EF byte1=$FF
+  EXECUTE                                  \ JP (HL) → RST $28 → handler → DOCOL
+  12345 = INVERT IF 0 _p1952a-pass ! ." result-bad " THEN
+  _p1952a-pass @ IF
+    ." probe-19.5.2-a-pass-rst-stub-dispatch-end-to-end"
   ELSE
-    0 _p18a-pass ! ." exit-code-layout-shift "
-  THEN
-  _p18a-pass @ IF
-    ." probe-18.2-a-pass-cross-bank-EXIT-trampoline-restored"
-  ELSE
-    ." FAIL: probe-18.2-a bank not restored to 0 after trampoline"
+    ." FAIL: probe-19.5.2-a RST stub dispatch did not return 12345"
   THEN CR
-  ." ---probe-18.2-a-end---" CR
-  BANKS-CLEAR
+  ." ---probe-19.5.2-a-end---" CR
 ;
-_probe-18.2-a
+_probe-19.5.2-a
 
 : _p18b-noop ;                  \ minimal intra-bank colon body
 : _p18b-driver
@@ -1069,16 +973,16 @@ VARIABLE _p18b-bank-before
 ;
 _probe-18.2-b
 
-\ === Story 18.3: EXECUTE chokepoint + cross-bank dispatch probes (A/B/C/D/E) ===
-\ Story 18.3 extends w_EXECUTE_cf (src/inner_interpreter.asm) with a 3-way
-\ dispatch: legacy CFA (xt < $D4 high-byte → JP (HL) byte-for-byte preserves
-\ the 975-PASS test-repl baseline), intra-bank stub (target_bank == BANK@ OR
-\ -1 fixed-memory → INC HL / JP (HL) executes the in-stub JP), and cross-bank
-\ stub (push 3-cell frame + LD DE,cross_bank_return + OUT (0x72), update
-\ current_bank, JP stub+1). The callee's JP DOCOL pushes DE = sentinel as
-\ the 4th cell, providing the sentinel-tagged top of the cross-bank frame
-\ (PD-P4-1 + PD-P4-11 + PD-P4-2; architecture.md:207..363; redesign §3 at
-\ docs/antforth-banking-redesign.md:54..63).
+\ === Story 18.3 slot: stub-EXECUTE dispatch probes (A/B/C/D/E) ===
+\ MECHANISM NOTE (Story 19.5.2, ADR 19.5 DR-2): Story 18.3's 3-way
+\ EXECUTE dispatch these probes originally targeted is RETIRED. EXECUTE
+\ is folded to a blind JP (HL); stubs self-dispatch via byte 0 = RST
+\ $28 → stub_dispatch (src/banking.asm), which handles legacy-vs-stub,
+\ intra-vs-cross uniformly for EVERY dispatch site. The probes below
+\ are RETAINED as dispatch witnesses — their observable contracts
+\ (stub xt EXECUTEs correctly; bank restored after a cross-bank call)
+\ are mechanism-independent and now route through the RST chain
+\ (PD-P4-1 + PD-P4-11; architecture.md:207..363; redesign §3).
 \
 \ Probe-18.3-A — fixed-memory stub EXECUTE. Allocates a stub for ' BANK@
 \ with target_bank = -1; EXECUTE dispatches via the intra-bank path
@@ -1246,12 +1150,13 @@ _probe-18.3-a2
 \ from interpret mode (NOT a colon body), so the running code during
 \ the dispatch's MMU slot-2 swap is INTERPRET (kernel-resident, body
 \ < $8000) and is unaffected by the swap. Cross-bank target is the
-\ kernel DEFWORD NEGATE (xt < $D400, main-RAM CFA): the in-stub JP
-\ transfers to w_NEGATE_cf in main RAM, DOCOL pushes DE =
-\ cross_bank_return as the sentinel, body runs (LIT 0, SWAP, MINUS,
-\ EXIT), then EXIT_CODE + trampoline + chained EXIT_CODE restore the
-\ caller's bank and resume INTERPRET. Validates AC1 cross-bank
-\ dispatch + closes Story-18.2 CR-H2 deferred MMU port-write +
+\ kernel DEFWORD NEGATE (xt < $D400, main-RAM CFA). Post-19.5.2
+\ mechanism (ADR DR-2): EXECUTE's JP (HL) lands on the stub's RST $28
+\ → stub_dispatch cross path pushes the 2-cell frame, sets DE =
+\ xbank_thunk, MMU-switches, JPs to w_NEGATE_cf; DOCOL pushes the
+\ thunk-IP; body runs (LIT 0, SWAP, MINUS, EXIT); EXIT pops the
+\ thunk-IP → NEXT → xbank_restore restores the caller's bank and
+\ resumes INTERPRET. Validates cross-bank dispatch + MMU port-write +
 \ current_bank cell-write coverage under caller_bank ≠ current_bank.
 \
 \ Output formatting goes through a colon-body helper (_p18f-check)
@@ -1911,12 +1816,12 @@ _p19-2h-check
 _p19-2h-end
 
 \ Probe-19.2-J — AC7-d coverage: bank-0 `:`-defined word's xt is a legacy
-\ CFA (xt < $D400). BANK-OF reads byte 0 of the stub at xt — for a legacy
-\ CFA xt, the discriminator at src/banking.asm:863..872 short-circuits to
-\ -1 (the fixed-memory marker per FR-P4-13) without dereferencing the
-\ stub-byte-0 read (which would yield the JP-opcode byte $C3 = 195,
-\ outside the signed [-1..28] range). AC7-d in the story spec was
-\ enumerated but not probed in the dev pass; CR fix 2026-05-19.
+\ CFA (xt < $D400). BANK-OF reads stub byte 1 (target_bank, layout v2
+\ per Story 19.5.2) at xt+1 — for a legacy CFA xt, the discriminator in
+\ src/banking.asm short-circuits to -1 (the fixed-memory marker per
+\ FR-P4-13) without dereferencing the stub-byte read (which would yield
+\ a code byte outside the signed [-1..28] range). AC7-d in the story
+\ spec was enumerated but not probed in the dev pass; CR fix 2026-05-19.
 VARIABLE _p19-2j-bank-of
 VARIABLE _p19-2j-tick
 VARIABLE _p19-2j-pass

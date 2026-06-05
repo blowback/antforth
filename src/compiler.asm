@@ -442,14 +442,14 @@ w_POSTPONE_cf EQU w_POSTPONE_body - 3
 ;   xt-as-stub-address contract. The 16-bit value written here is
 ;   transparently treated as an xt — for Phase-1/2/3 fixed-memory
 ;   words it is the code-field address (the legacy CFA-as-xt
-;   contract preserved by w_EXECUTE_cf's legacy-CFA discriminator);
-;   for Epic-18+ banked words it is the descriptor-stub address
-;   (PD-P4-11 4-byte stub layout in $D4CB+; the stub's address IS
-;   the word's xt per FR-P4-13). COMPILE, performs ZERO inspection
-;   of the value — same 16-bit store-and-advance whether the xt
-;   is a CFA or a stub. The discrimination happens at dispatch time
-;   (w_EXECUTE_cf at src/inner_interpreter.asm:285+), NOT at compile
-;   time.
+;   contract; the folded EXECUTE JP (HL)s it directly per Story
+;   19.5.2); for Epic-18+ banked words it is the descriptor-stub
+;   address (PD-P4-11 4-byte stub layout v2 in $D4CB+; the stub's
+;   address IS the word's xt per FR-P4-13). COMPILE, performs ZERO
+;   inspection of the value — same 16-bit store-and-advance whether
+;   the xt is a CFA or a stub. The discrimination happens at dispatch
+;   time (the stub's own RST $28 → stub_dispatch, src/banking.asm —
+;   ADR 19.5 DR-2), NOT at compile time.
 ;
 ;   This means COMPILE, requires NO functional code edit at Story
 ;   18.3 — the current emit IS the xt-as-stub-address contract.
@@ -674,12 +674,12 @@ w_SEMICOLON_cf:
         ; post-name-= CFA path at src/dictionary.asm:187). Preserves
         ; NFR-P4-1 (Phase-2/3 test surface; 975 PASS) and NFR-P4-16
         ; (byte-identical bank-0 dispatch).
-        ; If current_bank > 0: call stub_allocate (src/banking.asm:780);
+        ; If current_bank > 0: call stub_allocate (src/banking.asm);
         ; overwrite the reserved cell with the returned stub_addr; update
         ; LATEST to stub_addr. The stub's address IS the word's xt
         ; (PD-P4-1; architecture.md:200..211 + 347..363; redesign §2.1).
-        ; Cross-bank dispatch consumes via w_EXECUTE_cf's 3-way path at
-        ; src/inner_interpreter.asm:384..463 (FR-P4-15/16).
+        ; Dispatch consumes via the stub's own RST $28 → stub_dispatch
+        ; (src/banking.asm; Story 19.5.2 / ADR 19.5 DR-2; FR-P4-15/16).
         ; PUSH/POP DE wrap IS required: the bank-N>0 body uses DE as a
         ; scratch (EX DE,HL to set up stub_allocate's target_addr input
         ; and again to extract the stub_addr return). Without the wrap,

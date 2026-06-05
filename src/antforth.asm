@@ -155,6 +155,7 @@ cold_start:
         LD      (IY+UserArea.saved_bank+1),     0
         LD      (IY+UserArea.current_bank),     0
         LD      (IY+UserArea.current_bank+1),   0
+        LD      (IY+UserArea.triple_owner),     0       ; 19.5.2 CR-F1: live triple owned by bank 0
         LD      (IY+UserArea.bank_table_base),   LOW BANK_TABLE_BASE
         LD      (IY+UserArea.bank_table_base+1), HIGH BANK_TABLE_BASE
         LD      (IY+UserArea.bank_count),       0
@@ -227,11 +228,24 @@ cold_start:
         LD      DE, BANK_TABLE_ENTRY_SIZE - 1                   ; stride 5 after INC
         LD      B, BANK_TABLE_CAP - 1                           ; 28 entries
 .bank_here_init:
-        LD      (HL), $00                                       ; here.low
+        LD      (HL), LOW SLOT2_WINDOW_BASE                     ; here.low
         INC     HL
-        LD      (HL), $80                                       ; here.high → $8000
+        LD      (HL), HIGH SLOT2_WINDOW_BASE                    ; here.high → window base ($8000)
         ADD     HL, DE
         DJNZ    .bank_here_init
+        ; RST-$28 stub-dispatch vector install (Story 19.5.2, ADR 19.5
+        ; DR-2 option C). Descriptor stubs are self-dispatching: stub
+        ; byte 0 = $EF (RST $28) so NEXT's blind JP (HL) and the folded
+        ; EXECUTE both vector through here to stub_dispatch
+        ; (src/banking.asm) for bank-aware dispatch. Zero page is RAM
+        ; under CP/M (A2: BIOS IM-1 uses $0038; iz-cpm intercepts only
+        ; $0000/$0005); the vector address is the single EQU
+        ; STUB_DISPATCH_VECTOR (src/constants.asm) per the AC10
+        ; re-vector contingency.
+        LD      A, $C3                                          ; JP opcode
+        LD      (STUB_DISPATCH_VECTOR), A
+        LD      HL, stub_dispatch
+        LD      (STUB_DISPATCH_VECTOR+1), HL
         ;
         ; Auto BANK-MAPPING-ON (FR-P4-11): enable MMU mapping before banner.
         ; Inline body matches w_BANK_MAPPING_ON_cf (src/banking.asm); inlined
@@ -242,7 +256,12 @@ cold_start:
         LD      (IY+UserArea.bank_mapping_state+1), 0
         ; NOP layout-shift slot — Story 17.1 fix for iz-cpm */ underflow hang
         ; (feedback_iz_cpm_test_643_quirk.md). Count tuned empirically per
-        ; Story 17.4 dev-pass post +CL-parser growth.
+        ; Story 17.4 dev-pass post +CL-parser growth; re-tuned at Story
+        ; 19.5.2 (dispatch rework shifted the layout; flat test 643
+        ; tripped at 3 NOPs) and again at the 19.5.2 CR pass (+19 B
+        ; triple-restore/rpush delta; clean at 5).
+        NOP
+        NOP
         NOP
         NOP
         NOP

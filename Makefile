@@ -339,7 +339,7 @@ test-repl-banking: $(TARGET)
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_18_1_A=$$(echo "$$OUTPUT" | awk '/---probe-18.1-a-start---$$/{p=1; next} /---probe-18.1-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_1_A" | grep -q 'probe-18.1-a-pass-stub-A-fixed-memory-layout-correct' && ! echo "$$PROBE_18_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-a-end---$$'; then \
-		echo "PASS: probe-18.1-a — stub-A byte layout (FF / C3 / lo / hi) correct for fixed-memory target under $(IZCPM_BANKING)"; \
+		echo "PASS: probe-18.1-a — stub-A byte layout v2 (EF / FF / lo / hi) correct for fixed-memory target under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: probe-18.1-a — stub-A byte layout assertion missing or mismatched"; \
 		echo "  PROBE_18_1_A: $$PROBE_18_1_A"; exit 1; \
@@ -347,32 +347,32 @@ test-repl-banking: $(TARGET)
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_18_1_B=$$(echo "$$OUTPUT" | awk '/---probe-18.1-b-start---$$/{p=1; next} /---probe-18.1-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_1_B" | grep -q 'probe-18.1-b-pass-stub-B-banked-target-layout-correct' && ! echo "$$PROBE_18_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-b-end---$$'; then \
-		echo "PASS: probe-18.1-b — stub-B byte layout (05 / C3 / 00 / 82) correct for banked target under $(IZCPM_BANKING)"; \
+		echo "PASS: probe-18.1-b — stub-B byte layout v2 (EF / 05 / 00 / 82) correct for banked target under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: probe-18.1-b — stub-B byte layout assertion missing or mismatched"; \
 		echo "  PROBE_18_1_B: $$PROBE_18_1_B"; exit 1; \
 	fi
-	@# Story 18.2 AC7+AC8 — sentinel-trampoline + EXIT-sentinel probes
-	@# (Probe-18.2-A/B). Probe-18.2-A synthesizes a 3-cell sentinel frame
-	@# on the R-stack via three >R pushes; the implicit `;` EXIT pops the
-	@# sentinel and matches cross_bank_return, dispatching the trampoline.
-	@# The trampoline pops caller_bank + target_addr, restores the bank
-	@# (no-op since caller_bank == current_bank == 0), and JPs to
-	@# target_addr = xt of EXIT; the chained EXIT_CODE pops the DOCOL-
-	@# pushed _probe-18.2-a IP (CP no match → NEXT resumes caller).
-	@# Probe-18.2-B runs 100 intra-bank colon-body call/EXIT cycles and
-	@# asserts BANK@ unchanged across the loop (exercises AC3 miss-path +
-	@# AC4 intra-bank invariance — the deeper FR-P4-19 fitness witness is
-	@# the 975-PASS test-repl baseline which exercises EXIT_CODE on every
-	@# colon-body return). Sentinel-bounded greps follow the Story 17.5.1
-	@# pattern (M4 end-sentinel-on-its-own-line check).
+	@# Story 19.5.2 (ADR 19.5 DR-2) — RST self-dispatch witness
+	@# (probe-19.5.2-a, the retire-and-replace successor of probe-18.2-a:
+	@# the synthesized sentinel frame + EXIT_CODE byte-extraction it used
+	@# both ceased to exist with option C). The probe (stub-allocate)s a
+	@# fixed-memory stub for a colon word and EXECUTEs the stub xt: the
+	@# folded EXECUTE's blind JP (HL) lands on stub byte 0 = RST $28 →
+	@# $0028 vector → stub_dispatch intra path → DOCOL → body → EXIT.
+	@# The 12345 result is the end-to-end witness.
+	@# Probe-18.2-B (kept) runs 100 intra-bank colon-body call/EXIT
+	@# cycles and asserts BANK@ unchanged across the loop (post-19.5.2
+	@# the plain pop + NEXT is the ONLY EXIT path — the deeper FR-P4-19
+	@# fitness witness is the 975-PASS test-repl baseline which exercises
+	@# EXIT_CODE on every colon-body return). Sentinel-bounded greps
+	@# follow the Story 17.5.1 pattern (M4 end-sentinel-on-its-own-line).
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_18_2_A=$$(echo "$$OUTPUT" | awk '/---probe-18.2-a-start---$$/{p=1; next} /---probe-18.2-a-end---$$/{p=0} p') && \
-	if echo "$$PROBE_18_2_A" | grep -q 'probe-18.2-a-pass-cross-bank-EXIT-trampoline-restored' && ! echo "$$PROBE_18_2_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.2-a-end---$$'; then \
-		echo "PASS: probe-18.2-a — sentinel-trampoline restored bank-0 and resumed caller under $(IZCPM_BANKING)"; \
+	PROBE_19_5_2_A=$$(echo "$$OUTPUT" | awk '/---probe-19.5.2-a-start---$$/{p=1; next} /---probe-19.5.2-a-end---$$/{p=0} p') && \
+	if echo "$$PROBE_19_5_2_A" | grep -q 'probe-19.5.2-a-pass-rst-stub-dispatch-end-to-end' && ! echo "$$PROBE_19_5_2_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-19.5.2-a-end---$$'; then \
+		echo "PASS: probe-19.5.2-a — RST-$$28 stub self-dispatch end-to-end (EXECUTE → JP (HL) → RST → handler → DOCOL → 12345) under $(IZCPM_BANKING)"; \
 	else \
-		echo "FAIL: probe-18.2-a — trampoline did not restore bank / EXIT chain did not resume cleanly"; \
-		echo "  PROBE_18_2_A: $$PROBE_18_2_A"; exit 1; \
+		echo "FAIL: probe-19.5.2-a — RST stub dispatch chain did not return 12345"; \
+		echo "  PROBE_19_5_2_A: $$PROBE_19_5_2_A"; exit 1; \
 	fi
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_18_2_B=$$(echo "$$OUTPUT" | awk '/---probe-18.2-b-start---$$/{p=1; next} /---probe-18.2-b-end---$$/{p=0} p') && \
@@ -708,6 +708,21 @@ test-repl-banking-isolated-19-3: $(TARGET)
 		echo "PASS: probe-19.3.1-suite (isolated) — Story 19.3.1 suite end-sentinel present"; \
 	else \
 		echo "FAIL: probe-19.3.1-suite (isolated) — Story 19.3.1 end-sentinel missing"; \
+		exit 1; \
+	fi && \
+	for pid in b c d; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.5.2-"p"-start---";re="---probe-19.5.2-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-19.5.2-$$pid-end---$$"; then \
+			echo "PASS: probe-19.5.2-$$pid (isolated) — Story 19.5.2 dispatch-rework witness (result=-1) under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-19.5.2-$$pid (isolated) — Story 19.5.2 witness failed (b: non-DOCOL cross-bank thunk return; c: CATCH bank restore; d: CR-F1 caught-THROW triple restore)"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.5.2-suite-end---$$'; then \
+		echo "PASS: probe-19.5.2-suite (isolated) — Story 19.5.2 suite end-sentinel present"; \
+	else \
+		echo "FAIL: probe-19.5.2-suite (isolated) — Story 19.5.2 end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
 	fi
 

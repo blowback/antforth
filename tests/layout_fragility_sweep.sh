@@ -11,24 +11,27 @@
 #   tests/layout_fragility_sweep.sh before 0 1 2 4 8 16 17 32 33 64 128
 #   tests/layout_fragility_sweep.sh after  0 1 2 4 8 16 32 64 128
 #
-# Knob positions (controlled layout shift, per Story 19.5.0 Sub-1.1/1.2):
-#   before — DS N inserted immediately BEFORE the cross_bank_return label:
-#            shifts cross_bank_return (and everything after it, incl.
+# Knob positions (controlled layout shift, per Story 19.5.0 Sub-1.1/1.2;
+# ANCHOR MIGRATED at Story 19.5.2: cross_bank_return retired → the
+# layout-equivalent xbank_restore label in the same src/banking.asm
+# region is the knob anchor now):
+#   before — DS N inserted immediately BEFORE the xbank_restore label:
+#            shifts xbank_restore (and everything after it, incl.
 #            kernel_end and the runtime dictionary base) relative to all
 #            EARLIER kernel code/threads (EXIT_CODE, banking DEFWORD
-#            threads below the trampoline).
-#   after  — DS N inserted immediately AFTER the trampoline body:
+#            threads below the dispatch block).
+#   after  — DS N inserted immediately AFTER the xbank_restore body:
 #            shifts kernel_end / dictionary base relative to
-#            cross_bank_return, which stays put relative to earlier code.
+#            xbank_restore, which stays put relative to earlier code.
 #
-# Per N the driver records: kernel size, cross_bank_return / kernel_end
+# Per N the driver records: kernel size, xbank_restore / kernel_end
 # addresses (from the sjasmplus --sym dump), verdict, and the last
 # probe sentinel emitted before death.
 #
 # Verdict classification:
-#   PASS — full sequence ran: iron-spike end-sentinel AND probe-18.2-a
-#          end-sentinel AND final-probe (19.3-h) end-sentinel present,
-#          no FAIL: line.
+#   PASS — full sequence ran: iron-spike end-sentinel AND probe-19.5.2-a
+#          end-sentinel (probe-18.2-a's 19.5.2 replacement) AND
+#          final-probe (19.3-h) end-sentinel present, no FAIL: line.
 #   HANG — output truncated (emulator hung until timeout, exited early
 #          on a wild jump, or died mid-probe). Last sentinel column
 #          says where.
@@ -51,8 +54,8 @@ SYM=/tmp/sweep.sym
 COM=/tmp/sweep_antforth.com
 
 case "$POS" in
-  before) ANCHOR='^cross_bank_return:' ; MODE=insert_before ;;
-  after)  ANCHOR='transfer control; no NEXT here' ; MODE=insert_after ;;
+  before) ANCHOR='^xbank_restore:' ; MODE=insert_before ;;
+  after)  ANCHOR='resume caller in restored bank' ; MODE=insert_after ;;
   *) echo "knob position must be 'before' or 'after'" >&2; exit 2 ;;
 esac
 
@@ -86,9 +89,9 @@ for N in "$@"; do
     awk -v n="$N" -v a="$ANCHOR" '{print} $0 ~ a {printf "        DS      %s              ; LAYOUT-SWEEP KNOB (19.5.0)\n", n}' \
         "$BAK" > "$SRC"
   fi
-  # Fail loudly if the anchor vanished (e.g. 19.5.2 retires the
-  # cross_bank_return trampoline body) — a silent no-match would sweep
-  # the UNMODIFIED kernel at every N and report a meaningless table.
+  # Fail loudly if the anchor vanished (e.g. a future story renames or
+  # moves xbank_restore) — a silent no-match would sweep the UNMODIFIED
+  # kernel at every N and report a meaningless table.
   cmp -s "$BAK" "$SRC" && {
     echo "ANCHOR-NOT-FOUND: '$ANCHOR' in $SRC — knob not inserted; update the anchor" >&2
     exit 1; }
@@ -97,7 +100,7 @@ for N in "$@"; do
     printf '%-6s %-6s BUILD-ERROR\n' "$POS" "$N"; continue; }
 
   SIZE=$(wc -c < "$COM" | tr -d ' ')
-  XBR=$(awk -F'0x' '/^cross_bank_return: /{print $2}' "$SYM")
+  XBR=$(awk -F'0x' '/^xbank_restore: /{print $2}' "$SYM")
   KEND=$(awk -F'0x' '/^kernel_end: /{print $2}' "$SYM")
 
   timeout 30 iz-cpm-banking --disk-a disk/a --disk-b disk/b "$COM" < "$INPUT" > "$OUT" 2>/dev/null
@@ -105,7 +108,7 @@ for N in "$@"; do
 
   LAST=$(printf '%s\n' "$CLEAN" | grep -ao -- '---[a-z0-9.-]*---' | tail -1)
   if printf '%s\n' "$CLEAN" | grep -aq -- '---iron-spike-end---' \
-     && printf '%s\n' "$CLEAN" | grep -aq -- '---probe-18.2-a-end---' \
+     && printf '%s\n' "$CLEAN" | grep -aq -- '---probe-19.5.2-a-end---' \
      && printf '%s\n' "$CLEAN" | grep -aq -- '---probe-19.3-h-end---'; then
     if printf '%s\n' "$CLEAN" | grep -aq 'FAIL:'; then VERDICT=FAIL; else VERDICT=PASS; fi
   else

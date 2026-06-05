@@ -98,6 +98,13 @@ EXECUTE                           \ ( body-addr )
 \ defer block to the active EXECUTE @ ( verdict) sequence below in
 \ comment form.
 \
+\ STORY 19.5.2 NOTE: the defect class described above is FIXED (ADR
+\ 19.5 DR-2 option C — sentinel-trampoline retired; non-DOCOL targets
+\ return uniformly via xbank_thunk/xbank_restore; see probe-19.5.2-b
+\ below, which exercises this exact shape minus the cross-bank `@`).
+\ THIS DEFER STUB STAYS — full re-enablement incl. the `@` data read
+\ is Story 19.5.3 scope per its AC8 fence.
+\
 \ Original active form (kept as comment for future re-test):
 \   5 BANK!
 \   CREATE _p193f-tgt 99 ,
@@ -146,4 +153,75 @@ FORTH-WORDLIST 2 + 24 CELLS + @     \ ( bucket24-pre bucket24-post )
 ." ---probe-19.3.1-a-end---" CR
 
 ." ---probe-19.3.1-suite-end---" CR
+
+\ === Story 19.5.2 witnesses (ADR 19.5 DR-2 option C; distinct id family
+\ so the F/G DEFER grading clauses above stay untouched) ===
+\
+\ Probe-19.5.2-B — non-DOCOL cross-bank witness (Q2 default): cross-bank
+\ EXECUTE from bank 0 of a bank-5 CREATE'd word — the EXACT shape that
+\ hung as Probe-19.3-F under the retired sentinel-trampoline (DOVAR has
+\ no DOCOL/EXIT pair; NEXT dereferenced DE = sentinel as a thread cell
+\ and halted). Post-19.5.2: stub_dispatch's cross path sets DE =
+\ xbank_thunk; DOVAR pushes body-addr and NEXTs with IP = thunk →
+\ xbank_restore → caller resumes in bank 0. Asserts (1) the dispatch
+\ RETURNS at all (the hang class), (2) body-addr is window-resident
+\ (≥ $8000), (3) BANK@ = 0 after the thunk return. The cross-bank `@`
+\ data read stays OUT (FR-P4-26 pointer hazard + probe-F re-enablement
+\ is 19.5.3 scope — F/G DEFER stubs above are deliberately untouched).
+." ---probe-19.5.2-b-start---" CR
+5 BANK!
+CREATE _p1952b-tgt 99 ,
+LATEST @                          \ ( stub-xt )
+0 BANK!
+EXECUTE                           \ ( body-addr ) — formerly the 19.3-F hang
+$8000 U< 0=                       \ ( body-in-window? )
+BANK@ 0 =                         \ ( body-ok? bank-restored? )
+AND                               \ ( verdict-flag )
+." result=" . CR
+." ---probe-19.5.2-b-end---" CR
+
+\ Probe-19.5.2-C — AC6 CATCH-cross-bank bank-restore witness: bank-5
+\ colon word THROWs; CATCH wraps from bank 0. The cross-bank dispatch
+\ frame + thunk-IP on the R-stack are ABANDONED wholesale by THROW's
+\ snap-back (xbank_restore never runs) — pre-AC6 current_bank stayed 5;
+\ post-AC6 THROW's caught path MMU-restores the catcher's bank from
+\ CATCH frame +8. Asserts THROW code delivered (77) AND BANK@ = 0.
+\ The full banked NFR-P4-8 variant is 19.5.3 scope.
+." ---probe-19.5.2-c-start---" CR
+5 BANK!
+: _p1952c-thrower 77 THROW ;
+LATEST @                          \ ( stub-xt )
+0 BANK!
+CATCH                             \ ( 77 ) — cross-bank entry, caught THROW
+77 =                              \ ( code-ok? )
+BANK@ 0 =                         \ ( code-ok? bank-restored? )
+AND                               \ ( verdict-flag )
+." result=" . CR
+." ---probe-19.5.2-c-end---" CR
+
+\ Probe-19.5.2-D — CR-F1 caught-THROW triple-restore witness: a bank-0
+\ thrower performs a REAL `5 BANK!` (legal — its body sits below $8000,
+\ so the F1 window guard passes) before THROWing. The real BANK! swaps
+\ the live (HERE, LATEST, wordlist_head) triple to bank 5's; THROW's
+\ caught path must swap it back (CATCH frame +9 / bank_triple_swap —
+\ src/exception.asm). Pre-fix the caught path restored only MMU +
+\ current_bank: BANK@ read 0 while the live HERE stayed bank 5's
+\ (≥ $8000) and the next `:`/CREATE compiled against bank-5 HERE.
+\ Asserts code delivered (88), BANK@ = 0, AND bank-0 HERE unchanged
+\ across the caught cross-triple THROW.
+." ---probe-19.5.2-d-start---" CR
+: _p1952d-thrower 5 BANK! 88 THROW ;
+HERE                              \ ( here-pre )
+' _p1952d-thrower                 \ ( here-pre xt ) — tick: bank-0 words have
+                                  \ no stub-xt; LATEST @ is NOT an xt here
+CATCH                             \ ( here-pre 88 ) — caught after real BANK!
+88 =                              \ ( here-pre code-ok? )
+BANK@ 0 =                         \ ( here-pre code-ok? bank-ok? )
+AND                               \ ( here-pre flags )
+SWAP HERE =                       \ ( flags here-restored? )
+AND                               \ ( verdict-flag )
+." result=" . CR
+." ---probe-19.5.2-d-end---" CR
+
+." ---probe-19.5.2-suite-end---" CR
 BYE

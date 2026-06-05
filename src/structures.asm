@@ -50,4 +50,9 @@ bank_count          DW      0       ; FR-P4-3: count of active banks (= length o
                                     ; `Deliberately-omitted` in v2.0 per docs/ans-forth-core-compliance.md:453,458).
 stub_alloc_tail     DW      0       ; PD-P4-11 (architecture.md:347..365): descriptor-stub allocator next-free pointer; Story 18.1.
                                     ; COLD sets to STUB_ALLOC_BASE = $D4CB (src/constants.asm); stub_allocate writes 4 B + advances cell.
+triple_owner        DB      0       ; Story 19.5.2 CR-F1: bank index that owns the live (HERE, LATEST,
+                                    ; wordlist_head) triple. Diverges from current_bank only inside a
+                                    ; cross-bank dispatch window (stub_dispatch does NOT swap the triple).
+                                    ; Written by COLD (0), real BANK! (new bank), and THROW's caught-path
+                                    ; triple restore (CATCH frame +9). Single byte: bank index ≤ 28.
     ENDS

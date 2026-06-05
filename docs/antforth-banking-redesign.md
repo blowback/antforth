@@ -41,11 +41,15 @@ Three options were named for how an `xt` carries bank information:
 
 Why it matters: **(γ) collapses S1 (cross-bank EXIT) + S6 (`EXECUTE`) + S7 (`COMPILE,`) into one artifact.** Single most important design call in the banking effort. Endorsed by Ant during the session.
 
-### 2.2 S1 — Cross-bank EXIT (the (b) sentinel decision)
+> **Stub layout v2 (Story 19.5.2 / ADR 19.5 DR-2):** the shipped 4-byte stub is **self-dispatching** — `[$EF = RST $28][target_bank][target_addr.lo][target_addr.hi]`. `NEXT`'s blind `JP (HL)` and the folded 4-byte `EXECUTE` both land on byte 0; the `RST $28` vectors through `$0028` (COLD-installed `JP stub_dispatch`) to the kernel handler, which takes the intra path (same bank or `$FF` fixed-memory marker: `HL ← target CF`, `JP (HL)`) or the cross path (2-cell R-stack frame `(caller_bank, caller_IP)`, `DE ← xbank_thunk`, MMU switch, `JP` target CF). 0 T-states added per thread step for non-stub words (NFR-P4-1 by construction).
+
+### 2.2 S1 — Cross-bank EXIT (the (b) sentinel decision — SUPERSEDED)
 
 The obsolete doc proposed a `BIT 7,H` heuristic on the return-address high byte to detect cross-bank returns. **Broken** — user code lives at $8000-$BFFF, so bit 7 is always set on every user-code return-address; the heuristic detects nothing.
 
-**Replacement:** sentinel-tagged returns. Intra-bank returns push 1 cell (zero overhead). Cross-bank returns push three cells: `(sentinel_addr, caller_bank, target_addr)`. A single `cross_bank_return` trampoline in fixed memory restores the caller's bank then jumps to the target. The sentinel is a fixed-memory address recognised by `EXIT`.
+**(b) as shipped at Epic 18:** sentinel-tagged returns. Intra-bank returns push 1 cell (zero overhead). Cross-bank returns push three cells: `(sentinel_addr, caller_bank, target_addr)`. A single `cross_bank_return` trampoline in fixed memory restores the caller's bank then jumps to the target. The sentinel is a fixed-memory address recognised by `EXIT`.
+
+> **SUPERSEDED by ADR 19.5 DR-2 (Story 19.5.2).** The sentinel contract assumed a DOCOL/EXIT pair in every cross-bank callee — non-DOCOL targets (`VARIABLE`/`CREATE` references, Probe-19.3-F) hung. Option C replaces it: the **dispatch site** (`stub_dispatch`'s cross path) pushes a 2-cell frame `(caller_bank, caller_IP)` and pre-loads `IP = xbank_thunk` (one fixed-memory thread cell → `xbank_restore`). DOCOL targets return through their terminal EXIT popping the thunk-IP; DOVAR/DOCON/DEFCODE targets `NEXT` directly with the thunk-IP — **one uniform return path for every target shape**. `EXIT` is back to plain pop + NEXT (FR-P4-19 exact); the sentinel discriminator, the trampoline, and EXECUTE's 3-way are deleted. Cross-bank R-stack pressure drops from 3+1 cells to 2 per nesting level (the FR-P4-21 gotcha improves from 4× to 2× the intra-bank rate).
 
 ### 2.3 ALLOCATE futures (separate (α) (β) (γ′) reuse — Phase 5+)
 
@@ -55,10 +59,10 @@ The Greek labels reappear in a future-proofing sketch for ALLOCATE/heap design. 
 
 **Compiler-emitted, transparent.** `COMPILE,` always emits the stub address (xt). The stub itself decides intra-bank vs cross-bank dispatch at run time. From a user's vantage: type `5 BANK!`, then define and call words like always — banked `:` is **indistinguishable from flat `:`**. Existing programs run unmodified.
 
-The `COMPILE,` mechanism does not need to know whether the target is in the same bank as the call site. The stub handles it. This means:
+The `COMPILE,` mechanism does not need to know whether the target is in the same bank as the call site. The stub handles it — **literally, post-Story-19.5.2**: the stub's own `RST $28` byte performs the dispatch via the kernel `stub_dispatch` handler. This means:
 
-- Same-bank call: stub jumps directly to target body (one extra `JP` overhead vs flat dispatch).
-- Cross-bank call: stub switches MMU to target bank, pushes sentinel-tagged return, jumps to target body.
+- Same-bank call (or `$FF` fixed-memory target): handler loads the target CF from stub bytes 2..3 and `JP (HL)`s — the dispatch cost is the RST + handler intra path (~107 T, cheaper than the retired EXECUTE 3-way's intra path).
+- Cross-bank call: handler pushes the 2-cell return frame `(caller_bank, caller_IP)` on the R-stack, sets `IP = xbank_thunk`, switches the MMU to the target bank, and jumps to the target CF. The return routes through `xbank_restore` (bank + IP restore) uniformly for DOCOL and non-DOCOL targets.
 
 The user-visible thunk word from the obsolete doc (`5 THUNK-TO-USER-BANK5 GRAPHICS-APP`) is deleted.
 

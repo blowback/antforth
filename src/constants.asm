@@ -20,11 +20,36 @@ BANK_TABLE_BASE EQU     0xD400
 ; Output region for the descriptor-stub allocator (src/banking.asm).
 ; Sits immediately after active_pages[] in the reclaimed $D400-$DBFF
 ; CCP region. PD-P4-11 (architecture.md:347..365) pins the per-stub
-; size at 4 B: byte 0 = signed target_bank (-1 = fixed-memory marker;
-; 0..28 = active bank index); bytes 1..3 = JP target_addr (C3 lo hi).
-; Stub address IS the word's xt per PD-P4-1 + redesign §2.1.
+; size at 4 B — layout v2 per ADR 19.5 DR-2 (Story 19.5.2): byte 0 =
+; $EF (RST $28, self-dispatch); byte 1 = signed target_bank (-1 =
+; fixed-memory marker; 0..28 = active bank index); bytes 2..3 =
+; target_addr lo/hi. Stub address IS the word's xt per PD-P4-1 +
+; redesign §2.1.
 ; ACTIVE_PAGES_BASE + ACTIVE_PAGES_SIZE are defined in src/banking.asm.
 STUB_ALLOC_BASE EQU     ACTIVE_PAGES_BASE + ACTIVE_PAGES_SIZE  ; $D4CB
+
+; === Phase-4 RST-$28 stub-dispatch vector (Story 19.5.2, ADR 19.5 DR-2) ===
+; Zero-page RST vector claimed for descriptor-stub self-dispatch. The
+; stub's byte 0 ($EF = RST $28) transfers here; COLD installs
+; `JP stub_dispatch` (src/banking.asm) at this address. Zero page is
+; RAM under CP/M; BIOS IM-1 uses $0038; iz-cpm intercepts only
+; $0000/$0005 (ADR assumption A2 — emulator-verified Story 19.5.2,
+; hardware-verified at 19.5.4). Contingency per AC10: if the 19.5.4 HW
+; pass finds $0028 occupied, re-vector to $0008/$0010/$0018/$0020 by
+; editing this one EQU plus the RST opcode byte in stub_allocate
+; ($EF = RST $28; $CF/$D7/$DF/$E7 = RST $08/$10/$18/$20).
+STUB_DISPATCH_VECTOR EQU 0x0028
+
+; === Phase-4 MMU slot-2 portal window base (Story 19.5.2 CR pass) ===
+; The MMU slot-2 window is $8000..$BFFF (16 KiB; ports 0x70-0x73 select
+; the page per slot — redesign §5.1/§5.2; geometry is fixed MicroBeast
+; silicon). Single edit point for the window-geometry literals: the F1
+; window guard's high-byte compare (src/banking.asm w_BANK_STORE_cf),
+; the bank-N HERE COLD-init high byte (src/antforth.asm), and the
+; +BANK candidate-page probe address (src/banking.asm cl_probe_and_add)
+; all derive from this EQU — parallel to STUB_DISPATCH_VECTOR's
+; single-EQU re-vector contingency above.
+SLOT2_WINDOW_BASE EQU 0x8000
 
 ; === BDOS Function Numbers ===
 P_TERMCPM       EQU     0               ; BDOS function 0: terminate program
