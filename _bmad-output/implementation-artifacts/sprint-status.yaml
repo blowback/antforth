@@ -531,6 +531,30 @@ development_status:
   # → done.
   19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: done
   19-5-3-compiled-body-verification-banked-catch-variant: backlog
+  # 19-5-4 evidence anchor (HW UAT 2026-06-06, transcripts beastty-
+  # 20260606-112043.bin + -113348.bin): A2 DONE ($28 C@ → C3). A1
+  # PASS config ✓ (m1..m5+survived, calibration 27196 exact); A1 HANG
+  # config ✓ (m1..m3 then crash-restart — DR-1 "dies identically"
+  # CONFIRMED on silicon); A1 GUARD config INVALID — died -13 with a
+  # 10×$7E garbage token at the first window-resident WORD parse
+  # (HERE=32800), BEFORE reaching _victim; same fixture via INCLUDE is
+  # CLEAN under iz-cpm-banking (m1+e273). A3 ✓ (intra-bank EXECUTE
+  # into slot-2 → 7 — the old 19.2-F HW hang shape is dead; cross-bank
+  # DOVAR → 32796/bank 0). F2 HW-verified (first-visit HERE = 32768).
+  # NEW DIVERGENCE HYPOTHESIS (DIV-1): IN A,(0x72) MMU readback
+  # (banking.asm:417 cl_probe_and_add restore; docstring claims "real
+  # MicroBeast firmware exposes the same read-back" — never HW-
+  # verified) floats on real silicon → +BANK restores a random page
+  # into slot 2 → window-resident bank-0 dictionary ops flaky per
+  # session (STRADH lucky RAM page, STRADG non-RAM → $7E floats);
+  # retro-explains original Probe-19.2-F HW-only hang (post-+BANK
+  # boot, no explicit BANK! re-assert). All passing tests touched the
+  # window only after explicit BANK! (table OUT, no IN) — consistent.
+  # Confirming diagnostic issued (window canary pre/post 0 BANK!,
+  # multi-session). Proposed fix: restore from active_pages[
+  # current_bank] when bank_count>0, else leave candidate mapped
+  # (bootstrap probe IS the portal page). F1 -273 GUARD signature on
+  # HW still UNVERIFIED pending fix + STRADG re-run.
   19-5-4-hw-investigation-epic-close-out-tag: backlog
   epic-19-5-retrospective: optional
 
