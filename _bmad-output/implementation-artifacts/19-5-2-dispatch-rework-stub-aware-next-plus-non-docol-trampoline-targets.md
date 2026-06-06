@@ -1,6 +1,6 @@
 # Story 19.5.2: Dispatch rework — self-dispatching RST stub + return thunk (option C)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -342,6 +342,7 @@ The handler/restore as-built figures ran +5/+3 over the ADR's lines (sketch sums
 
 ## Change Log
 
+- 2026-06-06 (HW smoke): Deferred-smoke recipe run on real MicroBeast (transcript `~/Downloads/beastty-20260606-112043.bin`). All steps PASS: **A2 hardware-verified** (`28 C@` → `C3` — $0028 claimable, vector survives in zero-page RAM; no re-vector contingency needed), cross-bank DOCOL dispatch end-to-end (`5 BANK! : T1 42 ; LATEST @ 0 BANK! EXECUTE . BANK@ .` → `42 0`), **CR-F1 witnessed on silicon** (`' t2 CATCH` → `88 0`, `HERE =` → `-1`, post-catch `: t3 42 ;` compiles and runs). 19.5.4 retains A1 (straddle signature) + A3 (Probe-19.2-F DOVAR shape — this smoke ran the DOCOL shape). Status → done.
 - 2026-06-06 (code-review pass): 18 candidates across 7 finder angles; 11 refuted (incl. FR-P4-26 pointer hazard and uncaught-THROW bank state — both documented scope fences; JR→JP conversions verified necessary at +130 displacement), 7 fixed:
   - **CR-F1 (CONFIRMED correctness defect)**: THROW's caught path restored MMU + current_bank from frame +8 but NOT the live (HERE, LATEST, wordlist_head) triple — a real `BANK!` between CATCH and THROW left the catcher running with the foreign triple, and a later same-bank `BANK!` made the corruption sticky (saved the foreign triple over the table slot). Fix: `triple_owner` UserArea byte (written by COLD / real BANK! / caught THROW), CATCH records it in the formerly-unwritten frame +9 slot, caught path swaps the triple back via `bank_triple_swap` — the swap cascade factored out of `w_BANK_STORE_cf` so both sites share it. Witness: new probe-19.5.2-d (bank-0 thrower does real `5 BANK!` then `88 THROW`; asserts 88 + BANK@ 0 + HERE unchanged); probe-19.5.2-c keeps the skip-shape (dispatch-only THROW) covered. Probe note: bank-0 runtime words have no stub-xt — the probe uses `'`, not `LATEST @`.
   - stub_dispatch cross-path frame pushes routed through `rpush_de` (−13 B; one R-stack push convention; subsumes the `LD (IX+1),0` encoding finding).

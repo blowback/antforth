@@ -524,7 +524,12 @@ development_status:
   # 7 B (correctness fix; flag at epic close / NFR-P4-3 re-baseline).
   # NOP slot re-tuned 4→5 (flat 643). All nine surfaces re-green incl.
   # probe-19.5.2-d.
-  19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: review
+  # HW smoke 2026-06-06 (transcript ~/Downloads/beastty-20260606-112043.bin):
+  # A2 hardware-verified ($28 C@ → C3; no re-vector needed); cross-bank
+  # DOCOL dispatch 42/0; CR-F1 on silicon (CATCH → 88 0, HERE intact -1,
+  # post-catch compile clean). 19.5.4 retains A1 + A3 (DOVAR shape).
+  # → done.
+  19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: done
   19-5-3-compiled-body-verification-banked-catch-variant: backlog
   19-5-4-hw-investigation-epic-close-out-tag: backlog
   epic-19-5-retrospective: optional
