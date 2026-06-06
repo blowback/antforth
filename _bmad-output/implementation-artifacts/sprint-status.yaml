@@ -550,11 +550,26 @@ development_status:
   # retro-explains original Probe-19.2-F HW-only hang (post-+BANK
   # boot, no explicit BANK! re-assert). All passing tests touched the
   # window only after explicit BANK! (table OUT, no IN) — consistent.
-  # Confirming diagnostic issued (window canary pre/post 0 BANK!,
-  # multi-session). Proposed fix: restore from active_pages[
-  # current_bank] when bank_count>0, else leave candidate mapped
-  # (bootstrap probe IS the portal page). F1 -273 GUARD signature on
-  # HW still UNVERIFIED pending fix + STRADG re-run.
+  # DIV-1 CONFIRMED 2026-06-06 (diagnostic transcript beastty-
+  # 20260606-120930.bin, 4 sessions): boot-mapped window reads a
+  # constant $4E = C@'s own LD C,(HL) opcode and writes never stick —
+  # open-bus self-opcode echo, i.e. the restored page is UNMAPPED;
+  # after explicit `0 BANK!` the canary always sticks and persists
+  # across antforth restarts (real RAM). $7E tilde token = LD A,(HL)
+  # echo on WORD/FIND's read path. STRADH's flukish mid-compile
+  # success = capacitive read-after-write echo (timing-dependent — the
+  # DR-1-era flakiness signature; exact timing model left open, fix
+  # does not depend on it). FIX LANDED same day: cl_probe_and_add
+  # restores slot 2 from active_pages[current_bank] (bank_count>0)
+  # or leaves the candidate mapped (bootstrap probe IS the portal
+  # page); IN (0x72) retired. +13 B → 26953; epic cumulative 120 B —
+  # 20 B OVER the ~100 B guidance (correctness fixes; reconcile at
+  # close-out). All surfaces green post-fix (flat 975/0, banking 63/0,
+  # isolated+straddle+skip 47/0+2 DEFER); fixed-pad HW fixtures
+  # re-validated against the +13 B layout (P/H/G configs intact,
+  # expected first-HERE now 27209). REMAINING HW: re-run STRADG
+  # (expect [m1] + error -273 — closes A1-GUARD + F1 -273 on HW) +
+  # boot-window canary (expect live without priming).
   19-5-4-hw-investigation-epic-close-out-tag: backlog
   epic-19-5-retrospective: optional
 

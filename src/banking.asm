@@ -347,11 +347,17 @@ w_BANKS_cf:
 ;   byte at $8000 happens to equal $5A; $A5 catches that case because
 ;   the original byte cannot equal both sentinels.
 ;
-;   Saved caller slot-2 page is read via `IN A, (0x72)` (port readback —
-;   iz-cpm-banking cpm_machine.rs:138 returns bank_map[2]; real
-;   MicroBeast firmware exposes the same read-back). This avoids the
-;   chicken-and-egg of needing a populated active_pages[current_bank]
-;   on the FIRST +BANK call (when bank_count = 0 at boot).
+;   Caller slot-2 restore is TABLE-based: active_pages[current_bank]
+;   when bank_count > 0, else the candidate stays mapped (the bootstrap
+;   probe is by CL construction the portal page itself). The original
+;   implementation read the caller page via `IN A, (0x72)` on the
+;   docstring claim "real MicroBeast firmware exposes the same
+;   read-back" — DIV-1 (HW UAT 2026-06-06) falsified that claim: the
+;   readback floats on real silicon, so every probe restored an
+;   unmapped (open-bus) page into slot 2, leaving the post-boot window
+;   dead until the first explicit BANK!. Retro-explains the original
+;   Probe-19.2-F HW-only hang. iz-cpm-banking implements the readback
+;   (cpm_machine.rs:138) and hid the divergence.
 ;
 ;   No dedup at this surface (Q2 dev-pass disposition). Duplicate
 ;   pages append; downstream -BANK removes the first match, leaving
@@ -414,8 +420,32 @@ w_PLUS_BANK_cf:
 ; ============================================================
 cl_probe_and_add:
         LD      C, A                                ; C = candidate page
-        IN      A, (0x72)                           ; A = caller_slot2_page
-        LD      B, A                                ; B = caller_slot2_page (saved)
+        ; --- Restore-target selection (DIV-1 fix, 2026-06-06): restore
+        ;     slot 2 from the TABLE, never from `IN A,(0x72)` readback.
+        ;     HW UAT (transcripts beastty-20260606-113348/-120930.bin)
+        ;     proved the readback floats on real silicon: the restored
+        ;     page is open bus — reads echo the reading instruction's
+        ;     own opcode ($4E = C@'s LD C,(HL); $7E = LD A,(HL) → the
+        ;     STRADG tilde token) and writes don't stick. The emulator
+        ;     hid it (cpm_machine.rs:138 implements the readback) —
+        ;     same gap class as port-0x74 BANK-MAPPING-OFF. Restore =
+        ;     active_pages[current_bank] when the list is non-empty;
+        ;     on the bootstrap probe (bank_count = 0, which is by CL
+        ;     construction the portal page itself) the candidate stays
+        ;     mapped. Edge cases: a FAILED bootstrap probe leaves the
+        ;     failed candidate mapped (window dead — no worse than the
+        ;     pre-fix open bus); post--BANK current_bank staleness is
+        ;     the documented Q3-(a) "user re-issues BANK!" semantics. ---
+        LD      B, A                                ; default restore = candidate (bootstrap)
+        LD      A, (IY+UserArea.bank_count)
+        OR      A
+        JR      Z, .cpa_probe                       ; empty list → candidate stays
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      A, (IY+UserArea.current_bank)
+        ADD     A, L                                ; idx ≤ 28; $AE+28=$CA (no carry)
+        LD      L, A
+        LD      B, (HL)                             ; B = active_pages[current_bank]
+.cpa_probe:
         LD      A, C
         OUT     (0x72), A                           ; switch slot 2 to candidate
         LD      HL, SLOT2_WINDOW_BASE
