@@ -567,9 +567,17 @@ development_status:
   # close-out). All surfaces green post-fix (flat 975/0, banking 63/0,
   # isolated+straddle+skip 47/0+2 DEFER); fixed-pad HW fixtures
   # re-validated against the +13 B layout (P/H/G configs intact,
-  # expected first-HERE now 27209). REMAINING HW: re-run STRADG
-  # (expect [m1] + error -273 — closes A1-GUARD + F1 -273 on HW) +
-  # boot-window canary (expect live without priming).
+  # expected first-HERE now 27209).
+  # DIV-1 fix HW-VERIFIED 2026-06-06 (transcript beastty-20260606-
+  # 122352.bin, before/after in one capture): old kernel boot canary
+  # still 4E/4E; new 26953 kernel boot canary 5C/5A — window live
+  # unprimed. STRADG re-run: 27209/32813/32900/[m1]/error -273 —
+  # exactly as predicted. CLOSES A1-GUARD config + F1 -273 guard on
+  # real silicon. 19.5.4 HW ledger now COMPLETE: A1 (all 3 configs) +
+  # A2 + A3 + F1 + F2 + DIV-1 found/fixed/verified. Remaining 19.5.4
+  # scope: three-surface re-sweep, envelope reconciliation (120 B vs
+  # ~100 B guidance), NFR-P4-3 re-baseline statement, retro decision,
+  # epic tag.
   19-5-4-hw-investigation-epic-close-out-tag: backlog
   epic-19-5-retrospective: optional
 
