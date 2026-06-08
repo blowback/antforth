@@ -530,7 +530,7 @@ development_status:
   # post-catch compile clean). 19.5.4 retains A1 + A3 (DOVAR shape).
   # → done.
   19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: done
-  19-5-3-compiled-body-verification-banked-catch-variant: review
+  19-5-3-compiled-body-verification-banked-catch-variant: done
   # 19-5-4 evidence anchor (HW UAT 2026-06-06, transcripts beastty-
   # 20260606-112043.bin + -113348.bin): A2 DONE ($28 C@ → C3). A1
   # PASS config ✓ (m1..m5+survived, calibration 27196 exact); A1 HANG
