@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.0.3
+## Version 3.0.4
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -19,17 +19,24 @@ banked-memory support — the user-facing `BANK*` wordset that lets
 antforth address the MicroBeast's full 512 KB of RAM via the MMU
 portal at `$8000-$BFFF`. 3.0.2 completes the 12-word `BANK*` wordset
 with the descriptor-stub mechanism + cross-bank `EXIT` sentinel-
-trampoline + `BANK-OF` (descriptor-stub byte-0 read) + `IN-BANK`
+trampoline + `BANK-OF` (descriptor-stub byte-1 read) + `IN-BANK`
 (kernel-blessed, CATCH-safe save/switch/EXECUTE/restore wrapper).
 3.0.3 ships the verified bank-aware compiler mechanism: per-bank
 `HERE`/`LATEST`/`,`/`COMPILE,`, bank-aware `:` with an automatic
 descriptor-stub emitted on `;`, and bank-aware `CREATE`/`DOES>`.
-(The behavioural compiler-transparent-banking promise — calling a
-banked word from a compiled definition by name — is deferred to a
-forthcoming cross-bank-dispatch stabilization release; in 3.0.3
-banked words dispatch via the explicit `EXECUTE` path.)
+(In 3.0.3 banked words still dispatched only via the explicit
+`EXECUTE` path.) 3.0.4 delivers the cross-bank-dispatch stabilization
+interlude (Epic 19.5): a self-dispatching `RST $28` descriptor-stub +
+fixed-memory return thunk, portal-aliasing `BANK!` window guards, and
+caught-`THROW` cross-bank state restore. The behavioural compiler-
+transparent-banking north-star — calling a banked word from a
+compiled definition *by name* — is now delivered on the emulator, and
+the dispatch mechanism is confirmed on real MicroBeast silicon. The
+one remaining portal-aliasing limit (bank-N words are not yet
+`FIND`-able by name from another bank) is contained by the `BANK!`
+guard and carried to Epic 20 (bank-aware `FIND`).
 
-V3.0.3 supports the following ANS Forth standard words:
+V3.0.4 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|

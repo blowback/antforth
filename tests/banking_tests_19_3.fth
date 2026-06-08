@@ -91,9 +91,13 @@ EXECUTE                           \ ( body-addr )
 \ would yield bank-0 memory, not 99 — the FR-P4-26 "doc-and-pray" cross-bank
 \ pointer hazard (no runtime guard; redesign §5.4:105..107), NOT a dispatch
 \ defect. F asserts the cross-bank dispatch RETURNS (the hang class) AND hands
-\ back the SAME body-addr as an intra-bank dispatch of the same word — proving
-\ the returned pointer is the real DOVAR body, not merely some value ≥ $8000 —
-\ with BANK@ = 0. The cross-bank pointer is never dereferenced (fence honored).
+\ back the SAME slot-2 window address as an intra-bank dispatch of the same
+\ word — confirming the cross dispatch completed and DOVAR pushed its body-addr.
+\ NOTE: that window address is bank-agnostic (a fixed $8xxx slot-2 virtual
+\ address that does not encode which physical bank is mapped), so the `=` alone
+\ does NOT prove the correct bank was mapped during the call; the load-bearing
+\ restore witness is the ANDed BANK@ = 0. The cross-bank pointer is never
+\ dereferenced (FR-P4-26 fence honored).
 ." ---probe-19.3-f-start---" CR
 5 BANK!
 CREATE _p193f-tgt 99 ,

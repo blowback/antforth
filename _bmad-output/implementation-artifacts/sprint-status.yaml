@@ -578,7 +578,7 @@ development_status:
   # scope: three-surface re-sweep, envelope reconciliation (120 B vs
   # ~100 B guidance), NFR-P4-3 re-baseline statement, retro decision,
   # epic tag.
-  19-5-4-hw-investigation-epic-close-out-tag: backlog
+  19-5-4-hw-investigation-epic-close-out-tag: review
   epic-19-5-retrospective: optional
 
   epic-20: backlog

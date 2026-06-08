@@ -14,7 +14,7 @@ This document is the authoritative banked-RAM design for antforth Phase 4. Where
 | Core | `BANK!` | `( n -- )` | Switch logical bank. `ABORT" bank?"` if `n` is not in the active list. `THROW -273` on a foreign-bank switch from window-resident code (caller IP `$8000..$BFFF`) — see §5.4 portal-window guard (Story 19.5.1). |
 | Core | `BANKS` | `( -- n )` | Count of available banks (a `VALUE`, derived from list length). |
 | Core | `IN-BANK` | `( n xt -- )` | Execute `xt` with bank `n` active; restore prior bank on exit; `CATCH`-safe. **Kernel-blessed** (not a user library word). Reference body: `: IN-BANK BANK@ >R SWAP BANK! EXECUTE R> BANK! ;`. |
-| Introspection | `BANK-OF` | `( xt -- n )` | Bank a word lives in (`-1` for fixed memory). One-byte read from the descriptor stub at `xt` — essentially free under the (γ) mechanism. |
+| Introspection | `BANK-OF` | `( xt -- n )` | Bank a word lives in (`-1` for fixed memory). One-byte read from the descriptor stub at `xt+1` (byte 1 = signed `target_bank` under stub layout v2; byte 0 is `$EF`/`RST $28`) — essentially free under the (γ) mechanism. |
 | Introspection | `.BANKS` | `( -- )` | Print summary table (logical-#, physical page, current marker, used/free per bank, total). |
 | Configuration | `+BANK` | `( page -- )` | Add a physical page to the available list. **Probe-on-add** verifies it is RAM (rejects ROM / unmapped pages); `ABORT`s if probe fails. |
 | Configuration | `-BANK` | `( page -- )` | Remove a page from the active list. |

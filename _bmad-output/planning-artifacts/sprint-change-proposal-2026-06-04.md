@@ -79,3 +79,35 @@ The ~300 B figure was a **redesign-§7 spec target**, not an empirically-calibra
 - **Disposition:** Accept-with-rationale (Q3-α at the Story 19.4 dev-pass, AskUserQuestion 2026-06-04 — dedicated SCP record).
 - **Approved by:** Ant (project lead), Story 19.4 dev-pass.
 - **Cross-references:** Story 19.4 AC7; `epics-phase4-epics-16-22.md:871` (Epic-19 close-out reframing); [[project_epic17_envelope]] (the 2.4–2.7× empirical pattern).
+
+---
+
+## Addendum: Epic 19.5 envelope reconciliation (Story 19.5.4 close-out, 2026-06-08)
+
+**Context.** Epic 19.5 (cross-bank-dispatch stabilization interlude — ADR-first, Stories 19.5.0–19.5.3) shipped as antforth 3.0.4. This addendum reconciles its cumulative binary delta against the ADR-itemised guidance, applying the same accept-with-rationale + realistic-envelope precedent this SCP established for Epic 19.
+
+**Measured cumulative delta (re-derived via clean rebuilds at the 19.5.4 dev-pass — not inherited):**
+
+| Story | Δ | Close size | Note |
+|---|---|---|---|
+| Epic-19 close (v3.0.3 baseline) | — | **26834 B** | clean rebuild of tag `v3.0.3` (commit `94c2ba0`) |
+| 19.5.0 (ADR spike) | 0 B | 26834 B | zero binary delta |
+| 19.5.1 (F1 portal-aliasing guard + F2 COLD-init + F3 slot) | +65 B | ~26899 B | eda591f |
+| 19.5.2 (RST-stub option-C dispatch + CR-F1 CATCH triple restore) | +~42 B | ~26940 B | bddda48 |
+| DIV-1 fix (MMU-readback correctness) | +13 B | 26953 B | 1bab95a — **unbudgeted correctness fix** |
+| 19.5.3 (compiled-body + NFR-P4-8 verification) | 0 B | 26953 B | test/doc only |
+| 19.5.4 (this close-out) | 0 B | **26953 B** | same-length banner + docs + test-infra |
+| **Epic-19.5 total** | **+119 B** | **26953 B** | clean-rebuild verified (26953 − 26834) |
+
+**ADR guidance vs realised.** The ADR-itemised guidance was **~+30..+100 B** (epics:902 — F1 ~20 + F2 ~17 + option-C net −13..+25 + CATCH ~20, ×1.25). **+119 B is ~19 B over the ~100 B upper guidance.**
+
+**Disposition — accept-with-rationale (not a clean ≤100 B pass):**
+1. **The +13 B DIV-1 fix was an unbudgeted correctness fix** — a HW-only MMU-port-readback float (`IN A,(0x72)` returns an open-bus self-opcode echo on real silicon; the restored slot-2 page is unmapped) found during 19.5.2's hardware smoke. It could not be declined ([[feedback_no_accept_disposition_for_bugs]], [[project_div1_mmu_port_readback]]). **Excluding it, the epic lands at +106 B** — within rounding of the ~100 B guidance.
+2. **The residual sits comfortably inside the realistic envelope.** The empirical Phase-4 pattern is ~2.4–2.7× the redesign-§7 spec target ([[project_epic17_envelope]]), putting the ~100 B ADR figure's realistic band at **~240–270 B**. +119 B is well inside it.
+3. **NFR-P4-5's 8 KB Phase-4 fixed-memory cap is unaffected** — 119 B is a small fraction of the banking-infrastructure budget.
+
+No code changes by this addendum — it is a planning/accounting artefact; the +119 B is shipped and CR-verified across Stories 19.5.1–19.5.3. The AC2 three-surface re-sweep at the 19.5.4 dev-pass forced **no** kernel fix (0 B story), so nothing is added to this reconciliation.
+
+- **Disposition:** Accept-with-rationale (Q1-α at the Story 19.5.4 dev-pass, AskUserQuestion 2026-06-08 — append to this existing SCP rather than spawn a new one, per [[feedback_ceremony_diminishing_returns]]).
+- **Approved by:** Ant (project lead), Story 19.5.4 dev-pass.
+- **Cross-references:** Story 19.5.4 AC3; ADR 19.5 (`docs/adr-19-5-cross-bank-dispatch.md`); [[project_epic17_envelope]]; [[project_div1_mmu_port_readback]].

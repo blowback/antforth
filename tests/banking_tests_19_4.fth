@@ -51,7 +51,11 @@ DECIMAL
 \ === Probe-19.4-A — Epic-19 verified mechanism, end-to-end (EXECUTE-explicit)
 ." ---probe-19.4-a-start---" CR
 5 BANK!
-HERE $9000 SWAP - ALLOT           \ bump bank-5 HERE into slot-2 (H5 deferred to Epic 19.5)
+\ No manual HERE bump: Story 19.5.1's F2 COLD-init seeds bank-table[1..28].here
+\ = $8000, so first-visit bank-N HERE is already in slot-2. (The former
+\ `HERE $9000 SWAP - ALLOT` workaround was removed in Story 19.5.3 AC1 from the
+\ 19-2/19-3 fixtures; dropped here too for consistency — the COLD-init is the
+\ single mechanism.)
 : _p194a-tgt 100 ;                 \ bank-aware `:` lands body in bank 5 + stub on `;`
 LATEST @                           \ ( xt )
 DUP BANK-OF 5 =                    \ ( xt v1 )      BANK-OF = 5
