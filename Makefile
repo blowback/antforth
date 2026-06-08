@@ -635,8 +635,10 @@ test-repl-banking: $(TARGET)
 # === Story 19.2 — isolated fixture for per-bank `:` behavioural probes ===
 # Q4-γ-default per story-spec. Runs antforth under iz-cpm-banking with
 # ONLY tests/banking_tests_19_2.fth loaded — no Phase-1/2/3 test-thread
-# accumulation, no banking_tests.fth probe state. HERE stays well below
-# $8000 so the slot-2-swap-under-running-IP hazard (Story 18.3
+# accumulation, no banking_tests.fth probe state. Bank-0 HERE stays below
+# $8000, and although bank-N HERE is COLD-seeded to $8000 (slot 2) these
+# probes never run a banked body while a BANK! swaps slot 2 under the
+# running IP, so the slot-2-swap-under-running-IP hazard (Story 18.3
 # banking_tests.fth:1131..1145) does NOT manifest. Probes D/F/G cover
 # Story 19.2 AC1 (kernel mechanism), AC2 (LATEST = stub-xt for bank-N>0),
 # AC4 (intra-bank dispatch via EXECUTE-explicit), AC5 (cross-bank
@@ -723,6 +725,21 @@ test-repl-banking-isolated-19-3: $(TARGET)
 		echo "PASS: probe-19.5.2-suite (isolated) — Story 19.5.2 suite end-sentinel present"; \
 	else \
 		echo "FAIL: probe-19.5.2-suite (isolated) — Story 19.5.2 end-sentinel missing (mid-suite halt)"; \
+		exit 1; \
+	fi && \
+	for pid in ac2 ac3 ac6; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.5.3-"p"-start---";re="---probe-19.5.3-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-19.5.3-$$pid-end---$$"; then \
+			echo "PASS: probe-19.5.3-$$pid (isolated) — Story 19.5.3 compiled-body/NFR-P4-8 witness (result=-1) under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-19.5.3-$$pid (isolated) — Story 19.5.3 witness failed (ac2: intra compiled-body; ac3: cross-bank compiled-body north-star; ac6: full banked NFR-P4-8 CATCH)"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-19.5.3-suite-end---$$'; then \
+		echo "PASS: probe-19.5.3-suite (isolated) — Story 19.5.3 suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-19.5.3-suite (isolated) — Story 19.5.3 end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
 	fi
 

@@ -16,27 +16,28 @@
 \     LATEST @ ≥ $D400 (stub region); BANK-OF on LATEST @ returns 5.
 \   - Probe-19.3-E (AC6-E): intra-bank EXECUTE-explicit on bank-5 CREATE'd
 \     word pushes body addr; intra-bank `@` retrieves stored 42.
-\   - Probe-19.3-F (AC6-F): cross-bank EXECUTE-explicit from bank 0 on
-\     bank-5 stub-xt dispatches body; caller bank tracking (BANK@) read
-\     after the dispatch. Note: cross-bank data read via plain `@` after
-\     EXECUTE returns is subject to the FR-P4-26 doc-and-pray cross-bank
-\     pointer hazard (body-addr is in bank-5 slot-2; caller's @ may run
-\     in different MMU context). Verdict checks both the data return and
-\     the bank tracking to flag any state inconsistency.
-\   - Probe-19.3-G (Q3-α DEFERRED): bank-5 CREATE/DOES> behavioural
-\     surface is deferred — the DOES> body itself is a banked colon body
-\     that hits the inherited DTC threading-through-stub-xt defect. Emits
-\     a sentinel line `probe-19.3-g-deferred-on-cross-bank-thread-defect`
-\     instead of running the dispatch. The Makefile recipe accepts the
-\     defer-sentinel as a non-PASS, non-FAIL outcome (DEFER status).
-\     Per Q3-α default chosen at dev-pass start AskUserQuestion 2026-05-20.
+\   - Probe-19.3-F (AC6-F): RE-ENABLED in Story 19.5.3 (AC4) — cross-bank
+\     dispatch+return on a bank-5 CREATE'd (DOVAR) word. The former hang
+\     (DOVAR has no DOCOL/EXIT pair; retired sentinel-trampoline halted) is
+\     dead — 19.5.2's RST self-dispatch + xbank_thunk return it uniformly.
+\     Dispatch+return witness only: body-addr window-resident + BANK@ = 0.
+\     The cross-bank data read via `@` stays OUT (FR-P4-26 doc-and-pray
+\     pointer hazard; redesign §5.4) — not a dispatch defect.
+\   - Probe-19.3-G: RE-ENABLED in Story 19.5.3 (AC5) — bank-5 CREATE/DOES>
+\     compiled-body dispatched INTRA-bank (DOES> body in slot-2, bank 5
+\     mapped throughout). Proves DTC defect class (a) is retired by 19.5.2's
+\     RST self-dispatch. The CROSS-bank DOES> case (DOES> body above $8000
+\     mapping a foreign bank) stays the DR-1 portal-aliasing hazard — owning
+\     fix Epic 20 (redesign §5.5); documented-DEFER via the note line after
+\     the g-end sentinel, not forced green.
 \
-\ Bank-N HERE workaround: same as banking_tests_19_2.fth — open with
-\ `5 BANK! HERE $9000 SWAP - ALLOT` to bump bank-5's COLD-time HERE
-\ (cloned from bank-0's COLD HERE ≈ kernel_end) into slot-2 ($9000+).
-\ Without the bump, bank-5 CREATE writes into slot-1 fixed memory and
-\ corrupts bank-0 state. Permanent fix anchored on the architectural-
-\ debt list inherited from Story 19.2 (bank-N HERE COLD-init bump).
+\ Bank-N HERE: NO manual workaround. Story 19.5.1's F2 COLD-init seeds
+\ bank-table[1..28].here = $8000 at COLD, so a fresh bank-N's first-visit
+\ HERE is already in slot-2 ($8000+) — bank-5 CREATE/`:` bodies land in
+\ the window and never corrupt bank-0 state. The former
+\ `5 BANK! HERE $9000 SWAP - ALLOT` bump (removed in Story 19.5.3 AC1) is
+\ now redundant; the COLD-init is the single mechanism (gated behaviourally
+\ by probe-19.5.1-c / test-repl-banking-isolated-19-5-1).
 \
 \ Hash-collision avoidance: probe target names use disambiguated
 \ `_p193X-tgt` form to dodge bucket-0 collision (Story 19.2 caveat).
@@ -49,7 +50,6 @@ DECIMAL
 \ === Probe-19.3-D — bank-5 CREATE allocates stub; LATEST = stub-xt; BANK-OF = 5
 ." ---probe-19.3-d-start---" CR
 5 BANK!
-HERE $9000 SWAP - ALLOT           \ bump bank-5 HERE into slot-2
 CREATE _p193d-tgt 42 ,
 LATEST @                          \ ( stub-xt )
 DUP $D400 U< 0=                   \ ( stub-xt stub-in-region? )
@@ -74,58 +74,73 @@ EXECUTE                           \ ( body-addr )
 ." result=" . CR
 ." ---probe-19.3-e-end---" CR
 
-\ === Probe-19.3-F — cross-bank EXECUTE-explicit on bank-5 CREATE'd word (DEFERRED)
-\ ARCHITECTURAL DEFECT discovered 2026-05-20 at Story 19.3 dev-pass:
-\ cross-bank EXECUTE of a CREATE'd word (DOVAR-targeted CFA) HANGS the
-\ kernel under iz-cpm-banking. Root cause: the sentinel-trampoline
-\ mechanism (src/inner_interpreter.asm:402..461 EXECUTE.cross_bank +
-\ src/banking.asm cross_bank_return) relies on the target's body
-\ pushing the pre-loaded DE = cross_bank_return sentinel onto R-stack
-\ via DOCOL, then popping it via EXIT_CODE so the trampoline can fire.
-\ For DOVAR-targeted CFAs (CREATE'd words without DOES>) there is no
-\ DOCOL+EXIT pair — DOVAR pushes body_addr to data stack and NEXTs
-\ directly. NEXT then dereferences DE = cross_bank_return as if it were
-\ a thread cell, dispatches garbage, halts the emulator.
+\ === Probe-19.3-F — cross-bank dispatch+return on a bank-5 CREATE'd (DOVAR) word
+\ RE-ENABLED in Story 19.5.3 (AC4) — verified PASS under iz-cpm-banking.
+\ The hang this probe formerly deferred for is DEAD: the original defect
+\ (DOVAR-targeted CFAs have no DOCOL/EXIT pair, so the retired sentinel-
+\ trampoline dereferenced DE = cross_bank_return as a thread cell and
+\ halted) was fixed by ADR 19.5 DR-2 option C (Story 19.5.2): NEXT's
+\ blind `JP (HL)` now lands on stub byte 0 = $EF = RST $28 → stub_dispatch;
+\ the cross path sets DE = xbank_thunk; DOVAR pushes body-addr and NEXTs
+\ with IP = thunk → xbank_restore → caller resumes in bank 0. This is the
+\ exact shape probe-19.5.2-b witnesses; here graded as the re-enabled F.
 \
-\ This is the SAME architectural-debt class as Probe-19.3-G (DOES> body
-\ hits DTC threading defect): cross-bank dispatch needs kernel-level
-\ rework for non-DOCOL bodies. Story 19.2 referenced this as the
-\ "NEXT-via-EXECUTE chokepoint" rework (its anchor remains forward work).
-\
-\ Probe emits defer-sentinel rather than running the dispatch. Makefile
-\ recipe accepts the defer-sentinel as a non-PASS, non-FAIL DEFER
-\ outcome. To re-test once the chokepoint rework lands: revert this
-\ defer block to the active EXECUTE @ ( verdict) sequence below in
-\ comment form.
-\
-\ STORY 19.5.2 NOTE: the defect class described above is FIXED (ADR
-\ 19.5 DR-2 option C — sentinel-trampoline retired; non-DOCOL targets
-\ return uniformly via xbank_thunk/xbank_restore; see probe-19.5.2-b
-\ below, which exercises this exact shape minus the cross-bank `@`).
-\ THIS DEFER STUB STAYS — full re-enablement incl. the `@` data read
-\ is Story 19.5.3 scope per its AC8 fence.
-\
-\ Original active form (kept as comment for future re-test):
-\   5 BANK!
-\   CREATE _p193f-tgt 99 ,
-\   LATEST @
-\   0 BANK!
-\   EXECUTE @                     \ expected 99 cross-bank — HANGS today
-\   BANK@                         \ expected 0
-\   0 = SWAP 99 = AND
+\ FR-P4-26 fence (load-bearing): the original F body's cross-bank `EXECUTE @`
+\ (expecting the stored 99 from bank 5) stays OUT. After xbank_restore the
+\ slot-2 window maps bank 0, so reading the returned $8xxx body-pointer
+\ would yield bank-0 memory, not 99 — the FR-P4-26 "doc-and-pray" cross-bank
+\ pointer hazard (no runtime guard; redesign §5.4:105..107), NOT a dispatch
+\ defect. F asserts the cross-bank dispatch RETURNS (the hang class) AND hands
+\ back the SAME body-addr as an intra-bank dispatch of the same word — proving
+\ the returned pointer is the real DOVAR body, not merely some value ≥ $8000 —
+\ with BANK@ = 0. The cross-bank pointer is never dereferenced (fence honored).
 ." ---probe-19.3-f-start---" CR
-." probe-19.3-f-deferred-on-cross-bank-dovar-sentinel-defect" CR
+5 BANK!
+CREATE _p193f-tgt 99 ,
+LATEST @                          \ ( stub-xt )
+DUP EXECUTE                       \ ( stub-xt body-addr-intra )  intra-bank dispatch (bank 5)
+SWAP                              \ ( body-addr-intra stub-xt )
+0 BANK!
+EXECUTE                           \ ( body-addr-intra body-addr-xbank )  cross-bank via thunk
+=                                 \ ( addrs-equal? )  cross returns the SAME body-addr
+BANK@ 0 =                         \ ( addrs-equal? bank-restored? )  caller bank 0 restored
+AND                               \ ( verdict-flag: -1=PASS )
+." result=" . CR
 ." ---probe-19.3-f-end---" CR
 
-\ === Probe-19.3-G — bank-5 CREATE/DOES> behavioural surface (Q3-α DEFERRED)
-\ DOES> body in a bank-N>0 word is itself a banked colon body that hits
-\ the inherited DTC threading-through-stub-xt defect (Story 19.2 AC4/AC5
-\ deferred work, also blocking Story 19.3 AC6-G). Probe emits the
-\ defer-sentinel rather than running the dispatch. Makefile recipe
-\ accepts the defer-sentinel as a non-PASS, non-FAIL DEFER outcome.
+\ === Probe-19.3-G — bank-5 CREATE/DOES> compiled-body, INTRA-bank (Q3 default)
+\ RE-ENABLED in Story 19.5.3 (AC5) — verified PASS under iz-cpm-banking.
+\ Defines a bank-5 defining word `_p193g-maker` (CREATE , DOES> @) and a
+\ bank-5 instance `_p193g-inst`, then dispatches the instance FROM bank 5
+\ (DOES> body in slot-2, bank 5 mapped throughout — no foreign mapping).
+\ The DOES>-body DTC dispatch — defect class (a), NEXT's blind `JP (HL)`
+\ into a banked DOES>/colon body — is retired by 19.5.2's RST self-dispatch
+\ ($EF stub byte 0). bank-N words aren't FIND-able by name (shared bucket
+\ skipped per Story 19.3.1 Defect-2; bank-aware FIND is Epic 20), so the
+\ maker + instance are invoked via LATEST @ EXECUTE; the maker's CREATE
+\ parses the next input token (_p193g-inst) for the instance name.
+\
+\ DR-1 fence (cross-bank DOES> stays DEFER): a DOES> body running ABOVE
+\ $8000 that maps a foreign bank over slot 2 is the DR-1 portal-window-
+\ aliasing hazard — "contained, not abolished" by the F1 BANK! guard
+\ (-273). Its owning fix is Epic 20 (per-wordlist bank field / bank-aware
+\ FIND, redesign §5.5). That case is NOT forced green here — see the
+\ note-probe-19.3-g-cross-bank line below the end sentinel.
 ." ---probe-19.3-g-start---" CR
-." probe-19.3-g-deferred-on-cross-bank-thread-defect" CR
+5 BANK!
+: _p193g-maker CREATE , DOES> @ ;
+LATEST @                          \ ( maker-xt )
+42 SWAP                           \ ( 42 maker-xt )
+EXECUTE _p193g-inst               \ run maker → CREATE _p193g-inst, , stores 42, DOES> @
+LATEST @                          \ ( inst-xt )
+EXECUTE                           \ run _p193g-inst → DOES> pushes body, @ → 42
+42 =                              \ ( value-ok? )
+BANK@ 5 =                         \ ( value-ok? still-bank-5? )  intra: no MMU swap
+AND                               \ ( verdict-flag: -1=PASS )
+0 BANK!
+." result=" . CR
 ." ---probe-19.3-g-end---" CR
+." note-probe-19.3-g-cross-bank-does-deferred-dr1-epic20" CR
 
 ." ---probe-19.3-suite-end---" CR
 
@@ -144,7 +159,6 @@ EXECUTE                           \ ( body-addr )
 ." ---probe-19.3.1-a-start---" CR
 FORTH-WORDLIST 2 + 24 CELLS + @     \ ( bucket24-pre )
 5 BANK!
-HERE $9000 SWAP - ALLOT
 CREATE _p1931a-tgt 42 ,
 0 BANK!
 FORTH-WORDLIST 2 + 24 CELLS + @     \ ( bucket24-pre bucket24-post )
@@ -224,4 +238,102 @@ AND                               \ ( verdict-flag )
 ." ---probe-19.5.2-d-end---" CR
 
 ." ---probe-19.5.2-suite-end---" CR
+
+\ === Story 19.5.3 compiled-body verification + full banked NFR-P4-8 ===
+\
+\ The 19.5.2 witnesses above (probe-19.5.2-b/c/d) prove the dispatch +
+\ CATCH-restore MECHANISM via explicit EXECUTE. The probes below re-express
+\ FR-P4-15/16 in genuine COMPILED-BODY form — a banked word dispatched
+\ through NEXT's `JP (HL)` from a thread cell inside another word's
+\ parameter field, not via a runtime EXECUTE of a stack value. This is the
+\ Epic-19 north-star UX: "call a banked word from a compiled definition."
+\
+\ Compiled-body construction (the `[ COMPILE, ]` idiom): bank-N words are
+\ not FIND-able by name (shared bucket skipped per Story 19.3.1 Defect-2;
+\ bank-aware FIND-by-name is Epic 20, redesign §5.5). So the literal source
+\ shape `: CALLER ... BANKED-WORD ... ;` (BANKED-WORD a bank-5 name
+\ referenced from bank 0) cannot COMPILE today — the text interpreter would
+\ -13 on BANKED-WORD. The portable stub-xt (fixed memory, FR-P4-17) IS
+\ valid across banks, so the probes capture it (LATEST @) and inject it into
+\ the caller's body via `[ COMPILE, ]`. The result is a real compiled thread
+\ cell, dispatched by NEXT byte-identically to a by-name reference — the
+\ DISPATCH path (what 19.5.2 fixed and this story verifies) is exercised
+\ exactly. Source-syntax by-name is the only piece awaiting Epic 20.
+
+\ === Probe-19.5.3-AC2 — intra-bank compiled-body dispatch (FR-P4-15; 19.2 AC4)
+\ A bank-5 CALLER whose COMPILED body references a bank-5 CALLEE; calling
+\ CALLER intra-bank (bank 5 mapped) dispatches CALLEE through NEXT → stub
+\ byte 0 $EF (RST $28) → stub_dispatch INTRA path (target_bank ==
+\ current_bank → no MMU write) → CALLEE CF → 7. Assert value AND BANK@ = 5.
+." ---probe-19.5.3-ac2-start---" CR
+5 BANK!
+: _p1953ac2-callee 7 ;
+LATEST @                          \ ( callee-stub-xt )
+: _p1953ac2-caller [ COMPILE, ] ; \ body = DOCOL | callee-stub-xt | EXIT
+LATEST @                          \ ( caller-stub-xt )  bank-5: not FIND-able by name
+EXECUTE                           \ enter CALLER; its body dispatches CALLEE intra-bank
+7 =                               \ ( value-ok? )
+BANK@ 5 =                         \ ( value-ok? still-bank-5? )
+AND                               \ ( verdict-flag: -1=PASS )
+0 BANK!
+." result=" . CR
+." ---probe-19.5.3-ac2-end---" CR
+
+\ === Probe-19.5.3-AC3 — cross-bank compiled-body dispatch from bank 0 (north-star)
+\ A bank-0 CALLER (body in fixed memory < $8000, always mapped) whose
+\ COMPILED body references a bank-5 CALLEE. Calling CALLER from bank 0:
+\ NEXT → RST $28 → stub_dispatch CROSS path (2-cell frame [caller_bank]
+\ [caller_IP] pushed, MMU swaps bank-5 into slot 2, current_bank ← 5) →
+\ CALLEE runs in slot 2 → terminal EXIT → xbank_thunk → xbank_restore pops
+\ the frame, restores bank 0, resumes CALLER → 7. Assert value AND BANK@ = 0.
+\ CALLER lives in bank 0 by design — a CALLER body ABOVE $8000 calling a
+\ foreign bank is the DR-1 portal-aliasing hazard (AC9 fence), out of scope.
+." ---probe-19.5.3-ac3-start---" CR
+5 BANK!
+: _p1953ac3-callee 7 ;
+LATEST @                          \ ( callee-stub-xt )  portable across banks
+0 BANK!
+: _p1953ac3-caller [ COMPILE, ] ; \ bank-0 colon; body holds the bank-5 callee cell
+_p1953ac3-caller                  \ bank-0 word IS FIND-able by name → invoke directly
+7 =                               \ ( value-ok? )
+BANK@ 0 =                         \ ( value-ok? bank-restored? )  thunk returned to bank 0
+AND                               \ ( verdict-flag: -1=PASS )
+." result=" . CR
+." ---probe-19.5.3-ac3-end---" CR
+
+\ === Probe-19.5.3-AC6 — full banked NFR-P4-8 (CATCH-cross-bank) state integrity
+\ Beyond the minimal witnesses probe-19.5.2-c (dispatch-only THROW → BANK@
+\ restore) and -d (real BANK! → CR-F1 triple HERE-unchanged): a bank-0
+\ thrower performs a REAL `5 BANK!` (legal — body < $8000, F1 guard passes)
+\ then THROWs. The caught path must restore MMU + current_bank (frame +8)
+\ AND the live (HERE, LATEST, wordlist_head) triple (frame +9 triple_owner +
+\ bank_triple_swap). This probe asserts the FULL NFR-P4-8 guarantee:
+\   (a) THROW code delivered (99);
+\   (b) BANK@ = catcher's bank (0);
+\   (c) the live triple is the catcher-bank's — proven OPERATIONALLY: HERE
+\       unchanged AND a fresh `:` compiled post-catch lands + is FIND-able;
+\   (d) the thrower's bank's bank-table[] entry is not corrupted — a
+\       subsequent definition switched into bank 5 works cleanly.
+\ (c)+(d) are the "subsequent definitions work cleanly" clause that the
+\ minimal witnesses do not exercise. Kept kernel-word-only + below $8000 for
+\ the bank-0 arm (bucket-pollution rule, AC9).
+." ---probe-19.5.3-ac6-start---" CR
+: _p1953ac6-thrower 5 BANK! 99 THROW ;
+HERE                              \ ( here0 ) bank-0 HERE before the catch
+' _p1953ac6-thrower               \ ( here0 xt )  tick: bank-0 word has no stub-xt
+CATCH                             \ ( here0 99 )  caught after real BANK!
+99 =                              \ ( here0 code-ok? )           (a)
+SWAP HERE =                       \ ( code-ok here-restored? )   (c-HERE)
+BANK@ 0 =                         \ ( code-ok here-ok bank-ok? ) (b)
+: _p1953ac6-after 55 ;            \ fresh bank-0 compile post-catch
+' _p1953ac6-after EXECUTE 55 =    \ ( ... after-lands-and-finds? ) (c-FIND)
+5 BANK!
+: _p1953ac6-b5 123 ;             \ thrower-bank definition after switching back
+LATEST @ EXECUTE 123 =           \ ( ... bank5-clean? )          (d)
+0 BANK!
+AND AND AND AND                   \ ( verdict-flag: -1=PASS iff all five hold )
+." result=" . CR
+." ---probe-19.5.3-ac6-end---" CR
+
+." ---probe-19.5.3-suite-end---" CR
 BYE

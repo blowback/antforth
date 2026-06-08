@@ -41,17 +41,14 @@
 \ JP (HL) to stub-addr where byte 0 = target_bank decodes as opcode) —
 \ deferred to Story 19.5 per architectural finding 2026-05-19.
 \
-\ Bank-N HERE initialization: bank-table[1..28].HERE is cloned from
-\ bank-0's COLD-time HERE (= kernel_end ≈ $6800) per Story 17.2's
-\ LDIR clone at src/antforth.asm:194..197. Without a bump, defining
-\ a colon in bank-N writes to $6800 in slot-1 fixed memory and
-\ corrupts bank-0's dictionary. Probe-19.2-D opens with
-\ `HERE $9000 SWAP - ALLOT` to bump bank-5 HERE into slot-2 ($9000+);
-\ subsequent BANK!-cycles preserve the bump in bank-table[5].here.
-\ The CR pass attempted a COLD-time bump (H5) but reverted due to
-\ binary-layout-shift cascade breaking probe-18.2-a. Permanent fix
-\ deferred to Story 19.5 (alongside the threading-rework + CATCH-
-\ cross-bank reboot defects).
+\ Bank-N HERE initialization: Story 19.5.1's F2 COLD-init seeds
+\ bank-table[1..28].here = $8000 at COLD, so a fresh bank-N's first-visit
+\ HERE is already in slot-2 ($8000+) and bank-N `:` bodies land in the
+\ window without corrupting bank-0's dictionary. The former probe-19.2-D
+\ `HERE $9000 SWAP - ALLOT` bump (removed in Story 19.5.3 AC1) is now
+\ redundant; subsequent bank-5 probes inherit the COLD-init HERE through
+\ bank-table[5].here. The H5 COLD-init was re-landed and verified in
+\ Story 19.5.1 (gated by probe-19.5.1-c / test-repl-banking-isolated-19-5-1).
 \
 \ Architecture refs: PD-P4-1 + PD-P4-11 (architecture.md:200..211, 347..363);
 \ FR-P4-13..17, FR-P4-24.
@@ -61,7 +58,6 @@ DECIMAL
 \ === Probe-19.2-D — bank-5 `:` allocates stub; LATEST = stub-xt; BANK-OF = 5
 ." ---probe-19.2-d-start---" CR
 5 BANK!
-HERE $9000 SWAP - ALLOT           \ workaround: bump bank-5 HERE into slot-2 (H5 deferred to Story 19.5)
 : _p192d-tgt 7 ;
 \ LATEST @ should be a stub-xt in $D4CB+ (i.e., ≥ $D400). BANK-OF
 \ should return 5. Compose verdict on data stack as -1 (TRUE) or 0 (FALSE).
@@ -113,9 +109,10 @@ EXECUTE                           \ ( 7 )
 LATEST @                          \ ( stub-xt-of-bank-5-word )
 0 BANK!                           \ stub-xt portable per FR-P4-17 — survives BANK!
 \ Caller bank = 0; EXECUTE on bank-5 stub-xt triggers the cross-bank path
-\ (src/inner_interpreter.asm:407..453): MMU swaps slot-2 to bank 5,
-\ sentinel-trampoline 3-cell frame pushed, JP target_addr in bank-5 body,
-\ EXIT through trampoline pops frame + restores caller's bank 0.
+\ (Story 19.5.2 RST $28 dispatch — the original sentinel-trampoline was
+\ retired): stub byte 0 = $EF = RST $28 → stub_dispatch pushes the 2-cell
+\ caller frame, MMU swaps slot-2 to bank 5, runs the bank-5 body; terminal
+\ EXIT → xbank_thunk → xbank_restore pops the frame + restores caller's bank 0.
 \ Witness: post-EXECUTE result = 7 AND BANK@ = 0 (caller bank restored).
 EXECUTE                           \ ( 7 )
 BANK@                              \ ( 7 0 )  — bank-0 restored

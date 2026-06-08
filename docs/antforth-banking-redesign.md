@@ -43,6 +43,8 @@ Why it matters: **(γ) collapses S1 (cross-bank EXIT) + S6 (`EXECUTE`) + S7 (`CO
 
 > **Stub layout v2 (Story 19.5.2 / ADR 19.5 DR-2):** the shipped 4-byte stub is **self-dispatching** — `[$EF = RST $28][target_bank][target_addr.lo][target_addr.hi]`. `NEXT`'s blind `JP (HL)` and the folded 4-byte `EXECUTE` both land on byte 0; the `RST $28` vectors through `$0028` (COLD-installed `JP stub_dispatch`) to the kernel handler, which takes the intra path (same bank or `$FF` fixed-memory marker: `HL ← target CF`, `JP (HL)`) or the cross path (2-cell R-stack frame `(caller_bank, caller_IP)`, `DE ← xbank_thunk`, MMU switch, `JP` target CF). 0 T-states added per thread step for non-stub words (NFR-P4-1 by construction).
 
+> **Compiled-body dispatch verified 19.5.3 (status append, no history rewrite).** Story 19.5.3 re-expressed the 19.5.2 EXECUTE-form witnesses in genuine **compiled-body** form — a banked word dispatched through `NEXT`'s `JP (HL)` from a thread cell in another word's parameter field, not via a runtime `EXECUTE` of a stack value. FR-P4-15 (intra-bank, probe-19.5.3-ac2) and FR-P4-16 (cross-bank from bank 0, the north-star case, probe-19.5.3-ac3) confirmed PASS under `iz-cpm-banking`; the cross-bank case returns through `xbank_thunk`/`xbank_restore` with the caller's bank restored. Source-syntax by-name (`: CALLER ... BANKED-WORD ... ;` for a bank-N callee referenced from bank 0) still awaits the Epic-20 bank-aware FIND (§5.5) — the probes inject the portable stub-xt via the `[ COMPILE, ]` idiom, exercising the dispatch path byte-identically.
+
 ### 2.2 S1 — Cross-bank EXIT (the (b) sentinel decision — SUPERSEDED)
 
 The obsolete doc proposed a `BIT 7,H` heuristic on the return-address high byte to detect cross-bank returns. **Broken** — user code lives at $8000-$BFFF, so bit 7 is always set on every user-code return-address; the heuristic detects nothing.
@@ -65,6 +67,8 @@ The `COMPILE,` mechanism does not need to know whether the target is in the same
 - Cross-bank call: handler pushes the 2-cell return frame `(caller_bank, caller_IP)` on the R-stack, sets `IP = xbank_thunk`, switches the MMU to the target bank, and jumps to the target CF. The return routes through `xbank_restore` (bank + IP restore) uniformly for DOCOL and non-DOCOL targets.
 
 The user-visible thunk word from the obsolete doc (`5 THUNK-TO-USER-BANK5 GRAPHICS-APP`) is deleted.
+
+> **Behaviourally delivered — verified 19.5.3.** The "define and call words like always" north-star above is proven on the emulator in compiled-body form: FR-P4-15/16 compiled-body dispatch (probe-19.5.3-ac2/ac3), FR-P4-25 non-DOCOL (DOVAR) cross-bank dispatch+return and intra-bank CREATE/DOES> (re-enabled probe-19.3-F/G), and the full banked NFR-P4-8 CATCH-cross-bank state-integrity variant (probe-19.5.3-ac6 — caught THROW after a real `BANK!` leaves HERE/LATEST/wordlist_head and both banks' tables clean). Documented limits remain Epic-owned: cross-bank-from-bank-N bodies and cross-bank DOES> bodies are the DR-1 portal-aliasing hazard (§5.5, Epic 20); the cross-bank `@` data read is the FR-P4-26 doc-and-pray pointer hazard (§5.4).
 
 ## 4. Conditional compilation / flat build
 
