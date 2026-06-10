@@ -1,27 +1,20 @@
 ; banking.asm — Phase-4 banking subsystem
 ; AntForth — A Forth for CP/M on Z80
 ;
-; See docs/antforth-banking-redesign.md §5.1 for the canonical memory layout
-; and §1 for the Phase-4 wordset. Story 17.1 ships the file shell with the
-; bank-table[] cap/size constants, BANK-MAPPING-ON, and BANK-MAPPING-OFF.
-; Stories 17.2–17.6 fill in BANK@ / BANK! / BANKS / +BANK / -BANK /
-; BANKS-CLEAR / .BANKS in this same file (SET-BANK retired — see below).
+; Phase-4 wordset: BANK@ / BANK! / BANKS / +BANK / -BANK / BANKS-CLEAR /
+; .BANKS / BANK-OF / IN-BANK / (stub-allocate) / BANK-MAPPING-ON / -OFF.
+; (SET-BANK retired — see note below.)
 ;
-; The 2 KB region $D400-$DBFF is annexed to the kernel's fixed-memory
-; claim per PD-P4-6 closure (CCP eviction; Story 16.1 hardware
-; verification). Story 17.1 routes the bank-table[] base to $D400;
-; Story 18.1 carves the descriptor-stub allocator out of the
-; post-bank-table[] portion of this region.
+; The 2 KB region $D400-$DBFF is annexed to the kernel's fixed-memory claim
+; (CCP eviction). bank-table[] base = $D400; the descriptor-stub allocator
+; lives in the post-bank-table[] portion of this region.
 
 ; === Phase-4 banking constants ===
-; bank-table[] cap = 29 entries per PD-P4-13 (architecture.md:386..402).
-; Per-entry layout: here (2 B) + latest (2 B) + wordlist_head (2 B) =
-; 6 B / 3 cells. Full plumbing of the triple swap on BANK! is Story
-; 17.2 / Epic 19; Story 17.1 only declares the cell layout and
-; zero-initialises the table shell in COLD (src/antforth.asm step 8h).
-; The shell lives AT BANK_TABLE_BASE = $D400 (src/constants.asm), in
-; the reclaimed $D400-$DBFF CCP region — NOT allocated by a DS
-; directive (no kernel binary bytes consumed for the shell).
+; bank-table[] cap = 29 entries. Per-entry layout: here (2 B) + latest
+; (2 B) + wordlist_head (2 B) = 6 B / 3 cells. The shell lives AT
+; BANK_TABLE_BASE = $D400 (src/constants.asm), in the reclaimed
+; $D400-$DBFF CCP region — NOT allocated by a DS directive (no kernel
+; binary bytes consumed for the shell); zero-initialised in COLD.
 BANK_TABLE_CAP         EQU 29
 BANK_TABLE_ENTRY_SIZE  EQU 6
 BANK_TABLE_SHELL_SIZE  EQU BANK_TABLE_CAP * BANK_TABLE_ENTRY_SIZE   ; 174 B
@@ -29,24 +22,18 @@ BANK_TABLE_SHELL_SIZE  EQU BANK_TABLE_CAP * BANK_TABLE_ENTRY_SIZE   ; 174 B
 ; active_pages[]: dense logical-bank-index → physical-page mapping.
 ; Lives in the reclaimed $D400-$DBFF CCP region immediately after
 ; bank-table[] (no kernel binary bytes consumed). Read by BANK! to
-; translate the popped logical index to the physical page written to
-; MMU port 0x72 (slot 2); written by Story 17.3's +BANK / -BANK /
-; BANKS-CLEAR. Zero-initialised in COLD alongside bank-table[].
-; Footprint $D4AE..$D4CA — well under the 2 KB CCP claim's high edge.
+; translate the popped logical index to the physical page mapped into
+; slot 2; written by +BANK / -BANK / BANKS-CLEAR. Zero-initialised in
+; COLD alongside bank-table[]. Footprint $D4AE..$D4CA — well under the
+; 2 KB CCP claim's high edge.
 ACTIVE_PAGES_BASE      EQU BANK_TABLE_BASE + BANK_TABLE_SHELL_SIZE   ; $D4AE
 ACTIVE_PAGES_SIZE      EQU BANK_TABLE_CAP                            ; 29 B (1 byte / logical bank)
 
 ; === BANK-MAPPING-ON ( -- ) ===
-;   Enable the MicroBeast MMU mapping (port 0x74 bit 0 set).
-;   Updates UserArea.bank_mapping_state to 1.
-;   Auto-run in COLD (src/antforth.asm cold_start, after pool_init).
+;   Enable the MicroBeast MMU mapping. Updates UserArea.bank_mapping_state
+;   to 1. Auto-run in COLD (after pool_init).
 ;
-; PD-P4-9 (architecture.md:323): port 0x74 is the MMU-mapping-enable
-; register; bit 0 = enable. Confirmed against iz-cpm-banking @ 1777a85
-; (src/cpm_machine.rs: PORT_MAP_ENABLE = 0x74,
-;  `mapping_enabled = (value & 1) != 0`).
-;
-; antforth extension BANK-MAPPING-ON — see docs/antforth-banking-redesign.md §5.1
+;   Port 0x74 is the MMU-mapping-enable register; bit 0 = enable.
 w_BANK_MAPPING_ON:
         DEFCODE "BANK-MAPPING-ON", 0
 w_BANK_MAPPING_ON_cf:
@@ -57,31 +44,24 @@ w_BANK_MAPPING_ON_cf:
         NEXT
 
 ; === BANK-MAPPING-OFF ( -- ) ===
-;   CP/M warm-boot escape (FR-P4-12). Jumps to BIOS WBOOT at $0000
-;   to reload CCP and return to a healthy `B>` prompt. Never returns.
+;   CP/M warm-boot escape. Jumps to BIOS WBOOT at $0000 to reload CCP and
+;   return to a healthy `B>` prompt. Never returns.
 ;
-;   IMPLEMENTATION NOTE — literal port-0x74 write is INTENTIONALLY
-;   NOT performed. A naive `OUT (0x74), A` with A=0 disconnects the
-;   kernel from RAM in the next instruction fetch: the CPU sees
-;   flash bank 0 (firmware code) at the slot-0 address it was
-;   executing, falls through to the firmware reset path, and
-;   triggers a full cold-boot (PIO/Display/RTC re-detect, RAM-disk
-;   reformat, sector restore) — verified on real MicroBeast 2026-05-15
-;   transcript `~/Downloads/beastty-20260515-193026.bin`. Story 17.1
-;   AC10 dev-pass finding. The firmware-blessed transition path is
-;   BIOS WBOOT at $EA03 (MicroBeast firmware beastos/bios.asm:55+164
-;   `wboote JP bios_wboot`), reachable as `JP 0x0000` via the JP
-;   wboote that bios_wboot sets up at address 0 (beastos/bios.asm:173-176).
-;   Mapping stays enabled across warm-boot; CP/M operates with mapping
-;   enabled (it's how the BIOS loaded antforth in the first place).
+;   The literal port-0x74 write is INTENTIONALLY NOT performed. A naive
+;   `OUT (0x74), A` with A=0 disconnects the kernel from RAM in the next
+;   instruction fetch: the CPU sees flash bank 0 (firmware code) at the
+;   slot-0 address it was executing, falls through to the firmware reset
+;   path, and triggers a full cold-boot (PIO/Display/RTC re-detect,
+;   RAM-disk reformat, sector restore) — confirmed on real MicroBeast.
+;   The firmware-blessed transition is BIOS WBOOT, reachable as `JP 0x0000`
+;   (the firmware installs a JP wboote at address 0). Mapping stays enabled
+;   across warm-boot; CP/M operates with mapping enabled (it's how the BIOS
+;   loaded antforth in the first place).
 ;
-;   The kernel-side `bank_mapping_state` cell is NOT updated here —
-;   the BIOS warm-boot destroys the antforth runtime before any
-;   observer could read it back, so the cell write would be dead
-;   code. The next antforth invocation runs COLD, which re-inits
-;   `bank_mapping_state` to 1 (src/antforth.asm step 8h).
-;
-; antforth extension BANK-MAPPING-OFF — see docs/antforth-banking-redesign.md §5.1
+;   The kernel-side `bank_mapping_state` cell is NOT updated here — the BIOS
+;   warm-boot destroys the antforth runtime before any observer could read
+;   it back, so the cell write would be dead code. The next invocation runs
+;   COLD, which re-inits `bank_mapping_state` to 1.
 w_BANK_MAPPING_OFF:
         DEFCODE "BANK-MAPPING-OFF", 0
 w_BANK_MAPPING_OFF_cf:
@@ -122,12 +102,9 @@ mbb_get_slot2:
 
 ; === BANK@ ( -- n ) ===
 ;   Return the current logical bank index — i.e. (IY+UserArea.current_bank).
-;   n is the index into the active bank list (NOT the physical page
-;   number) per FR-P4-1. Initial value 0 (portal-page default); updated
-;   by BANK! on successful bank switch. Available at the REPL and inside
-;   colon definitions.
-;
-; antforth extension BANK@ — see docs/antforth-banking-redesign.md §5.4
+;   n is the index into the active bank list (NOT the physical page number).
+;   Initial value 0 (portal-page default); updated by BANK! on successful
+;   bank switch. Available at the REPL and inside colon definitions.
 w_BANK_AT:
         DEFCODE "BANK@", 0
 w_BANK_AT_cf:
@@ -144,66 +121,47 @@ w_BANK_AT_cf:
 ;     n is a logical bank-list index, never > 28 in practice). On
 ;     out-of-range, raises ABORT" bank?" — THROW -2 with "bank?"
 ;     message printed via the kernel-internal w_THROW_cf.kernel_entry
-;     path (same shape as `(ABORT")` runtime at src/system.asm:164-171).
-;     FR-P4-2 wording: `If n is not in the active bank list, raises
-;     ABORT" bank?"`.
+;     path (same shape as the `(ABORT")` runtime).
 ;
-;     At Story 17.2 close, bank_count = 0 (active list empty until
-;     Story 17.3's +BANK populates it / Story 17.4's CL parser auto-
-;     populates at boot), so every BANK! invocation aborts. The swap
-;     mechanism wired below is dormant in 17.2 — verified active by
-;     Story 17.3 / Epic 19.
-;
-;     Portal-window guard (Story 19.5.1, ADR 19.5 DR-1 fix F1): a
-;     foreign-bank switch (n != current_bank) attempted from window-
-;     resident code — caller IP in $8000..$BFFF, the MMU slot-2 portal
-;     window — raises THROW -273 (THROW_BANK_FROM_BANKED) BEFORE any
-;     MMU or state mutation. Rationale: a threaded body physically
-;     resident in the window keeps fetching cells from whatever page is
-;     mapped; switching the page under itself makes subsequent fetches
-;     read the foreign page (portal-window dictionary aliasing — the
-;     DR-1 corruption class: opcode soup or JP $0000 warm boot). Same-
-;     bank switches from window code stay legal, as do all switches
-;     with caller IP < $8000 or >= $C000 (interpreted-mode BANK! runs
-;     from the outer interpreter's kernel-resident thread with IP in
+;     Portal-window guard: a foreign-bank switch (n != current_bank)
+;     attempted from window-resident code — caller IP in $8000..$BFFF,
+;     the MMU slot-2 portal window — raises THROW -273
+;     (THROW_BANK_FROM_BANKED) BEFORE any MMU or state mutation.
+;     Rationale: a threaded body physically resident in the window keeps
+;     fetching cells from whatever page is mapped; switching the page
+;     under itself makes subsequent fetches read the foreign page (portal-
+;     window dictionary aliasing — corrupts into opcode soup or a JP $0000
+;     warm boot). Same-bank switches from window code stay legal, as do all
+;     switches with caller IP < $8000 or >= $C000 (interpreted-mode BANK!
+;     runs from the outer interpreter's kernel-resident thread with IP in
 ;     kernel space, so the guard never fires on interactive use).
 ;
-;     Residual exposure (documented limit, ADR DR-1 honest-coverage
-;     note): the guard checks the caller IP only — DE at DEFCODE
-;     entry, i.e. the address of the cell AFTER the invoking BANK! xt
-;     (NEXT has already advanced IP), which is exactly the cell the
-;     post-swap NEXT would fetch from the foreign page. A bank-0 body
-;     whose post-BANK! cell sits below $8000 but whose later cells
-;     straddle into the window still corrupts (R-stack walking was
-;     rejected on cost). Boundary note: a BANK! xt cell at $7FFE has
-;     caller IP $8000 and IS guarded — the check is on the next-fetch
-;     address, not the xt cell itself. The straddle reproducer
-;     (tests/straddle_repro.fth.in + make test-straddle-regression)
-;     pins the residual class as a regression signature.
+;     Residual exposure (documented limit): the guard checks the caller IP
+;     only — DE at DEFCODE entry, i.e. the address of the cell AFTER the
+;     invoking BANK! xt (NEXT has already advanced IP), which is exactly
+;     the cell the post-swap NEXT would fetch from the foreign page. A
+;     bank-0 body whose post-BANK! cell sits below $8000 but whose later
+;     cells straddle into the window still corrupts (R-stack walking was
+;     rejected on cost). Boundary note: a BANK! xt cell at $7FFE has caller
+;     IP $8000 and IS guarded — the check is on the next-fetch address, not
+;     the xt cell itself. The straddle reproducer (tests/straddle_repro.fth.in
+;     + make test-straddle-regression) pins the residual as a regression
+;     signature.
 ;
 ;   Effects on success:
-;     1. MMU port write: OUT (0x72), active_pages[n]. Port 0x72 = slot 2
-;        per iz-cpm-banking cpm_machine.rs:13-14 (PORT_BANK0..3 =
-;        0x70..0x73); slot 2 = portal page per redesign §5.1/§5.2.
-;        UNLIKE BANK-MAPPING-OFF (port 0x74, disconnects kernel from
-;        RAM and triggers BIOS WBOOT — Story 17.1 AC10), the slot-2
-;        page-ID write at port 0x72 is safe from kernel-disconnect
-;        failure: the kernel binary lives in slot 0 ($0000-$3FFF);
-;        switching slot 2 does not affect the address range the CPU
-;        is currently fetching from.
-;     2. Per-bank triple swap (PD-P4-3 / FR-P4-22):
-;        save live (HERE, LATEST, wordlist_head) → bank-table[old][0..5]
-;        then load bank-table[new][0..5] → live cells. wordlist_head =
-;        the cell at `forth_wordlist` (canonical FORTH-WORDLIST struct's
-;        WORDLIST_NEXT slot per src/wordlists.asm:336-337). "Initial
-;        swap only" semantics at 17.2; full per-bank ,/COMPILE,/HERE/
-;        LATEST plumbing is Epic 19.
+;     1. Map slot 2 to active_pages[n]. Slot 2 = the portal window
+;        $8000..$BFFF. UNLIKE BANK-MAPPING-OFF (port 0x74, disconnects
+;        kernel from RAM and triggers BIOS WBOOT), the slot-2 page switch
+;        is safe from kernel-disconnect: the kernel binary lives in slot 0
+;        ($0000-$3FFF); switching slot 2 does not affect the address range
+;        the CPU is currently fetching from.
+;     2. Per-bank triple swap: save live (HERE, LATEST, wordlist_head) →
+;        bank-table[old][0..5] then load bank-table[new][0..5] → live cells.
+;        wordlist_head = the cell at `forth_wordlist` (the canonical
+;        FORTH-WORDLIST struct's WORDLIST_NEXT slot).
 ;     3. (IY+UserArea.current_bank) ← n. (The high byte stays 0 — it is
-;        zero at COLD and the precondition validates BC.high == 0 on
-;        every entry, so the high-byte write is a known-zero no-op and
-;        is elided to save 3 B.)
-;
-; antforth extension BANK! — see docs/antforth-banking-redesign.md §5.4
+;        zero at COLD and the precondition validates BC.high == 0 on every
+;        entry, so the high-byte write is a known-zero no-op and is elided.)
 w_BANK_STORE:
         DEFCODE "BANK!", 0
 w_BANK_STORE_cf:
@@ -214,19 +172,16 @@ w_BANK_STORE_cf:
         LD      A, C
         CP      (IY+UserArea.bank_count)
         JR      NC, .abort_bank
-        ; --- F1 portal-window guard (ADR 19.5 DR-1, Story 19.5.1):
-        ;     foreign-bank switch from window-resident code (caller IP in
-        ;     $8000..$BFFF) THROWs -273 BEFORE any MMU/state mutation.
-        ;     Same-bank switches stay legal (probe-18.2-a's `0 BANK!`
-        ;     while in bank 0). DE = caller IP at DEFCODE entry
-        ;     (src/inner_interpreter.asm:7); only D is read — no save
-        ;     needed at this point (the swap's PUSH DE comes later).
-        ;     Residual (documented in the docstring above): only the
-        ;     caller IP — the cell AFTER the invoking BANK! xt, i.e.
-        ;     the post-swap NEXT fetch address — is checked; later
-        ;     body cells are not. ---
-        ; A still holds C (target bank) from the precondition above — the
-        ; CP doesn't modify A, so the sketch's `LD A, C` is elided (-1 B).
+        ; --- Portal-window guard: foreign-bank switch from window-resident
+        ;     code (caller IP in $8000..$BFFF) THROWs -273 BEFORE any
+        ;     MMU/state mutation. Same-bank switches stay legal. DE = caller
+        ;     IP at DEFCODE entry (inner-interpreter convention); only D is
+        ;     read — no save needed here (the swap's PUSH DE comes later).
+        ;     Residual (see docstring): only the caller IP — the cell AFTER
+        ;     the invoking BANK! xt, i.e. the post-swap NEXT fetch address —
+        ;     is checked; later body cells are not. ---
+        ; A still holds C (target bank) from the precondition above (CP does
+        ; not modify A), so a redundant LD A, C is elided.
         CP      (IY+UserArea.current_bank)
         JR      Z, .window_ok                       ; same-bank → legal
         LD      A, D                                ; caller IP high byte
@@ -244,16 +199,14 @@ w_BANK_STORE_cf:
         ; --- Swap current_bank (read old; write new). High byte stays 0. ---
         LD      A, (IY+UserArea.current_bank)       ; A = old_bank
         LD      (IY+UserArea.current_bank), C       ; current_bank.low ← new
-        LD      (IY+UserArea.triple_owner), C       ; 19.5.2 CR-F1: live triple now keyed to new bank
-        ; DE = IP (inner-interpreter convention; src/inner_interpreter.asm:7).
-        ; The helper's LDIR cascade clobbers DE; preserve IP across the
-        ; swap so the trailing NEXT resumes at the caller. Precedent: WORDLIST
-        ; (src/wordlists.asm:48-63) does the same PUSH DE / POP DE around its
-        ; LDIR. (Story 17.2 review fix — H1.)
+        LD      (IY+UserArea.triple_owner), C       ; live triple now keyed to new bank
+        ; DE = IP (inner-interpreter convention). The helper's LDIR cascade
+        ; clobbers DE; preserve IP across the swap so the trailing NEXT
+        ; resumes at the caller (same PUSH DE / POP DE shape as WORDLIST).
         PUSH    DE                                  ; save IP — LDIR clobbers DE
         ; --- Triple swap: save live → table[A=old], load table[C=new] → live.
-        ;     Factored to bank_triple_swap (19.5.2 CR-F1) so THROW's caught
-        ;     path (src/exception.asm) can share the swap shape. ---
+        ;     Factored to bank_triple_swap so THROW's caught path
+        ;     (src/exception.asm) can share the swap shape. ---
         CALL    bank_triple_swap
         POP     DE                                  ; restore IP
         ; --- Pop new TOS (BC = previous-second-from-top) ---
@@ -294,9 +247,8 @@ bank_offset_hl:
 
 ; bank_triple_swap — save the live (HERE, LATEST, wordlist_head) triple
 ;   to bank-table[A], then load bank-table[C]'s triple into the live
-;   cells (the PD-P4-3 / FR-P4-22 swap shape, factored out of
-;   w_BANK_STORE_cf by the Story 19.5.2 CR pass so THROW's caught-path
-;   triple restore — src/exception.asm CR-F1 — can share it).
+;   cells. Factored out of w_BANK_STORE_cf so THROW's caught-path triple
+;   restore (src/exception.asm) can share it.
 ;
 ;   ENTRY:  A = save-target bank index, C = load-source bank index
 ;           (both in [0..28]; B is ignored).
@@ -306,8 +258,8 @@ bank_offset_hl:
 ;           and on the THROW caught path (completed before the stash-
 ;           restore LDIR touches [SP_safe..sp_base-1]).
 ;   Callers must NOT rely on the IX R-stack here: on the THROW caught
-;   path IX = frame base with the Story-18.5.1 stash zone live directly
-;   below it, so an rpush would clobber the depth word.
+;   path IX = frame base with the stash zone live directly below it, so
+;   an rpush would clobber the depth word.
 bank_triple_swap:
         PUSH    BC                                  ; preserve load-bank across save cascade
         ; --- Save live → bank-table[A][0..5] ---
@@ -337,23 +289,10 @@ bank_triple_swap:
 ;   Push the count of currently-active banks (= length of the active
 ;   list). Reads (IY+UserArea.bank_count).
 ;
-;   Implementation-vs-spec NOTE: FR-P4-3 names this word as "a VALUE
-;   derived from the active bank-list length". Antforth has §6.2.2405
-;   `VALUE` and §6.2.2295 `TO` both Deliberately-omitted in v2.0
-;   (docs/ans-forth-core-compliance.md:453,458 — "Pairs with VALUE
-;   (also omitted); deferred — out of v2.0 scope"). Shipping VALUE/TO
-;   to back this single use is scope-creep against the Story 17.2
-;   ~80 B envelope; a DEFCODE proxy reading a kernel cell has identical
-;   user-observable stack effect ( -- n ) pushing the stored count.
-;   Future enhancement (Epic N+1) can refactor `BANKS` to a real `VALUE`
-;   once VALUE/TO ship. Story 17.2 dev-pass choice; see Q1 in story
-;   17-2-bank-fetch-bank-store-banks-read-and-swap-primitives.md.
-;   At Story 17.2 close bank_count = 0 (active list empty until
-;   Story 17.3's +BANK / Story 17.4's CL parser populate it); BANKS
-;   returns 0. Story 17.4 dev-pass updates the active-probe to assert
-;   the configured-defaults count.
-;
-; antforth extension BANKS — see docs/antforth-banking-redesign.md §5.4
+;   The spec names this a VALUE derived from the active bank-list length,
+;   but VALUE/TO are deliberately omitted from antforth's core; shipping
+;   them to back this single use is rejected as scope-creep. A DEFCODE
+;   proxy reading the kernel cell has the identical ( -- n ) stack effect.
 w_BANKS:
         DEFCODE "BANKS", 0
 w_BANKS_cf:
@@ -363,49 +302,37 @@ w_BANKS_cf:
         NEXT
 
 ; === +BANK ( page -- ) ===
-;   Probe-on-add + append to active_pages[]. Switches slot 2 (port 0x72)
-;   to the candidate page, writes two sentinels ($5A then $A5) to $8000,
-;   and reads back. If either round-trip fails (ROM, unmapped, unstable),
-;   the original $8000 byte and the caller's slot-2 mapping are restored
-;   and ABORT" probe?" fires. On success, the original $8000 byte +
-;   slot-2 mapping are restored, the candidate is appended to
-;   active_pages[bank_count], and bank_count is incremented.
+;   Probe-on-add + append to active_pages[]. Maps slot 2 to the candidate
+;   page, writes two sentinels ($5A then $A5) to $8000, and reads back. If
+;   either round-trip fails (ROM, unmapped, unstable), the original $8000
+;   byte and the caller's slot-2 mapping are restored and ABORT" probe?"
+;   fires. On success, the original $8000 byte + slot-2 mapping are
+;   restored, the candidate is appended to active_pages[bank_count], and
+;   bank_count is incremented.
 ;
-;   Cap check (PD-P4-13 / §9.4 closure — architecture.md:386..402): if
-;   bank_count == BANK_TABLE_CAP (29), ABORT" cap?" fires BEFORE the
-;   probe. The active list is NOT modified on either ABORT path.
+;   Cap check: if bank_count == BANK_TABLE_CAP (29), ABORT" cap?" fires
+;   BEFORE the probe. The active list is NOT modified on either ABORT path.
 ;
-;   Probe correctness — two-sentinel sweep (Q1 dev-pass disposition,
-;   conservative). $5A alone would false-positive a ROM page whose
-;   byte at $8000 happens to equal $5A; $A5 catches that case because
-;   the original byte cannot equal both sentinels.
+;   Probe correctness — two-sentinel sweep, conservatively. $5A alone would
+;   false-positive a ROM page whose byte at $8000 happens to equal $5A; $A5
+;   catches that case because the original byte cannot equal both sentinels.
 ;
-;   Caller slot-2 restore is TABLE-based: active_pages[current_bank]
-;   when bank_count > 0, else the candidate stays mapped (the bootstrap
-;   probe is by CL construction the portal page itself). The original
-;   implementation read the caller page via `IN A, (0x72)` on the
-;   docstring claim "real MicroBeast firmware exposes the same
-;   read-back" — DIV-1 (HW UAT 2026-06-06) falsified that claim: the
-;   readback floats on real silicon, so every probe restored an
-;   unmapped (open-bus) page into slot 2, leaving the post-boot window
-;   dead until the first explicit BANK!. Retro-explains the original
-;   Probe-19.2-F HW-only hang. iz-cpm-banking implements the readback
-;   (cpm_machine.rs:138) and hid the divergence.
+;   The caller's slot-2 page is read from the BIOS shadow via MBB_GET (the
+;   page registers are write-only on real silicon — a raw IN floats open-bus,
+;   so reading the live mapping must go through the BIOS), then restored via
+;   MBB_SET after the probe.
 ;
-;   No dedup at this surface (Q2 dev-pass disposition). Duplicate
-;   pages append; downstream -BANK removes the first match, leaving
-;   subsequent duplicates intact. CL parser (Story 17.4) owns
-;   surface-level dedup per PD-P4-14 (§9.3 closure).
-;
-; antforth extension +BANK — see docs/antforth-banking-redesign.md §1
+;   No dedup at this surface: duplicate pages append; downstream -BANK
+;   removes the first match, leaving subsequent duplicates intact. The CL
+;   parser owns surface-level dedup.
 w_PLUS_BANK:
         DEFCODE "+BANK", 0
 w_PLUS_BANK_cf:
-        ; --- Cap check (AC2 / PD-P4-13) ---
+        ; --- Cap check ---
         LD      A, (IY+UserArea.bank_count)
         CP      BANK_TABLE_CAP
         JP      Z, .abort_cap
-        ; --- Probe + append via shared helper (Story 17.4 refactor) ---
+        ; --- Probe + append via shared helper ---
         ; Helper preserves DE (IP) so no PUSH/POP DE wrap is needed; the
         ; old D/E scratch arrangement (D=caller_slot2_page, E=saved_orig)
         ; is replaced by B/AF-via-stack inside the helper.
@@ -430,16 +357,12 @@ w_PLUS_BANK_cf:
         JP      w_THROW_cf.kernel_entry
 
 ; ============================================================
-; cl_probe_and_add — shared probe-and-append (Story 17.4 factoring).
+; cl_probe_and_add — shared probe-and-append.
 ;
 ;   Used by:
 ;     - w_PLUS_BANK_cf (above): on CY=1, JPs to .abort_probe (ABORT" probe?").
 ;     - cl_tail_parse  (src/antforth.asm): on CY=1, emits "probe? NN" +
-;       continues with the next CL-tail token (warn-and-continue per
-;       PD-P4-14 (v) / §9.3 closure).
-;
-;   Body identical to the post-cap-check, pre-NEXT section of the
-;   pre-17.4 w_PLUS_BANK_cf; refactored 2026-05-16 for Story 17.4 reuse.
+;       continues with the next CL-tail token (warn-and-continue).
 ;
 ;   Input:  A = candidate page byte.
 ;   Output: CY=0 on PASS — page appended to active_pages[bank_count];
@@ -454,9 +377,8 @@ w_PLUS_BANK_cf:
 cl_probe_and_add:
         LD      C, A                                ; C = candidate page
         ; Save the caller's current slot-2 page from the BIOS shadow
-        ; (MBB_GET preserves BC=candidate). This reads the actual live
-        ; mapping, so it needs no bootstrap special-case and retires the
-        ; DIV-1 IN-readback workaround (the port is write-only).
+        ; (MBB_GET preserves BC=candidate). Reads the actual live mapping —
+        ; no bootstrap special-case needed; the port itself is write-only.
         CALL    mbb_get_slot2                       ; A = caller's slot-2 page
         LD      B, A                                ; B = saved restore page
 .cpa_probe:
@@ -502,21 +424,18 @@ str_cap_q_len    EQU 4
 ; === -BANK ( page -- ) ===
 ;   Linear-search active_pages[0..bank_count-1] for page; on hit, shift
 ;   tail down by one byte via LDIR and decrement bank_count. On miss
-;   (or empty list), silent no-op (no THROW) per FR-P4-8.
+;   (or empty list), silent no-op (no THROW).
 ;
 ;   -BANK does NOT touch the MMU port; the currently-mapped slot-2 page
 ;   stays mapped. If the removed entry's logical index was below
 ;   current_bank, current_bank is left unchanged — the kernel cell may
-;   now point to a different physical page than before, and the user
-;   is responsible for re-issuing BANK! to re-establish the intended
-;   mapping (Q3 dev-pass disposition (a) — no current_bank bookkeeping).
+;   now point to a different physical page than before, and the user is
+;   responsible for re-issuing BANK! to re-establish the intended mapping
+;   (no current_bank bookkeeping).
 ;
-;   The vacated tail byte at the old active_pages[bank_count-1]
-;   position is NOT zeroed — it is unreachable post-decrement per the
-;   BANK! precondition, the -BANK search bounds, and .BANKS iteration
-;   cap (Q4 dev-pass disposition).
-;
-; antforth extension -BANK — see docs/antforth-banking-redesign.md §1
+;   The vacated tail byte at the old active_pages[bank_count-1] position
+;   is NOT zeroed — it is unreachable post-decrement per the BANK!
+;   precondition, the -BANK search bounds, and the .BANKS iteration cap.
 w_MINUS_BANK:
         DEFCODE "-BANK", 0
 w_MINUS_BANK_cf:
@@ -555,13 +474,12 @@ w_MINUS_BANK_cf:
         NEXT
 
 ; === BANKS-CLEAR ( -- ) ===
-;   Reset bank_count to 0. The active_pages[] byte array is NOT zeroed
-;   (Q4 dev-pass disposition) — the bytes become unreachable when
-;   bank_count == 0 because BANK!'s precondition `n < bank_count` fails
-;   for every n; -BANK's search loop bounds itself by bank_count; .BANKS
-;   (Story 17.5) iterates 0..bank_count-1. A subsequent +BANK rebuilds
-;   the list starting at index 0, overwriting the stale tail bytes as
-;   it goes.
+;   Reset bank_count to 0. The active_pages[] byte array is NOT zeroed —
+;   the bytes become unreachable when bank_count == 0 because BANK!'s
+;   precondition `n < bank_count` fails for every n; -BANK's search loop
+;   bounds itself by bank_count; .BANKS iterates 0..bank_count-1. A
+;   subsequent +BANK rebuilds the list from index 0, overwriting the
+;   stale tail bytes as it goes.
 ;
 ;   current_bank is NOT updated — its stale value is benign until the
 ;   next BANK!, which will ABORT" bank?" (precondition fails). After a
@@ -570,36 +488,27 @@ w_MINUS_BANK_cf:
 ;
 ;   USER-FACING TRAP — call `0 BANK!` BEFORE BANKS-CLEAR when current_bank
 ;   != 0. BANK!'s swap saves live HERE/LATEST/wordlist_head to
-;   bank-table[old] and loads bank-table[new]. Calling BANKS-CLEAR while
-;   a bank N != 0 is live strands the live cells on bank-N's triple
-;   (HERE at/above $8000 — the window compile point per the 19.5.1 F2
-;   COLD-init) with no BANK! route back: the precondition fails for
-;   every n until a +BANK rebuild, so dictionary-extending words run
-;   before the rebuild compile into the window under whatever page is
-;   still mapped. The safe rebuild sequence is:
+;   bank-table[old] and loads bank-table[new]. Calling BANKS-CLEAR while a
+;   bank N != 0 is live strands the live cells on bank-N's triple (HERE
+;   at/above $8000 — the window compile point) with no BANK! route back:
+;   the precondition fails for every n until a +BANK rebuild, so
+;   dictionary-extending words run before the rebuild compile into the
+;   window under whatever page is still mapped. The safe rebuild sequence:
 ;     N BANK! ... 0 BANK! BANKS-CLEAR ... +BANK ... BANK!
 ;   The 0 BANK! before BANKS-CLEAR swaps the kernel-snapshot triple back
 ;   into the live cells, so the dictionary stays consistent across the
-;   clear-and-rebuild. Probes 7 + F (tests/banking_tests.fth) follow
-;   this pattern.
-;   (History: pre-19.5.1 this trap was harsher — bank-table[N!=0] was
-;   zero-init until the 19.2 clone, so the stranded HERE was 0 and the
-;   next CREATE corrupted low memory. The 19.2 clone, then 19.5.1 F2's
-;   $8000 override, retired that HERE=0 class; the strand itself
-;   remains.)
-;
-; antforth extension BANKS-CLEAR — see docs/antforth-banking-redesign.md §1
+;   clear-and-rebuild.
 w_BANKS_CLEAR:
         DEFCODE "BANKS-CLEAR", 0
 w_BANKS_CLEAR_cf:
         LD      (IY+UserArea.bank_count), 0
         NEXT
 
-; SET-BANK (diagnostic raw MMU port write, FR-P4-10) was RETIRED in the
-; banking-correctness interlude: a raw OUT now desyncs the BIOS page shadow
-; (the BIOS owns it and re-pages during disk ops), so a later BIOS call could
-; restore a stale mapping and clobber slot 2 — a footgun once every page write
-; must go through MBB_SET_PAGE. Use BANK! (kernel-managed) for page switching.
+; SET-BANK (diagnostic raw MMU port write) was RETIRED: a raw OUT desyncs
+; the BIOS page shadow (the BIOS owns it and re-pages during disk ops), so a
+; later BIOS call could restore a stale mapping and clobber slot 2 — a footgun
+; once every page write must go through MBB_SET_PAGE. Use BANK! (kernel-managed)
+; for page switching.
 
 ; ============================================================
 ; === .BANKS ( -- ) ===
@@ -609,7 +518,8 @@ w_BANKS_CLEAR_cf:
 ;   (2-hex uppercase), current-bank marker ('*' for the row whose index
 ;   matches BANK@; space otherwise), per-bank `used` and `free` columns.
 ;
-;   Format (Q1=a compact form, 23 chars per row + CRLF):
+;   Format (compact, 23 chars per row + CRLF; fits 80 cols at the 29-bank
+;   cap — worst case "TOTAL          0 475136\r\n"):
 ;     "BANK PAGE   USED   FREE\r\n"   ; header — USED right-edge col 15,
 ;     "   0   22 *    0  16384\r\n"   ; FREE right-edge col 22; column
 ;     "   1   35      0  16384\r\n"   ; right-edges aligned across header,
@@ -617,39 +527,18 @@ w_BANKS_CLEAR_cf:
 ;     "TOTAL          0 196608\r\n"   ; (totals via D.R width-6).
 ;
 ;   Per-bank used = 0 and per-bank free = 16384 are PLACEHOLDERS (literal
-;   strings) per the AC2 minimal-form scope. Epic 19's bank-aware ':' makes
-;   the per-bank HERE real and updates .BANKS to read live values.
+;   strings); a future bank-aware ':' makes per-bank HERE real.
 ;
-;   Totals: used = 0 (sum of zero placeholders); free = bank_count * 16384
-;   (sum of per-bank 16384 placeholders). Computed as 24-bit value via
-;   `bank_count << 14` then printed via D.R right-aligned in 6-char field.
+;   Totals: used = 0; free = bank_count * 16384, computed post-loop as a
+;   double-cell value (d-low = (bank_count & 3) << 14, d-high =
+;   bank_count >> 2) and printed via D.R right-aligned in a 6-char field.
+;   D.R (double) is used rather than U.R (single) because max free total
+;   = 29*16384 = 475136 overflows a 16-bit single cell, and U.R is a
+;   DEFWORD not a DEFCODE.
 ;
-; Q1=a (column layout): compact form. Per-row width 23 chars + CRLF; fits
-;   80 cols at the 29-bank cap (worst case "TOTAL          0 475136\r\n").
-; Q2=b (totals computation): post-loop, double-cell value
-;   d-low = (bank_count & 3) << 14, d-high = bank_count >> 2.
-;   The story Q2(b) print recommendation cites `w_U_DOT_R_cf` (~10-15 B);
-;   that is INFEASIBLE because (a) U.R is a DEFWORD not a DEFCODE, and
-;   (b) max free total = 29*16384 = 475136 overflows the 16-bit single-cell
-;   that U.R consumes. Fix: switch IP to a tiny inline thread that calls
-;   D.R (double-cell right-aligned) + CR + EXIT. Disposition documented
-;   here; no project-lead escalation needed — the computation formula is
-;   unchanged, only the print primitive switches single→double.
-; Q3=c (BANK-column print): hand-rolled inline decimal printer via small
-;   helper print_bank_col_4 (4-char right-aligned for 0..28).
-; Q4=a (PAGE col bare hex): re-uses cl_emit_hex_byte (Story 17.4 helper).
-; Q5=a (zero-bank case): zero per-bank rows, totals = 0; header + totals
-;   row only, no per-bank-row loop entry.
-; Q6=a-extended (envelope): accept-with-rationale forward per Story 17.4
-;   precedent ACCEPTED 2026-05-16; Epic-17 retro absorbs cumulative overage.
-; Q7=a (probes): sentinel-and-grep via Makefile (Story 17.4 pattern).
-;
-; antforth extension .BANKS — see docs/antforth-banking-redesign.md §1
-; .BANKS — Epic 17 minimal form. Per-bank used/free are placeholders
-; (literal "0" / "16384"); Epic 19's bank-aware ':' makes them real
-; (probe: `5 BANK!  : SOME-WORD ; ` → used in bank 5 should reflect body
-; byte-count). Epic 22 polishes column formatting + adds optional REPL
-; prompt indicator integration (see architecture.md:483 Epic-22 budget).
+;   BANK col: hand-rolled decimal via print_bank_col_4. PAGE col: bare hex
+;   via cl_emit_hex_byte. Zero-bank case: header + totals row only (totals
+;   = 0), no per-bank loop.
 w_DOT_BANKS:
         DEFCODE ".BANKS", 0
 w_DOT_BANKS_cf:
@@ -670,7 +559,7 @@ w_DOT_BANKS_cf:
 
         ; --- Per-row loop ---
         ; B = remaining row count (DJNZ); C = current logical index (counts up).
-        ; bank_count == 0: skip the loop (Q5=a edge case — header + totals only).
+        ; bank_count == 0: skip the loop (header + totals only).
         LD      A, (IY+UserArea.bank_count)
         OR      A
         JR      Z, .totals
@@ -772,10 +661,8 @@ w_DOT_BANKS_cf:
 ;   Output: 4 chars emitted via BDOS ("   0".."  28")
 ;   Clobbers: A, BC, DE, HL
 ;
-;   Single call site (per-row BANK column); inline cost ~25 B inline-emit per
-;   row vs ~40 B via this helper + 3 B CALL = ~43 B helper-encapsulated. The
-;   helper form is preferred for readability + future re-use if .BANKS gains
-;   a second decimal column (Epic 22 polish).
+;   Single call site (per-row BANK column); kept as a helper for readability
+;   and future re-use if .BANKS gains a second decimal column.
 print_bank_col_4:
         ; A is clobbered by bdos_putchar (BDOS func 2 returns through A);
         ; stash via PUSH AF across the two leading-space emissions so the
@@ -813,78 +700,62 @@ print_bank_col_4:
         JP      bdos_putchar                        ; tail-call
 
 ; ============================================================
-; === Descriptor-stub allocator (Story 18.1, the (γ) mechanism) ===
+; === Descriptor-stub allocator (the γ mechanism) ===
 ;
 ;   Allocates one 4-byte descriptor stub at (IY+UserArea.stub_alloc_tail)
-;   then advances the cell by 4. The stub's address IS the word's xt
-;   per PD-P4-1 + redesign §2.1 (`docs/antforth-banking-redesign.md:34..42`);
-;   xt portability across BANK! (FR-P4-17) is automatic because the stub
-;   lives in fixed memory (the CCP-evicted $D400-$DBFF annex; see
-;   PD-P4-6 / architecture.md:271..285).
+;   then advances the cell by 4. The stub's address IS the word's xt;
+;   xt portability across BANK! is automatic because the stub lives in
+;   fixed memory (the CCP-evicted $D400-$DBFF annex).
 ;
-;   Stub layout v2 per PD-P4-11 (architecture.md:347..365) — Story
-;   19.5.2 (ADR 19.5 DR-2, option C: self-dispatching stub):
+;   Stub layout v2 — self-dispatching stub:
 ;     byte 0 — $EF (RST $28 opcode). The stub IS executable: NEXT's
-;              blind `JP (HL)` (src/macros.asm:32..47, untouched) and
-;              the folded EXECUTE both land here; the RST transfers to
-;              the stub_dispatch handler installed at the
-;              STUB_DISPATCH_VECTOR by COLD (src/antforth.asm). The
-;              Story-18.3-era dead `$C3` is retired — byte 0 is live
-;              code again, by design.
+;              blind `JP (HL)` (src/macros.asm) and the folded EXECUTE
+;              both land here; the RST transfers to the stub_dispatch
+;              handler installed at the STUB_DISPATCH_VECTOR by COLD.
 ;     byte 1 — target_bank as a signed byte. $FF = -1 = fixed-memory
-;              marker per FR-P4-13; $00..$1C = active logical bank
-;              index 0..28 per PD-P4-13 (29-entry cap). Caller owns
-;              range-checking (the allocator does NOT validate).
-;     bytes 2..3 — target_addr lo/hi (unchanged from v1).
+;              marker; $00..$1C = active logical bank index 0..28
+;              (29-entry cap). Caller owns range-checking (the allocator
+;              does NOT validate).
+;     bytes 2..3 — target_addr lo/hi.
 ;   stub_dispatch pops the RST-pushed stub+1, reads target_bank,
 ;   optionally writes the MMU port for slot 2, then JPs to target_addr
 ;   with HL = target CF (the DOCOL body = HL+3 precondition).
 ;
 ;   No DS directive backs the output region — the bytes are claimed at
 ;   constant addresses in the fixed-memory map (STUB_ALLOC_BASE = $D4CB,
-;   src/constants.asm). COLD (src/antforth.asm step 8h) seeds
-;   stub_alloc_tail = STUB_ALLOC_BASE; each allocation writes 4 B and
-;   advances the cell. Available region $D4CB..$DBFF = 1845 B = up to
-;   461 stubs in the CCP-evicted region alone (Epic 19+ may overflow
-;   into the HERE region — out of Story 18.1 scope).
+;   src/constants.asm). COLD seeds stub_alloc_tail = STUB_ALLOC_BASE;
+;   each allocation writes 4 B and advances the cell. Available region
+;   $D4CB..$DBFF = 1845 B = up to 461 stubs in the CCP-evicted region
+;   alone (heavier workloads may overflow into the HERE region).
 ;
-;   Callers: the AC7 probes (via the (stub-allocate) wrapper below),
-;   `;`-emit (src/compiler.asm) and CREATE-emit (src/compiler.asm) —
-;   all pass B = bank, DE = CFA, unchanged across the v2 layout swap.
-;   Execute-through is the RST-$28 stub_dispatch handler (below).
-;   Story 18.4 (BANK-OF) reads byte 1 (target_bank) at xt+1.
-;
-;   antforth Phase-4 — see docs/antforth-banking-redesign.md §2.1 (γ
-;   mechanism). Banking subsystem header at src/banking.asm:1..14.
+;   Callers: the (stub-allocate) wrapper below, `;`-emit and CREATE-emit
+;   (src/compiler.asm) — all pass B = bank, DE = CFA. Execute-through is
+;   the RST-$28 stub_dispatch handler (below). BANK-OF reads byte 1
+;   (target_bank) at xt+1.
 ; ============================================================
 ; stub_allocate — Kernel-internal allocator.
 ;
-;   Input:  B  = target_bank as a signed byte (-1 = fixed-memory marker
-;                per FR-P4-13; 0..28 = logical bank index per PD-P4-13).
-;                Out-of-range values are UNDEFINED INPUT — caller owns
-;                the bounds check (Stories 18.3 / 19.x).
+;   Input:  B  = target_bank as a signed byte (-1 = fixed-memory marker;
+;                0..28 = logical bank index). Out-of-range values are
+;                UNDEFINED INPUT — caller owns the bounds check.
 ;           DE = target_addr_in_bank (16-bit; for fixed-memory targets
 ;                this is a fixed-memory address; for banked targets it
 ;                is an address in the target bank's $8000-$BFFF body).
-;   Output: HL = stub address = the word's xt (per PD-P4-1 + redesign §2.1).
-;   Clobbers: HL is the output (was used as the write-cursor across the
-;                 4 bytes; restored to stub_addr via PUSH/POP). No other
+;   Output: HL = stub address = the word's xt.
+;   Clobbers: HL is the output (used as the write-cursor across the 4
+;                 bytes; restored to stub_addr via PUSH/POP). No other
 ;                 main-set register is modified: A / B / C / D / E and
-;                 flags are all preserved. The alt-set is untouched
-;                 (no EXX in the body). Lesson 17-D PUSH/POP DE wrap
-;                 NOT required: no EX DE,HL / no LDIR / no DE-as-temp
-;                 — DE is read-only (used as the source for `LD (HL),E`
-;                 and `LD (HL),D` to emit bytes 2-3). BC.high unchanged
-;                 (only B.low = target_bank consumed).
-;
-;                 Callers in Stories 18.3 / 19.x can rely on the full
-;                 main-set preservation contract — no caller-save wrap
-;                 is needed around `CALL stub_allocate`.
-;   Side effect: writes 4 B at (stub_alloc_tail); advances
-;                stub_alloc_tail by 4. No range check on the upper
-;                bound of the output region — overflow into the HERE
-;                region is an Epic 21 / future concern (the
-;                CCP-evicted region holds 461 stubs; current Phase-4
+;                 flags are all preserved. The alt-set is untouched (no
+;                 EXX in the body). No PUSH/POP DE wrap required: no
+;                 EX DE,HL / no LDIR / no DE-as-temp — DE is read-only
+;                 (source for `LD (HL),E` / `LD (HL),D` emitting bytes
+;                 2-3). BC.high unchanged (only B.low consumed). Callers
+;                 can rely on the full main-set preservation contract —
+;                 no caller-save wrap around `CALL stub_allocate`.
+;   Side effect: writes 4 B at (stub_alloc_tail); advances stub_alloc_tail
+;                by 4. No range check on the upper bound of the output
+;                region — overflow into the HERE region is a future
+;                concern (the CCP-evicted region holds 461 stubs; current
 ;                workloads stay well under).
 stub_allocate:
         LD      L, (IY+UserArea.stub_alloc_tail)
@@ -904,19 +775,15 @@ stub_allocate:
         RET
 
 ; === (stub-allocate) ( target_addr target_bank -- xt ) ===
-;   Forth-callable wrapper around stub_allocate. Layout-only kernel
-;   surface for Story 18.1's AC7 probes (Probe-18.1-A/B/C) — keeps the
-;   4-byte layout knowledge in one place (the kernel) rather than
-;   spreading it into test code. Stories 18.3 / 19.x consume the
-;   allocator via direct CALL stub_allocate inside their own
-;   DEFCODE bodies; this (stub-allocate) wrapper is the only
-;   Forth-callable surface in Story 18.1.
+;   Forth-callable wrapper around stub_allocate — keeps the 4-byte layout
+;   knowledge in the kernel rather than spreading it into test code.
+;   Kernel words consume the allocator via direct CALL stub_allocate
+;   inside their own DEFCODE bodies; this is the only Forth-callable
+;   surface.
 ;
-;   target_bank is consumed as a signed byte (low byte of TOS); the
-;   high byte of TOS is discarded. target_addr is consumed as a 16-bit
-;   cell (the NOS at entry).
-;
-; antforth Phase-4 — see docs/antforth-banking-redesign.md §2.1
+;   target_bank is consumed as a signed byte (low byte of TOS); the high
+;   byte of TOS is discarded. target_addr is consumed as a 16-bit cell
+;   (the NOS at entry).
 w_PAREN_STUB_ALLOCATE:
         DEFCODE "(stub-allocate)", 0
 w_PAREN_STUB_ALLOCATE_cf:
@@ -931,53 +798,34 @@ w_PAREN_STUB_ALLOCATE_cf:
         NEXT
 
 ; === BANK-OF ( xt -- n ) ===
-;   One-byte read of descriptor-stub byte 1 (target_bank — stub layout
-;   v2 per Story 19.5.2 / ADR 19.5 DR-2: byte 0 is now the RST $28
-;   opcode), sign-extended to a single cell. Returns the bank a word
-;   lives in: -1 for fixed-memory words (FR-P4-13 marker, stored as
-;   signed $FF), 0..28 for banked words (active-bank index per
-;   PD-P4-13).
+;   One-byte read of descriptor-stub byte 1 (target_bank; stub layout v2,
+;   byte 0 = the RST $28 opcode), sign-extended to a single cell. Returns
+;   the bank a word lives in: -1 for fixed-memory words (marker stored as
+;   signed $FF), 0..28 for banked words (active-bank index).
 ;
 ;   Implementation contract:
 ;     - Input: BC = xt = stub address (typically in [STUB_ALLOC_BASE,
 ;       $DC00) = [$D4CB, $DC00)). No range check on xt — caller owns
-;       valid-stub-address discipline, matching the stub_allocate
-;       undefined-input contract at src/banking.asm:751..769.
-;     - Output: BC = n = sign-extended byte at xt+1 (one INC HL ahead
-;       of the v1 byte-0 read; PD-P4-1's "one-byte read" property
-;       survives at +1 B).
+;       valid-stub-address discipline, matching stub_allocate's
+;       undefined-input contract.
+;     - Output: BC = n = sign-extended byte at xt+1.
 ;       $FF → $FFFF (= -1); $00..$1C → $0000..$001C (= 0..28).
 ;     - Sign-extension idiom: RLA / SBC A, A — bit 7 → carry; SBC A,A
-;       yields $FF if carry set, $00 if clear (Q2 decision: 2 B / 8 T;
-;       smallest + no branches; same idiom is widely used in Zilog
-;       programming guides).
-;     - EXX-hygiene audit (S7 / NFR-P4-34; docs/register-conventions.md
-;       §3 leaf-level rule + §7 EXX-using inventory): body reads only
-;       main-set BC / HL / A. No EXX. No EX DE,HL. No LDIR. No
-;       DE-as-temp. Lesson 17-D PUSH/POP DE wrap NOT required.
+;       yields $FF if carry set, $00 if clear (2 B / 8 T; smallest, no
+;       branches; widely used in Zilog programming guides).
+;     - Body reads only main-set BC / HL / A. No EXX. No EX DE,HL. No
+;       LDIR. No DE-as-temp. No PUSH/POP DE wrap required.
 ;     - Stack effect: single-cell-in / single-cell-out — TOS replaced
 ;       in BC, no PUSH BC / POP BC wraps.
-;
-;   "Essentially free" under PD-P4-1 / PD-P4-11: 8-instruction body
-;   (~8 B) consuming the byte 1 slot of the v2 layout (Story 19.5.2).
-;
-; antforth Phase-4 — FR-P4-5; PD-P4-1 (architecture.md:209, γ
-; descriptor-stub mechanism — "BANK-OF becomes a one-byte read from
-; the stub — essentially free"); PD-P4-11 (architecture.md:347..363,
-; 4-byte stub layout v2 with byte 1 = signed target_bank per ADR 19.5
-; DR-2); redesign §1 row at docs/antforth-banking-redesign.md:17.
 w_BANK_OF:
         DEFCODE "BANK-OF", 0
 w_BANK_OF_cf:
-        ; --- Story 19.2 (Q3-β consequence) — legacy-CFA xt discriminator ---
+        ; --- legacy-CFA xt discriminator ---
         ; Bank-0 `:` keeps the legacy CFA-as-xt path (no descriptor stub
-        ; allocated; preserves NFR-P4-1 test surface). BANK-OF on such an
-        ; xt would otherwise read a code byte (post-19.5.2 the body's
-        ; first opcode), out of signed [-1..28] range. Discriminate on
-        ; xt.high < $D4: legacy CFA xt → return -1 (fixed-memory marker
-        ; per FR-P4-13). The fold of EXECUTE (Story 19.5.2) makes this
-        ; the kernel's only remaining CP $D4 discriminator.
-        ; STUB_ALLOC_BASE = $D4CB.
+        ; allocated). BANK-OF on such an xt would otherwise read a code
+        ; byte (the body's first opcode), out of signed [-1..28] range.
+        ; Discriminate on xt.high < $D4: legacy CFA xt → return -1
+        ; (fixed-memory marker). STUB_ALLOC_BASE = $D4CB.
         LD      A, B                                ; A = xt.high
         CP      $D4
         JR      C, .bank_of_legacy_fixed
@@ -997,51 +845,29 @@ w_BANK_OF_cf:
 ; ============================================================
 ; IN-BANK ( n xt -- )
 ;
-;   Story 18.5 (FR-P4-4). Twelfth and final user-facing word of
-;   the redesign §1 BANK* wordset. Save current bank, switch to
-;   bank n, execute xt, restore caller's bank — CATCH-safe on
-;   the THROW unwind path.
+;   Save current bank, switch to bank n, execute xt, restore caller's
+;   bank — CATCH-safe on the THROW unwind path.
 ;
-;   Reference colon body at docs/antforth-banking-redesign.md:16:
+;   Reference colon body:
 ;
 ;     : IN-BANK BANK@ >R SWAP BANK! EXECUTE R> BANK! ;
 ;
-;   The reference body is NOT CATCH-safe: a THROW from xt would
-;   unwind to the caller's outer CATCH frame, abandoning the
-;   >R-saved bank cell — caller's bank would NOT be restored on
-;   the unwind path. FR-P4-4 binds CATCH-safety as externally-
-;   observable, so IN-BANK is kernel-blessed (DEFWORD that wraps
-;   EXECUTE in an internal CATCH frame), NOT a user library word.
+;   The reference body is NOT CATCH-safe: a THROW from xt would unwind to
+;   the caller's outer CATCH frame, abandoning the >R-saved bank cell —
+;   caller's bank would NOT be restored on the unwind path. CATCH-safety
+;   is externally observable, so IN-BANK is kernel-blessed (a DEFWORD that
+;   wraps EXECUTE in an internal CATCH frame), NOT a user library word.
 ;
-;   Q1 (Story 18.5 §"Open implementation questions") — DEFWORD
-;   with internal CATCH wrap chosen over DEFCODE inline-Z80:
-;   composes cleanly with existing exception machinery (no new
-;   CCD-1 dual-chain layout exposure), inherits the Story-11.4.1
-;   saved-SP / saved-BC discipline at src/exception.asm:111..174
-;   unchanged.
-;
-;   Q2 — saved-bank stash via Forth return stack (>R / R>):
-;     - >R pushes saved bank ABOVE the internal CATCH frame on
-;       the R-stack (i.e., at a higher IX address; R-stack grows
-;       downward).
-;     - CATCH frame is pushed BELOW (lower IX) — at IX_init-10..
-;       IX_init-3 — by w_CATCH_cf's DEC IX × 4 frame push.
-;     - On caught THROW from xt, THROW restores IX to the
-;       internal CATCH frame base, pops 8 B → IX is back to
-;       IX_init-2 with saved_bank still at (IX). R> recovers it;
-;       BANK! restores caller's bank; ?DUP IF THROW THEN
-;       re-throws the captured code.
-;     - Re-entrant for free: nested IN-BANK invocations each
-;       have their own R-stack stash cell; no aliasing. AC4
-;       Probe-18.5-B asserts.
-;     - UserArea fixed-cell stash REJECTED on Q2(d) non-re-
-;       entrancy grounds.
-;
-;   Q3 — Probe-18.5-D (cross-bank IN-BANK) DEFERRED to Epic 19
-;   per the slot-2-remap-under-IP hazard (Story-18.3 / 18.4
-;   precedent documented at tests/banking_tests.fth:1302..1345 —
-;   Probe-18.4-C deferral block). Epic 19's per-bank dictionary
-;   plumbing resolves the hazard structurally.
+;   Saved-bank stash via the Forth return stack (>R / R>):
+;     - >R pushes saved bank ABOVE the internal CATCH frame on the R-stack
+;       (higher IX address; R-stack grows downward).
+;     - The CATCH frame is pushed BELOW (lower IX) by CATCH's 4-cell push.
+;     - On caught THROW from xt, THROW restores IX to the internal CATCH
+;       frame base and pops it, leaving saved_bank at (IX). R> recovers it;
+;       BANK! restores caller's bank; ?DUP IF THROW THEN re-throws.
+;     - Re-entrant for free: nested IN-BANK invocations each have their own
+;       R-stack stash cell; no aliasing. A UserArea fixed-cell stash was
+;       REJECTED on non-re-entrancy grounds.
 ;
 ;   Stack diagram (BC = TOS-in-register; [SP] = next):
 ;     ( n xt -- )                            initial
@@ -1055,54 +881,31 @@ w_BANK_OF_cf:
 ;     BANK!   ( j*x 0 | i*x throw )          restore caller bank
 ;     ?DUP IF THROW THEN                     re-throw if non-zero
 ;
-;   CATCH-SAFETY SCOPE (FR-P4-4 / Story 18.5 AC2 narrow binding) —
-;   the externally-observable property guaranteed by this kernel
-;   word is: on caught THROW from xt, (a) the throw code lands on
-;   the CATCH frame's data stack, and (b) the caller's bank is
-;   restored on the unwind path (via the R-stack-stashed saved
-;   bank, recovered by R>). AC2's wording, Probe-18.5-C, and the
-;   deeper-cell-independent Probe-18.5-E witness this binding.
+;   CATCH-SAFETY SCOPE — the externally-observable guarantee: on caught
+;   THROW from xt, (a) the throw code lands on the CATCH frame's data
+;   stack, and (b) the caller's bank is restored on the unwind path (via
+;   the R-stack-stashed saved bank, recovered by R>).
 ;
-;   The i*x notation `( j*x 0 | i*x throw )` above is the ANS
-;   Forth CATCH stack effect. Story 18.5.1 (post-Story-18.5
-;   close, option (b) framework patch) extends antforth's CATCH
-;   frame with an IX-rstack stash zone (depth_word + i*x cells
-;   below frame_base; see docs/register-conventions.md §9 "Story
-;   18.5.1: i*x cell-content preservation scope") so that BOTH
-;   i*x's TOS-cell (via Story-11.4.1 saved-BC at frame +2) AND
-;   i*x's deeper cells (via the new LDIR-stash mechanism) are
-;   preserved across the caught-THROW boundary per ANS §9.6.1.0875.
-;   IN-BANK's body-cell-3 SWAP — which would have corrupted outer
-;   i*x's second-from-top under the pre-Story-18.5.1 framework
-;   (witnessed by the 18.5 H1 disposition Reproducer A trace) — is
-;   now harmless: outer CATCH stashes the deeper cells at its push,
-;   and the outer THROW caught-path LDIR restores them regardless
-;   of IN-BANK body's intermediate writes at [SP_safe + 0]. See
-;   `_bmad-output/implementation-artifacts/18-5-1-defwords-ix-
-;   preservation-on-caught-throw.md` for the dev-pass log and
-;   Probes 18.5.1-A/B for the empirical witnesses.
+;   The `( j*x 0 | i*x throw )` notation is the ANS Forth CATCH stack
+;   effect. The outer CATCH frame's IX-rstack stash zone preserves both
+;   i*x's TOS-cell and its deeper cells across the caught-THROW boundary
+;   (ANS §9.6.1.0875), so IN-BANK's body-cell-3 SWAP is harmless: the
+;   outer CATCH stashes the deeper cells at its push and the outer caught
+;   path restores them regardless of IN-BANK's intermediate writes.
 ;
-;   BANK!-on-bad-n contract: -2 THROW ("bank?") fires BEFORE the
-;   bank switch commits (src/banking.asm:151..156). On bad n,
-;   IN-BANK propagates -2 cleanly; caller's bank is preserved
-;   because no switch occurred. The R-stack stash cell is
-;   abandoned by the outer-CATCH (or uncaught-handler) unwind —
-;   harmless since IX is restored above it.
+;   BANK!-on-bad-n contract: -2 THROW ("bank?") fires BEFORE the bank
+;   switch commits. On bad n, IN-BANK propagates -2 cleanly; caller's bank
+;   is preserved because no switch occurred. The R-stack stash cell is
+;   abandoned by the outer-CATCH (or uncaught-handler) unwind — harmless
+;   since IX is restored above it.
 ;
-;   FR-P4-21 (recursive R-stack — documented gotcha per
-;   architecture.md:367..382): nested IN-BANK adds 5 cells per
-;   level (1 stash + 4-cell internal CATCH frame). Unbounded
-;   recursion eventually hits -5 RETURN-STACK-OVERFLOW THROW;
-;   no runtime guard added here.
+;   Recursive R-stack (documented gotcha): nested IN-BANK adds 5 cells per
+;   level (1 stash + 4-cell internal CATCH frame). Unbounded recursion
+;   eventually hits -5 RETURN-STACK-OVERFLOW THROW; no runtime guard here.
 ;
-;   EXX-HYGIENE (per NFR-P4-34 / docs/register-conventions.md
-;   §3): IN-BANK is a Forth-threaded DEFWORD composition of
-;   existing primitives (BANK@, >R, SWAP, BANK!, CATCH, R>,
-;   ?DUP, ?BRANCH, THROW), each of which is independently
-;   EXX-clean. No new EXX-hygiene audit needed for IN-BANK
-;   itself.
-;
-; antforth extension IN-BANK — see docs/antforth-banking-redesign.md §1
+;   IN-BANK is a Forth-threaded DEFWORD composition of EXX-clean primitives
+;   (BANK@, >R, SWAP, BANK!, CATCH, R>, ?DUP, ?BRANCH, THROW), so it needs
+;   no EXX-hygiene audit of its own.
 ; ============================================================
 w_IN_BANK:
         DEFWORD "IN-BANK", 0                ; ( n xt -- )
@@ -1123,17 +926,11 @@ w_IN_BANK_cf    EQU     w_IN_BANK_body - 3
 ; ============================================================
 ; stub_dispatch — RST-$28 self-dispatching descriptor-stub handler.
 ;
-;   Story 19.5.2 (ADR 19.5 DR-2, option C). Descriptor stubs are
-;   executable: stub byte 0 = $EF (RST $28). NEXT's blind JP (HL)
-;   (src/macros.asm:32..47, byte-for-byte untouched — NFR-P4-1 0 T per
-;   thread step for non-stub words), the folded EXECUTE, CATCH's
-;   xt-execute (src/exception.asm), and the outer interpreter all land
-;   on stub byte 0; the RST vectors through STUB_DISPATCH_VECTOR
-;   ($0028, src/constants.asm; COLD installs JP stub_dispatch there)
-;   to this handler. Replaces Story 18.2's sentinel-trampoline
-;   (cross_bank_return) + Story 18.3's EXECUTE 3-way — both RETIRED
-;   by this story (PD-P4-2 superseded; see architecture.md and
-;   redesign §2.2).
+;   Descriptor stubs are executable: stub byte 0 = $EF (RST $28). NEXT's
+;   blind JP (HL) (src/macros.asm), the folded EXECUTE, CATCH's xt-execute,
+;   and the outer interpreter all land on stub byte 0; the RST vectors
+;   through STUB_DISPATCH_VECTOR ($0028; COLD installs JP stub_dispatch
+;   there) to this handler.
 ;
 ;   ENTRY CONTRACT:
 ;     Reached via RST $28 from stub byte 0.
@@ -1144,77 +941,58 @@ w_IN_BANK_cf    EQU     w_IN_BANK_body - 3
 ;       [SP+0..1] = stub+1      — the RST-pushed return address. SP is
 ;                                 the FORTH DATA STACK in antforth; this
 ;                                 is a transient 2-byte push, POPped by
-;                                 the first instruction below. Together
-;                                 with the cross path's PUSH BC + PUSH
-;                                 HL spills the worst-case transient is
-;                                 6 bytes — covered by check_overflow's
-;                                 32-byte safety margin.
+;                                 the first instruction below. With the
+;                                 cross path's PUSH BC + PUSH HL the
+;                                 worst-case transient is 6 bytes —
+;                                 covered by check_overflow's 32-byte
+;                                 safety margin.
 ;       IX = R-stack pointer; IY = UserArea base
 ;
 ;   DISPATCH:
 ;     Read target_bank at stub byte 1 (= the popped stub+1 address).
-;     - target_bank == current_bank OR == $FF (fixed-memory marker per
-;       FR-P4-13) → INTRA path: load HL ← target_addr (stub bytes
-;       2..3), JP (HL) with HL = target CF. DOCOL's `body = HL+3`
-;       precondition (Story 18.3 CR-H1; src/inner_interpreter.asm)
-;       holds on every exit from this handler.
+;     - target_bank == current_bank OR == $FF (fixed-memory marker) →
+;       INTRA path: load HL ← target_addr (stub bytes 2..3), JP (HL) with
+;       HL = target CF. DOCOL's `body = HL+3` precondition holds on every
+;       exit from this handler.
 ;     - else → CROSS path: push the 2-cell frame on the IX R-stack
 ;       (top-to-bottom: [caller_bank][caller_IP = DE]), set DE ←
-;       xbank_thunk, MMU-switch to active_pages[target_bank] via
-;       OUT (0x72) (BANK!-shape lookup, src/banking.asm .window_ok
-;       block — minus the F1 guard and minus the per-bank triple swap,
-;       both deliberately: the dispatch path writes the port directly
-;       and BANK!'s -273 window guard does not constrain it, by
-;       design), update current_bank, then the same HL ← target CF /
-;       JP (HL) tail.
+;       xbank_thunk, map slot 2 to active_pages[target_bank] via
+;       mbb_set_slot2 (BANK!-shape lookup, minus the F1 guard and minus
+;       the per-bank triple swap — both deliberately: the dispatch path
+;       switches the page directly and BANK!'s -273 window guard does not
+;       constrain it, by design), update current_bank, then the same
+;       HL ← target CF / JP (HL) tail.
 ;
 ;   RETURN (cross path): uniform for DOCOL and non-DOCOL targets.
-;     HANDLER DE-CONTRACT (19.5.2 CR pass — binding on EVERY code-field
-;     handler reachable through a stub; mirrored at the handler sites,
-;     src/inner_interpreter.asm header): on entry DE = incoming IP
-;     (= xbank_thunk here). A handler must either push DE to the
-;     R-stack as the return IP, or reach NEXT with DE untouched. A
-;     future handler that clobbers DE without pushing it breaks
-;     cross-bank return SILENTLY (stale-IP wild fetch) — there is no
-;     runtime diagnostic.
-;     - DOCOL/DODOES target: pushes DE (= xbank_thunk) as the return
-;       IP; the body's terminal EXIT pops it; NEXT fetches the thunk
-;       cell → xbank_restore.
+;     HANDLER DE-CONTRACT (binding on EVERY code-field handler reachable
+;     through a stub; mirrored at the handler sites in
+;     src/inner_interpreter.asm): on entry DE = incoming IP (= xbank_thunk
+;     here). A handler must either push DE to the R-stack as the return IP,
+;     or reach NEXT with DE untouched. A future handler that clobbers DE
+;     without pushing it breaks cross-bank return SILENTLY (stale-IP wild
+;     fetch) — there is no runtime diagnostic.
+;     - DOCOL/DODOES target: pushes DE (= xbank_thunk) as the return IP;
+;       the body's terminal EXIT pops it; NEXT fetches the thunk cell →
+;       xbank_restore.
 ;     - DOVAR/DOCON/DEFCODE target: the body's own NEXT runs with
 ;       IP = xbank_thunk → same fetch → xbank_restore.
-;     Probe-19.3-F's hang class (cross-bank VARIABLE/CREATE reference
-;     through the old DOCOL/EXIT-pair-assuming sentinel contract) is
-;     structurally impossible here — root cause (b) subsumed.
 ;
-;   RE-ENTRANCY / R-STACK PRESSURE: nested cross-bank calls each push
-;     their own 2-cell frame; the thunk cell is read-only and shared.
-;     2 cells per cross-bank call vs the old 3+1-cell sentinel frame —
-;     the FR-P4-21 documented-gotcha (recursive cross-bank R-stack
-;     exhaustion) improves from 4× to 2× the intra-bank rate; the
-;     existing -5 RETURN-STACK-OVERFLOW THROW still backstops.
+;   RE-ENTRANCY / R-STACK PRESSURE: nested cross-bank calls each push their
+;     own 2-cell frame; the thunk cell is read-only and shared. 2 cells per
+;     cross-bank call doubles R-stack pressure vs intra-bank; the existing
+;     -5 RETURN-STACK-OVERFLOW THROW still backstops.
 ;
 ;   PRECONDITION owned by the stub emitter (stub_allocate callers):
-;     target_bank ∈ [0..bank_count) or $FF; target_addr is a Z80
-;     code-field address. The handler does NOT range-check (matches
-;     the stub_allocate undefined-input contract above).
+;     target_bank ∈ [0..bank_count) or $FF; target_addr is a Z80 code-field
+;     address. The handler does NOT range-check (matches the stub_allocate
+;     undefined-input contract above).
 ;
-;   EXX-HYGIENE AUDIT (NFR-P4-34 / docs/register-conventions.md §3
-;   leaf-level rule + §7 EXX-using inventory):
-;     - Main-set only (A, BC, DE, HL, IX, IY). NO `EXX` in the body.
-;       Leaf with respect to the EXX rule — entered at NEXT-time
-;       main-set register state from every dispatch site.
-;     - No `EX DE, HL`, no `LDIR`. DE is read (caller_IP, cross path)
-;       and re-loaded (xbank_thunk); BC=TOS is PUSH/POP-preserved
-;       around the MMU lookup. Lesson 17-D wrap NOT required.
-;     - No THROW raise (the OUT port write is hardware-deterministic;
-;       the byte reads are emitter-precondition'd). If a future
-;       disposition adds a guard here, re-walk the leaf-level audit.
-;
-;   FORWARD POINTERS:
-;     - Story 19.5.3 verifies the compiled-body north-star UX through
-;       this handler (19.2 AC4/AC5, 19.3 AC3/DOES>, probes F/G).
-;     - Epic 21 (row 21-2) owns the uncaught-THROW bank restore.
-;     - Story 19.5.4 hardware-verifies $0028 claimability (ADR A2).
+;   Main-set only (A, BC, DE, HL, IX, IY). No EXX. No EX DE,HL. No LDIR.
+;   DE is read (caller_IP, cross path) and re-loaded (xbank_thunk); BC=TOS
+;   is PUSH/POP-preserved around the MMU lookup. No THROW raise (the page
+;   switch is hardware-deterministic; the byte reads are emitter-
+;   precondition'd). If a future disposition adds a guard here, re-walk the
+;   register audit.
 ; ============================================================
 stub_dispatch:
         POP     HL                                  ; HL = stub+1 (FIRST: clear the RST transient off the data stack)
@@ -1224,10 +1002,8 @@ stub_dispatch:
         CP      $FF                                 ; fixed-memory marker?
         JR      Z, .enter                           ; → intra path (no switch)
         ; --- CROSS path: 2-cell frame [caller_bank][caller_IP] on IX R-stack.
-        ;     Both pushes route through rpush_de (19.5.2 CR pass — one
-        ;     R-stack push convention, src/inner_interpreter.asm; −13 B
-        ;     vs the hand-rolled DEC IX/LD (IX) pairs; the two CALL+RETs
-        ;     stay well inside the ADR's ≤400 T cross-path re-baseline). ---
+        ;     Both pushes route through rpush_de (the one R-stack push
+        ;     convention, src/inner_interpreter.asm). ---
         CALL    rpush_de                            ; caller_IP → frame +2..3
         LD      E, (IY+UserArea.current_bank)       ; E = caller_bank (DE dead: IP saved)
         LD      D, 0                                ; high byte invariantly 0
@@ -1252,7 +1028,7 @@ stub_dispatch:
         INC     HL                                  ; HL = stub+3 (target_addr.hi)
         LD      H, (HL)
         LD      L, A                                ; HL = target CF
-        JP      (HL)                                ; DOCOL sees HL = CF (CR-H1 precondition)
+        JP      (HL)                                ; DOCOL sees HL = CF (body = HL+3 precondition)
 
 ; xbank_thunk — one fixed-memory thread cell. Read-only, always mapped,
 ;   re-entrant (each cross-bank nesting level has its own 2-cell frame;
@@ -1266,18 +1042,16 @@ xbank_thunk:
 ;   restore caller's bank + IP, NEXT.
 ;
 ;   Raw code reached by NEXT's JP (HL) on the xbank_thunk cell — no
-;   DEFCODE header (not a dictionary word; parallel to the retired
-;   cross_bank_return's headerless shape).
+;   DEFCODE header (not a dictionary word).
 ;
 ;   ENTRY: BC = TOS (callee's final TOS — preserved); DE = xbank_thunk+2
 ;     (dead — re-loaded below); IX → 2-cell frame pushed by
 ;     stub_dispatch's cross path: (IX+0..1) = caller_bank,
 ;     (IX+2..3) = caller_IP.
 ;
-;   EXX-HYGIENE AUDIT (NFR-P4-34, §3 leaf-level rule): main-set only
-;     (A, BC, DE, HL, IX, IY); no EXX; no EX DE,HL; no LDIR; BC=TOS
-;     PUSH/POP-preserved around the MMU lookup; DE written only after
-;     its entry value is dead. No THROW raise.
+;   Main-set only (A, BC, DE, HL, IX, IY); no EXX; no EX DE,HL; no LDIR;
+;   BC=TOS PUSH/POP-preserved around the MMU lookup; DE written only after
+;   its entry value is dead. No THROW raise.
 xbank_restore:
         PUSH    BC                                  ; save TOS
         LD      C, (IX+0)                           ; C = caller_bank.low
