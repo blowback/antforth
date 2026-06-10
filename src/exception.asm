@@ -1,67 +1,57 @@
 ; exception.asm — Exception subsystem (CATCH/THROW)
 ; AntForth — A Forth for CP/M on Z80
 ;
-; Story 11.2 establishes CATCH and the 8-byte exception frame layout
-; (E11-D1, architecture.md:270-287). Stories 11.3–11.7 land THROW, the
-; per-primitive ABORT→THROW migration crawl, and the ABORT/ABORT"
-; retarget. Story 11.2 implements only the normal-return path —
-; THROW-time restore is intentionally not present here.
+; The exception chain is rooted at the USER variable CATCH-TOP; CATCH
+; pushes a frame, sets CATCH-TOP to the new frame address, and on normal
+; return restores CATCH-TOP from the frame's prev-link slot at +6.
 ;
-; Per CCD-1 (architecture.md:168-191) the exception chain is rooted at
-; the USER variable CATCH-TOP; CATCH pushes a frame, sets CATCH-TOP to
-; the new frame address, and on normal return restores CATCH-TOP from
-; the frame's prev-link slot at +6.
-;
-; Frame layout (E11-D1, post-Story-11.4.1 + Story 18.5.1 + Story 19.5.2):
-;   +8: current_bank          (Story 19.5.2 AC6, Q1=α: catcher's bank at
-;                             CATCH entry, low byte only — high byte slot
-;                             is not written; readers force 0 since bank
-;                             ≤ 28. Pushed FIRST so all pre-existing
-;                             field offsets below are untouched. THROW's
-;                             caught path MMU-restores from this slot so
-;                             a THROW across an abandoned cross-bank
-;                             thunk frame lands in the catcher's bank.)
+; Frame layout (10 bytes):
+;   +9: triple_owner          (the bank owning the live HERE/LATEST/
+;                             wordlist_head triple at CATCH time; the caught
+;                             path swaps the triple back when a real BANK!
+;                             ran between CATCH and THROW.)
+;   +8: current_bank          (catcher's bank at CATCH entry, low byte only;
+;                             readers force the high byte to 0 since bank
+;                             ≤ 28. Pushed FIRST so all pre-existing field
+;                             offsets below are untouched. THROW's caught
+;                             path MMU-restores from this slot so a THROW
+;                             across an abandoned cross-bank thunk frame
+;                             lands in the catcher's bank.)
 ;   +6: previous CATCH-TOP   (chain link)
 ;   +4: catching-IP          (caller's IP at CATCH entry)
 ;   +2: saved BC             (i*x's TOS-cell value at CATCH entry; restored
-;                             to data stack on THROW caught path so that
-;                             the cell at [SP_safe-2] — which any CALL
-;                             inside xt would otherwise clobber with its
-;                             return-address byte — is repopulated before
-;                             NEXT. Pre-Story-11.4.1 this slot was named
-;                             "saved IX" and unused — see story 11-4-1
-;                             root-cause analysis.)
+;                             to the data stack on the THROW caught path so
+;                             the cell at [SP_safe-2] — which any CALL inside
+;                             xt would otherwise clobber with its return-
+;                             address byte — is repopulated before NEXT.)
 ;   +0: saved SP             (parameter-stack pointer **after** the POP BC
 ;                             that consumed xt → HL and i*x's TOS → BC.
-;                             Pre-Story-11.4.1 captured BEFORE POP BC,
-;                             which left frame +0 pointing at a cell xt's
-;                             first CALL would clobber with its return-
-;                             address byte — the Story 11.4 Note A bug.)
+;                             Capturing it AFTER the POP keeps frame +0 above
+;                             xt's CALL/PUSH territory, so xt's stack traffic
+;                             cannot clobber the restored SP.)
 ;
-; Story 18.5.1 (post-frame extension) — i*x deeper-cell preservation:
-;   -2: depth_bytes word     (= sp_base − SP_safe = bytes of i*x cells
-;                             below the TOS that need preservation; high
-;                             byte invariantly 0 since PS_SIZE = 256.)
+; i*x deeper-cell preservation (below the frame on the IX rstack):
+;   -2: depth_bytes word     (= sp_base − SP_safe = bytes of i*x cells below
+;                             the TOS that need preservation; high byte
+;                             invariantly 0 since PS_SIZE = 256.)
 ;   -2-depth_bytes..-3:  i*x stash zone (data-stack bytes copied from
 ;                             [SP_safe..sp_base-1] at CATCH entry; LDIR'd
-;                             back to data stack on THROW caught path.
+;                             back to the data stack on the THROW caught path.
 ;                             Closes the ANS §9.6.1.0875 cell-content
-;                             preservation gap exposed by Story 18.5 H1
-;                             disposition.)
-;   CATCH-TOP still points at frame +0 (saved-SP slot); the stash zone
-;   sits BELOW CATCH-TOP on IX rstack. THROW and catch_resume_cf both
-;   advance IX past the (post-19.5.2) 10-byte frame; the depth_word +
-;   stash below frame base are left in the freed rstack region. See
-;   `w_CATCH_cf`, `catch_resume_cf`, and `w_THROW_cf.kernel_entry`
-;   caught path for the implementation.
+;                             preservation gap.)
+;   CATCH-TOP still points at frame +0 (saved-SP slot); the stash zone sits
+;   BELOW CATCH-TOP on the IX rstack. THROW and catch_resume_cf both advance
+;   IX past the 10-byte frame; the depth_word + stash below frame base are
+;   left in the freed rstack region. See `w_CATCH_cf`, `catch_resume_cf`,
+;   and `w_THROW_cf.kernel_entry` caught path for the implementation.
 
 ; -----------------------------------------------
 ; CATCH-TOP ( -- a-addr )
 ;   Push the address of the most-recent-exception-frame USER variable.
 ;   Zero when no enclosing CATCH is active (cold-start init in
 ;   antforth.asm; restored to prev value on every CATCH normal return).
-; antforth extension — CATCH-TOP exposed as user variable (per CCD-1
-;   dual-chain discipline; DPANS94 §9.6 does not require user-visibility)
+; antforth extension — CATCH-TOP exposed as a user variable (DPANS94 §9.6
+;   does not require user-visibility).
 ; -----------------------------------------------
 w_CATCH_TOP:
         DEFCODE "CATCH-TOP", 0          ; ( -- a-addr )
@@ -74,9 +64,9 @@ w_CATCH_TOP_cf:
 ;   Push the address of the most-recent INCLUDE source-frame USER variable.
 ;   Zero when no INCLUDE is in progress (cold-start init in antforth.asm;
 ;   restored to prev value on every (input-frame-pop) and on the THROW
-;   chain-walk per Story 13.4 v2 PD-9).
-; antforth extension  INCLUDE-TOP  — most recent INCLUDE source-frame addr (CCD-1 chain head)
-;   (CCD-1 dual-LIFO chain discipline; DPANS94 §11.6 does not require user-visibility)
+;   chain-walk).
+; antforth extension — INCLUDE-TOP exposed as a user variable (DPANS94
+;   §11.6 does not require user-visibility).
 ; -----------------------------------------------
 w_INCLUDE_TOP:
         DEFCODE "INCLUDE-TOP", 0        ; ( -- a-addr )
@@ -88,12 +78,12 @@ w_INCLUDE_TOP_cf:
 ; CATCH ( i*x xt -- j*x 0 | i*x n )
 ;   Execute xt with an exception frame on the IX return stack.
 ;   On normal return: push 0 onto the parameter stack as the success code.
-;   On THROW: (Story 11.3 — not implemented here) restore SP/IX, push n.
+;   On THROW: SP/IX/CATCH-TOP/IP are restored from the frame and n is
+;   pushed — see w_THROW_cf.kernel_entry caught path.
 ;
-;   Frame layout (E11-D1, post-Story-11.4.1 + 19.5.2) — pushed in
+;   Frame layout (see the file header for the full table) — pushed in
 ;   highest-addr-first order so the final IX matches the frame base:
-;       +8: current_bank (Story 19.5.2 AC6: catcher's bank, low byte;
-;                       readers force the high byte to 0)
+;       +8/+9: current_bank / triple_owner
 ;       +6: prev CATCH-TOP
 ;       +4: catching-IP (caller's IP at CATCH entry)
 ;       +2: saved BC   (i*x's TOS-cell value, captured from BC immediately
@@ -116,36 +106,33 @@ w_INCLUDE_TOP_cf:
 ;     - Captures SP_safe via "PUSH HL / LD HL, 2 / ADD HL, SP / POP HL"
 ;       (HL holds xt at this point; spill xt to system stack, capture
 ;       SP_safe = SP+2 to undo the PUSH, recover xt at end).
-;     - On entry BC=xt; AC #3 says check_underflow first (1-cell guard;
-;       ABORT path identical to every other 1-cell primitive — Story 11.4
-;       owns the migration to THROW -4).
+;     - On entry BC=xt; check_underflow runs first (1-cell guard; ABORT
+;       path identical to every other 1-cell primitive).
 ;
 ; ANS Forth 1994 §9.6.1.0875   CATCH          — execute xt with exception frame
 ; -----------------------------------------------
 w_CATCH:
         DEFCODE "CATCH", 0              ; ( i*x xt -- j*x 0 | i*x n )
 w_CATCH_cf:
-        CALL    check_underflow         ; AC #3: SP-cells >= 1 (xt cell)
-        ; --- EXECUTE-prelude reorder (Story 11.4.1): consume xt → HL and
-        ;     i*x's TOS → BC BEFORE the frame push so the post-POP SP
-        ;     ("SP_safe") and i*x's TOS-cell value are both available
-        ;     for the new frame layout. ---
+        CALL    check_underflow         ; 1-cell guard: SP-cells >= 1 (xt cell)
+        ; --- EXECUTE-prelude reorder: consume xt → HL and i*x's TOS → BC
+        ;     BEFORE the frame push so the post-POP SP ("SP_safe") and
+        ;     i*x's TOS-cell value are both available for the frame. ---
         LD      H, B
         LD      L, C                    ; HL = xt
         POP     BC                      ; BC = i*x's TOS-cell value
                                         ; SP advances to SP_safe = one
                                         ; cell above the original [SP].
         ; --- SP_safe capture: the saved-SP slot must hold the SP value
-        ;     AFTER the POP BC consumed i*x's TOS into BC. Pre-Story-
-        ;     11.4.1 this was captured BEFORE the POP — frame +0 then
-        ;     pointed at the i*x's TOS-cell location, which xt's first
-        ;     CALL (typically check_underflow) would clobber with its
-        ;     return-address byte. THROW's `LD SP, HL` then landed on
-        ;     stale return-address data instead of i*x's TOS. The post-
-        ;     Story-11.4.1 design captures SP_safe = SP after POP BC;
-        ;     xt's CALLs write at [SP_safe - 2] (never at SP_safe or
-        ;     above — Z80 PUSH/CALL discipline); i*x's TOS-cell value
-        ;     is preserved separately in frame +2 (saved-BC).
+        ;     AFTER the POP BC consumed i*x's TOS into BC. If it were
+        ;     captured BEFORE the POP, frame +0 would point at the i*x
+        ;     TOS-cell location, which xt's first CALL (typically
+        ;     check_underflow) would clobber with its return-address byte,
+        ;     and THROW's `LD SP, HL` would land on stale data instead of
+        ;     i*x's TOS. Capturing SP_safe = SP after POP BC keeps it above
+        ;     xt's CALL territory: xt's CALLs write at [SP_safe-2] (never
+        ;     at SP_safe or above — Z80 PUSH/CALL discipline); i*x's TOS-cell
+        ;     value is preserved separately in frame +2 (saved-BC).
         ;
         ;     The PUSH HL / LD HL, 2 / ADD HL, SP / POP HL idiom is
         ;     required because Z80 has no direct LD HL, SP — and HL
@@ -167,14 +154,13 @@ w_CATCH_cf:
         LD      HL, 2
         ADD     HL, SP                  ; HL = SP_safe (post-POP-BC SP)
         ; --- Push 10-byte frame (highest addr first; IX grows downward) ---
-        ; +8: current_bank (Story 19.5.2 AC6, Q1=α — pushed FIRST so the
-        ;     pre-existing +0/+2/+4/+6 offsets and CATCH-TOP = frame base
-        ;     are untouched). Low byte only — readers force 0, bank ≤ 28.
-        ; +9: triple_owner (19.5.2 CR-F1 — the bank owning the live
-        ;     HERE/LATEST/wordlist_head triple at CATCH time; the caught
-        ;     path swaps the triple back when a real BANK! ran between
-        ;     CATCH and THROW). Re-purposes the formerly-unwritten
-        ;     high-byte slot; frame stays 10 bytes.
+        ; +8: current_bank — pushed FIRST so the pre-existing +0/+2/+4/+6
+        ;     offsets and CATCH-TOP = frame base are untouched. Low byte
+        ;     only — readers force 0, bank ≤ 28.
+        ; +9: triple_owner — the bank owning the live HERE/LATEST/
+        ;     wordlist_head triple at CATCH time; the caught path swaps the
+        ;     triple back when a real BANK! ran between CATCH and THROW.
+        ;     Uses the +8 high-byte slot; frame stays 10 bytes.
         DEC     IX
         DEC     IX
         LD      A, (IY+UserArea.current_bank)
@@ -193,7 +179,7 @@ w_CATCH_cf:
         DEC     IX
         LD      (IX+0), E
         LD      (IX+1), D
-        ; +2: saved BC (Story 11.4.1: i*x's TOS-cell value from BC)
+        ; +2: saved BC (i*x's TOS-cell value from BC)
         DEC     IX
         DEC     IX
         LD      (IX+0), C
@@ -210,11 +196,11 @@ w_CATCH_cf:
                                         ; wrote to +0; safe.
         LD      (IY+UserArea.catch_top), L
         LD      (IY+UserArea.catch_top+1), H
-        ; --- Story 18.5.1 option (b): stash i*x deeper cells on IX rstack ---
-        ; Copy [SP_safe..sp_base-1] into a new zone below the 8-byte frame,
-        ; preceded by a 2-byte depth_word, so that THROW caught path can
-        ; LDIR them back after restoring SP. Closes ANS §9.6.1.0875 cell-
-        ; content preservation gap exposed by Story 18.5 H1 disposition.
+        ; --- Stash i*x deeper cells on the IX rstack ---
+        ; Copy [SP_safe..sp_base-1] into a new zone below the frame,
+        ; preceded by a 2-byte depth_word, so that the THROW caught path can
+        ; LDIR them back after restoring SP. Closes the ANS §9.6.1.0875
+        ; cell-content preservation gap.
         ; State here: IX = frame_base, BC = i*x's TOS, DE = caller's IP
         ; (already saved to frame +2 / +4), system stack [SP+0] = xt spill.
         ; Strategy: spill BC and SP_safe, compute depth, LDIR-push stash.
@@ -227,15 +213,13 @@ w_CATCH_cf:
         OR      A
         SBC     HL, DE                  ; HL = sp_base - SP_safe = depth_bytes
         ; --- Push depth_word at IX-2 UNCONDITIONALLY. The THROW caught
-        ;     path at `w_THROW_cf.kernel_entry` reads (IX-2)/(IX-1) into
-        ;     BC and uses it as both the LDIR byte-count and the JR Z
-        ;     short-circuit predicate (`LD A,B / OR C / JR Z`), so the
-        ;     slot must hold the actual depth_bytes value even when
-        ;     depth = 0 (Story-18.5.1 dev-pass iteration #1 bug: gating
-        ;     the write on depth>0 left (IX-2) holding rstack garbage,
-        ;     which THROW then attempted to LDIR-copy → crashes in test
-        ;     622 EVALUATE / test-repl-banking-skip).
-        ;     catch_resume_cf does NOT read (IX-2); it does a fixed +8
+        ;     path at `w_THROW_cf.kernel_entry` reads (IX-2)/(IX-1) into BC
+        ;     and uses it as both the LDIR byte-count and the JR Z short-
+        ;     circuit predicate (`LD A,B / OR C / JR Z`), so the slot must
+        ;     hold the actual depth_bytes value even when depth = 0 — gating
+        ;     the write on depth>0 would leave (IX-2) holding rstack garbage
+        ;     that THROW would then attempt to LDIR-copy.
+        ;     catch_resume_cf does NOT read (IX-2); it does a fixed +10
         ;     advance after re-anchoring IX via CATCH-TOP. ---
         LD      B, H
         LD      C, L                    ; BC = depth_bytes (count for LDIR)
@@ -263,7 +247,7 @@ w_CATCH_cf:
 .catch_no_stash:
         POP     HL                      ; drop SP_safe spill (clobbers HL — fine)
         POP     BC                      ; restore i*x's TOS-cell value
-        ; --- end Story 18.5.1 option (b) ---
+        ; --- end i*x stash ---
         POP     HL                      ; recover xt (matches PUSH HL above)
         ; --- DE = continuation thread (xt's terminal NEXT lands on (CATCH-RESUME)) ---
         LD      DE, catch_resume_thread
@@ -283,7 +267,7 @@ catch_resume_thread:
 ;     1. Restore CATCH-TOP from frame +6.
 ;     2. Restore caller's IP (DE) from frame +4.
 ;     3. Push xt's final TOS (BC) to SP; install BC = 0 (success code).
-;     4. Pop the 8-byte frame (IX += 8).
+;     4. Pop the 10-byte frame (IX += 10).
 ;     5. NEXT to the caller's thread.
 ;
 ;   At entry: IX = frame base (xt did not pop our frame).
@@ -292,13 +276,13 @@ catch_resume_thread:
 ;             the value sits as second-on-stack after we install BC=0).
 ; -----------------------------------------------
 catch_resume_cf:
-        ; --- Story 18.5.1: re-anchor IX to frame_base via CATCH-TOP.
-        ;     Post-Story-18.5.1, w_CATCH_cf pushes a stash zone BELOW the
-        ;     8-byte frame on the IX rstack (depth_word + i*x deeper-cell
-        ;     stash), so IX at xt's terminal NEXT may be at stash_low
-        ;     (= frame_base − 2 − depth_bytes) rather than at frame_base.
-        ;     CATCH-TOP still points at frame +0 (= frame_base) by contract,
-        ;     so reload IX from CATCH-TOP before reading frame fields. ---
+        ; --- Re-anchor IX to frame_base via CATCH-TOP. w_CATCH_cf pushes a
+        ;     stash zone BELOW the frame on the IX rstack (depth_word + i*x
+        ;     deeper-cell stash), so IX at xt's terminal NEXT may be at
+        ;     stash_low (= frame_base − 2 − depth_bytes) rather than at
+        ;     frame_base. CATCH-TOP still points at frame +0 (= frame_base)
+        ;     by contract, so reload IX from CATCH-TOP before reading frame
+        ;     fields. ---
         LD      L, (IY+UserArea.catch_top)
         LD      H, (IY+UserArea.catch_top+1)
         PUSH    HL
@@ -311,27 +295,21 @@ catch_resume_cf:
         ; --- Restore caller's IP (DE) from frame +4 ---
         LD      E, (IX+4)
         LD      D, (IX+5)
-        ; --- Push xt's final TOS to SP; new TOS = 0. Story 11.4.1: the
-        ;     +2 slot's repurposing as saved-BC has zero effect on this
-        ;     path — normal-return doesn't read +2 (or +0); it just
-        ;     pushes BC and pops the 8-byte frame. The saved-SP slot at
-        ;     +0 likewise becomes stale on this path; harmless because
-        ;     THROW's caught path reads +0 from a target frame that is
-        ;     by definition still live (catch_resume_cf bypassed). ---
+        ; --- Push xt's final TOS to SP; new TOS = 0. The +2 saved-BC slot
+        ;     has zero effect on this path — normal-return doesn't read +2
+        ;     (or +0); it just pushes BC and pops the frame. The saved-SP
+        ;     slot at +0 likewise becomes stale on this path; harmless
+        ;     because THROW's caught path reads +0 from a target frame that
+        ;     is by definition still live (catch_resume_cf bypassed). ---
         PUSH    BC
-        ; --- Pop the 10-byte frame: IX += 10 (8 + the Story-19.5.2 bank
-        ;     slot at +8 — no bank restore needed on THIS path: the
-        ;     xbank_thunk balances every cross-bank entry on the
-        ;     non-THROW path, so current_bank is already the catcher's).
-        ;     The Story-18.5.1 stash zone (depth_word + i*x stash) lives
-        ;     at LOWER addresses than frame_base on the IX rstack;
-        ;     advancing IX past the frame leaves the stash bytes in the
-        ;     now-free region below IX (they will be overwritten by
-        ;     subsequent rstack pushes; no GC required — IX rstack is
-        ;     dynamic). ---
-        ; ADD IX, BC = DD 09 (first kernel use of the IX-relative ADD; the
-        ; user-level assembler dispatches the same opcode via
-        ; .add16_dst_ixiy in src/assembler.asm).
+        ; --- Pop the 10-byte frame: IX += 10. No bank restore needed on
+        ;     THIS path: the xbank_thunk balances every cross-bank entry on
+        ;     the non-THROW path, so current_bank is already the catcher's.
+        ;     The stash zone (depth_word + i*x stash) lives at LOWER
+        ;     addresses than frame_base on the IX rstack; advancing IX past
+        ;     the frame leaves the stash bytes in the now-free region below
+        ;     IX (overwritten by subsequent rstack pushes; no GC required —
+        ;     the IX rstack is dynamic). ---
         LD      BC, 10
         ADD     IX, BC
         ; --- Install success code in BC ---
@@ -344,35 +322,17 @@ catch_resume_cf:
 ;   Non-zero n: if CATCH-TOP != 0, restore SP/IX/CATCH-TOP/IP from the
 ;     target exception frame, install BC = n, NEXT into caller's thread
 ;     (resumes one cell after the CATCH that wraps this THROW).
-;   Non-zero n with CATCH-TOP = 0: uncaught — print "error <n>"
-;     (decimal, BASE-independent) plus optional ": <description>" if n
-;     is in throw_desc_table, then run the recovery chain (asm_cleanup
-;     + SP-reset + JP w_QUIT_cf) inline; routes back to the .quit_loop
-;     REPL prompt with dictionary preserved (FR21, FR22, NFR3, NFR7, NFR8).
-;
-;   See architecture.md:289-300 (E11-D2 algorithm) and CCD-1 dual-chain
-;   discipline (architecture.md:168-191) — the INCLUDE-TOP chain walk is
-;   a no-op pre-Epic-13 and Story 13.4 inserts the loop here.
+;   Non-zero n with CATCH-TOP = 0: uncaught — print "error <n>" (decimal,
+;     BASE-independent) plus optional ": <description>" if n is in
+;     throw_desc_table, then run the recovery chain (asm_cleanup + SP-reset
+;     + JP w_QUIT_cf) inline; routes back to the REPL prompt with the
+;     dictionary preserved.
 ;
 ;   Post-NEXT invariant on the caught path: BC = n is a *real* TOS, not
-;   phantom (project_tos_in_register.md). At CATCH entry, BC held xt
-;   (TOS-in-register) and [SP] held i*x's TOS-cell. Story-11.4.1 frame
-;   layout: CATCH's POP BC consumes i*x's TOS into BC; frame +2 captures
-;   that BC value as saved-BC; frame +0 captures the post-POP SP value
-;   as SP_safe (one cell above the original i*x's TOS-cell slot).
-;
-;   Pre-Story-11.4.1 (Story 11.4 Note A): saved-SP was captured BEFORE
-;   the POP BC, so frame +0 pointed at the memory cell that held i*x's
-;   TOS. xt's first CALL (typically check_underflow's entry CALL) wrote
-;   its return-address byte at THAT cell, clobbering the i*x's TOS value
-;   the THROW caught path expected to find via LD SP, HL. The fix splits
-;   the responsibility: saved-SP at +0 holds SP_safe (above xt's CALL
-;   territory) and saved-BC at +2 holds the i*x's TOS-cell value
-;   separately. THROW's caught-path restore:
-;     LD SP, HL    (HL = SP_safe — points one cell above xt's
-;                   CALL/PUSH territory; preserved across xt)
-;     PUSH BC      (BC = saved-BC at this point — restores
-;                   i*x's TOS-cell to [SP_safe - 2])
+;   phantom. The caught-path restore:
+;     LD SP, HL    (HL = SP_safe — points one cell above xt's CALL/PUSH
+;                   territory; preserved across xt)
+;     PUSH BC      (BC = saved-BC — restores i*x's TOS-cell to [SP_safe-2])
 ;     LD BC, n
 ;     NEXT
 ;   Final invariant: BC = n (real TOS), [SP] = i*x's TOS-cell,
@@ -382,35 +342,31 @@ catch_resume_cf:
 ;
 ;   The IX rstack between the THROW site and the target frame's base
 ;   (colon return-addr frames, DO-LOOP frames, etc.) is abandoned
-;   wholesale by the IX restore — E11-D2's "snap back" semantic.
+;   wholesale by the IX restore — the "snap back" semantic.
 ;
-;   Caller contract (Stories 11.4-11.6 watch-list): a primitive that
-;   has executed `EXX` to acquire shadow registers must `EXX`-restore
-;   *before* falling into THROW. THROW reads BC as `n`, captures HL/SP
-;   from the primary set, and overwrites BC/DE/HL during the restore;
-;   if the shadow set is still active at entry, n is read from the
-;   wrong cell and the post-NEXT shadow state stays inverted into the
-;   catching frame. Per the EXX convention (docs/register-conventions
-;   .md §1) shadow regs must be restored before NEXT or any transfer
-;   out — this contract simply restates that for THROW.
+;   Caller contract: a primitive that has executed `EXX` to acquire shadow
+;   registers must `EXX`-restore *before* falling into THROW. THROW reads
+;   BC as `n`, captures HL/SP from the primary set, and overwrites BC/DE/HL
+;   during the restore; if the shadow set is still active at entry, n is
+;   read from the wrong cell and the post-NEXT shadow state stays inverted
+;   into the catching frame. (This just restates the EXX convention: shadow
+;   regs must be restored before NEXT or any transfer out.)
 ;
 ; ANS Forth 1994 §9.6.1.2275   THROW          — raise an exception
 ; -----------------------------------------------
 w_THROW:
         DEFCODE "THROW", 0              ; ( k*x n -- k*x | i*x n )
 w_THROW_cf:
-        CALL    check_underflow         ; AC #17: 1-cell guard. Story 11.4
-                                        ; migrates do_underflow_error itself
-                                        ; to -4 THROW, but THROW's own entry
+        CALL    check_underflow         ; 1-cell guard. THROW's own entry
                                         ; call must remain wired to the
-                                        ; legacy helper to avoid recursion.
+                                        ; legacy helper (not -4 THROW) to
+                                        ; avoid recursion.
         ; -----------------------------------------------
         ; Kernel-internal entry: callers from inside the kernel
         ; (do_underflow_error, the divisor-zero guards in udivmod / UM/MOD,
-        ; the dictionary/compiler/control-flow/string/I-O sites migrated
-        ; by Stories 11.5 / 11.6, and the user-facing ABORT / (ABORT")
-        ; sites migrated by Story 11.7) JP w_THROW_cf.kernel_entry with
-        ; BC pre-loaded to the THROW code.
+        ; the dictionary/compiler/control-flow/string/I-O THROW sites, and
+        ; the user-facing ABORT / (ABORT") sites) JP w_THROW_cf.kernel_entry
+        ; with BC pre-loaded to the THROW code.
         ; The check_underflow guard above is skipped for two reasons:
         ;   (1) the caller's user stack is by definition in a degenerate
         ;       state on the underflow path (so check_underflow would
@@ -424,11 +380,7 @@ w_THROW_cf:
         ; SP-reset + JP w_QUIT_cf), both perform a wholesale state
         ; reset before any SP-dependent operation.
         ; EXX hygiene: each kernel-internal call site must verify
-        ; EXX-not-active at entry. The three sites added in Story 11.4
-        ; (do_underflow_error, the udivmod guard, the UM/MOD guard)
-        ; satisfy this — they all run from primary-set context. The
-        ; sites added in Stories 11.5 / 11.6 / 11.7 each re-verified
-        ; the contract per their AC #12 spot-checks.
+        ; EXX-not-active at entry (all run from primary-set context).
         ; FUTURE-EDIT NOTE 1: any new code inserted between this label
         ; and the n=0 short-circuit below will be SKIPPED on the
         ; kernel-internal path. New pre-throw work belongs *after*
@@ -438,55 +390,45 @@ w_THROW_cf:
         ; `POP BC` to consume the zero from the user data stack — on
         ; the kernel-entry path SP may be indeterminate (per the
         ; "SP may be in any state" note above), so a BC=0 entry would
-        ; pop a stale frame byte and corrupt the user stack. Today no
-        ; site does this (post-Epic-11 the codes raised from the
-        ; kernel-internal entry are -1, -2, -4, -10, -13, -14, -16,
-        ; -17, -22, -58, -258..-272, -273 — all non-zero; -272 added by
-        ; Story 11.5.6's split, -273 by Story 19.5.1's BANK! window
-        ; guard); flagging for any future migration that wishes to
-        ; raise THROW 0 from the kernel.
+        ; pop a stale frame byte and corrupt the user stack. Today every
+        ; code raised from this entry is non-zero (-1, -2, -4, -10, -13,
+        ; -14, -16, -17, -22, -58, -258..-272, -273); flagging for any
+        ; future migration that wishes to raise THROW 0 from the kernel.
         ; -----------------------------------------------
 .kernel_entry:
         ; --- n = 0 no-op (Forth 2014 §9.6.1.2275: "If any bits of n are
         ;     non-zero, ..." — zero is silent, only consumes the zero) ---
         LD      A, B
         OR      C
-        JP      Z, .throw_zero          ; (JP, not JR: 19.5.2 AC6 bank restore
-                                        ; pushed .throw_zero past +127. +1 B.)
+        JP      Z, .throw_zero          ; JP, not JR: target is past JR's +127 range
         ; --- Read CATCH-TOP into HL ---
         LD      L, (IY+UserArea.catch_top)
         LD      H, (IY+UserArea.catch_top+1)
         LD      A, H
         OR      L
         JP      Z, .throw_uncaught       ; CATCH-TOP = 0: no enclosing CATCH
-                                         ; (JP, not JR: Story 19.5.2's AC6 bank
-                                         ; restore pushed the uncaught label past
-                                         ; JR's +127 range — the switch-back the
-                                         ; original JR comment anticipated. +1 B.)
+                                         ; (JP, not JR: target is past JR's +127 range)
         ; --- Caught path. HL = target frame base.
         ;     Stash n in throw_saved_n so BC is free for ADD IX, BC. ---
         LD      (throw_saved_n), BC
         PUSH    HL
         POP     IX                       ; IX = target frame base
-        ; --- Story 13.4 v2: INCLUDE-TOP chain walk (PD-10 / AC #11).
-        ;     Pop INCLUDE source frames more recent than the target catch
-        ;     frame (rstack grows DOWN: frame addr < IX_target ⇒ more
-        ;     recent). Closes each FID on the way and restores the
-        ;     parent's input-spec into USER. IX is preserved across the
-        ;     walk; chain_walk_target scratch cell holds the target frame
-        ;     base for the unsigned `<` compare. See architecture.md
-        ;     E11-D2 (THROW algorithm) and E13-D2 (frame layout). ---
+        ; --- INCLUDE-TOP chain walk. Pop INCLUDE source frames more recent
+        ;     than the target catch frame (rstack grows DOWN: frame addr <
+        ;     IX_target ⇒ more recent). Closes each FID on the way and
+        ;     restores the parent's input-spec into USER. IX is preserved
+        ;     across the walk; the chain_walk_target scratch cell holds the
+        ;     target frame base for the unsigned `<` compare. ---
         CALL    throw_chain_walk_caught
-        ; --- Story 19.5.2 AC6: restore the catcher's bank from frame +8
-        ;     (MMU port + current_bank cell) during snap-back. A THROW
-        ;     across an abandoned cross-bank thunk frame (stub_dispatch's
-        ;     2-cell frame + xbank_thunk, src/banking.asm) must land in
-        ;     the catcher's bank — the abandoned frame's xbank_restore
-        ;     never runs (E11-D2 wholesale R-stack abandonment).
-        ;     Sequenced HERE, before the frame-field reads below, while
-        ;     HL/BC/DE are all free (n is parked in throw_saved_n; the
-        ;     reads at +6/+4/+0/+2 come after). High byte forced 0
-        ;     (bank ≤ 28; the +9 slot holds triple_owner — below). ---
+        ; --- Restore the catcher's bank from frame +8 (MMU port +
+        ;     current_bank cell) during snap-back. A THROW across an
+        ;     abandoned cross-bank thunk frame (stub_dispatch's 2-cell frame
+        ;     + xbank_thunk, src/banking.asm) must land in the catcher's
+        ;     bank — the abandoned frame's xbank_restore never runs under
+        ;     the wholesale R-stack abandonment. Sequenced HERE, before the
+        ;     frame-field reads below, while HL/BC/DE are all free (n is
+        ;     parked in throw_saved_n). High byte forced 0 (bank ≤ 28; the
+        ;     +9 slot holds triple_owner — below). ---
         LD      C, (IX+8)               ; C = catcher's bank.low
         LD      B, 0
         LD      HL, ACTIVE_PAGES_BASE
@@ -494,20 +436,18 @@ w_THROW_cf:
         LD      A, (HL)
         CALL    mbb_set_slot2           ; MMU slot 2 ← catcher's page (preserves BC,HL,DE)
         LD      (IY+UserArea.current_bank), C
-        ; --- 19.5.2 CR-F1: restore the CATCH-time triple owner from
-        ;     frame +9. A real BANK! between CATCH and THROW leaves the
-        ;     live (HERE, LATEST, wordlist_head) triple keyed to a bank
-        ;     other than the one saved at CATCH; the MMU restore above
-        ;     does not touch the triple (stub_dispatch parity), so the
-        ;     next `:`/CREATE would compile against the foreign HERE —
-        ;     sticky corruption (a later same-bank BANK! early-exits the
-        ;     guard but still saves the foreign triple over the table
-        ;     slot). Swap back via bank_triple_swap (save live →
-        ;     table[owner], load table[frame +9] → live; transient
-        ;     PUSH BC only — the stash-restore LDIR below is untouched).
-        ;     Same-owner case (incl. plain cross-bank dispatch, which
-        ;     never swaps the triple) skips: probe-19.5.2-d witnesses
-        ;     the swap shape, probe-19.5.2-c the skip shape. ---
+        ; --- Restore the CATCH-time triple owner from frame +9. A real
+        ;     BANK! between CATCH and THROW leaves the live (HERE, LATEST,
+        ;     wordlist_head) triple keyed to a bank other than the one saved
+        ;     at CATCH; the MMU restore above does not touch the triple
+        ;     (stub_dispatch parity), so the next `:`/CREATE would compile
+        ;     against the foreign HERE — sticky corruption (a later same-bank
+        ;     BANK! early-exits the guard but still saves the foreign triple
+        ;     over the table slot). Swap back via bank_triple_swap (save live
+        ;     → table[owner], load table[frame +9] → live; transient PUSH BC
+        ;     only — the stash-restore LDIR below is untouched). Same-owner
+        ;     case (incl. plain cross-bank dispatch, which never swaps the
+        ;     triple) skips. ---
         LD      A, (IY+UserArea.triple_owner)
         CP      (IX+9)
         JR      Z, .throw_owner_ok
@@ -528,18 +468,16 @@ w_THROW_cf:
         ; --- Read saved-SP from frame +0 into HL (read while IX = base) ---
         LD      L, (IX+0)
         LD      H, (IX+1)               ; HL = SP_safe
-        ; --- Read saved i*x's TOS-cell value from frame +2 (Story 11.4.1).
-        ;     Pre-Story-18.5.1 this read happened POST-ADD-IX-8 via
-        ;     (IX-6)/(IX-5); Story 18.5.1 reads it BEFORE the variable
-        ;     advance so the stash-restore LDIR can be sequenced cleanly. ---
+        ; --- Read saved i*x's TOS-cell value from frame +2 BEFORE the IX
+        ;     advance, so the stash-restore LDIR below can be sequenced
+        ;     cleanly. ---
         LD      C, (IX+2)
         LD      B, (IX+3)               ; BC = saved i*x's TOS-cell
-        ; --- Story 18.5.1 option (b): restore i*x deeper cells from IX-rstack
-        ;     stash zone (pushed by w_CATCH_cf above). Stash saved-BC and
-        ;     SP_safe to scratch cells; LDIR from stash to data stack at
-        ;     [SP_safe..sp_base-1]; advance IX past frame + depth_word +
-        ;     stash; recover saved-BC and SP_safe; LD SP, HL; PUSH BC;
-        ;     LD BC, n; NEXT. ---
+        ; --- Restore i*x deeper cells from the IX-rstack stash zone (pushed
+        ;     by w_CATCH_cf above). Stash saved-BC and SP_safe to scratch
+        ;     cells; LDIR from stash to data stack at [SP_safe..sp_base-1];
+        ;     advance IX past frame + depth_word + stash; recover saved-BC
+        ;     and SP_safe; LD SP, HL; PUSH BC; LD BC, n; NEXT. ---
         LD      (throw_stash_hl), HL    ; spill SP_safe
         LD      (throw_stash_bc), BC    ; spill saved-BC (i*x TOS)
         LD      (throw_stash_de), DE    ; spill catching-IP. Use a kernel
@@ -568,9 +506,8 @@ w_THROW_cf:
         ; --- LDIR copy BC bytes from stash (HL) → data stack (DE) ---
         LDIR
 .throw_no_unstash:
-        ; --- Advance IX past the 10-byte frame (8 + the Story-19.5.2
-        ;     bank slot at +8). The Story-18.5.1 stash zone (depth_word +
-        ;     i*x stash) at lower addrs is now in the freed rstack region
+        ; --- Advance IX past the 10-byte frame. The stash zone (depth_word
+        ;     + i*x stash) at lower addrs is now in the freed rstack region
         ;     below IX (parallel to catch_resume_cf above; no variable
         ;     advance needed — stash sits BELOW frame_base). ---
         LD      BC, 10
@@ -579,11 +516,10 @@ w_THROW_cf:
         LD      BC, (throw_stash_bc)    ; BC = saved i*x's TOS-cell
         LD      HL, (throw_stash_hl)    ; HL = SP_safe
         LD      DE, (throw_stash_de)    ; DE = catching-IP
-        ; --- Restore SP_safe; push i*x TOS at [SP_safe-2] (matches
-        ;     pre-Story-18.5.1 contract — Story 11.4.1 i*x preservation).
-        ;     With option (b), the data-stack cells [SP_safe..sp_base-1]
-        ;     have ALREADY been restored from stash above; this PUSH BC
-        ;     only restores the TOS-cell at the original slot. ---
+        ; --- Restore SP_safe; push i*x TOS at [SP_safe-2]. The data-stack
+        ;     cells [SP_safe..sp_base-1] have ALREADY been restored from the
+        ;     stash above; this PUSH BC only restores the TOS-cell at the
+        ;     original slot. ---
         LD      SP, HL
         PUSH    BC
         ; --- Install BC = n (THROW code, new TOS) ---
@@ -600,11 +536,10 @@ w_THROW_cf:
         NEXT
 
 .throw_uncaught:
-        ; SCOPE FENCE (Story 19.5.2 AC6): bank restore on the UNCAUGHT
-        ; path is Epic 21 scope (sprint row 21-2: QUIT re-asserts the
-        ; saved bank; ABORT/ABORT" pass-through). An uncaught THROW from
-        ; cross-bank code currently leaves current_bank/MMU at the
-        ; throwing bank; the caught path above restores from frame +8.
+        ; KNOWN LIMIT: bank restore on the UNCAUGHT path is not done here —
+        ; an uncaught THROW from cross-bank code currently leaves
+        ; current_bank/MMU at the throwing bank (QUIT re-asserts the saved
+        ; bank downstream). The caught path above restores from frame +8.
         ;
         ; Stash n; it's needed across bdos_print_str calls (BDOS helper
         ; takes the length arg in B, clobbering BC).
@@ -613,7 +548,7 @@ w_THROW_cf:
         LD      HL, str_throw_prefix
         LD      B, STR_THROW_PREFIX_LEN
         CALL    bdos_print_str
-        ; --- Print n in signed decimal (BASE-independent: FR21, AC #13) ---
+        ; --- Print n in signed decimal (BASE-independent) ---
         LD      BC, (throw_saved_n)
         CALL    print_signed_dec_bc
         ; --- Look up description; print ": <desc>" on hit, nothing on miss ---
@@ -621,31 +556,25 @@ w_THROW_cf:
         CALL    print_throw_description
         ; --- Trailing CR/LF ---
         CALL    bdos_crlf
-        ; --- Story 13.4 v2: walk INCLUDE-TOP chain to completion (PD-10
-        ;     uncaught). Closes every FID from in-progress INCLUDEs and
-        ;     restores the input-spec back to the outermost (typically
-        ;     keyboard). NFR9 ("no orphaned FIDs after THROW") closure. ---
+        ; --- Walk the INCLUDE-TOP chain to completion. Closes every FID
+        ;     from in-progress INCLUDEs and restores the input-spec back to
+        ;     the outermost (typically keyboard) — no orphaned FIDs after
+        ;     THROW. ---
         CALL    throw_chain_walk_uncaught
-        ; --- State reset + REPL recovery (Story 11.7 inline).
-        ;     Pre-Story-11.7 this was `JP w_ABORT_cf` and the chain
-        ;     lived in w_ABORT_cf's body; Story 11.7 retargets
-        ;     w_ABORT_cf itself to -1 THROW so the chain `user-ABORT
-        ;     → -1 THROW → uncaught (CATCH-TOP=0) → JP w_ABORT_cf`
-        ;     would otherwise infinite-loop. The chain is moved
-        ;     here; w_QUIT_cf's IX/STATE/CATCH-TOP reset
-        ;     (outer_interpreter.asm:243-258) closes the recovery.
-        ;     FR22 / NFR7 / NFR8. ---
+        ; --- State reset + REPL recovery, inlined HERE rather than `JP
+        ;     w_ABORT_cf`: ABORT is itself -1 THROW, so jumping to it would
+        ;     loop (user-ABORT → -1 THROW → uncaught → ABORT → ...).
+        ;     w_QUIT_cf's IX/STATE/CATCH-TOP reset closes the recovery. ---
         CALL    asm_cleanup             ; If asm_mode set, restore HERE/bucket
         LD      HL, (sp_base)
         LD      SP, HL                  ; Reset parameter stack
-        JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE
-                                        ; + CATCH-TOP per outer_interpreter.asm:252-255)
+        JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE + CATCH-TOP)
 
 ; -----------------------------------------------
 ; print_signed_dec_bc — Print BC as signed decimal via BDOS.
 ;   Hardcodes base 10 (does NOT read UserArea.base) — diagnostic must be
-;   readable regardless of user's BASE setting (FR21 / AC #13). The sign
-;   prefix and absolute-value reduction reuse print_neg_prefix from
+;   readable regardless of user's BASE setting. The sign prefix and
+;   absolute-value reduction reuse print_neg_prefix from
 ;   src/formatting.asm; the digit loop reuses div_bc_by_e and
 ;   digit_to_char from the same file. The shared num_buf is safe here
 ;   because the THROW path is the terminal action before NEXT or the
@@ -696,7 +625,7 @@ print_signed_dec_bc:
 ;
 ;   Table entry: code (DW), len (DB), text (len bytes).
 ;   Terminator: code = 0 (THROW 0 is no-op'd before any uncaught lookup,
-;   so 0 never collides with a real entry — see AC #3 short-circuit at
+;   so 0 never collides with a real entry — see the n=0 short-circuit at
 ;   the top of w_THROW_cf).
 ;
 ;   Linear search is fine for ~10-15 entries; the THROW path is cold
@@ -707,9 +636,7 @@ print_signed_dec_bc:
 ;   ADD HL,DE) assumes string length <= 255 — enforced by every entry
 ;   (max length seeded is 43 bytes). The 16-bit add wraps modulo 65536
 ;   per Zilog UM008011 §8, so the walk is wrap-safe regardless of
-;   table base address (closes Story 11.5 F9 / Story 11.6 R-L6 — see
-;   _bmad-output/implementation-artifacts/
-;     11.5-4-print-throw-description-table-walk-hardening.md).
+;   table base address.
 ;
 ;   Input:  BC = THROW code (signed 16-bit)
 ;   Output: ": <desc>" emitted on match; nothing on miss.
@@ -747,7 +674,7 @@ print_throw_description:
 .ptd_skip:
         ; Advance HL past length byte + string body to next entry's code-DW.
         ; 16-bit ADD HL,DE form: wraps mod 65536 (UM008011 §8) — wrap-safe
-        ; regardless of table address. Story 11.5.4 (closes 11.5 F9 / 11.6 R-L6).
+        ; regardless of table address.
         LD      E, (HL)                 ; E = length (LD r,(HL) is flag-neutral)
         INC     HL                      ; HL → first text byte
         LD      D, 0
@@ -755,13 +682,13 @@ print_throw_description:
         JR      .ptd_loop
 
 ; -----------------------------------------------
-; Story 13.4 v2 — THROW INCLUDE-TOP chain-walk helpers (PD-10 / AC #11).
+; THROW INCLUDE-TOP chain-walk helpers.
 ;   Used by both the caught path (target = IX = catch frame base; pops
 ;   only frames more recent than target) and the uncaught path (target
 ;   = 0xFFFF effective; walks to completion). HL = walk pointer; IX
 ;   preserved; chain_walk_target scratch holds the unsigned-compare
 ;   target. Close-failure semantics: ior is DISCARDED, pool_release is
-;   always called, walk continues regardless (PD-10 close-failure spec).
+;   always called, walk continues regardless.
 ; -----------------------------------------------
 
 ; throw_chain_walk_caught — Walk frames more recent than IX (target catch
@@ -840,13 +767,11 @@ throw_chain_walk_loop_init:
 ; chain_walk_close_current_fid — Close USER.source_id if it's a real FID.
 ;   No-op for keyboard (0) / EVALUATE (-1). Discards close ior. Preserves
 ;   HL (walk pointer) across the call. Clobbers A, BC, DE, F.
-;   Note: no file_flush call in this body (review L4) — the INCLUDE
-;   close path always closes R/O FIDs whose byte-stream layer has only
-;   been reading, so the per-FCB `fcb_has_written` bit stays 0.
-;   file_flush is mode-aware as of Story 13.5 via that bit, plus the
-;   per-FCB `fcb_dirty` bit (Story 13.5.1, transient counterpart), and
-;   would itself skip even if called; omitting the call is documented
-;   intent.
+;   Note: no file_flush call in this body — the INCLUDE close path always
+;   closes R/O FIDs whose byte-stream layer has only been reading, so the
+;   per-FCB `fcb_has_written` bit stays 0. file_flush is mode-aware via
+;   that bit (plus the per-FCB `fcb_dirty` bit) and would itself skip even
+;   if called; omitting the call is intentional.
 chain_walk_close_current_fid:
         PUSH    HL                      ; preserve walk pointer
         ; Exact-value sentinel tests (0 keyboard, 0xFFFF EVALUATE); avoid
@@ -885,20 +810,16 @@ str_colon_space:        DB      ": "
 
 ; -----------------------------------------------
 ; throw_desc_table — Description table for the uncaught-THROW handler.
-;   Seeded with the standard ANS Forth 1994 §9.3.5 codes Epic 11
-;   migrations will issue. antforth-extension codes -258..-269
-;   (assembler errors) are added here by Story 11.5 when those
-;   migrations land. -69 / -257 are reserved for Epic 13 (file-access)
-;   and added at that epic's first migration story.
+;   Holds the standard ANS Forth 1994 §9.3.5 codes plus the antforth-
+;   extension codes (assembler errors -258..-272, banking -273).
 ;
 ;   Format per entry: DW <code>, DB <len>, DB "<description>"
 ;   Terminator:       DW 0  (THROW 0 is no-op'd before uncaught lookup,
-;                            so 0 is unambiguous as terminator — see
-;                            AC #3 short-circuit in w_THROW_cf).
+;                            so 0 is unambiguous as terminator — see the
+;                            n=0 short-circuit in w_THROW_cf).
 ;
-;   Strings are the standard's "Name (verbatim)" from
-;   docs/throw-codes.md §b. Length bytes hand-counted; mismatch would
-;   misalign the table walk.
+;   Strings are the standard's "Name (verbatim)". Length bytes are
+;   hand-counted; a mismatch would misalign the table walk.
 ; -----------------------------------------------
 throw_desc_table:
         DW      -1
@@ -931,14 +852,14 @@ throw_desc_table:
         DW      -22
         DB      26
         DB      "control structure mismatch"
-        ; -49 — Story 12.3: SET-ORDER bounds check (search-order overflow)
+        ; -49 — SET-ORDER bounds check (search-order overflow)
         DW      THROW_SEARCH_ORDER_OVERFLOW
         DB      21
         DB      "search-order overflow"
         DW      -58
         DB      23
         DB      "unexpected end of input"
-        ; --- File-Access codes (Story 13.4 v2) ---
+        ; --- File-Access codes ---
         DW      THROW_FILE_IO               ; -37
         DB      14
         DB      "file I/O error"
@@ -946,19 +867,10 @@ throw_desc_table:
         DB      14
         DB      "file not found"
         ; --- antforth extension codes -258..-272 (assembler errors) ---
-        ; Added by Story 11.5 (-258..-269), extended by Story 11.6
-        ; (-270 / -271 to retire the asm_die residual: check_asm_mode
-        ; and the +D / bit-op range guards — the two non-fan-in callers
-        ; Story 11.1's inventory missed), and split by Story 11.5.6
-        ; (-271 disp range + new -272 bit range; see assembler.asm
-        ; asm_disp_range_err / asm_bit_range_err). Description text
-        ; matches the pre-Story-11.5/11.6 str_asm_<name> string contents
-        ; — the migration
-        ; moved the diagnostic from inline pre-prints to the unified
-        ; "error -<N>: <desc>" format via this table. Length bytes
-        ; hand-counted to match the literal string contents (mismatch
-        ; silently misaligns the table walk per Story 11.3 design —
-        ; cross-check on every edit).
+        ; Description text matches the assembler's str_asm_<name> contents.
+        ; Length bytes are hand-counted to match the literal strings (a
+        ; mismatch silently misaligns the table walk — cross-check on every
+        ; edit).
         DW      THROW_ASM_BAD_OPERAND       ; -258
         DB      11
         DB      "bad operand"
@@ -1004,9 +916,9 @@ throw_desc_table:
         DW      THROW_ASM_BIT_RANGE         ; -272
         DB      9
         DB      "bit range"
-        ; --- antforth extension code -273 (banking — Story 19.5.1) ---
-        ; BANK! portal-window guard (ADR 19.5 DR-1 F1): foreign-bank
-        ; switch attempted from window-resident code ($8000..$BFFF IP).
+        ; --- antforth extension code -273 (banking) ---
+        ; BANK! portal-window guard: foreign-bank switch attempted from
+        ; window-resident code ($8000..$BFFF IP).
         DW      THROW_BANK_FROM_BANKED      ; -273
         DB      28
         DB      "bank switch from banked code"
@@ -1015,7 +927,7 @@ throw_desc_table:
 ; -----------------------------------------------
 ; throw_saved_n — Scratch cell for the THROW path.
 ;   Parks n across:
-;     - The caught path's `LD BC, 8 / ADD IX, BC` (BC clobbered by 8).
+;     - The caught path's `LD BC, 10 / ADD IX, BC` (BC clobbered by 10).
 ;     - The uncaught path's three bdos_print_str calls (BC clobbered by
 ;       the `LD B, <len>` argument).
 ;   Never held across NEXT (THROW is the terminal call before NEXT or
@@ -1030,7 +942,7 @@ throw_desc_table:
 throw_saved_n:  DW      0
 
 ; -----------------------------------------------
-; Story 18.5.1 option (b) THROW caught-path scratch cells.
+; THROW caught-path scratch cells.
 ;   Spill SP_safe, saved-BC (= i*x's TOS-cell, frame +2), and the
 ;   catching-IP across the LDIR that restores i*x deeper cells from the
 ;   IX-rstack stash zone. LDIR clobbers HL/DE/BC, so all three must be
@@ -1042,10 +954,8 @@ throw_saved_n:  DW      0
 ;   cells before THROW (SP_throw > SP_safe), that address can fall inside
 ;   the LDIR write range [SP_safe..sp_base-1], which the LDIR-restore
 ;   below would then overwrite with stash bytes. POP DE would read garbage
-;   and NEXT would dispatch to a corrupted IP — empirically witnessed by
-;   the Story-18.5.1 dev-pass `DROP-ABORT` and `EVALUATE` crashes
-;   (Debug Log iteration #3). DO NOT revert `throw_stash_de` to a
-;   PUSH/POP pair; the kernel scratch cell sidesteps the SP/LDIR overlap.
+;   and NEXT would dispatch to a corrupted IP. DO NOT revert `throw_stash_de`
+;   to a PUSH/POP pair; the kernel scratch cell sidesteps the SP/LDIR overlap.
 ;
 ;   Single-threaded invariant: never re-entered (caught-path runs
 ;   atomically between THROW entry and NEXT).
