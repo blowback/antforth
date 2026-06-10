@@ -1,42 +1,40 @@
 ; wordlists.asm — Per-wordlist hash-table struct + canonical FORTH-WORDLIST
 ; AntForth — A Forth for CP/M on Z80
 ;
-; Defines the 130-byte per-wordlist struct (E12-D1) and emits the kernel-
-; resident FORTH-WORDLIST instance. Story 12.1 introduces the struct shape
-; and parameterises dictionary lookup on a wordlist-struct address; the
-; user-facing search-order words (WORDLIST, SEARCH-WORDLIST, FORTH-WORDLIST,
-; GET-ORDER, SET-ORDER, …) arrive in Stories 12.2–12.5.
+; Defines the 130-byte per-wordlist struct and emits the kernel-
+; resident FORTH-WORDLIST instance. Dictionary lookup is parameterised on a
+; wordlist-struct address.
 ;
-; Wordlist struct layout (architecture.md:326-330 — E12-D1):
+; Wordlist struct layout:
 ;     +0   2 bytes   next-wordlist chain pointer (0 = end of chain)
 ;     +2 128 bytes   64 × 2-byte hash-bucket array
 ; Total = 130 bytes (= WORDLIST_SIZE).
 ;
-; A wordlist identifier (`wid`, E12-D3) is the raw address of this struct.
+; A wordlist identifier (`wid`) is the raw address of this struct.
 ; Dictionary lookup primitives load the bucket-head address as
-; `wid + WORDLIST_BUCKET0` (i.e., struct base + 2). The legacy global
-; `hash_table` symbol is retired in this story; every call site now
-; addresses the bucket array via `forth_wordlist + WORDLIST_BUCKET0`.
+; `wid + WORDLIST_BUCKET0` (i.e., struct base + 2). There is no legacy global
+; `hash_table` symbol; every call site addresses the bucket array via
+; `forth_wordlist + WORDLIST_BUCKET0`.
 
 ; === Layout EQUs ===
-WORDLIST_SIZE       EQU     130     ; architecture.md:328 — E12-D1 (2-byte next link + 64×2-byte buckets)
-WORDLIST_BUCKETS    EQU     64      ; architecture.md:328 — E12-D1; sole source of truth (HASH_BUCKETS retired Story 12.1 per AC #5(d)(i))
+WORDLIST_SIZE       EQU     130     ; 2-byte next link + 64×2-byte buckets
+WORDLIST_BUCKETS    EQU     64      ; sole source of truth for the bucket count
                                     ; Three sites duplicate this literal for sjasmplus-pass-ordering reasons:
                                     ;   src/macros.asm:9   `for i = 0, 63 do`     (LUA _hash_buckets[] init — runs before this EQU is defined)
                                     ;   src/macros.asm:54  `return h & 63`        (LUA forth_hash mask — same pass-ordering)
                                     ;   src/hash.asm:30    `AND 63`               (runtime hash_name mask)
                                     ; Assertion below catches any future drift.
     ASSERT WORDLIST_BUCKETS = 64
-WORDLIST_NEXT       EQU     0       ; architecture.md:326-330 — offset of next-wordlist chain link
-WORDLIST_BUCKET0    EQU     2       ; architecture.md:326-330 — offset of first hash-bucket entry (per-bucket stride is 2 bytes)
+WORDLIST_NEXT       EQU     0       ; offset of next-wordlist chain link
+WORDLIST_BUCKET0    EQU     2       ; offset of first hash-bucket entry (per-bucket stride is 2 bytes)
 
-; === User-facing search-order words (Story 12.2) ===
+; === User-facing search-order words ===
 ; WORDLIST and SEARCH-WORDLIST are emitted INSIDE this file BEFORE the
 ; `forth_wordlist:` label so the DEFCODE macros' `_hash_buckets[]` updates
 ; (src/macros.asm:75-86, 109-117) run before the bucket array below reads
 ; the table. They are also emitted INSIDE the trailing INCLUDE in
 ; src/antforth.asm (line 205) so they land after all other DEFCODE/DEFWORDs
-; — preserving Story 12.1's INCLUDE-order discipline (Finding F2).
+; — preserving the INCLUDE-order discipline.
 
 ; ANS Forth 1994 §16.6.1.2460   WORDLIST    ( -- wid )
 ;   Allocate a new 130-byte wordlist struct at HERE; zero-init all bytes
@@ -68,14 +66,14 @@ w_WORDLIST_cf:
 ;   On miss return single 0 (depth shrinks 3 -> 1). On hit return xt and
 ;   either +1 (IMMEDIATE) or -1 (non-IMMEDIATE) (depth 3 -> 2).
 ;   Reuses the shared chain-walk helper `search_wid_for_name` factored out
-;   of FIND in Story 12.2 (per AC #5 pick (a)).
+;   of FIND.
 ;
 ;   `u` is operated on as an 8-bit length: only the low byte is passed to
 ;   the chain-walk helper (sw_search_len is a DB). Practical names are
 ;   <= F_LENMASK (31), so this is a non-issue in normal use; for u > 255
-;   the high byte is discarded. AC #11(b) pick (ii) ("pass u unchanged")
-;   is honoured within the 8-bit window — the chain compare still rejects
-;   any low-byte length that doesn't match an entry's stored length-mask.
+;   the high byte is discarded. `u` is passed unchanged within the 8-bit
+;   window — the chain compare still rejects any low-byte length that
+;   doesn't match an entry's stored length-mask.
 w_SEARCH_WORDLIST:
         DEFCODE "SEARCH-WORDLIST", 0
 w_SEARCH_WORDLIST_cf:
@@ -86,7 +84,7 @@ w_SEARCH_WORDLIST_cf:
         POP     HL                      ; HL = u (length cell)
         LD      A, L                    ; A = u low byte (length)
         POP     HL                      ; HL = c-addr (name start)
-        LD      B, A                    ; B = u (length passed unchanged per AC #11(b) pick (ii))
+        LD      B, A                    ; B = u (length passed unchanged)
         CALL    search_wid_for_name
         ; Helper output: HL = xt and A = count_flags on hit (CF clear);
         ;                HL = 0 on miss (CF set).
@@ -107,7 +105,7 @@ w_SEARCH_WORDLIST_cf:
 
 sw_saved_ip:    DW      0               ; SEARCH-WORDLIST IP slot
 
-; === Story 12.3 — search-order infrastructure ===
+; === Search-order infrastructure ===
 ; FORTH-WORDLIST, GET-ORDER, SET-ORDER (and the do_search_order_overflow
 ; raise site) — all emitted BEFORE the forth_wordlist: label below so the
 ; DEFCODE macros' _hash_buckets[] updates run before the bucket array is
@@ -126,7 +124,7 @@ w_FORTH_WORDLIST_cf:
 ;   Push the search-order wordlists onto the stack with slot 0
 ;   (top-of-search-order) deepest (= immediately below n).
 ;
-;   Stack-direction discipline (Story 12.3 AC #18(a) trap): slot 0
+;   Stack-direction discipline: slot 0
 ;   is the FIRST wordlist consulted by FIND, so wid1 = slot 0 and
 ;   wid1 must end up adjacent to n. Algorithm: walk slots from
 ;   index `depth-1` down to `0`, pushing each wid; finally BC = depth.
@@ -242,17 +240,17 @@ w_SET_ORDER_cf:
         NEXT
 
 ; ANS Forth 1994 §9.3.5   THROW -49 raise site for SET-ORDER bounds checks.
-; Mirrors do_overflow_error / do_underflow_error idiom (Story 11.5.2).
+; Mirrors do_overflow_error / do_underflow_error idiom.
 do_search_order_overflow:
         LD      BC, THROW_SEARCH_ORDER_OVERFLOW
         JP      w_THROW_cf.kernel_entry
 
-; === Story 12.4 — compilation wordlist control ===
+; === Compilation wordlist control ===
 ; GET-CURRENT, SET-CURRENT, DEFINITIONS — emitted before forth_wordlist:
 ; for the same _hash_buckets[] LUA-pass-ordering reason as the words above.
-; All three operate on (IY+UserArea.current_wordlist) — the USER-var added
-; in Story 12.4 (src/structures.asm) and initialised at cold start in
-; src/antforth.asm step 8e to forth_wordlist.
+; All three operate on (IY+UserArea.current_wordlist) — the USER-var defined
+; in src/structures.asm and initialised at cold start in src/antforth.asm to
+; forth_wordlist.
 
 ; ANS Forth 1994 §16.6.1.1643   GET-CURRENT    ( -- wid )
 ;   Push the wid of the compilation wordlist (the wordlist into which new
@@ -281,7 +279,7 @@ w_SET_CURRENT_cf:
 ; ANS Forth 1994 §16.6.1.1180   DEFINITIONS    ( -- )
 ;   Set the compilation wordlist to the same as the first wordlist in
 ;   the search order (slot 0). No stack effect.
-;   Note (AC #4 pick (a)): slot 0 is read unconditionally regardless of
+;   Note: slot 0 is read unconditionally regardless of
 ;   search-order depth. SET-ORDER 0 only updates the depth field — it
 ;   does NOT zero slot 0; the cached slot-0 value persists from the prior
 ;   SET-ORDER call (or the cold-start default = FORTH-WORDLIST). The user
