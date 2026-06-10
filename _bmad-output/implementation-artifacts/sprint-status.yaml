@@ -237,7 +237,7 @@ development_status:
   epic-19-5-retrospective: done
 
   epic-20: in-progress
-  20-1-per-wordlist-bank-field-find-save-switch-walk-restore: review
+  20-1-per-wordlist-bank-field-find-save-switch-walk-restore: done
   20-2-words-traverses-banks-lookup-failure-error-messages-name-source-bank: backlog
   20-3-epic-20-close-out-antforth-3-x-4-tag: backlog
   epic-20-retrospective: optional
