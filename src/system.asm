@@ -17,14 +17,14 @@ w_BYE_cf:
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
 ;   Body layout: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
-;   the wordlist struct's next-link cell is NOT snapshotted (Story 12.1 AC #6: byte-count
-;   stays at 128 for binary-compat with pre-Epic-12 markers).
+;   the wordlist struct's next-link cell is NOT snapshotted (byte-count
+;   stays at 128 for binary-compat with earlier markers).
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
-;   when the parsed name is empty (Story 11.5).
-;   Story 12.4 limitation (AC #8 pick (a)): MARKER snapshots FORTH-WORDLIST's
+;   when the parsed name is empty.
+;   Limitation: MARKER snapshots FORTH-WORDLIST's
 ;   bucket array regardless of CURRENT-WORDLIST. Definitions placed into
 ;   other wordlists between MARKER-create and MARKER-execute are NOT
-;   rolled back. Broader-wordlist MARKER semantics deferred to a later story.
+;   rolled back.
 ;   When MARKER itself is created with current_wordlist != FORTH-WORDLIST,
 ;   the snapshot's bucket-head fixup is skipped — bh_old_bucket_head is the
 ;   foreign wid's chain head, and writing it into FORTH-WORDLIST's snapshot
@@ -62,7 +62,7 @@ w_MARKER_cf:
         ; Need LDIR: HL=src, DE=dst, BC=count
         ; Currently HL = body dest, need to swap
         EX      DE, HL                  ; DE = body dest
-        LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only — Story 12.1 AC #6)
+        LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only)
         LD      BC, 128
         LDIR                            ; DE = past end of body
 
@@ -75,7 +75,7 @@ w_MARKER_cf:
         ; already reflects FORTH-WORDLIST's true bucket head (MARKER didn't
         ; touch FORTH-WORDLIST) and bh_old_bucket_head is the FOREIGN wid's
         ; bucket head — applying the fixup would corrupt FORTH-WORDLIST on
-        ; DOMARKER restore (per AC #8 pick (a) snapshot-scope discipline).
+        ; DOMARKER restore (snapshot-scope discipline).
         POP     HL                      ; HL = body_hash_start
         LD      BC, (bh_wid)
         LD      A, C
@@ -103,10 +103,10 @@ w_MARKER_cf:
         NEXT
 
 .marker_no_name:
-        EXX                                      ; Restore primary set (Story 11.5:
+        EXX                                      ; Restore primary set:
                                                  ; kernel-internal THROW entry contract
-                                                 ; requires primary-set BC; src/exception.asm:288-296)
-        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+                                                 ; requires primary-set BC (see src/exception.asm)
+        ; -16 THROW: attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
         LD      BC, THROW_ZERO_LEN_NAME
         JP      w_THROW_cf.kernel_entry
 
@@ -162,11 +162,9 @@ w_PAREN_ABORT_QUOTE_cf:
         CALL    bdos_print_str
 
 .paq_do_abort:
-        ; -2 THROW (Story 11.7): ABORT" with truthy flag per
+        ; -2 THROW: ABORT" with truthy flag per
         ; ANS Forth 1994 §9.3.5 / §6.1.0680 / Forth 2014 §9.6.2.0680.
-        ; Pre-Story-11.7 this site jumped to w_ABORT_cf (the legacy
-        ; SP-reset + asm_cleanup + JP w_QUIT_cf chain); post-retarget
-        ; the same recovery happens via the uncaught-THROW handler.
+        ; Recovery happens via the uncaught-THROW handler.
         LD      BC, THROW_ABORT_QUOTE
         JP      w_THROW_cf.kernel_entry
 
@@ -294,22 +292,18 @@ aq_src:         DW 0
 ; ABORT ( -- )
 ;   Raise -1 THROW per ANS §6.1.0670 / Forth 2014 §9.6.2.0670.
 ;   Uncaught: REPL recovery via the uncaught-THROW handler
-;   (src/exception.asm:.throw_uncaught — post-Story-11.7 this
-;   handler owns the asm_cleanup / SP-reset / JP w_QUIT_cf chain
-;   directly rather than delegating to w_ABORT_cf).
+;   (src/exception.asm:.throw_uncaught — this handler owns the
+;   asm_cleanup / SP-reset / JP w_QUIT_cf chain directly).
 ;   Caught: -1 lands on the data stack as the THROW code; i*x
-;   cells underneath are preserved per the Story 11.4.1 contract.
+;   cells underneath are preserved.
 ;
-;   Story 11.7 capstone: completes Epic 11's E11-D3 word-by-word
-;   internal-error migration. Every prior internal ABORT call
-;   site has been migrated to a direct THROW raise (Stories
-;   11.4-11.6); ABORT itself is now the user-facing entry point
-;   that raises -1 THROW.
+;   ABORT is the user-facing entry point that raises -1 THROW;
+;   all internal ABORT call sites raise THROW directly.
 ; -----------------------------------------------
 w_ABORT:
         DEFCODE "ABORT", 0
 w_ABORT_cf:
-        ; -1 THROW (Story 11.7): ABORT per ANS Forth 1994 §9.3.5 /
+        ; -1 THROW: ABORT per ANS Forth 1994 §9.3.5 /
         ; §6.1.0670 / Forth 2014 §9.6.2.0670.
         LD      BC, THROW_ABORT
         JP      w_THROW_cf.kernel_entry
@@ -411,8 +405,8 @@ w_ENVIRONMENT_QUERY_cf:
         JR      .env_advance
 .env_kind_double:
         ; DE -> 4 bytes: lo_low, lo_high, hi_low, hi_high.
-        ; Story 13.0.1: per ANS Forth 1994 §3.1.4.1 the high cell is on
-        ; TOS (post-flip from pre-13.0.1 low-on-TOS). We want stack
+        ; Per ANS Forth 1994 §3.1.4.1 the high cell is on
+        ; TOS. We want stack
         ; ( lo hi true ) with true as TOS, so push lo first (deepest),
         ; then hi (above lo), then BC = -1 (new TOS = true).
         LD      A, (DE)
@@ -461,10 +455,10 @@ env_table:
         ; ADDRESS-UNIT-BITS -> 8 (Z80 byte-addressable)
         db  17, "ADDRESS-UNIT-BITS", 0
         dw  8
-        ; CORE -> true (post-Story-10.9: 133/133 §6.1 Core words implemented)
+        ; CORE -> true (133/133 §6.1 Core words implemented)
         db  4, "CORE", 2
         dw  $FFFF
-        ; CORE-EXT -> false (§6.2 partial: 13/46 DPANS94 1994 §6.2 + 1 Forth-2014 bonus HOLDS; DPANS94 §15.3.5.2 needs full set; count rationalised by Story 15.1)
+        ; CORE-EXT -> false (§6.2 partial: 13/46 DPANS94 §6.2 + 1 Forth-2014 bonus HOLDS; DPANS94 §15.3.5.2 needs full set)
         db  8, "CORE-EXT", 2
         dw  0
         ; FLOORED -> false (antforth's `/` is symmetric per sdivmod, not floored)
@@ -504,7 +498,7 @@ env_table:
 ;   i.e. sp_base - SP_measured >= 4.
 ;
 ;   On underflow: JP do_underflow_error (raises -4 THROW via
-;     w_THROW_cf.kernel_entry; Story 11.4). Never returns to caller.
+;     w_THROW_cf.kernel_entry). Never returns to caller.
 ;   On success: returns normally
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
@@ -530,7 +524,7 @@ check_underflow:
 ;   Threshold: sp_base - SP_measured >= 6
 ;   (2 for CALL ret addr + 4 for two cells)
 ;
-;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
+;   On underflow: JP do_underflow_error (-4 THROW).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -555,7 +549,7 @@ check_underflow_2:
 ;   Threshold: sp_base - SP_measured >= 8
 ;   (2 for CALL ret addr + 6 for three cells)
 ;
-;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
+;   On underflow: JP do_underflow_error (-4 THROW).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -580,7 +574,7 @@ check_underflow_3:
 ;   Threshold: sp_base - SP_measured >= 10
 ;   (2 for CALL ret addr + 8 for four cells)
 ;
-;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
+;   On underflow: JP do_underflow_error (-4 THROW).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -613,9 +607,9 @@ check_underflow_4:
 ;   CALL BDOS_ENTRY → BDOS internals; ~26 bytes deepest per the
 ;   trace below, with conservative slack for variable BDOS impls).
 ;   32 bytes chosen to give 6-byte slack over the measured worst
-;   case. -3 THROW per ANS Forth 1994 §9.3.5 (Story 11.5.2).
+;   case. -3 THROW per ANS Forth 1994 §9.3.5.
 ;
-;   Threshold derivation (see story 11.5.2 Completion Notes Task 3):
+;   Threshold derivation:
 ;     - HL_computed at guard entry = U_caller + 2 (CALL ret addr).
 ;     - On normal return + caller's PUSH BC: used = HL_computed.
 ;     - On overflow path: SP at .throw_uncaught entry = caller_SP - 2;
@@ -650,23 +644,22 @@ check_overflow:
 
 ; -----------------------------------------------
 ; do_underflow_error — Internal subroutine (not a Forth word)
-;   Migrated by Story 11.4 from `JP w_ABORT_cf` (with a "? Stack
-;   underflow" pre-print) to a clean -4 THROW. The diagnostic the
-;   user sees on the uncaught path becomes "error -4: stack
-;   underflow" (description seeded by Story 11.3 into
-;   throw_desc_table at src/exception.asm). On the caught path,
+;   Raises a clean -4 THROW. The diagnostic the
+;   user sees on the uncaught path is "error -4: stack
+;   underflow" (description in throw_desc_table at
+;   src/exception.asm). On the caught path,
 ;   -4 lands on the user's data stack as the THROW code per
 ;   ANS Forth 1994 §9.3.5.
 ;
 ;   Note: CALL check_underflow's return address remains on SP —
 ;   harmless because the THROW-restore (caught) or the inlined
-;   recovery chain at .throw_uncaught (uncaught; post-Story-11.7)
+;   recovery chain at .throw_uncaught (uncaught)
 ;   both wholesale reset SP downstream. SP-may-be-corrupt safety
 ;   is preserved: the new path neither reads nor writes SP-relative
 ;   values until the downstream restore.
 ; -----------------------------------------------
 do_underflow_error:
-        ; -4 THROW (Story 11.4): stack underflow per ANS Forth 1994 §9.3.5
+        ; -4 THROW: stack underflow per ANS Forth 1994 §9.3.5
         LD      BC, THROW_STACK_UNDERFLOW
         JP      w_THROW_cf.kernel_entry
 
@@ -680,7 +673,6 @@ do_underflow_error:
 ;   frame +0; uncaught path: LD SP, (sp_base) at .throw_uncaught
 ;   tail). The CALL check_overflow's return address remains on SP —
 ;   harmless for the same reason underflow's ret-addr is harmless.
-;   Story 11.5.2 closes the Story 11.8 NFR6 documented gap.
 ; -----------------------------------------------
 do_overflow_error:
         ; -3 THROW: stack overflow per ANS Forth 1994 §9.3.5
