@@ -67,6 +67,35 @@ firmware-repro-test: $(BDOS_PROBE_COM)
 	@echo "Running BDOS probe under iz-cpm (negative-control gate)..."
 	@printf 'k\nhello\n\n' | $(IZCPM) $(BDOS_PROBE_COM) 2>/dev/null
 
+# --- MMU port 0x72 readback probe (Epic 19.5 retro / DIV-1 re-investigation) ---
+# Independent of antforth. Tests whether IN ...,(0x72) reads back the page
+# written by OUT (0x72),A, and whether the answer depends on instruction form
+# (IN A,(n) vs IN A,(C)). Run the .com on a REAL MicroBeast under raw CP/M.
+MMU_PROBE_SRC = tools/mmu_probe/mmu_probe.asm
+MMU_PROBE_COM = $(BUILDDIR)/mmuprobe.com
+
+mmu-probe: $(MMU_PROBE_COM)
+
+$(MMU_PROBE_COM): $(MMU_PROBE_SRC) | $(BUILDDIR)
+	cd tools/mmu_probe && $(ASM) $(ASMFLAGS) mmu_probe.asm --raw=../../$(MMU_PROBE_COM)
+
+mmu-probe-emu: $(MMU_PROBE_COM)
+	@echo "Port 0x72 write-only check under iz-cpm-banking (reads = open bus)..."
+	@$(IZCPM_BANKING) $(MMU_PROBE_COM) 2>/dev/null
+
+# --- MBB BIOS page-routine probe (blessed MBB_SET_PAGE/MBB_GET_PAGE interface) ---
+MBB_PROBE_SRC = tools/mbb_probe/mbb_probe.asm
+MBB_PROBE_COM = $(BUILDDIR)/mbbprobe.com
+
+mbb-probe: $(MBB_PROBE_COM)
+
+$(MBB_PROBE_COM): $(MBB_PROBE_SRC) | $(BUILDDIR)
+	cd tools/mbb_probe && $(ASM) $(ASMFLAGS) mbb_probe.asm --raw=../../$(MBB_PROBE_COM)
+
+mbb-probe-emu: $(MBB_PROBE_COM)
+	@echo "MBB_SET_PAGE/MBB_GET_PAGE round-trip + desync demo under iz-cpm-banking..."
+	@$(IZCPM_BANKING) $(MBB_PROBE_COM) 2>/dev/null
+
 # --- PRD↔architecture transcription-drift sync (Story 14.5 / B.5) ---
 # Advisory-only: never wired as a prerequisite of `test-repl`, `test`,
 # `all`, or `asm`. Expected clean-pass before any tag-applicable
@@ -90,7 +119,12 @@ test-repl-banking: $(TARGET)
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
 	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-1' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'PASS: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'INFO: bank-store-t-states'; do \
-		if echo "$$OUTPUT" | grep -q "$$pat"; then \
+		: "The REPL echoes piped source, so an unanchored match hits the"; \
+		: "echoed '.\" PASS: ...\"' literal regardless of which runtime"; \
+		: "branch ran (false green). Strip source lines (they begin with"; \
+		: "optional ws + '.\"') then match; this keeps runtime verdicts"; \
+		: "whether at col 0 or mid-line (e.g. after a caught-abort 'bank?')."; \
+		if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q "$$pat"; then \
 			echo "PASS: REPL banking test — $$pat under $(IZCPM_BANKING)"; \
 		else \
 			echo "FAIL: REPL banking test — expected '$$pat' in output"; \
@@ -862,8 +896,10 @@ test-repl-banking-skip: $(TARGET)
 	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in '^SKIP: banking-emu-probe' '^SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'SKIP: plus-bank-known-good' 'SKIP: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'SKIP: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'SKIP: minus-bank-ldir-shift-data'; do \
-		if echo "$$OUTPUT" | grep -q "$$pat"; then \
+	for pat in 'SKIP: banking-emu-probe' 'SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'SKIP: plus-bank-known-good' 'SKIP: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'SKIP: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'SKIP: minus-bank-ldir-shift-data'; do \
+		: "Strip echoed source (see test-repl-banking) then match: unanchored"; \
+		: "alone hits the echoed '.\" PASS/SKIP: ...\"' literal, not the verdict."; \
+		if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q "$$pat"; then \
 			echo "PASS: banking probe surface check — '$$pat' present under $(IZCPM) baseline"; \
 		else \
 			echo "FAIL: banking probe surface check — expected '$$pat' under $(IZCPM)"; \
