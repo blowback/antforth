@@ -7,7 +7,7 @@
 ; match WORDLIST_BUCKETS (src/wordlists.asm). The literal `63` here, the
 ; `& 63` mask in forth_hash below, and `AND 63` in src/hash.asm:30 must all
 ; stay in sync with WORDLIST_BUCKETS — verified at assembly time by the
-; ASSERT in src/wordlists.asm (Story 12.1 AC #5(d)(i)).
+; ASSERT in src/wordlists.asm.
     LUA ALLPASS
         _hash_buckets = {}
         for i = 0, 63 do
