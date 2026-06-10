@@ -207,8 +207,6 @@ w_U_DOT_cf      EQU     w_U_DOT_body - 3
 ; -----------------------------------------------
 ; .R ( n +n -- )   Display signed n right-aligned in +n-char field.
 ; ANS Forth 1994 §6.2.0210   .R   — print signed, right-aligned (Core Extension)
-;   (Epic spec's §6.1.0310 is a typo — §6.1.0310 is actually `2!`; the correct
-;   reference is §6.2.0210 per docs/ans-forth-core-compliance.md:334.)
 ; -----------------------------------------------
 w_DOT_R:
         DEFWORD ".R", 0
