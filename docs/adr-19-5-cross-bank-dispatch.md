@@ -295,6 +295,23 @@ The "BANK-OF becomes a one-byte read" property (PD-P4-1) survives at +1 B.
   source of truth. Sign-off on the re-baseline rides with this ADR's
   acceptance; the alternative (micro-optimising the handler toward 60 T) is
   not achievable with a 2-cell frame + MMU lookup on this CPU.
+
+  **NFR-P4-3 re-baseline #2 (banking-correctness interlude).** The "+ MMU
+  port write" term was a single direct `OUT (0x72),A` (~12 T). That term is
+  retired: the hot path now switches slot 2 through the BIOS via
+  `mbb_set_slot2 → MBB_SET_PAGE` so the BIOS page shadow stays in sync (a
+  direct `OUT` desyncs it and a later BIOS disk op can clobber the mapping).
+  Hardware cost of one slot-2 switch ≈ **250 T**: `mbb_set_slot2` wrapper
+  ~84 T (3×PUSH/POP + 2×LD + RET) + `CALL`/`JP` framing ~27 T + BIOS
+  `set_page_mapping` body ~124 T (incl. `_mapping_address`, OUT, SCF; firmware
+  `MicroBeast/firmware/beastos/bios.asm:1566`). The one-way dispatch
+  (RST-entry → target CF) does exactly one such switch
+  (`stub_dispatch.enter`, `src/banking.asm`), so the envelope re-baselines to
+  **"cross-bank dispatch ≤ 600 T + one MBB_SET_PAGE, measured RST-entry →
+  target CF"** (~343 T table + ~250 T switch). NOTE: under iz-cpm-banking
+  `MBB_SET_PAGE` is a RET-trap (~27 T), so emulator T-state counts under-read
+  the BIOS body by ~124 T — the 250 T switch figure is a hardware quantity.
+  Sign-off rides with the interlude (the page-routing pivot, 2026-06-10).
 - **NFR-P4-4 / NFR-P4-5:** PASS (stub 4 B; banking fixed-memory budget
   shrinks by the EXECUTE/trampoline retirements).
 
