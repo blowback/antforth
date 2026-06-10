@@ -9,13 +9,15 @@
 
 ASM      = sjasmplus
 ASMFLAGS = --fullpath --nologo
-IZCPM    = iz-cpm
-# Story 16.3 — banking-capable emulator dual-track per architecture `:494..499`.
-# `IZCPM_BANKING` is the blowback/iz-cpm fork (pin: 1777a85, see .tool-versions)
-# which adds the MicroBeast MMU at ports 0x70-0x73 (slot bank regs) and 0x74
-# (mapping enable). Used by `make test-repl-banking` for cross-bank assertions;
-# `make test-repl` continues to use the non-banking iz-cpm baseline (975-PASS).
-IZCPM_BANKING = iz-cpm-banking
+# antforth is MicroBeast-BIOS-only: COLD hard-requires the MBB page routines, so
+# it cannot boot on stock CP/M iz-cpm. The banking fork (blowback/iz-cpm — adds
+# the MicroBeast MMU at ports 0x70-0x73 + the BIOS MBB_SET_PAGE/MBB_GET_PAGE
+# routines) is now the single emulator for every antforth target, including the
+# 975-PASS test-repl gate. It is a superset that still runs plain CP/M probes
+# (e.g. firmware-repro-test's bdos_probe). IZCPM_BANKING is kept as an alias for
+# the targets that name the banking surface explicitly.
+IZCPM    = iz-cpm-banking
+IZCPM_BANKING = $(IZCPM)
 
 # Story 13.1 — multi-drive iz-cpm wiring (AC #8). disk/a/ is the
 # directory iz-cpm maps as drive A:. Verified against
@@ -47,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-skip test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -891,154 +893,6 @@ test-straddle-regression:
 		echo "PASS: straddle-guard-config — body above \$$8000: F1 THROW -273 pre-mutation, interpreter survives"; \
 	else \
 		echo "FAIL: straddle-guard-config — expected m1 + e273 + survived without m2, got:$$ROW_GUARD"; exit 1; fi
-
-test-repl-banking-skip: $(TARGET)
-	@echo "Verifying banking probes SKIP cleanly under $(IZCPM) baseline..."
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	FAILED=0; \
-	for pat in 'SKIP: banking-emu-probe' 'SKIP: banking-mapping-on-port-74' 'PASS: banking-mapping-on-idempotent' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'SKIP: bank-store-round-trip-1' 'SKIP: bank-store-round-trip-0' 'SKIP: plus-bank-known-good' 'SKIP: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: set-bank-diagnostic-bank-at' 'SKIP: set-bank-diagnostic-port-write' 'PASS: minus-bank-ldir-shift-count' 'SKIP: minus-bank-ldir-shift-data'; do \
-		: "Strip echoed source (see test-repl-banking) then match: unanchored"; \
-		: "alone hits the echoed '.\" PASS/SKIP: ...\"' literal, not the verdict."; \
-		if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q "$$pat"; then \
-			echo "PASS: banking probe surface check — '$$pat' present under $(IZCPM) baseline"; \
-		else \
-			echo "FAIL: banking probe surface check — expected '$$pat' under $(IZCPM)"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
-	@# Story 17.4 — CL-tail probes under iz-cpm baseline. Surface split:
-	@#   - Surface-AGNOSTIC (parser-state only, MMU-independent):
-	@#     bad-token + reverse-range + dup-detect → PASS under iz-cpm.
-	@#   - Surface-DEPENDENT (probe machinery → flat-memory false-PASSes):
-	@#     defaults / single-range / multi-list / probe-fail / empty-list
-	@#     produce different bank-counts than under iz-cpm-banking
-	@#     (flat memory accepts every probe). Annotate SKIP-with-rationale.
-	@echo "Verifying Story 17.4 CL-tail probes under $(IZCPM) baseline..."
-	@# Surface-DEPENDENT probes — assert binary boots cleanly + BANKS surfaces
-	@# something numeric (the specific value differs by surface; under iz-cpm
-	@# baseline all pages false-PASS so '22 00-02' gives BANKS=4 not 1).
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '^[0-9]+  ok'; then \
-		echo "SKIP: cl-probe-defaults — '$(IZCPM)' baseline false-PASSes via flat memory; BANKS surfaces a number (load-bearing verdict deferred to $(IZCPM_BANKING))"; \
-	else \
-		echo "FAIL: cl-probe-defaults SKIP-surface — kernel crashed or BANKS missing"; \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
-	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 00-02" 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '^[0-9]+  ok'; then \
-		echo "SKIP: cl-probe-probe-fail — '$(IZCPM)' baseline false-PASSes via flat memory ($(IZCPM_BANKING) carries the load-bearing verdict for 'probe?' warnings + BANKS=1)"; \
-	else \
-		echo "FAIL: cl-probe-probe-fail SKIP-surface — kernel crashed"; \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
-	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "00 01-03" 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '^[0-9]+  ok'; then \
-		echo "SKIP: cl-probe-empty-list — '$(IZCPM)' baseline false-PASSes via flat memory ($(IZCPM_BANKING) carries 'empty?' warning + BANKS=0)"; \
-	else \
-		echo "FAIL: cl-probe-empty-list SKIP-surface — kernel crashed"; \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
-	fi
-	@# Surface-AGNOSTIC probes — parser-state edge cases don't depend on MMU.
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 XX,35" 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '^2  ok' && echo "$$OUTPUT" | grep -q '^bad?'; then \
-		echo "PASS: cl-probe-bad-token (surface-agnostic) — '22 XX,35' → BANKS=2 + bad? warning under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: cl-probe-bad-token (surface-agnostic) — expected BANKS=2 + bad? warning under $(IZCPM)"; \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
-	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 3F-35" 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '^1  ok' && echo "$$OUTPUT" | grep -q '^range?'; then \
-		echo "PASS: cl-probe-reverse-range (surface-agnostic) — '22 3F-35' → BANKS=1 + range? warning under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: cl-probe-reverse-range (surface-agnostic) — expected BANKS=1 + range? warning under $(IZCPM)"; \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
-	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) "22 35,35-3F" 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '^dup? 35'; then \
-		echo "PASS: cl-probe-dup (surface-agnostic) — '22 35,35-3F' produces 'dup? 35' warning under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: cl-probe-dup (surface-agnostic) — expected 'dup? 35' warning under $(IZCPM)"; \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
-	fi
-	@# Story 17.5 AC10 — .BANKS probes are surface-AGNOSTIC: `.BANKS` only
-	@# reads UserArea cells + walks active_pages[], never touches port 0x72
-	@# or 0x74; output is identical on iz-cpm baseline and iz-cpm-banking
-	@# (the +BANK $$22 setup PASSes on iz-cpm baseline via flat memory).
-	@# Probes X / Y / W lift here as PASS-on-both-surfaces; probe Z is
-	@# surface-redundant (placeholder values are MMU-independent) and is
-	@# omitted from the baseline run to avoid noise.
-	@echo "Verifying Story 17.5 .BANKS probes under $(IZCPM) baseline..."
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
-	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && echo "$$PROBE_X" | grep -qE '^TOTAL[ ]+0 196608$$' && [ $$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') -ge 12 ]; then \
-		echo "PASS: dot-banks-probe-x (surface-agnostic) — header + 12 rows + totals 196608 under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: dot-banks-probe-x (surface-agnostic) — header/rows/totals missing under $(IZCPM)"; \
-		echo "  PROBE_X: $$PROBE_X"; exit 1; \
-	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_Y1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-start---$$/{p=1; next} /---dot-banks-probe-y-mid1---$$/{p=0} p') && \
-	PROBE_Y2=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid1---$$/{p=1; next} /---dot-banks-probe-y-mid2---$$/{p=0} p') && \
-	PROBE_Y3=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid2---$$/{p=1; next} /---dot-banks-probe-y-end---$$/{p=0} p') && \
-	Y1_STAR_LINES=$$(echo "$$PROBE_Y1" | grep -cE '\*') && \
-	Y2_STAR_LINES=$$(echo "$$PROBE_Y2" | grep -cE '\*') && \
-	Y3_STAR_LINES=$$(echo "$$PROBE_Y3" | grep -cE '\*') && \
-	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+22 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
-	   [ "$$Y1_STAR_LINES" = "1" ] && [ "$$Y2_STAR_LINES" = "1" ] && [ "$$Y3_STAR_LINES" = "1" ]; then \
-		echo "PASS: dot-banks-probe-y (surface-agnostic) — marker 0 → 1 → 0 tracks BANK! (exactly 1 * per phase) under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: dot-banks-probe-y (surface-agnostic) — marker did not track BANK! under $(IZCPM) (Y1/Y2/Y3 stars: $$Y1_STAR_LINES/$$Y2_STAR_LINES/$$Y3_STAR_LINES; expected 1/1/1)"; \
-		echo "  PROBE_Y1: $$PROBE_Y1"; echo "  PROBE_Y2: $$PROBE_Y2"; echo "  PROBE_Y3: $$PROBE_Y3"; exit 1; \
-	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_W=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-w-start---$$/{p=1; next} /---dot-banks-probe-w-end---$$/{p=0} p') && \
-	if echo "$$PROBE_W" | grep -qE '^TOTAL[ ]+0 196608$$'; then \
-		echo "PASS: dot-banks-probe-w (surface-agnostic) — TOTAL row reports 196608 under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: dot-banks-probe-w (surface-agnostic) — TOTAL row missing or value wrong under $(IZCPM)"; \
-		echo "  PROBE_W: $$PROBE_W"; exit 1; \
-	fi
-	@# Story 17.5.1 AC4 — sentinel-bounded probe G under iz-cpm baseline.
-	@# Cap-check is a kernel-cell comparison (bank_count == 29 in the
-	@# +BANK body), surface-independent: PASS-on-both-surfaces per the
-	@# Story-17.5 dual-recipe precedent. Identical assertion logic to
-	@# the iz-cpm-banking recipe (only the harness command differs);
-	@# end-sentinel OUTPUT-presence clause per Story 17.5.1 code-review M4.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_G=$$(echo "$$OUTPUT" | awk '/---plus-bank-cap-start---$$/{p=1; next} /---plus-bank-cap-end---$$/{p=0} p') && \
-	if echo "$$PROBE_G" | grep -q 'cap-check-fired-after-29-seed' && echo "$$PROBE_G" | grep -q 'seeded: 29' && ! echo "$$PROBE_G" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---plus-bank-cap-end---$$'; then \
-		echo "PASS: plus-bank-cap (surface-agnostic) — cap-check fired after 29-entry seed under $(IZCPM) baseline"; \
-	else \
-		echo "FAIL: plus-bank-cap (surface-agnostic) — assertion text missing OR 'seeded: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT under $(IZCPM)"; \
-		echo "  PROBE_G: $$PROBE_G"; exit 1; \
-	fi
-	@# Story 17.6 AC8 (Task 3.2) — iron-spike sentinel-bounded recipe under
-	@# iz-cpm baseline. Surface disposition: PASS-on-both-surfaces per Story
-	@# 17.5.1 AC4 precedent. Under flat memory BANK! is a no-op port write
-	@# (port 0x72 unmodelled by base iz-cpm), but the kernel-cell per-bank
-	@# triple swap still moves HERE/LATEST in step with the BANK! calls; the
-	@# 9-byte hand-built body lands at HERE (some address in $8000-$BFFF
-	@# range), EXECUTE reaches it across the no-op bank-cycle, and the
-	@# sentinel returns. End-sentinel OUTPUT-presence clause per Story
-	@# 17.5.1 M4 fix.
-	@#
-	@# Story 19.3 dev-pass 2026-05-20: same disk/a/P193IRON.FTH isolated-
-	@# subprocess invocation as test-repl-banking's iron-spike recipe (see
-	@# its block above for full rationale). Replaces the previous "pipe
-	@# full banking_tests.fth" approach which depended on the now-removed
-	@# inline `_iron-spike-test` invocation at banking_tests.fth:728.
-	@OUTPUT=$$(sed 's/$$/\r/' disk/a/P193IRON.FTH | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-19.3-start---$$/{p=1; next} /---iron-spike-19.3-end---$$/{p=0} p') && \
-	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-19.3-end---$$'; then \
-		echo "PASS: iron-spike (surface-agnostic) — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM) baseline (isolated subprocess via disk/a/P193IRON.FTH)"; \
-	else \
-		echo "FAIL: iron-spike (surface-agnostic) — sentinel literal missing OR FAIL: present in PROBE_IRONSPIKE OR end-sentinel missing from OUTPUT under $(IZCPM)"; \
-		echo "  PROBE_IRONSPIKE: $$PROBE_IRONSPIKE"; exit 1; \
-	fi
 
 $(TARGET): $(SRCS) | $(BUILDDIR)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) antforth.asm --raw=../$(TARGET)
