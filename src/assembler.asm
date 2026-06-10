@@ -79,7 +79,8 @@ asm_saved_here:    DW 0   ; HERE at CODE entry (entry start, for restore)
 asm_body_start:    DW 0   ; HERE at the start of the CODE word body
                           ; (= code field address; for LABEL "no opcodes" check)
 asm_saved_bucket:  DB 0   ; hash bucket for new word
-asm_saved_head:    DW 0   ; previous bucket head (for unlink)
+asm_saved_head:    DW 0   ; previous bucket head addr (for unlink)
+asm_saved_bank:    DB 0   ; previous bucket head fat bank byte (for unlink)
 asm_saved_wid:     DW 0   ; wid the CODE word's header was inserted into
                           ; (single per-CODE-block wid; all
                           ; LABELs in the block share this wid; mid-CODE
@@ -112,13 +113,15 @@ asm_throw_code:    DW 0   ; THROW code carrier for
 ; entry in the side area asm_label_dict (NOT at HERE — HERE is busy
 ; assembling native machine code into the in-progress CODE word body).
 ;
-; Slot record (8 bytes):
+; Slot record (9 bytes):
 ;   +0  resolved flag (0 = unresolved, 1 = resolved)
 ;   +1  target address (2 bytes; valid only when resolved=1)
 ;   +3  hash bucket index (set by LABEL after build_header)
-;   +4  saved bucket head (2 bytes; for unlink at END-CODE/cleanup)
+;   +4  saved bucket head addr (2 bytes; for unlink at END-CODE/cleanup)
 ;   +6  count_flags ptr (2 bytes; points at the dict entry's count_flags
 ;       byte — name length follows in low 5 bits, name bytes follow)
+;   +8  saved bucket head fat bank byte (Story 20.1; restored with the addr
+;       so a window-resident previous head pages the correct bank under FIND)
 ;
 ; Fixup record (4 bytes):
 ;   +0  patch address (2 bytes — the placeholder byte/word in CODE body)
@@ -135,7 +138,7 @@ asm_throw_code:    DW 0   ; THROW code carrier for
 ; prepend-to-head dictionary discipline correctly handles bucket-collision
 ; cases.
 ASM_LABEL_POOL_SIZE  EQU 16
-ASM_LABEL_REC_SIZE   EQU 8
+ASM_LABEL_REC_SIZE   EQU 9       ; +8 fat bank byte added in Story 20.1
 ASM_FIXUP_POOL_SIZE  EQU 32
 ASM_FIXUP_REC_SIZE   EQU 4
 ; Worst case per label entry: 2 (link) + 1 (count_flags) + 31 (max name,
@@ -433,6 +436,9 @@ asm_cleanup:
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        INC     HL
+        LD      A, (asm_saved_bank)
+        LD      (HL), A                         ; restore fat bank byte too
         ; (LATEST is intentionally not restored — matches the existing
         ; colon-compiler error recovery convention; QUIT carries on and
         ; the next `:` / CODE will overwrite LATEST.)
@@ -489,8 +495,11 @@ asm_slot_addr:
         LD      H, 0
         ADD     HL, HL              ; *2
         ADD     HL, HL              ; *4
-        ADD     HL, HL              ; *8 (== ASM_LABEL_REC_SIZE)
+        ADD     HL, HL              ; *8
         PUSH    DE
+        LD      E, A
+        LD      D, 0
+        ADD     HL, DE              ; *9 (== ASM_LABEL_REC_SIZE); A still = index
         LD      DE, asm_label_pool
         ADD     HL, DE
         POP     DE
@@ -839,6 +848,10 @@ asm_unlink_labels:
         LD      E, (HL)             ; E = old_head lo
         INC     HL
         LD      D, (HL)             ; D = old_head hi
+        INC     HL                  ; +6
+        INC     HL                  ; +7
+        INC     HL                  ; +8
+        LD      C, (HL)             ; C = old_head fat bank byte
         ; Compute &<asm_saved_wid>.buckets[bucket] (single
         ; per-CODE-block wid; all LABELs in the block live in the wordlist
         ; that was current when CODE was entered).
@@ -854,10 +867,13 @@ asm_unlink_labels:
         INC     DE                  ; DE = saved_wid + WORDLIST_BUCKET0
         ADD     HL, DE
         POP     DE
-        ; Restore bucket head (addr only; fat bank byte at +2 left intact)
+        ; Restore the fat bucket head: addr (2 bytes) + saved bank byte, so a
+        ; window-resident previous head pages the correct bank under FIND.
         LD      (HL), E
         INC     HL
         LD      (HL), D
+        INC     HL
+        LD      (HL), C
         POP     AF
         OR      A
         JR      NZ, .ul_loop
@@ -1256,6 +1272,8 @@ w_CODE_cf:
         LD      (asm_saved_bucket), A
         LD      BC, (bh_old_bucket_head)
         LD      (asm_saved_head), BC
+        LD      A, (bh_old_bucket_bank)
+        LD      (asm_saved_bank), A             ; fat bank byte for error restore
         LD      BC, (bh_count_flags_addr)
         LD      (asm_smudge_addr), BC
         LD      BC, (bh_wid)                    ; wid for error-recovery + LABEL unlink
@@ -2338,6 +2356,9 @@ w_LABEL_cf:
         LD      (HL), E                 ; +6 cf_ptr lo
         INC     HL
         LD      (HL), D                 ; +7 cf_ptr hi
+        INC     HL
+        LD      A, (bh_old_bucket_bank)
+        LD      (HL), A                 ; +8 old_head fat bank byte
 
         ; Restore LATEST to the CODE word's entry — build_header set
         ; LATEST to the new label entry, but the user expects LATEST to

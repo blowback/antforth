@@ -309,6 +309,46 @@ find_search_name:   DW      0
 find_search_len:    DB      0
 find_slot_ptr:      DW      0
 
+; words_deref ( HL = &fat-pointer [addr:2][bank:1] ) -> DE = entry addr.
+;   Bank-aware deref for WORDS: bank-N definitions are linked into the global
+;   FORTH-WORDLIST buckets (Story 20.1), so a head/link can point into the
+;   $8000..$BFFF window. Read the fat pointer; if window-resident, page
+;   active_pages[bank] into slot 2 so the subsequent count_flags/name/next-link
+;   reads hit the right bank. The link bytes themselves are read BEFORE the
+;   page-in (the current entry is still mapped). The first switch of the walk
+;   saves the caller's slot-2 page via the shared sw_switched/sw_saved_page;
+;   sw_restore_slot2 puts it back. Clobbers A, BC, HL.
+words_deref:
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = bank; DE = entry addr
+        BIT     7, D
+        RET     Z                       ; addr < $8000 -> fixed, no page-in
+        BIT     6, D
+        RET     NZ                      ; addr >= $C000 -> fixed
+        ; window-resident -> page active_pages[bank] into slot 2
+        PUSH    DE                      ; preserve entry addr across the map
+        PUSH    AF                      ; save bank
+        LD      A, (sw_switched)
+        OR      A
+        JR      NZ, .wd_mapped
+        CALL    mbb_get_slot2           ; first switch: save caller's page
+        LD      (sw_saved_page), A
+        LD      A, 1
+        LD      (sw_switched), A
+.wd_mapped:
+        POP     AF                      ; A = bank
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC                  ; &active_pages[bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2
+        POP     DE                      ; DE = entry addr
+        RET
+
 ; -----------------------------------------------
 ; WORDS ( -- )
 ;   List all words in the dictionary by traversing all 64 hash buckets
@@ -324,16 +364,16 @@ w_WORDS_cf:
         ; Save DE (IP) — we'll use all registers as scratch
         LD      (words_saved_ip), DE
         PUSH    BC              ; save TOS
+        XOR     A
+        LD      (sw_switched), A        ; reset per-walk slot-2 page-in state
 
         LD      HL, forth_wordlist + WORDLIST_BUCKET0
         LD      A, WORDLIST_BUCKETS     ; 64
 .words_bucket:
         LD      (words_bucket_count), A
         LD      (words_bucket_ptr), HL
-        ; Load bucket head
-        LD      E, (HL)
-        INC     HL
-        LD      D, (HL)         ; DE = chain head
+        ; Deref the fat bucket head (page its bank in if window-resident)
+        CALL    words_deref     ; DE = chain head entry addr
 
 .words_chain:
         LD      A, D
@@ -377,11 +417,10 @@ w_WORDS_cf:
         POP     DE
 
 .words_skip:
-        ; Follow hash_link: entry+0,1
+        ; Follow the fat hash_link (read from the still-mapped current entry,
+        ; then page the next entry's bank in if it is window-resident).
         LD      HL, (words_entry)
-        LD      E, (HL)
-        INC     HL
-        LD      D, (HL)         ; DE = next entry
+        CALL    words_deref     ; DE = next entry addr
         JR      .words_chain
 
 .words_next_bucket:
@@ -393,6 +432,7 @@ w_WORDS_cf:
         DEC     A
         JR      NZ, .words_bucket
 
+        CALL    sw_restore_slot2        ; restore the caller's slot-2 page
         ; Print CR/LF
         CALL    bdos_crlf
 

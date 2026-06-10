@@ -7955,14 +7955,15 @@ test-repl: $(TARGET)
 	@# name; depth 3->1 shrink). Hit-path tests are deferred to Stories
 	@# 12.3 (FORTH-WORDLIST as a Forth word) and 12.4 (SET-CURRENT). Source
 	@# spec: tests/wordlist_tests.fth.
-	@# T-WL1 — WORDLIST advances HERE by exactly 130. (The story-spec
-	@# sketch `HERE WORDLIST OVER OVER SWAP - .` prints 0 because wid =
-	@# pre-WORDLIST HERE per E12-D3; using post-WORDLIST HERE gives 130.)
+	@# T-WL1 — WORDLIST advances HERE by exactly 194 (Story 20.1 fat buckets:
+	@# 2-byte next link + 64×3-byte heads). (The story-spec sketch
+	@# `HERE WORDLIST OVER OVER SWAP - .` prints 0 because wid =
+	@# pre-WORDLIST HERE per E12-D3; using post-WORDLIST HERE gives 194.)
 	@OUTPUT=$$(printf 'HERE WORDLIST DROP HERE SWAP - .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '194 '; then \
-		echo "PASS: REPL test 807 — Story 12.2: WORDLIST advances HERE by exactly 130 (T-WL1)"; \
+		echo "PASS: REPL test 807 — Story 12.2: WORDLIST advances HERE by exactly 194 (T-WL1)"; \
 	else \
-		echo "FAIL: REPL test 807 — expected '130 ' from HERE WORDLIST DROP HERE SWAP -"; \
+		echo "FAIL: REPL test 807 — expected '194 ' from HERE WORDLIST DROP HERE SWAP -"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi

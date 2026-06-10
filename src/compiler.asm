@@ -118,6 +118,7 @@ colon_saved_here:    DW 0
 colon_smudge_addr:   DW 0
 colon_saved_bucket:  DB 0
 colon_saved_head:    DW 0
+colon_saved_bank:    DB 0   ; Fat bank byte of the saved head (for restore)
 colon_saved_wid:     DW 0   ; Wid the colon header was inserted into
 colon_saved_xt_cell: DW 0   ; bh_stub_xt_addr snapshot for SEMICOLON
                             ; to overwrite the cell with the descriptor-stub address
@@ -526,6 +527,8 @@ w_COLON_cf:
         LD      (colon_saved_bucket), A
         LD      BC, (bh_old_bucket_head)
         LD      (colon_saved_head), BC
+        LD      A, (bh_old_bucket_bank)
+        LD      (colon_saved_bank), A           ; fat bank byte for COMP-ERROR
         LD      BC, (bh_count_flags_addr)
         LD      (colon_smudge_addr), BC
         LD      BC, (bh_wid)                     ; save wid for COMP-ERROR rollback
@@ -592,13 +595,17 @@ w_COMP_ERROR_cf:
         INC     BC
         INC     BC                              ; BC = saved_wid + WORDLIST_BUCKET0
         ADD     HL, BC                          ; HL = &<saved_wid>.buckets[bucket]
-        ; Restore the head addr (2 bytes). The fat bank byte at +2 keeps the
-        ; failed entry's current_bank — correct for the bank-0 error path
-        ; (restored head is fixed memory, addr < $8000, so FIND ignores it).
+        ; Restore the fat bucket head: addr (2 bytes) + the saved bank byte.
+        ; Restoring the bank too keeps the head consistent when the previous
+        ; head was a window-resident bank-N entry (FIND pages on the bank byte,
+        ; so a stale byte would page the wrong bank for the restored address).
         LD      BC, (colon_saved_head)
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        INC     HL
+        LD      A, (colon_saved_bank)
+        LD      (HL), A
 
         ; --- 5.3: Set STATE to 0 ---
         LD      (IY+UserArea.state), 0

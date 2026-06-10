@@ -3,12 +3,17 @@
 
 ; === Dictionary Entry Structure ===
 ; Each dictionary entry has:
-;   hash_link (2 bytes) — pointer to previous entry in same hash bucket
+;   hash_link (3 bytes) — fat pointer [addr:2][bank:1] to the previous entry
+;       in the same hash bucket (Story 20.1 bank-aware FIND; bank $FF = fixed
+;       memory). Bucket heads share this [addr:2][bank:1] shape.
 ;   count_flags (1 byte) — bits 7=IMMEDIATE, 6=SMUDGE, 4-0=name length
 ;   name (n bytes) — name string (length from count_flags & 0x1F)
 ;   code_field — JP DOCOL (for threaded words) or inline Z80 (for CODE words)
+; (Doc-only struct — no code addresses fields through it; the live layout is
+;  hand-coded in dictionary.asm / compiler.asm.)
     STRUCT DictEntry
-hash_link   DW      0               ; Previous entry in hash bucket chain
+hash_link   DW      0               ; Previous entry addr in hash bucket chain
+hash_bank   DB      0               ; Fat-pointer bank byte ($FF = fixed memory)
 count_flags DB      0               ; Count + flags byte
 ; name and code field follow dynamically
     ENDS

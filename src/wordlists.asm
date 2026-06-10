@@ -35,7 +35,7 @@ WORDLIST_BUCKETS    EQU     64      ; sole source of truth for the bucket count
                                     ; Assertion below catches any future drift.
     ASSERT WORDLIST_BUCKETS = 64
 WORDLIST_NEXT       EQU     0       ; offset of next-wordlist chain link
-WORDLIST_BUCKET0    EQU     2       ; offset of first hash-bucket entry (per-bucket stride is 2 bytes)
+WORDLIST_BUCKET0    EQU     2       ; offset of first hash-bucket entry (per-bucket stride = WORDLIST_BUCKET_STRIDE = 3: [addr:2][bank:1])
 
 ; === User-facing search-order words ===
 ; WORDLIST and SEARCH-WORDLIST are emitted INSIDE this file BEFORE the
