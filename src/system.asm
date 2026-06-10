@@ -58,12 +58,12 @@ w_MARKER_cf:
         ; Save body hash start address for fixup later
         PUSH    HL                      ; body_hash_start on stack
 
-        ; Copy 128 bytes from FORTH-WORDLIST bucket array to body
-        ; Need LDIR: HL=src, DE=dst, BC=count
+        ; Copy 192 bytes from FORTH-WORDLIST fat bucket array to body
+        ; (64 × 3-byte fat heads). Need LDIR: HL=src, DE=dst, BC=count
         ; Currently HL = body dest, need to swap
         EX      DE, HL                  ; DE = body dest
         LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only)
-        LD      BC, 128
+        LD      BC, 192
         LDIR                            ; DE = past end of body
 
         ; Fixup: restore pre-MARKER bucket value in body copy.
@@ -88,11 +88,15 @@ w_MARKER_cf:
         LD      C, A
         LD      B, 0
         ADD     HL, BC
-        ADD     HL, BC                  ; HL = body_hash_start + bucket_index * 2
+        ADD     HL, BC
+        ADD     HL, BC                  ; HL = body_hash_start + bucket_index * 3 (fat stride)
         LD      BC, (bh_old_bucket_head)
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        INC     HL
+        LD      A, (bh_old_bucket_bank)
+        LD      (HL), A                 ; restore fat bank byte too
 .marker_skip_fixup:
 
         ; Update HERE = DE (past end of body, from LDIR)

@@ -321,7 +321,7 @@ grouping.
 | § | Rule | Verdict | Source | Closure | Notes |
 |---|------|---------|--------|---------|-------|
 | §6.1.1370 | `EXECUTE ( xt -- )` | Implemented | src/inner_interpreter.asm:224 | v2.0 baseline | |
-| §6.1.1550 | `FIND ( c-addr -- c-addr 0 \| xt 1 \| xt -1 )` | Implemented | src/dictionary.asm:22 | v2.0 baseline | Hash-table lookup. |
+| §6.1.1550 | `FIND ( c-addr -- c-addr 0 \| xt 1 \| xt -1 )` | Implemented | src/dictionary.asm:22 | v2.0 baseline | Hash-table lookup. Phase-4-bank-aware (Story 20.1): bucket heads and entry links are inline 24-bit `[addr:2][bank:1]` fat pointers; FIND pages a window-resident entry's bank into MMU slot 2 during the chain walk and restores it on exit. System/fixed entries (`bank=$FF`, addr < $8000) take no MMU switch. Semantics unchanged per §6.1.1550 / §6.2.1985. |
 | §6.1.0670 | `ABORT ( -- )` | Implemented | src/system.asm:259 | Story 11.7 | Retargeted as `-1 THROW` wrapper post-Epic-11 (Story 11.7 capstone). |
 | §6.1.2050 | `QUIT ( -- )` | Implemented | src/outer_interpreter.asm:237 | v2.0 baseline | |
 | §6.1.0560 | `>IN ( -- a-addr )` | Implemented | src/outer_interpreter.asm:46 | v2.0 baseline | |

@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -828,6 +828,31 @@ test-repl-banking-isolated-19-5-1: $(TARGET)
 		echo "PASS: probe-19.5.1-suite (isolated) — suite end-sentinel present (no foreign-bank strand / kernel halt)"; \
 	else \
 		echo "FAIL: probe-19.5.1-suite (isolated) — end-sentinel missing (mid-suite strand or halt)"; \
+		exit 1; \
+	fi
+
+# --- Story 20.1 — bank-aware FIND (inline 24-bit fat dictionary pointers) ---
+# Runs antforth under iz-cpm-banking with ONLY tests/banking_tests_20_1.fth.
+# Probes A..E cover AC7(a) creation-bank traversal, AC7(b) fixed-word
+# no-switch witness, AC7(c) clean miss, the Q2 in-window search-name snapshot,
+# and execute-by-name across BANK!. Verdict per probe: result=-1 (TRUE) PASS.
+test-repl-banking-isolated-20-1: $(TARGET)
+	@echo "Running Story 20.1 isolated bank-aware-FIND probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	for pid in a b c d e; do \
+		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-20.1-"p"-start---";re="---probe-20.1-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
+		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-20.1-$$pid-end---$$"; then \
+			echo "PASS: probe-20.1-$$pid (isolated) — bank-aware FIND invariant (result=-1) under $(IZCPM_BANKING)"; \
+		else \
+			echo "FAIL: probe-20.1-$$pid (isolated) — bank-aware FIND invariant failed"; \
+			echo "  PROBE: $$PROBE"; exit 1; \
+		fi; \
+	done
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-20.1-suite-end---$$'; then \
+		echo "PASS: probe-20.1-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-20.1-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
 	fi
 
@@ -7934,7 +7959,7 @@ test-repl: $(TARGET)
 	@# sketch `HERE WORDLIST OVER OVER SWAP - .` prints 0 because wid =
 	@# pre-WORDLIST HERE per E12-D3; using post-WORDLIST HERE gives 130.)
 	@OUTPUT=$$(printf 'HERE WORDLIST DROP HERE SWAP - .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q '130 '; then \
+	if echo "$$OUTPUT" | grep -q '194 '; then \
 		echo "PASS: REPL test 807 — Story 12.2: WORDLIST advances HERE by exactly 130 (T-WL1)"; \
 	else \
 		echo "FAIL: REPL test 807 — expected '130 ' from HERE WORDLIST DROP HERE SWAP -"; \

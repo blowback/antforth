@@ -7,17 +7,26 @@
 ;
 ; Wordlist struct layout:
 ;     +0   2 bytes   next-wordlist chain pointer (0 = end of chain)
-;     +2 128 bytes   64 × 2-byte hash-bucket array
-; Total = 130 bytes (= WORDLIST_SIZE).
+;     +2 192 bytes   64 × 3-byte hash-bucket array (each = [addr:2][bank:1])
+; Total = 194 bytes (= WORDLIST_SIZE).
 ;
 ; A wordlist identifier (`wid`) is the raw address of this struct.
 ; Dictionary lookup primitives load the bucket-head address as
 ; `wid + WORDLIST_BUCKET0` (i.e., struct base + 2). There is no legacy global
 ; `hash_table` symbol; every call site addresses the bucket array via
 ; `forth_wordlist + WORDLIST_BUCKET0`.
+;
+; Inline 24-bit "fat" pointers (Story 20.1 — bank-aware FIND): a bucket head
+; and every entry's hash_link are 3 bytes = [addr:2 little-endian][bank:1].
+; The bank byte names the bank the pointed-to entry physically lives in;
+; $FF = fixed memory (kernel / main-RAM, always mapped). FIND pages the bank
+; into slot 2 only when the pointed-to address is in the $8000..$BFFF window;
+; fixed entries (addr < $8000) read directly, so the hot path is untouched.
 
 ; === Layout EQUs ===
-WORDLIST_SIZE       EQU     130     ; 2-byte next link + 64×2-byte buckets
+WORDLIST_SIZE       EQU     194     ; 2-byte next link + 64×3-byte fat buckets
+WORDLIST_BUCKET_STRIDE EQU  3       ; bytes per bucket head: [addr:2][bank:1]
+BANK_FIXED          EQU     0xFF    ; fat-pointer bank byte for fixed memory
 WORDLIST_BUCKETS    EQU     64      ; sole source of truth for the bucket count
                                     ; Three sites duplicate this literal for sjasmplus-pass-ordering reasons:
                                     ;   src/macros.asm:9   `for i = 0, 63 do`     (LUA _hash_buckets[] init — runs before this EQU is defined)
@@ -37,9 +46,12 @@ WORDLIST_BUCKET0    EQU     2       ; offset of first hash-bucket entry (per-buc
 ; — preserving the INCLUDE-order discipline.
 
 ; ANS Forth 1994 §16.6.1.2460   WORDLIST    ( -- wid )
-;   Allocate a new 130-byte wordlist struct at HERE; zero-init all bytes
-;   (next-link cell + 64-entry bucket array); advance HERE by 130; return
-;   the struct base address as the wordlist identifier (wid).
+;   Allocate a new 194-byte wordlist struct at HERE; zero-init all bytes
+;   (next-link cell + 64×3-byte fat bucket array); advance HERE by 194;
+;   return the struct base address as the wordlist identifier (wid).
+;   Zero-init leaves empty buckets as addr=0 (no entry) — FIND tests the
+;   address for window-residence before consulting the bank byte, so a zero
+;   bank on an empty bucket is harmless.
 w_WORDLIST:
         DEFCODE "WORDLIST", 0
 w_WORDLIST_cf:
@@ -52,11 +64,11 @@ w_WORDLIST_cf:
         LD      D, H
         LD      E, L
         INC     DE                      ; DE = HL + 1
-        LD      BC, WORDLIST_SIZE - 1   ; 129
-        LDIR                            ; cascade-zero remaining 129 bytes
-                                        ; on exit DE = HL + WORDLIST_SIZE = HERE + 130
+        LD      BC, WORDLIST_SIZE - 1   ; 193
+        LDIR                            ; cascade-zero remaining 193 bytes
+                                        ; on exit DE = HL + WORDLIST_SIZE = HERE + 194
         LD      (IY+UserArea.here), E
-        LD      (IY+UserArea.here+1), D ; HERE = old + 130
+        LD      (IY+UserArea.here+1), D ; HERE = old + 194
         POP     BC                      ; BC = wid (new TOS)
         POP     DE                      ; restore IP
         NEXT
@@ -336,6 +348,9 @@ forth_wordlist:
     LUA ALLPASS
         local n = sj.calc("WORDLIST_BUCKETS")
         for i = 0, n - 1 do
+            -- fat bucket head: [addr:2][bank:1]. All kernel-word heads are
+            -- in fixed memory, so the bank byte is BANK_FIXED ($FF).
             _pc(string.format("DW 0x%04X", _hash_buckets[i]))
+            _pc("DB 0xFF")
         end
     ENDLUA

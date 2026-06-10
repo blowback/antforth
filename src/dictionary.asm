@@ -116,26 +116,44 @@ search_wid_for_name:
         LD      (sw_search_name), HL    ; save name addr for chain-compare
         ; hash_name takes HL = name, B = length; returns A = bucket (0-63).
         CALL    hash_name
-        ; Compute &bucket = wid + WORDLIST_BUCKET0 + 2*A.
+        ; Compute &bucket = wid + WORDLIST_BUCKET0 + 3*A (fat-bucket stride).
         LD      L, A
         LD      H, 0
+        LD      C, A
+        LD      B, 0                    ; BC = bucket
         ADD     HL, HL                  ; HL = 2 * bucket
+        ADD     HL, BC                  ; HL = 3 * bucket
         INC     HL
-        INC     HL                      ; HL = WORDLIST_BUCKET0 + 2 * bucket
+        INC     HL                      ; HL = WORDLIST_BUCKET0 + 3 * bucket
         ADD     HL, DE                  ; HL = &wid.buckets[bucket]
-        ; Load chain head pointer.
-        LD      A, (HL)
+        ; Reset per-walk slot-2 switch state, then deref the fat head INLINE:
+        ; HL = first entry addr; page the entry's bank into slot 2 only if it
+        ; is window-resident. Inlined (not CALLed) so the per-entry hot path
+        ; carries no call/return overhead — the everyday fixed-entry walk hits
+        ; no subroutine and does no MMU work.
+        XOR     A
+        LD      (sw_switched), A
+        LD      E, (HL)
         INC     HL
-        LD      H, (HL)
-        LD      L, A                    ; HL = first entry (or 0)
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = bank; DE = entry addr
+        EX      DE, HL                  ; HL = entry addr
+        BIT     7, H
+        JR      Z, .sw_head_fixed       ; addr < $8000 -> fixed, no MMU switch
+        BIT     6, H
+        JR      NZ, .sw_head_fixed      ; addr >= $C000 -> fixed
+        CALL    sw_map_bank             ; window-resident -> page bank in (A=bank; HL preserved)
+.sw_head_fixed:
 
 .sw_chain:
         LD      A, H
         OR      L
         JR      Z, .sw_miss             ; end of chain
-        PUSH    HL                      ; save entry-start
+        PUSH    HL                      ; save entry-start (= &fat hash_link)
         INC     HL
-        INC     HL                      ; HL = &count_flags
+        INC     HL
+        INC     HL                      ; HL = &count_flags (past 3-byte fat link)
         LD      A, (HL)
         LD      (sw_match_cf), A        ; remember count_flags for caller
         BIT     6, A                    ; F_SMUDGE
@@ -184,28 +202,106 @@ search_wid_for_name:
         LD      L, A                    ; HL = cell value = xt
 .sw_match_legacy:
         POP     DE                      ; discard saved entry-start (DE clobbered next)
+        CALL    sw_restore_slot2        ; undo any head/link page-in (preserves HL = xt)
         LD      A, (sw_match_cf)        ; A = count_flags
         OR      A                       ; clear CF (NC = hit)
         RET
 
 .sw_skip:
-        POP     HL                      ; restore entry-start
-        LD      A, (HL)
+        POP     HL                      ; restore entry-start (= &fat hash_link)
+        ; inline fat-link deref (page-in only if window-resident)
+        LD      E, (HL)
         INC     HL
-        LD      H, (HL)
-        LD      L, A                    ; HL = next entry (or 0)
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = bank; DE = next entry addr
+        EX      DE, HL                  ; HL = next entry addr
+        BIT     7, H
+        JR      Z, .sw_skip_fixed
+        BIT     6, H
+        JR      NZ, .sw_skip_fixed
+        CALL    sw_map_bank
+.sw_skip_fixed:
         JR      .sw_chain
 
 .sw_miss:
+        CALL    sw_restore_slot2        ; undo any head/link page-in
         XOR     A                       ; A = 0
         LD      H, A
         LD      L, A                    ; HL = 0
         SCF                             ; CF set = miss
         RET
 
+; The fat-pointer deref (read [addr:2][bank:1] + conditional page-in) is
+; inlined at its two hot-path sites above (.sw_head_fixed / .sw_skip_fixed)
+; so the per-entry walk carries no call/return overhead. Only the rare
+; window-resident case calls the helper below.
+
+; sw_map_bank: A = logical bank -> map active_pages[bank] into slot 2.
+;   On the first call of a walk, saves the caller's slot-2 page so the exit
+;   path can restore it. Preserves DE and HL; clobbers A.
+sw_map_bank:
+        PUSH    HL
+        PUSH    DE
+        PUSH    AF                      ; save bank
+        LD      A, (sw_switched)
+        OR      A
+        JR      NZ, .smb_mapped         ; already switched -> name already copied
+        ; First switch of this walk: save the caller's page, then snapshot
+        ; the search name into fixed scratch BEFORE we unmap slot 2 — the
+        ; name may itself live in the window we are about to page away (it
+        ; was parsed at an in-bank HERE). Lazy: the fast path (no page-in)
+        ; never reaches here, so all-fixed lookups copy nothing.
+        CALL    mbb_get_slot2           ; A = caller's slot-2 page
+        LD      (sw_saved_page), A
+        LD      A, 1
+        LD      (sw_switched), A
+        LD      A, (sw_search_len)      ; clamp to 31 (max stored name length;
+        CP      32                      ; a longer name can never match, so a
+        JR      C, .smb_clamp           ; truncated copy is compare-irrelevant)
+        LD      A, 31
+.smb_clamp:
+        OR      A
+        JR      Z, .smb_repoint         ; zero length — nothing to copy
+        LD      C, A
+        LD      B, 0
+        LD      HL, (sw_search_name)    ; src = original name (still mapped)
+        LD      DE, sw_name_buf         ; dst = fixed scratch
+        LDIR
+.smb_repoint:
+        LD      HL, sw_name_buf
+        LD      (sw_search_name), HL    ; compares now read the fixed copy
+.smb_mapped:
+        POP     AF                      ; A = bank
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC                  ; &active_pages[bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2
+        POP     DE
+        POP     HL
+        RET
+
+; sw_restore_slot2: if this walk paged slot 2, restore the caller's page.
+;   Preserves HL (mbb_set_slot2 push/pops it); clobbers A/F (don't-care).
+sw_restore_slot2:
+        LD      A, (sw_switched)
+        OR      A
+        RET     Z
+        XOR     A
+        LD      (sw_switched), A
+        LD      A, (sw_saved_page)
+        JP      mbb_set_slot2
+
 sw_search_len:  DB      0               ; saved name length
 sw_search_name: DW      0               ; saved name address
 sw_match_cf:    DB      0               ; count_flags of matched entry
+sw_saved_page:  DB      0               ; caller's slot-2 page during a page-in
+sw_switched:    DB      0               ; non-zero iff this walk paged slot 2
+sw_name_buf:    DS      32              ; fixed-memory copy of the search name
+                                        ; (snapshotted on first page-in, so a
+                                        ;  window-resident name survives the swap)
 
 ; FIND scratch — saved across the search-order walk (CODE words don't
 ; reentrantly nest, so a single set is safe).
@@ -246,7 +342,8 @@ w_WORDS_cf:
 
         ; DE = entry address
         LD      (words_entry), DE
-        ; entry+2 = count_flags
+        ; entry+3 = count_flags (past 3-byte fat hash_link)
+        INC     DE
         INC     DE
         INC     DE
         LD      A, (DE)         ; A = count_flags
@@ -290,7 +387,8 @@ w_WORDS_cf:
 .words_next_bucket:
         LD      HL, (words_bucket_ptr)
         INC     HL
-        INC     HL              ; next bucket
+        INC     HL
+        INC     HL              ; next bucket (fat-bucket stride = 3)
         LD      A, (words_bucket_count)
         DEC     A
         JR      NZ, .words_bucket

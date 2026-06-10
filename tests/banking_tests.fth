@@ -1622,7 +1622,7 @@ VARIABLE _p19-2c-pass
   THEN CR ;
 _p19-2c-start
 : _p19-2c-target 13 ;
-LATEST @ 2 + C@ _p19-2c-cf !
+LATEST @ 3 + C@ _p19-2c-cf !   \ count_flags at entry+3 (fat 3-byte hash_link)
 _p19-2c-check
 _p19-2c-end
 
@@ -1767,7 +1767,7 @@ VARIABLE _p193c-pass
   THEN CR ;
 _p193c-start
 CREATE _p193c-c0
-LATEST @ 2 + C@ $20 AND _p193c-flag !
+LATEST @ 3 + C@ $20 AND _p193c-flag !   \ count_flags at entry+3 (fat 3-byte hash_link)
 _p193c-check
 _p193c-end
 

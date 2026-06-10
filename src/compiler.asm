@@ -83,7 +83,8 @@ bh_name_len:         DB 0   ; Clamped name length
 bh_bucket_index:     DB 0   ; Hash bucket index (0-63)
 bh_bucket_addr:      DW 0   ; Address in current wordlist's bucket array
 bh_entry_start:      DW 0   ; HERE at entry (entry start address)
-bh_old_bucket_head:  DW 0   ; Previous bucket head (for error recovery)
+bh_old_bucket_head:  DW 0   ; Previous bucket head addr (for error recovery)
+bh_old_bucket_bank:  DB 0   ; Previous bucket head bank (fat-pointer byte)
 bh_count_flags_addr: DW 0   ; Address of count_flags byte (for unsmudging)
 bh_flags:            DB 0   ; Flags to OR into count_flags
 bh_code_field:       DW 0   ; Code field position (saved for return)
@@ -252,8 +253,11 @@ build_header:
         ; the bh_wid read on error — otherwise they read a stale wid from
         ; a previous successful build_header invocation.
         LD      L, A
-        LD      H, 0
-        ADD     HL, HL
+        LD      H, 0                            ; HL = bucket
+        LD      E, A
+        LD      D, 0                            ; DE = bucket
+        ADD     HL, HL                          ; HL = 2*bucket
+        ADD     HL, DE                          ; HL = 3*bucket (fat-bucket stride)
         LD      C, (IY+UserArea.current_wordlist)
         LD      B, (IY+UserArea.current_wordlist+1)
         LD      (bh_wid), BC                    ; capture wid
@@ -261,20 +265,26 @@ build_header:
         INC     BC                              ; BC = wid + WORDLIST_BUCKET0
         ADD     HL, BC                          ; HL = &<current_wordlist>.buckets[bucket]
         LD      (bh_bucket_addr), HL
-        ; Read current bucket head
+        ; Read current fat bucket head: [addr:2][bank:1]
         LD      C, (HL)
         INC     HL
-        LD      B, (HL)                         ; BC = current bucket head
+        LD      B, (HL)                         ; BC = current bucket head addr
+        INC     HL
+        LD      A, (HL)                         ; A = current bucket head bank
         LD      (bh_old_bucket_head), BC
+        LD      (bh_old_bucket_bank), A
 
         ; --- Build dictionary entry at HERE ---
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
 
-        ; Emit hash_link (2 bytes)
+        ; Emit fat hash_link (3 bytes): [addr:2][bank:1] = old bucket head
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        INC     HL
+        LD      A, (bh_old_bucket_bank)
+        LD      (HL), A
         INC     HL
 
         ; Save count_flags address
@@ -365,24 +375,19 @@ build_header:
         LD      (IY+UserArea.latest), C
         LD      (IY+UserArea.latest+1), B
 
-        ; --- Update hash bucket head to point to new entry ---
-        ; Skip the bucket-head update when current_bank > 0.
-        ; The FORTH-WORDLIST bucket array lives in always-mapped slot-1
-        ; and is SHARED across all banks; writing a bank-N HERE address
-        ; (slot-2, bank-N RAM) into a bucket leaves a dangling pointer
-        ; after `0 BANK!` reverts slot-2 to bank-0 RAM. FIND walks would
-        ; dereference into bank-0 slot-2 garbage and rot every word
-        ; sharing the polluted bucket. Bank-N CREATEd entries remain
-        ; reachable via post-CREATE `LATEST @` (the stub-xt capture
-        ; pattern); bank-N FIND-by-name is deferred.
-        LD      A, (IY+UserArea.current_bank)
-        OR      A
-        JR      NZ, .bh_skip_bucket_update
+        ; --- Update fat bucket head → new entry (ALL banks) ---
+        ; Inline 24-bit pointers (Story 20.1): the head is [addr:2][bank:1].
+        ; Recording the entry's bank lets FIND page it in before reading a
+        ; window-resident entry, so bank-N definitions are findable by name
+        ; (superseding the old bank-N bucket-skip, which left them reachable
+        ; only via `LATEST @`).
         LD      HL, (bh_bucket_addr)
-        LD      (HL), C
+        LD      (HL), C                         ; BC = bh_entry_start (new entry addr)
         INC     HL
         LD      (HL), B
-.bh_skip_bucket_update:
+        INC     HL
+        LD      A, (IY+UserArea.current_bank)   ; bank the entry lives in
+        LD      (HL), A
 
         ; Restore HL = code field position, clear carry = success
         LD      HL, (bh_code_field)
@@ -578,12 +583,18 @@ w_COMP_ERROR_cf:
         ; --- 5.2: Restore hash bucket head (saved wid from colon prologue) ---
         LD      A, (colon_saved_bucket)
         LD      L, A
-        LD      H, 0
-        ADD     HL, HL                          ; HL = bucket * 2
+        LD      H, 0                            ; HL = bucket
+        LD      E, A
+        LD      D, 0                            ; DE = bucket
+        ADD     HL, HL                          ; HL = 2*bucket
+        ADD     HL, DE                          ; HL = 3*bucket (fat-bucket stride)
         LD      BC, (colon_saved_wid)
         INC     BC
         INC     BC                              ; BC = saved_wid + WORDLIST_BUCKET0
         ADD     HL, BC                          ; HL = &<saved_wid>.buckets[bucket]
+        ; Restore the head addr (2 bytes). The fat bank byte at +2 keeps the
+        ; failed entry's current_bank — correct for the bank-0 error path
+        ; (restored head is fixed memory, addr < $8000, so FIND ignores it).
         LD      BC, (colon_saved_head)
         LD      (HL), C
         INC     HL

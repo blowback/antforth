@@ -481,7 +481,8 @@ w_RECURSE_cf:
         ; via build_header so this is the entry the user is mid-defining)
         LD      L, (IY+UserArea.latest)
         LD      H, (IY+UserArea.latest+1)
-        ; Skip hash_link (2 bytes) → HL -> count_flags
+        ; Skip fat hash_link (3 bytes) → HL -> count_flags
+        INC     HL
         INC     HL
         INC     HL
         LD      A, (HL)              ; A = count_flags

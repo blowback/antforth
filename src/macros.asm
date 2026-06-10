@@ -78,8 +78,11 @@
             local flags = sj.calc(sj.get_define("_CURRENT_FLAGS"))
             _current_bucket = forth_hash(name)
             local prev = _hash_buckets[_current_bucket]
-            -- Emit hash_link (2 bytes, little-endian)
+            -- Emit fat hash_link: [addr:2 little-endian][bank:1].
+            -- Kernel entries always chain to fixed-memory predecessors, so
+            -- the bank byte is BANK_FIXED ($FF).
             _pc(string.format("DW 0x%04X", prev))
+            _pc("DB 0xFF")
             -- Emit count_flags byte (flags | name_length)
             _pc(string.format("DB 0x%02X", flags | #name))
         ENDLUA
@@ -112,7 +115,9 @@
             local flags = sj.calc(sj.get_define("_CURRENT_FLAGS"))
             _current_bucket = forth_hash(name)
             local prev = _hash_buckets[_current_bucket]
+            -- Fat hash_link: [addr:2][bank:1]; kernel predecessor → $FF fixed.
             _pc(string.format("DW 0x%04X", prev))
+            _pc("DB 0xFF")
             _pc(string.format("DB 0x%02X", flags | #name))
         ENDLUA
         DB      name?                   ; Name string

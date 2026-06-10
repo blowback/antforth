@@ -421,7 +421,10 @@ asm_cleanup:
         LD      A, (asm_saved_bucket)
         LD      L, A
         LD      H, 0
-        ADD     HL, HL                          ; bucket * 2
+        ADD     HL, HL                          ; 2*bucket
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC                          ; 3*bucket (fat-bucket stride)
         LD      BC, (asm_saved_wid)
         INC     BC
         INC     BC                              ; BC = saved_wid + WORDLIST_BUCKET0
@@ -841,14 +844,17 @@ asm_unlink_labels:
         ; that was current when CODE was entered).
         LD      L, A
         LD      H, 0
-        ADD     HL, HL              ; *2
+        ADD     HL, HL              ; 2*bucket
         PUSH    DE
+        LD      E, A
+        LD      D, 0
+        ADD     HL, DE              ; 3*bucket (fat-bucket stride)
         LD      DE, (asm_saved_wid)
         INC     DE
         INC     DE                  ; DE = saved_wid + WORDLIST_BUCKET0
         ADD     HL, DE
         POP     DE
-        ; Restore bucket head
+        ; Restore bucket head (addr only; fat bank byte at +2 left intact)
         LD      (HL), E
         INC     HL
         LD      (HL), D

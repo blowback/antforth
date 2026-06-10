@@ -150,10 +150,10 @@ DOMARKER:
         LD      (IY+UserArea.here), E
         LD      (IY+UserArea.here+1), D
 
-        ; Copy 128 bytes from body to FORTH-WORDLIST bucket array
+        ; Copy 192 bytes from body to FORTH-WORDLIST fat bucket array
         LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only)
-        LD      BC, 128
-        LDIR                            ; Restore all 64 hash bucket heads
+        LD      BC, 192
+        LDIR                            ; Restore all 64 × 3-byte fat bucket heads
 
         ; Restore BC (TOS) and DE (IP)
         LD      B, (IX+1)
