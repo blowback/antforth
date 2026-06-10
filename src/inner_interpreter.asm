@@ -9,7 +9,7 @@
 ; staging idiom, shadow BC' as TOS-preservation slot — see:
 ;   docs/register-conventions.md
 ;
-; CF-HANDLER DE-CONTRACT (Story 19.5.2 CR pass): every code-field
+; CF-HANDLER DE-CONTRACT: every code-field
 ; handler here (DOCOL, DOVAR, DOCON, DODOES — and any future one) is
 ; reachable through a cross-bank descriptor stub (src/banking.asm
 ; stub_dispatch), which pre-loads DE = xbank_thunk as the return IP
@@ -44,18 +44,14 @@ w_EXIT_cf:
         JP      EXIT_CODE
 
 ; === EXIT — Return from colon definition ===
-; Story 19.5.2 (ADR 19.5 DR-2, option C): the Story-18.2 sentinel
-; discriminator that lived here (16-bit CP of the popped IP against
-; `cross_bank_return`) is RETIRED along with the trampoline itself.
-; Cross-bank returns now route through the dispatch-site 2-cell frame
-; + xbank_thunk / xbank_restore (src/banking.asm): a cross-bank DOCOL
+; Cross-bank returns route through the dispatch-site 2-cell frame +
+; xbank_thunk / xbank_restore (src/banking.asm): a cross-bank DOCOL
 ; callee's terminal EXIT pops IP = xbank_thunk (pushed by DOCOL from
-; the DE stub_dispatch pre-loaded), and the standard NEXT below
-; fetches the thunk cell → xbank_restore performs the bank restore.
-; EXIT_CODE is back to the plain pop + NEXT — the FR-P4-19
-; zero-overhead invariant is exact again (the ~23 T miss-path CP
-; penalty is retired with the discriminator). Hand-built kernel
-; threads' `DW EXIT_CODE` cells are unaffected.
+; the DE stub_dispatch pre-loaded), and the standard NEXT below fetches
+; the thunk cell → xbank_restore performs the bank restore. EXIT_CODE
+; itself is a plain pop + NEXT — zero added overhead for the common
+; in-bank case. Hand-built kernel threads' `DW EXIT_CODE` cells are
+; unaffected.
 EXIT_CODE:
         ; Pop IP from return stack
         LD      E, (IX+0)
@@ -69,7 +65,7 @@ EXIT_CODE:
 ; Body = HL+5 (skips 3-byte JP + 2-byte does-addr slot)
 ; ( -- addr )
 DOVAR:
-        ; Story 11.5.2: -3 THROW guard. PUSH HL spills W across the
+        ; -3 THROW guard. PUSH HL spills W across the
         ; check (check_overflow clobbers HL); the +2-byte transient SP
         ; pressure is covered by check_overflow's 32-byte safety margin.
         PUSH    HL              ; spill W (= code field addr)
@@ -87,7 +83,7 @@ DOVAR:
 ; Value = HL+3 (no does-addr slot for constants)
 ; ( -- x )
 DOCON:
-        ; Story 11.5.2: -3 THROW guard (depth +1). PUSH HL spills W.
+        ; -3 THROW guard (depth +1). PUSH HL spills W.
         PUSH    HL              ; spill W (= code field addr)
         CALL    check_overflow
         POP     HL              ; recover W
@@ -118,7 +114,7 @@ DODOES:
         INC     HL
         LD      D, (HL)         ; DE = does-addr (new IP)
         INC     HL              ; HL = body address (cf+5)
-        ; Story 11.5.2: -3 THROW guard before the data-stack push (depth +1).
+        ; -3 THROW guard before the data-stack push (depth +1).
         ; PUSH HL spills the body addr across the check.
         PUSH    HL              ; spill body addr
         CALL    check_overflow
@@ -132,7 +128,7 @@ DODOES:
 ; === DOMARKER — Restore dictionary state from marker body ===
 ; HL points to code field (JP DOMARKER)
 ; Body at cf+3: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
-; the wordlist struct's next-link cell is NOT snapshotted (Story 12.1 AC #6).
+; the wordlist struct's next-link cell is NOT snapshotted.
 ; ( -- ) no stack effect
 DOMARKER:
         ; Skip code field to reach body
@@ -155,7 +151,7 @@ DOMARKER:
         LD      (IY+UserArea.here+1), D
 
         ; Copy 128 bytes from body to FORTH-WORDLIST bucket array
-        LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only — Story 12.1 AC #6)
+        LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only)
         LD      BC, 128
         LDIR                            ; Restore all 64 hash bucket heads
 
@@ -219,7 +215,7 @@ rpop_hl:                        ; Pop HL from return stack
 w_LIT:
         DEFCODE "LIT", 0
 w_LIT_cf:
-        ; Story 11.5.2: -3 THROW guard (depth +1). HL on entry is W
+        ; -3 THROW guard (depth +1). HL on entry is W
         ; (= code field addr) but LIT does not use it — it uses DE
         ; (= IP). check_overflow clobbers AF/HL, both unused, so no
         ; spill is needed.
@@ -277,23 +273,16 @@ w_QBRANCH_cf:
 ; EXECUTE ( xt -- )
 ;   Execute the word whose execution token is on the stack.
 ;
-;   Story 19.5.2 (ADR 19.5 DR-2, option C): Story 18.3's 77-byte 3-way
-;   dispatch (legacy-CFA / intra-bank stub / cross-bank sentinel-frame
-;   push) is RETIRED. Descriptor stubs are now self-dispatching — stub
-;   byte 0 = $EF (RST $28) vectors through STUB_DISPATCH_VECTOR to
-;   stub_dispatch (src/banking.asm), which performs the bank-aware
-;   dispatch for EVERY JP (HL) site uniformly (NEXT, EXECUTE, CATCH's
-;   xt-execute, the outer interpreter). EXECUTE therefore folds to the
-;   pre-Phase-4 4-byte shape:
-;     - legacy CFA xt (Phase-1/2/3 CFA-as-xt contract, bank-0 `:` per
-;       19.2 Q3-β) → JP (HL) executes the code field directly,
-;       byte-identical to the pre-Story-18.3 dispatch (NFR-P4-16);
+;   EXECUTE is a plain 4-byte JP (HL). Descriptor stubs are
+;   self-dispatching — stub byte 0 = $EF (RST $28) vectors through
+;   STUB_DISPATCH_VECTOR to stub_dispatch (src/banking.asm), so every
+;   JP (HL) site (NEXT, EXECUTE, CATCH's xt-execute, the outer
+;   interpreter) dispatches uniformly with no discrimination here:
+;     - legacy CFA xt (CFA-as-xt contract, bank-0 `:`) → JP (HL)
+;       executes the code field directly;
 ;     - stub xt → JP (HL) lands on the RST $28 at stub byte 0 and the
-;       stub self-dispatches (intra- or cross-bank, stub_dispatch's
-;       call). No discrimination needed HERE — that is the whole point
-;       of option C.
-;   EXX-hygiene (NFR-P4-34): trivially leaf — main-set only, no EXX,
-;   no THROW raise.
+;       stub self-dispatches (intra- or cross-bank).
+;   EXX-hygiene: trivially leaf — main-set only, no EXX, no THROW raise.
 ; -----------------------------------------------
 w_EXECUTE:
         DEFCODE "EXECUTE", 0
