@@ -18,7 +18,7 @@ w_COUNT_cf:
 
 ; === FIND ( c-addr -- c-addr 0 | xt 1 | xt -1 ) ===
 ; Search the current search order (slot 0 down) for the counted-string
-; name at c-addr. Story 12.3 — walks UserArea.search_order[0..depth-1],
+; name at c-addr. Walks UserArea.search_order[0..depth-1],
 ; calling the shared helper `search_wid_for_name` once per wid; returns
 ; on the first hit. On full miss returns ( c-addr 0 ) per the existing
 ; ANS contract.
@@ -93,14 +93,13 @@ w_FIND_cf:
 
 ; -----------------------------------------------
 ; search_wid_for_name — Walk a single wordlist's bucket chain for a name match.
-; Story 12.2 — shared by FIND (passing forth_wordlist) and SEARCH-WORDLIST
-; (passing the user-supplied wid). Designed-up-front to also serve Story
-; 12.3's per-wid search-order walk (per `feedback_design_upfront.md`).
+; Shared by FIND (passing forth_wordlist), SEARCH-WORDLIST (passing the
+; user-supplied wid), and the per-wid search-order walk.
 ;
 ; Input:  HL = name address (raw characters, NOT counted)
 ;         B  = name length (passed unchanged; chain compare rejects entries
 ;              whose stored length-mask doesn't match B, so u > 31 yields
-;              a pure miss without crashing — AC #11(b) pick (ii))
+;              a pure miss without crashing)
 ;         DE = wid (wordlist struct base address)
 ; Output: On HIT:  HL = xt (code field address);
 ;                  A  = count_flags byte of matched entry (caller checks F_IMMEDIATE);
@@ -161,22 +160,20 @@ search_wid_for_name:
         INC     HL
         INC     DE
         DJNZ    .sw_compare
-        ; Match — HL points past the name. Story 19.2 (Q1-α): runtime-built
-        ; entries (every build_header consumer: `:`, CREATE, CONSTANT,
-        ; MARKER, CODE, LABEL) carry a 2-byte stub-xt cell between name and
-        ; CFA, flagged by F_HAS_STUB_XT_CELL in count_flags. Kernel-assembled
+        ; Match — HL points past the name. Runtime-built entries (every
+        ; build_header consumer: `:`, CREATE, CONSTANT, MARKER, CODE,
+        ; LABEL) carry a 2-byte stub-xt cell between name and CFA, flagged
+        ; by F_HAS_STUB_XT_CELL in count_flags. Kernel-assembled
         ; DEFCODE/DEFWORD/DEFIMMED entries keep the legacy post-name = CFA
         ; layout (no cell, flag clear). Discriminate on the flag:
-        ;   - flag set: read 2-byte cell at HL → HL = xt. Bank-0 / Phase-1/2/3
-        ;     entries' cell holds the CFA address (initial-fill from
-        ;     build_header → FIND returns CFA; the folded EXECUTE's
-        ;     JP (HL) executes it directly — Story 19.5.2); bank-N>0
-        ;     colon entries' cell holds the descriptor-stub address
-        ;     (overwritten by w_SEMICOLON_cf → FIND returns stub-xt; the
-        ;     stub self-dispatches via RST $28 / stub_dispatch per
-        ;     PD-P4-1 / FR-P4-13 / FR-P4-17 / ADR 19.5 DR-2).
+        ;   - flag set: read 2-byte cell at HL → HL = xt. Bank-0 entries'
+        ;     cell holds the CFA address (initial-fill from build_header →
+        ;     FIND returns CFA; the folded EXECUTE's JP (HL) executes it
+        ;     directly); bank-N>0 colon entries' cell holds the
+        ;     descriptor-stub address (overwritten by w_SEMICOLON_cf →
+        ;     FIND returns stub-xt; the stub self-dispatches via RST $28 /
+        ;     stub_dispatch).
         ;   - flag clear: HL is post-name = CFA directly (legacy layout).
-        ; architecture.md:200..211 + 347..363; redesign §2.1.
         LD      A, (sw_match_cf)
         AND     F_HAS_STUB_XT_CELL
         JR      Z, .sw_match_legacy
@@ -219,13 +216,11 @@ find_slot_ptr:      DW      0
 ; -----------------------------------------------
 ; WORDS ( -- )
 ;   List all words in the dictionary by traversing all 64 hash buckets
-;   of FORTH-WORDLIST. Story 12.3 AC #10 + Story 12.4 AC #9 picked option
-;   (a) — keep WORDS scoped to FORTH-WORDLIST. ANS does not standardise
-;   WORDS across wordlists. With SET-CURRENT (Story 12.4) live, a user
+;   of FORTH-WORDLIST. WORDS is scoped to FORTH-WORDLIST; ANS does not
+;   standardise WORDS across wordlists. With SET-CURRENT live, a user
 ;   can place definitions into non-FORTH-WORDLIST wordlists; those words
 ;   are NOT visible to WORDS. Workaround: dump the bucket array of the
-;   target wordlist by hand. Revisit if MicroBeast hardware wordlists
-;   land in Phase 3.
+;   target wordlist by hand.
 ; -----------------------------------------------
 w_WORDS:
         DEFCODE "WORDS", 0
