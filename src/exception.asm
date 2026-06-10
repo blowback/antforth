@@ -492,7 +492,7 @@ w_THROW_cf:
         LD      HL, ACTIVE_PAGES_BASE
         ADD     HL, BC                  ; HL = &active_pages[catcher's bank]
         LD      A, (HL)
-        OUT     (0x72), A               ; MMU slot 2 ← catcher's page
+        CALL    mbb_set_slot2           ; MMU slot 2 ← catcher's page (preserves BC,HL,DE)
         LD      (IY+UserArea.current_bank), C
         ; --- 19.5.2 CR-F1: restore the CATCH-time triple owner from
         ;     frame +9. A real BANK! between CATCH and THROW leaves the

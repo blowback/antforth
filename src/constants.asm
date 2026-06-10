@@ -51,6 +51,17 @@ STUB_DISPATCH_VECTOR EQU 0x0028
 ; single-EQU re-vector contingency above.
 SLOT2_WINDOW_BASE EQU 0x8000
 
+; === MicroBeast BIOS page-mapping routines (blessed slot accessors) ===
+; The page registers (ports 0x70-0x73) are write-only; the BIOS owns the
+; authoritative page shadow and re-pages logical pages itself (e.g. during
+; disk ops), so all page switching MUST go through these, never raw OUT/IN.
+; Both clobber A, B, C, H, L, F and preserve DE, IX, IY (verified against
+; MicroBeast firmware beastos/bios.asm get_page_mapping/set_page_mapping).
+; antforth wraps them as mbb_set_slot2 / mbb_get_slot2 (src/banking.asm),
+; which preserve the inner-interpreter registers (BC=TOS, DE=IP, HL).
+MBB_GET_PAGE    EQU     0xFDDC          ; C = logical page 0-2 -> A = physical (0xFF err)
+MBB_SET_PAGE    EQU     0xFDDF          ; A = logical page 0-2, E = physical page
+
 ; === BDOS Function Numbers ===
 P_TERMCPM       EQU     0               ; BDOS function 0: terminate program
 C_READ          EQU     1               ; BDOS function 1: console input (blocking, echoes)

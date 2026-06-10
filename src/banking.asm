@@ -87,6 +87,39 @@ w_BANK_MAPPING_OFF:
 w_BANK_MAPPING_OFF_cf:
         JP      0x0000          ; BIOS WBOOT — never returns
 
+; === mbb_set_slot2 / mbb_get_slot2 — blessed slot-2 page accessors ===
+;   The page registers are write-only and the BIOS owns the authoritative
+;   page shadow (and re-pages under disk ops), so slot 2 is switched/read
+;   via the BIOS routines, never raw OUT/IN (see constants.asm MBB_*).
+;   The BIOS routines clobber A/BC/HL/F; these wrappers preserve the
+;   inner-interpreter registers BC (TOS), DE (IP) and HL so call sites can
+;   invoke them inline. IX (R-stack) and IY (UserArea) are BIOS-preserved.
+;
+; mbb_set_slot2 ( A = physical page -> ) — map logical page 2 to A.
+mbb_set_slot2:
+        PUSH    DE                      ; E is reused as the arg; save IP
+        PUSH    HL
+        PUSH    BC
+        LD      E, A                    ; E = physical page
+        LD      A, 2                    ; logical CPU page 2 = $8000..$BFFF window
+        CALL    MBB_SET_PAGE
+        POP     BC
+        POP     HL
+        POP     DE
+        RET
+;
+; mbb_get_slot2 ( -> A = physical page ) — read logical page 2's mapping.
+mbb_get_slot2:
+        PUSH    DE
+        PUSH    HL
+        PUSH    BC
+        LD      C, 2                    ; logical CPU page 2
+        CALL    MBB_GET_PAGE            ; A = physical page (survives the POPs)
+        POP     BC
+        POP     HL
+        POP     DE
+        RET
+
 ; === BANK@ ( -- n ) ===
 ;   Return the current logical bank index — i.e. (IY+UserArea.current_bank).
 ;   n is the index into the active bank list (NOT the physical page
@@ -203,11 +236,11 @@ w_BANK_STORE_cf:
         LD      BC, THROW_BANK_FROM_BANKED          ; -273
         JP      w_THROW_cf.kernel_entry
 .window_ok:
-        ; --- MMU port write: OUT (0x72), active_pages[n] ---
+        ; --- Map slot 2 to active_pages[n] via the BIOS (preserves BC=n) ---
         LD      HL, ACTIVE_PAGES_BASE
         ADD     HL, BC                              ; BC.high == 0 validated
         LD      A, (HL)
-        OUT     (0x72), A
+        CALL    mbb_set_slot2
         ; --- Swap current_bank (read old; write new). High byte stays 0. ---
         LD      A, (IY+UserArea.current_bank)       ; A = old_bank
         LD      (IY+UserArea.current_bank), C       ; current_bank.low ← new
@@ -420,34 +453,15 @@ w_PLUS_BANK_cf:
 ; ============================================================
 cl_probe_and_add:
         LD      C, A                                ; C = candidate page
-        ; --- Restore-target selection (DIV-1 fix, 2026-06-06): restore
-        ;     slot 2 from the TABLE, never from `IN A,(0x72)` readback.
-        ;     HW UAT (transcripts beastty-20260606-113348/-120930.bin)
-        ;     proved the readback floats on real silicon: the restored
-        ;     page is open bus — reads echo the reading instruction's
-        ;     own opcode ($4E = C@'s LD C,(HL); $7E = LD A,(HL) → the
-        ;     STRADG tilde token) and writes don't stick. The emulator
-        ;     hid it (cpm_machine.rs:138 implements the readback) —
-        ;     same gap class as port-0x74 BANK-MAPPING-OFF. Restore =
-        ;     active_pages[current_bank] when the list is non-empty;
-        ;     on the bootstrap probe (bank_count = 0, which is by CL
-        ;     construction the portal page itself) the candidate stays
-        ;     mapped. Edge cases: a FAILED bootstrap probe leaves the
-        ;     failed candidate mapped (window dead — no worse than the
-        ;     pre-fix open bus); post--BANK current_bank staleness is
-        ;     the documented Q3-(a) "user re-issues BANK!" semantics. ---
-        LD      B, A                                ; default restore = candidate (bootstrap)
-        LD      A, (IY+UserArea.bank_count)
-        OR      A
-        JR      Z, .cpa_probe                       ; empty list → candidate stays
-        LD      HL, ACTIVE_PAGES_BASE
-        LD      A, (IY+UserArea.current_bank)
-        ADD     A, L                                ; idx ≤ 28; $AE+28=$CA (no carry)
-        LD      L, A
-        LD      B, (HL)                             ; B = active_pages[current_bank]
+        ; Save the caller's current slot-2 page from the BIOS shadow
+        ; (MBB_GET preserves BC=candidate). This reads the actual live
+        ; mapping, so it needs no bootstrap special-case and retires the
+        ; DIV-1 IN-readback workaround (the port is write-only).
+        CALL    mbb_get_slot2                       ; A = caller's slot-2 page
+        LD      B, A                                ; B = saved restore page
 .cpa_probe:
         LD      A, C
-        OUT     (0x72), A                           ; switch slot 2 to candidate
+        CALL    mbb_set_slot2                       ; switch slot 2 to candidate
         LD      HL, SLOT2_WINDOW_BASE
         LD      A, (HL)
         PUSH    AF                                  ; stash orig $8000 byte
@@ -463,7 +477,7 @@ cl_probe_and_add:
         POP     AF                                  ; recover orig $8000 byte
         LD      (HL), A                             ; restore $8000
         LD      A, B
-        OUT     (0x72), A                           ; restore caller's slot 2
+        CALL    mbb_set_slot2                       ; restore caller's slot 2
         LD      HL, ACTIVE_PAGES_BASE
         LD      A, (IY+UserArea.bank_count)
         ADD     A, L                                ; idx ≤ 28; $AE+28=$CA (no carry)
@@ -476,7 +490,7 @@ cl_probe_and_add:
         POP     AF                                  ; recover orig $8000 byte (in A)
         LD      (HL), A                             ; restore $8000 (HL still = $8000)
         LD      A, B
-        OUT     (0x72), A                           ; restore caller's slot 2
+        CALL    mbb_set_slot2                       ; restore caller's slot 2
         SCF                                         ; CY=1 (FAIL)
         RET
 
@@ -1250,7 +1264,7 @@ stub_dispatch:
         ADD     HL, BC                              ; HL = &active_pages[target_bank]
         LD      A, (HL)                             ; A = physical page
         POP     HL                                  ; HL = stub+1
-        OUT     (0x72), A                           ; MMU slot 2 ← page
+        CALL    mbb_set_slot2                       ; MMU slot 2 ← page (preserves BC,HL,DE)
         LD      (IY+UserArea.current_bank), C       ; current_bank ← target_bank
         POP     BC                                  ; restore TOS
 .enter:
@@ -1295,7 +1309,7 @@ xbank_restore:
         LD      HL, ACTIVE_PAGES_BASE
         ADD     HL, BC                              ; HL = &active_pages[caller_bank]
         LD      A, (HL)
-        OUT     (0x72), A                           ; MMU slot 2 ← physical page
+        CALL    mbb_set_slot2                       ; MMU slot 2 ← physical page (preserves BC,HL,DE)
         LD      (IY+UserArea.current_bank), C       ; current_bank ← caller_bank
         POP     BC                                  ; restore TOS
         LD      E, (IX+0)                           ; DE = caller_IP
