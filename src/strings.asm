@@ -417,8 +417,8 @@ w_TO_NUMBER_cf:
 
 .tonum_done:
         ; Push ud2-low, ud2-high, c-addr2 — high cell ends up second-on-
-        ; stack-just-under-c-addr2 per ANS Forth 1994 §3.1.4.1 (post-
-        ; Story-13.0.1 hi-on-TOS). After EXX + BC=u2: stack picture is
+        ; stack-just-under-c-addr2 per ANS Forth 1994 §3.1.4.1 (hi-on-TOS).
+        ; After EXX + BC=u2: stack picture is
         ; ( ud2-lo ud2-hi c-addr2 u2 ) with u2=BC=TOS.
         LD      HL, (.tonum_ud_lo)
         PUSH    HL
@@ -447,7 +447,7 @@ w_TO_NUMBER_cf:
 w_NUMBER_Q:
         DEFCODE "NUMBER?", 0
 w_NUMBER_Q_cf:
-        ; Story 11.5.2: -3 THROW guard. NUMBER? grows the data stack
+        ; -3 THROW guard. NUMBER? grows the data stack
         ; by 1 cell on BOTH the success path (n + true) and the fail
         ; path (c-addr + false), so guard at entry covers both.
         CALL    check_overflow
@@ -480,10 +480,10 @@ w_NUMBER_Q_cf:
         JR      Z, .numq_fail  ; Bare "-" → fail
 
 .numq_convert:
-        ; Story 13.0 — switch to 32-bit dot-aware accumulator (ANS Forth
-        ; 1994 §3.4.1.3). For unprefixed digit strings, base is BASE
-        ; (UserArea). saw_dot=0 → single-cell single (flag=0xFFFF, DPL=-1);
-        ; saw_dot=1 → double-cell (flag=2, DPL=digits-after-dot).
+        ; 32-bit dot-aware accumulator (ANS Forth 1994 §3.4.1.3). For
+        ; unprefixed digit strings, base is BASE (UserArea). saw_dot=0 →
+        ; single-cell single (flag=0xFFFF, DPL=-1); saw_dot=1 →
+        ; double-cell (flag=2, DPL=digits-after-dot).
         CALL    do_double_dot_user
         JR      C, .numq_fail   ; multi-dot or invalid digit
         LD      A, B
@@ -514,8 +514,7 @@ w_NUMBER_Q_cf:
 
 .numq_double:
         ; Double-cell: apply 32-bit sign, write DPL, push low+high, flag=2.
-        ; Story 13.0.1: high cell on TOS per ANS Forth 1994 §3.1.4.1
-        ; (post-flip from pre-13.0.1 low-on-TOS).
+        ; High cell on TOS per ANS Forth 1994 §3.1.4.1.
         LD      A, (.numq_negate)
         OR      A
         CALL    NZ, dlit_negate
@@ -802,29 +801,23 @@ s_quote_buf:    DS 258          ; transient buffer for interpret mode (256 chars
 ;   Compile mode: compile (S") + inline string + TYPE
 ;   Interpret mode: parse and print string immediately
 ;
-; Story 13.5.3 / TD-5 closure:
-;   Interpret-mode tail at .dq_interpret now saves the caller's TOS
+;   Interpret-mode tail at .dq_interpret saves the caller's TOS
 ;   across the parse-and-print work via PUSH BC at entry / POP BC at
-;   .dq_i_end exit. Pre-13.5.3 the loop counter `C` was loaded with
-;   the remaining-TIB byte-count (LD C, A at .dq_i_rem_ok) and
-;   decremented on every iteration (DEC C inside .dq_i_loop), which
-;   destroyed BC (the TOS-in-register cell per docs/register-conventions.md)
-;   without saving it — violating ANS §6.1.0190 ( -- ) net stack
+;   .dq_i_end exit. The loop counter `C` is loaded with the
+;   remaining-TIB byte-count (LD C, A at .dq_i_rem_ok) and decremented
+;   on every iteration (DEC C inside .dq_i_loop), which would destroy
+;   BC (the TOS-in-register cell per docs/register-conventions.md)
+;   without the save — violating ANS §6.1.0190 ( -- ) net stack
 ;   effect for any interpret-mode invocation (REPL, INCLUDED top-level,
-;   EVALUATE outside a colon body). Originally surfaced as Story 13.5
-;   adversarial review F2 (catalogue at
-;   _bmad-output/implementation-artifacts/13-5-r-o-close-file-destructive-flush-audit-and-fix.md:217)
-;   and re-classified to a tag-blocker by the Epic 13 retro
-;   2026-05-05 (Tag-Blocking Slate row 13.5.3) under feedback_no_preexisting_discharge.md
-;   (Lesson 13-B). The fix mirrors the compile-mode tail of this same
-;   word at lines 841/852 (PUSH BC / POP BC around compile_string)
-;   and the interpret-mode tail of S" at line 715 (PUSH BC at entry).
+;   EVALUATE outside a colon body). This mirrors the compile-mode tail
+;   of this same word (PUSH BC / POP BC around compile_string) and the
+;   interpret-mode tail of S" (PUSH BC at entry).
 ;
-;   The in-loop PUSH BC / POP BC envelopes at lines 902/908 (>IN
-;   advance) and 915/918 (bdos_putchar) are unrelated: they save the
-;   loop COUNTER state of BC across helper-clobbering inner code; the
-;   function-level outer envelope saves the original-TOS state at a
-;   strictly outer scope. Two scopes, one register pair, no conflict.
+;   The in-loop PUSH BC / POP BC envelopes (>IN advance, and
+;   bdos_putchar) are unrelated: they save the loop COUNTER state of
+;   BC across helper-clobbering inner code; the function-level outer
+;   envelope saves the original-TOS state at a strictly outer scope.
+;   Two scopes, one register pair, no conflict.
 ; -----------------------------------------------
 w_DOT_QUOTE:
         DEFCODE '."', F_IMMEDIATE
@@ -857,7 +850,7 @@ w_DOT_QUOTE_cf:
 
 .dq_interpret:
         ; === Interpret mode: parse string and print directly ===
-        PUSH    BC              ; save TOS across interpret-mode work (Story 13.5.3 / TD-5)
+        PUSH    BC              ; save TOS across interpret-mode work
         ; Compute source: TIB + >IN
         LD      E, (IY+UserArea.tib_in)
         LD      D, (IY+UserArea.tib_in+1)
@@ -920,7 +913,7 @@ w_DOT_QUOTE_cf:
         JR      .dq_i_loop
 
 .dq_i_end:
-        POP     BC              ; restore TOS (Story 13.5.3 / TD-5)
+        POP     BC              ; restore TOS
         ; Restore IP
         LD      DE, (dq_saved_ip)
         NEXT
@@ -947,20 +940,19 @@ w_BACKSLASH_cf:
 ; ( ( -- ) IMMEDIATE
 ;   Paren comment: consume input up to and including next ')'
 ;   Raises -58 THROW (unexpected end of input) per ANS Forth 1994
-;   §9.3.5 if ')' not found before end of input. Pre-Story-11.6 the
-;   site printed "? missing )" before ABORT — the syntactic
-;   specificity is lost in the unified `error -58: unexpected end
-;   of input` diagnostic; the trade is deliberate (mirrors ?COMP's
-;   "? compile only" → -14 migration in Story 11.5). A future
-;   refactor could re-introduce a (-specific extension code if the
-;   syntactic clarity proves valuable.
+;   §9.3.5 if ')' not found before end of input. The syntactic
+;   specificity of a "? missing )" message is lost in the unified
+;   `error -58: unexpected end of input` diagnostic; the trade is
+;   deliberate (mirrors ?COMP's "? compile only" → -14 migration).
+;   A future refactor could re-introduce a (-specific extension code
+;   if the syntactic clarity proves valuable.
 ; -----------------------------------------------
 w_PAREN:
         DEFCODE "(", F_IMMEDIATE
 w_PAREN_cf:
         ; Save TOS/IP/W via shadows. Shadow BC' implicitly preserves the
         ; original TOS for free, so no explicit `PUSH BC` is needed
-        ; (matches 7.1 COLON/CREATE/CONSTANT convention for `( -- )` words).
+        ; (matches the COLON/CREATE/CONSTANT convention for `( -- )` words).
         EXX
 
         ; Compute HL = tib_addr + >IN, BC = tib_len - >IN
@@ -1007,15 +999,12 @@ w_PAREN_cf:
 
 .paren_missing:
         EXX                              ; Restore primary set (kernel-internal
-                                         ; THROW entry contract; matches Story
-                                         ; 11.5 :/CREATE/CONSTANT/MARKER pattern)
-        ; -58 THROW (Story 11.6): unexpected end of input per ANS Forth
-        ; 1994 §9.3.5. Pre-Story-11.6 this site printed "? missing )"
-        ; CR/LF before ABORT; the unified `error -58: unexpected end of
-        ; input` diagnostic from Story 11.3's throw_desc_table replaces
-        ; the pre-print. The pre-Story-11.6 message carried syntactic
-        ; specificity ("the ) is missing") which the ANS text loses;
-        ; the trade is deliberate per the unified-diagnostic discipline
-        ; (mirrors ?COMP's "? compile only" → -14 migration).
+                                         ; THROW entry contract; matches the
+                                         ; :/CREATE/CONSTANT/MARKER pattern)
+        ; -58 THROW: unexpected end of input per ANS Forth 1994 §9.3.5.
+        ; The unified `error -58: unexpected end of input` diagnostic from
+        ; throw_desc_table replaces a syntactically specific "? missing )"
+        ; message; the trade is deliberate per the unified-diagnostic
+        ; discipline (mirrors ?COMP's "? compile only" → -14 migration).
         LD      BC, THROW_END_OF_INPUT
         JP      w_THROW_cf.kernel_entry
