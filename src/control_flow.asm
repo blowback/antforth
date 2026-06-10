@@ -3,13 +3,9 @@
 
 ; -----------------------------------------------
 ; ?COMP ( -- )
-;   Compile-only guard: if STATE=0 (interpreting), raise -14 THROW
-;   (Story 11.5) per ANS Forth 1994 §9.3.5. Migrated from the
-;   pre-print + JP w_ABORT_cf form — the legacy "? compile only"
-;   pre-print (and its data declarations) was deleted in favour of
-;   the unified "error -14: interpreting a compile-only word"
-;   diagnostic from Story 11.3's throw_desc_table (mirrors Story
-;   11.4's removal of "? Stack underflow").
+;   Compile-only guard: if STATE=0 (interpreting), raise -14 THROW per
+;   ANS Forth 1994 §9.3.5. The unified "error -14: interpreting a
+;   compile-only word" diagnostic comes from throw_desc_table.
 ; -----------------------------------------------
 w_QCOMP:
         DEFCODE "?COMP", 0
@@ -17,7 +13,7 @@ w_QCOMP_cf:
         LD      A, (IY+UserArea.state)
         OR      (IY+UserArea.state+1)
         JR      NZ, .qcomp_ok
-        ; -14 THROW (Story 11.5): interpreting a compile-only word per ANS Forth 1994 §9.3.5
+        ; -14 THROW: interpreting a compile-only word per ANS Forth 1994 §9.3.5
         LD      BC, THROW_COMPILE_ONLY
         JP      w_THROW_cf.kernel_entry
 .qcomp_ok:
@@ -498,7 +494,7 @@ w_RECURSE_cf:
         JR      NC, .rec_no_carry
         INC     H
 .rec_no_carry:
-        ; Story 19.2 (Q1-α): discriminate on F_HAS_STUB_XT_CELL in count_flags.
+        ; Discriminate on F_HAS_STUB_XT_CELL in count_flags.
         ; Bank-0 entries: legacy layout — HL = post-name = CFA directly.
         ; Bank-N>0 entries: 2-byte stub-xt cell at HL → read it as CFA addr
         ; (initial-fill from build_header; w_SEMICOLON_cf hasn't run yet so
