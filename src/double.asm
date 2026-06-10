@@ -1,15 +1,15 @@
 ; double.asm — Double-cell (32-bit) stack and memory primitives
 ; AntForth — A Forth for CP/M on Z80
 ;
-; Epic 10 double-cell primitives:
-;   Stack:        2DUP, 2DROP, 2SWAP, 2OVER        (Story 10.2)
-;   Memory:       2@, 2!                           (Story 10.2)
-;   Conversions:  S>D, D>S                         (Story 10.3)
-;   Arithmetic:   D+, D-, M+                       (Story 10.4)
-;   Sign:         DNEGATE, DABS                    (Story 10.4)
-;   Compare:      D=, D<, DMAX, DMIN               (Story 10.4)
+; Double-cell primitives:
+;   Stack:        2DUP, 2DROP, 2SWAP, 2OVER
+;   Memory:       2@, 2!
+;   Conversions:  S>D, D>S
+;   Arithmetic:   D+, D-, M+
+;   Sign:         DNEGATE, DABS
+;   Compare:      D=, D<, DMAX, DMIN
 ;
-; Byte-order convention (architecture decision E10-D1, post-Story-13.0.1):
+; Byte-order convention:
 ; on the parameter stack, the HIGH cell is on top and the LOW cell below —
 ; matching ANS Forth 1994 §3.1.4.1 ("the cell containing the most
 ; significant part of a double-cell integer shall be above the cell
@@ -17,18 +17,14 @@
 ; x1 x2 )` where x2 (the most-significant cell, MSC) is TOS. In memory,
 ; the HIGH cell is stored at a-addr and the LOW cell at a-addr+2 (each
 ; cell internally little-endian per Z80 native order; the cell-pair is
-; "big-endian"). Story 13.0.1 (2026-05-01) flipped from the inverted
-; pre-13.0.1 convention; see architecture.md E10-D1 decision history.
+; "big-endian").
 
 ; -----------------------------------------------
 ; 2@ ( a-addr -- x1 x2 )
 ;   Fetch double-cell at a-addr: x2 (high cell, MSC) ends on TOS;
 ;   x1 (low cell) second on stack. x2 = M[a-addr], x1 = M[a-addr+2].
 ;   Per ANS Forth 1994 §3.1.4.1 + §6.1.0350: high-on-TOS / high-at-low-
-;   address. Story 13.0.1 — previously the labelling was inverted
-;   (low-on-TOS / low-at-low-address); the assembly code is unchanged
-;   because the pair-load is layout-symmetric — only the conceptual
-;   labels of M[a-addr] and second-on-stack flipped.
+;   address. The pair-load is layout-symmetric.
 ; ANS Forth 1994 §6.1.0350   2@   — double-cell fetch
 ; -----------------------------------------------
 w_TWO_FETCH:
@@ -55,8 +51,7 @@ w_TWO_FETCH_cf:
 ; 2! ( x1 x2 a-addr -- )
 ;   Store double-cell at a-addr: x2 (HIGH cell, was on TOS) at a-addr;
 ;   x1 (LOW cell, was second-on-stack) at a-addr+2. Per §3.1.4.1 +
-;   §6.1.0310: high cell at lower address. Story 13.0.1 — same
-;   assembly code as pre-flip; only the cell labels swapped.
+;   §6.1.0310: high cell at lower address.
 ; ANS Forth 1994 §6.1.0310   2!   — double-cell store
 ; -----------------------------------------------
 w_TWO_STORE:
@@ -180,8 +175,8 @@ w_S_TO_D_cf:
 
 ; -----------------------------------------------
 ; D>S ( d -- n )
-;   Narrow double to single by dropping the high cell. Post-Story-13.0.1
-;   per §3.1.4.1: BC holds the HIGH cell on entry; pop the LOW cell
+;   Narrow double to single by dropping the high cell.
+;   Per §3.1.4.1: BC holds the HIGH cell on entry; pop the LOW cell
 ;   from second-on-stack into BC, discarding the high cell (it was the
 ;   incoming BC, overwritten). Truncation is ANS implementation-defined.
 ; ANS Forth 1994 §8.6.1140   D>S   — narrow double to single (truncating)
@@ -288,19 +283,16 @@ w_D_MINUS_cf:
 ;   — matching D+ / 2@ / D. consumption order. Advances IP by 4 bytes.
 ;   Inline layout in compiled code: [w_D_LIT_cf addr][d.hi lo,hi][d.lo lo,hi]
 ;   so a 2! of the same value at (HERE+2) round-trips byte-for-byte.
-;   The Z80 assembly code is unchanged from pre-Story-13.0.1 — only
-;   the cell-label interpretation flipped (BC reads from IP+0..1 which
-;   is now the HIGH cell, DE reads from IP+2..3 which is now the LOW
-;   cell). Same opcodes; conventionally re-labelled.
+;   BC reads from IP+0..1 (the HIGH cell), DE reads from IP+2..3 (the
+;   LOW cell).
 ; ANS Forth 1994 §3.4.1.3 — runtime for compile-state double-literal emitted
 ;   by NUMBER-PREFIX? / NUMBER? when a dot-bearing digit string is parsed.
-; Story 13.0 — paren-convention internal helper (architecture.md:438).
-; Story 13.0.1 — flipped to high-on-TOS / high-at-low-address per §3.1.4.1.
+; Paren-convention internal helper. High-on-TOS / high-at-low-address per §3.1.4.1.
 ; -----------------------------------------------
 w_D_LIT:
         DEFCODE "(DLIT)", 0
 w_D_LIT_cf:
-        ; Story 11.5.2 -3 THROW guard. Depth grows by 2 cells (high + low);
+        ; -3 THROW guard. Depth grows by 2 cells (high + low);
         ; the 32-byte safety margin in check_overflow covers both cells.
         CALL    check_overflow
         PUSH    BC                      ; spill old TOS (3rd-on-stack)
@@ -349,8 +341,7 @@ w_D_NEGATE_cf:
 ;   d; tail-call DNEGATE for negative d. The re-entry into DNEGATE
 ;   re-checks underflow (cheap, ~30 T-states).
 ; ANS Forth 1994 §8.6.1160   DABS   — double-cell absolute value
-; Story 13.0.1 — sign-bit peek moved from M[SP+1] (old: high cell at
-;   SP) to register B.bit7 (new: high cell in BC).
+;   Sign-bit peek is register B.bit7 (high cell in BC).
 ; -----------------------------------------------
 w_D_ABS:
         DEFCODE "DABS", 0
@@ -368,8 +359,7 @@ w_D_ABS_cf:
 ;   circuits on first-popped-cell mismatch but still drops the deeper
 ;   cell so the stack net is (4 consumed, 1 pushed). Algorithm is
 ;   convention-symmetric — just compares both cells; the cell labels
-;   (high/low) are irrelevant to equality. Story 13.0.1 — code
-;   unchanged from pre-flip; only comment labels updated.
+;   (high/low) are irrelevant to equality.
 ; ANS Forth 1994 §8.6.1120   D=   — double-cell equality → flag
 ; -----------------------------------------------
 w_D_EQUALS:
@@ -486,9 +476,8 @@ w_D_MIN_cf EQU w_D_MIN_body - 3
 ;   (HL:BC) is shifted right by 1 each iteration; the carry-out of
 ;   ADD HL,DE is captured by the subsequent RR H, giving an effective
 ;   33-bit shift register so the $FFFF × $FFFF = $FFFE0001 corner
-;   case settles correctly. Story 13.0.1 — final push/load swapped:
-;   push LOW cell (was BC) as second-on-stack, then load BC = HIGH
-;   cell (= HL) as the new TOS.
+;   case settles correctly. The final step pushes the LOW cell (was BC)
+;   as second-on-stack, then loads BC = HIGH cell (= HL) as the new TOS.
 ; ANS Forth 1994 §6.1.2360   UM*   — unsigned mixed multiply (single × single → double)
 ; -----------------------------------------------
 w_U_M_STAR:
@@ -561,35 +550,31 @@ w_M_STAR_cf EQU w_M_STAR_body - 3
 ;       d3 = (b1*b2) + ((b1*a2 + a1*b2) << 16)  mod 2^32
 ;   where a = HIGH cell, b = LOW cell.
 ;
-;   Story 13.0.1: high-on-TOS convention flipped from low-on-TOS. The
-;   pre-13.0.1 body was structured around input ( a1 b1 a2 b2 ) with
-;   b2 (low) on TOS. The new convention has input ( b1 a1 b2 a2 ) with
-;   a2 (high) on TOS. Rather than rewrite the algebra from scratch we
-;   adapt: convert NEW input → OLD-style with "SWAP 2SWAP SWAP 2SWAP",
-;   run the OLD body (with one inner SWAP after UM* to flip its NEW
-;   output back to OLD-style), then SWAP the final result back to NEW
-;   ( res_lo res_hi ) with res_hi on TOS. Cost: +6 cells = +12 bytes.
-;   Native rewrite would shave a few bytes but at significant
-;   readability/correctness risk; the adapter approach is transparent.
+;   High-on-TOS convention: input ( b1 a1 b2 a2 ) with a2 (high) on TOS.
+;   The body is written around an internal OLD-style ( a1 b1 a2 b2 ) with
+;   b2 (low) on TOS. Convert input → OLD-style with "SWAP 2SWAP SWAP
+;   2SWAP", run the body (with one inner SWAP after UM* to flip its
+;   output back to OLD-style), then SWAP the final result back to
+;   ( res_lo res_hi ) with res_hi on TOS.
 ; ANS Forth 1994 §8.6.1090   D*   — double-cell signed multiply (truncating)
 ; -----------------------------------------------
 w_D_STAR:
         DEFWORD "D*", 0
 w_D_STAR_body:
 w_D_STAR_cf EQU w_D_STAR_body - 3
-        ; Convert NEW input ( lo1 hi1 lo2 hi2 ) → OLD-style ( hi1 lo1 hi2 lo2 ).
+        ; Convert input ( lo1 hi1 lo2 hi2 ) → OLD-style ( hi1 lo1 hi2 lo2 ).
         DW      w_SWAP_cf               ; ( lo1 hi1 hi2 lo2 )
         DW      w_TWO_SWAP_cf           ; ( hi2 lo2 lo1 hi1 )
         DW      w_SWAP_cf               ; ( hi2 lo2 hi1 lo1 )
         DW      w_TWO_SWAP_cf           ; ( hi1 lo1 hi2 lo2 ) — OLD-style ( a1 b1 a2 b2 )
-        ; Pre-Story-13.0.1 body (OLD conv internally):
+        ; Body (OLD conv internally):
         DW      w_TWO_OVER_cf           ; Underflow guard (needs >= 4)
         DW      w_TWO_DROP_cf           ; Drop the duplicates from 2OVER
         DW      w_TO_R_cf               ; >R: stash b2
         DW      w_OVER_cf               ; copy b1
         DW      w_R_FETCH_cf            ; R@: copy b2
-        DW      w_U_M_STAR_cf           ; UM*(b1,b2) — under NEW outputs ( P_lo P_hi )
-        DW      w_SWAP_cf               ; flip UM* NEW output → OLD-style ( P_hi P_lo )
+        DW      w_U_M_STAR_cf           ; UM*(b1,b2) — outputs ( P_lo P_hi )
+        DW      w_SWAP_cf               ; flip UM* output → OLD-style ( P_hi P_lo )
         DW      w_TWO_SWAP_cf           ; ( a1 P_hi P_lo b1 a2 )
         DW      w_STAR_cf               ; ( a1 P_hi P_lo (b1*a2) ) — single * truncates
         DW      w_ROT_cf                ; ( a1 P_lo (b1*a2) P_hi )
@@ -604,7 +589,7 @@ w_D_STAR_cf EQU w_D_STAR_body - 3
         DW      w_ROT_cf                ; ( P_lo res_hi a1 )
         DW      w_DROP_cf               ; ( P_lo res_hi )
         DW      w_SWAP_cf               ; ( res_hi P_lo ) — OLD-style output ( res_hi res_lo )
-        ; Convert OLD-style output → NEW ( res_lo res_hi ) with res_hi on TOS.
+        ; Convert OLD-style output → ( res_lo res_hi ) with res_hi on TOS.
         DW      w_SWAP_cf               ; ( res_lo res_hi )
         DW      EXIT_CODE
 
@@ -630,23 +615,22 @@ w_D_STAR_cf EQU w_D_STAR_body - 3
 ;   the true quotient does not fit in a single cell the result is
 ;   implementation-defined. antforth silently returns the low 16 bits
 ;   of the quotient — matching the single-cell `/` truncation
-;   convention. No overflow check; Epic 11 may reconsider.
+;   convention. No overflow check.
 ;
-;   Divide-by-zero: Migrated by Story 11.4: divisor-zero raises
-;   `-10 THROW` (catchable via `CATCH`; uncaught diagnostic
-;   `error -10: division by zero`). The single guard at this site
-;   covers SM/REM, FM/MOD, */, and */MOD (each funnels through
-;   UM/MOD), plus bare UM/MOD user invocations. Note: M/MOD is not
-;   a kernel primitive in antforth (Story 11.4 review F3).
+;   Divide-by-zero: divisor-zero raises `-10 THROW` (catchable via
+;   `CATCH`; uncaught diagnostic `error -10: division by zero`). The
+;   single guard at this site covers SM/REM, FM/MOD, */, and */MOD
+;   (each funnels through UM/MOD), plus bare UM/MOD user invocations.
+;   Note: M/MOD is not a kernel primitive in antforth.
 ; ANS Forth 1994 §6.1.2370   UM/MOD   — unsigned mixed divide (double ÷ single → single rem + single quot)
 ; -----------------------------------------------
 w_U_M_SLASH_MOD:
         DEFCODE "UM/MOD", 0
 w_U_M_SLASH_MOD_cf:
         CALL    check_underflow_3
-        ; Divisor-zero guard (Story 11.4): BC = the divisor n at this
-        ; point. Single guard covers every double-cell-divide path.
-        ; -10 THROW (Story 11.4): division by zero per ANS Forth 1994 §9.3.5
+        ; Divisor-zero guard: BC = the divisor n at this point. Single
+        ; guard covers every double-cell-divide path.
+        ; -10 THROW: division by zero per ANS Forth 1994 §9.3.5
         LD      A, B
         OR      C
         JR      NZ, .ummod_proceed
@@ -654,10 +638,10 @@ w_U_M_SLASH_MOD_cf:
         JP      w_THROW_cf.kernel_entry
 .ummod_proceed:
         LD      (double_ip_stash), DE   ; Stash IP — DE now free
-        ; Story 13.0.1: under §3.1.4.1 hi-on-TOS, the cell layout for ud is
-        ; ( ud-lo ud-hi ) with ud-hi at SP-top. Swap the two POPs so DE
-        ; receives ud-hi (running remainder) and HL receives ud-lo
-        ; (quotient accumulator). Body algorithm unchanged.
+        ; Under §3.1.4.1 hi-on-TOS, the cell layout for ud is
+        ; ( ud-lo ud-hi ) with ud-hi at SP-top. The two POPs are ordered so
+        ; DE receives ud-hi (running remainder) and HL receives ud-lo
+        ; (quotient accumulator).
         POP     DE                      ; DE = ud-hi (running remainder)
         POP     HL                      ; HL = ud-lo (quotient accumulator)
         LD      A, 16                   ; 16-iteration shift-subtract loop
@@ -721,7 +705,7 @@ w_QGUARD_3_cf:
 ;   $80000000 corner: DABS($80000000) returns $80000000 unchanged
 ;   (mirrors single-cell ABS($8000)). For this SM/REM input the
 ;   true quotient would overflow single-cell range anyway, so
-;   AC #7's implementation-defined-truncation convention applies.
+;   the implementation-defined-truncation convention applies.
 ; ANS Forth 1994 §6.1.2214   SM/REM   — symmetric signed mixed divide
 ;   (quotient truncates toward zero; remainder sign matches dividend)
 ; -----------------------------------------------
@@ -729,11 +713,9 @@ w_S_M_SLASH_REM:
         DEFWORD "SM/REM", 0
 w_S_M_SLASH_REM_body:
 w_S_M_SLASH_REM_cf EQU w_S_M_SLASH_REM_body - 3
-        ; Story 13.0.1: under §3.1.4.1 hi-on-TOS, entry stack is
-        ; ( d-lo d-hi n1 ) with d-hi at depth 1 (not depth 2 as under
-        ; pre-flip OLD conv). Use 2DUP to copy (d-hi n1) for the
-        ; sign-XOR, and OVER to copy d-hi for the rem-sign. Saves 10
-        ; bytes vs the pre-flip "LIT 2 PICK" pattern.
+        ; Under §3.1.4.1 hi-on-TOS, entry stack is ( d-lo d-hi n1 ) with
+        ; d-hi at depth 1. Use 2DUP to copy (d-hi n1) for the sign-XOR,
+        ; and OVER to copy d-hi for the rem-sign.
         DW      w_QGUARD_3_cf           ; Underflow guard (3 cells)
         DW      w_TWO_DUP_cf            ; ( d-lo d-hi n1 d-hi n1 )
         DW      w_XOR_cf                ; ( d-lo d-hi n1 (d-hi^n1) )
