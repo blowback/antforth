@@ -152,14 +152,14 @@ Confirm redesign §5.4/§5.5 already cover the FR-P4-26 / DR-1 residual fences (
   - [x] Sub-9.1 Q2=β recorded; inline lessons captured (as seed) in Completion Notes; the formal `bmad-bmm-retrospective` is a gated post-tag epic ceremony — `epic-19-5-retrospective` stays `optional` until that ceremony runs and marks it `done` (flagged in close message)
   - [x] Sub-9.2 `project_phase4_scope.md` memory `description` + Epic-19.5 bullet updated → 3.0.4 close-out dev-passed → review (cumulative +119 B reconciled; HW ledger complete; debt anchors discharged; DR-1 abolition → Epic 20; tag + formal retro pending authorization)
 
-- [ ] **Task 10 — Tag + epic close (AC: #10)** [outward-facing — recipe-only at dev-pass; execute on Ant's authorization after CR]
+- [x] **Task 10 — Tag + epic close (AC: #10)** [outward-facing — recipe-only at dev-pass; execute on Ant's authorization after CR]
   - [x] Sub-10.1 Verified no `v3.0.4` pre-exists (`git tag` = v3.0.1/v3.0.2/v3.0.3 only); close-out commit + `git tag v3.0.4` + push recipe provided in the closing chat message
-  - [ ] Sub-10.2 On authorization: commit, tag `v3.0.4`, push; sprint-status `19-5-4-...` → `done` + `epic-19-5` → `done` in the same edit
+  - [~] Sub-10.2 `v3.0.4` tag intentionally HELD (Ant decision): the banking→BIOS MBB pivot + comment-debloat interlude landed on top of the close-out commit (5abfbc5) and the pivot's Phase C is still outstanding, so tagging is deferred until that work completes (target tag then rolls forward, e.g. v3.0.5). Close-out commit shipped at 5abfbc5; epic stories all `done`.
 
-- [ ] **Task 11 — Sprint-status transitions (sprint-status.yaml)**
+- [x] **Task 11 — Sprint-status transitions (sprint-status.yaml)**
   - [x] Sub-11.1 `19-5-4-...` `ready-for-dev` → `in-progress` at dev-pass start
   - [x] Sub-11.2 `19-5-4-...` `in-progress` → `review` at dev-pass close
-  - [ ] Sub-11.3 (post-CR + authorization) `19-5-4-...` → `done` + `epic-19-5` → `done`
+  - [x] Sub-11.3 `19-5-4-...` → `done`, `19-5-0-...` → `done` (stranded review closed), `epic-19-5` → `done`; `v3.0.4` tag held per Sub-10.2
 
 ## Dev Notes
 

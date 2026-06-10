@@ -228,12 +228,12 @@ development_status:
   19-4-epic-19-close-out-antforth-3-x-3-tag: done
   epic-19-retrospective: optional
 
-  epic-19-5: in-progress
-  19-5-0-adr-spike-trampoline-layout-fragility-root-cause-dtc-dispatch-architecture: review
+  epic-19-5: done
+  19-5-0-adr-spike-trampoline-layout-fragility-root-cause-dtc-dispatch-architecture: done
   19-5-1-portal-aliasing-guards-bank-n-here-cold-init-h5-reproducer-regression-slot: done
   19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: done
   19-5-3-compiled-body-verification-banked-catch-variant: done
-  19-5-4-hw-investigation-epic-close-out-tag: review
+  19-5-4-hw-investigation-epic-close-out-tag: done
   epic-19-5-retrospective: done
 
   epic-20: backlog
