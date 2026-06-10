@@ -1,29 +1,15 @@
-\ banking_tests.fth — Phase-4 banking word tests (Epic 17+)
-\ Surface annotations per tests/README.md §5; one annotation per probe block.
-\
-\ Probes here ship with Story 17.1's BANK-MAPPING-ON / BANK-MAPPING-OFF.
-\ Later Epic-17 stories (17.2 BANK@/BANK!, 17.3 +BANK/-BANK, 17.5 .BANKS)
-\ extend this file with their own probe blocks.
+\ banking_tests.fth — Phase-4 banking word tests
+\ Run under the banking-capable emulator (make test-repl-banking).
 \
 \ === Architectural note: BANK-MAPPING-OFF emulator coverage ===
-\ BANK-MAPPING-OFF is a one-way warm-boot-escape transition per FR-P4-12
-\ (returns control to a flat-memory CP/M context). Under iz-cpm-banking
-\ (cpm_machine.rs virtual_bank: when mapping is disabled the CPU sees
-\ flash banks 0..3, and load_flash is only called via --flash) and on
-\ real MicroBeast (flash holds BIOS, not antforth), executing
-\ BANK-MAPPING-OFF disconnects the kernel from the RAM that hosts its
-\ code. Story 17.1 dev-pass surfaced this divergence: AC5/AC6/AC11's
-\ `BANK-MAPPING-OFF BANK-MAPPING-ON round-trip` text cannot run under
-\ iz-cpm-banking (no flash mirror) without bigger plumbing. Pragmatic
-\ split (project-lead direction 2026-05-15):
-\   - emulator probes here verify ON-idempotence + port 0x74 readback;
-\   - real-MicroBeast hardware (AC10 / Task 11) verifies the OFF→BYE
-\     warm-boot escape to a healthy `B>` CCP prompt.
+\ BANK-MAPPING-OFF is a one-way warm-boot escape: it disconnects the kernel
+\ from the RAM that hosts its code, so it cannot be exercised under the
+\ emulator (no flash mirror of antforth). The emulator probes here verify
+\ ON-idempotence + port 0x74 readback; the OFF→BYE warm-boot escape to a
+\ healthy `B>` CCP prompt is verified on real MicroBeast hardware.
 
 \ Inline assembler reader for port 0x74 (MMU mapping enable).
-\ Pattern lifted from _bmad-output/implementation-artifacts/16.3-probe.fth.
-\ Pushes the live mapping_enabled byte (0 or 1 under iz-cpm-banking;
-\ 0 always on iz-cpm baseline — unmodelled port).
+\ Pushes the live mapping_enabled byte (1 after BANK-MAPPING-ON).
 CODE FETCH-74 ( -- byte )
   BC PUSH,          \ save old TOS to SP
   $74 # A IN,       \ IN A, (74h)
@@ -37,14 +23,10 @@ END-CODE
 \ MBB-GET-2 (MBB_GET_PAGE; defined in 16.3-probe.fth, loaded first).
 
 \ === Probe 1: BANK-MAPPING-ON idempotence + stack effect ===
-\ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
-\
-\ AC5 stack-effect verification — repeated BANK-MAPPING-ON has stack
-\ effect `( -- )` and the word body completes cleanly. Idempotent
-\ under iz-cpm-banking (mapping is enabled at startup; second-and-third
-\ ON are silent re-writes of the same bit pattern). Idempotent under
-\ iz-cpm baseline (port 0x74 is unmodelled — OUT is a no-op trace, but
-\ the kernel-side bank_mapping_state cell still updates correctly).
+\ Stack-effect verification — repeated BANK-MAPPING-ON has stack effect
+\ `( -- )` and the word body completes cleanly. Idempotent: mapping is
+\ enabled at startup, so second-and-third ON are silent re-writes of the
+\ same bit pattern.
 : _probe-1 ( -- )
   BANK-MAPPING-ON  BANK-MAPPING-ON  BANK-MAPPING-ON
   DEPTH 0 = IF
@@ -57,15 +39,8 @@ END-CODE
 _probe-1
 
 \ === Probe 2: port 0x74 readback after BANK-MAPPING-ON ===
-\ Surface: iz-cpm-SKIP (no MMU model — port 0x74 unmodelled, returns 0)
-\        / iz-cpm-banking-PASS (port_in 0x74 = mapping_enabled byte)
-\        / real-MicroBeast-PASS (hardware MMU reflects bit 0).
-\
-\ AC5 load-bearing verification — after BANK-MAPPING-ON, the MMU
-\ mapping-enable register (port 0x74) reads back as 1. Under iz-cpm
-\ baseline the readback is 0 (no MMU model) — probe declares SKIP
-\ with rationale per the Story 16.3 convention; on iz-cpm-banking and
-\ real MicroBeast the load-bearing assertion (readback = 1) fires PASS.
+\ After BANK-MAPPING-ON, the MMU mapping-enable register (port 0x74)
+\ reads back as 1.
 : _probe-2 ( -- )
   BANK-MAPPING-ON
   FETCH-74
@@ -73,20 +48,17 @@ _probe-1
     ." PASS: banking-mapping-on-port-74 — port 0x74 reads back 1 (mapping enabled)"
     DROP
   ELSE
-    ." SKIP: banking-mapping-on-port-74 — iz-cpm does not model MMU port 0x74 (readback=$"
+    ." FAIL: banking-mapping-on-port-74 — port 0x74 readback=$"
     BASE @ HEX SWAP . BASE !
-    ." expected=$1)"
+    ." expected=$1"
   THEN
   CR
 ;
 _probe-2
 
 \ === Probe 3: BANK@ at boot returns 0 (Story 17.2 AC6 Probe 1) ===
-\ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
-\
-\ Verifies (IY+UserArea.current_bank) is zero-initialised in COLD per
-\ Story 17.1 step 8h. Surface-agnostic: the cell read does not touch
-\ the MMU; passes on all three test surfaces.
+\ Verifies (IY+UserArea.current_bank) is zero-initialised in COLD. The
+\ cell read does not touch the MMU.
 : _probe-3 ( -- )
   BANK@
   DUP 0 = IF
@@ -100,8 +72,6 @@ _probe-2
 _probe-3
 
 \ === Probe 4: BANKS-CLEAR drives BANKS to 0 (Story 17.2 AC6 Probe 2; Story 17.5.2 rewrite) ===
-\ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
-\
 \ Verifies BANKS-CLEAR resets (IY+UserArea.bank_count) to 0. The
 \ original Story-17.2 assertion was "BANKS = 0 at boot" — that PASSed
 \ pre-CL-parser, and the inline comment at the time noted "This
@@ -116,7 +86,7 @@ _probe-3
 \ for probes 5+, which they all tolerate (probes 6/7/8/A explicitly
 \ +BANK their own pages; probes 5/B/D/G all start from a defined
 \ BANKS=0 head or are insensitive to it).
-\ Surface-agnostic: kernel cell read, no MMU touch.
+\ Kernel cell read; no MMU touch.
 : _probe-4 ( -- )
   BANKS-CLEAR
   BANKS
@@ -131,8 +101,6 @@ _probe-3
 _probe-4
 
 \ === Probe 5: 99 BANK! raises ABORT" bank?" (Story 17.2 AC6 Probe 3) ===
-\ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
-\
 \ Verifies BANK!'s precondition check (n < bank_count) fires for an
 \ out-of-range argument. At Story 17.2 close, bank_count = 0 so every
 \ BANK! invocation aborts; the precondition path is the only path
@@ -148,7 +116,7 @@ _probe-4
 \ ABORT\"" both land in the upstream-pipe stdout pre-prompt, but
 \ verifying via DEPTH avoids the brittleness of an inline string
 \ match).
-\ Surface-agnostic: no MMU touch on the precondition-fail path.
+\ No MMU touch on the precondition-fail path.
 : _99-bank-store ( -- ) 99 BANK! ;
 : _probe-5 ( -- )
   ['] _99-bank-store CATCH -2 = IF
@@ -164,20 +132,12 @@ _probe-4
 ;
 _probe-5
 
-\ === Story 17.3 probe block (Probes 6 rewrite + 7+8 re-enable + A..E) ===
+\ === +BANK / -BANK / BANK! probe block ===
 \
-\ All Story-17.3 probes are wrapped in colon definitions so IF/ELSE/THEN
-\ compile (top-level IF errors with -14 'compile-only' per ?COMP). Probes
-\ that exercise port 0x72 are surface-gated via FETCH-74 (returns 1 on
-\ iz-cpm-banking / real MicroBeast after auto-BANK-MAPPING-ON; returns 0
-\ on iz-cpm baseline where port 0x74 is unmodelled). Story-17.2 Probe 6
-\ (`bank-store-swap-path`) is rewritten to drop the inline-asm
-\ `_SEED-BANK` / `_CLEAR-BANK` fixture (retired this story); its body
-\ now uses `$22 +BANK` to populate the active list.
+\ These probes are wrapped in colon definitions so IF/ELSE/THEN compile
+\ (top-level IF errors with -14 'compile-only' per ?COMP).
 
-\ Probe 6 (rewrite — was inline-asm fixture-seeded; now uses real +BANK).
-\ Surface: iz-cpm-PASS (flat memory PASSes +BANK probe) / iz-cpm-banking-PASS /
-\          real-MicroBeast-PASS
+\ Probe 6: 0 BANK! round-trips after $22 +BANK.
 : _probe-6 ( -- )
   $22 +BANK
   0 BANK!
@@ -192,107 +152,74 @@ _probe-5
 ;
 _probe-6
 
-\ Probe 7 (re-enabled PENDING-17.3): 1 BANK! BANK@ round-trip.
-\ Surface: iz-cpm-SKIP (port 0x72 unmodelled — flat memory would
-\          accidentally PASS but BANK! swap-path is meaningless) /
-\          iz-cpm-banking-PASS / real-MicroBeast-PASS
+\ Probe 7: 1 BANK! BANK@ round-trip.
 : _probe-7 ( -- )
-  FETCH-74 1 = IF
-    $22 +BANK $23 +BANK
-    1 BANK! BANK@ DUP 1 = IF
-      ." PASS: bank-store-round-trip-1 — 1 BANK! round-trips after $22+$23 +BANK"
-      DROP
-    ELSE
-      ." FAIL: bank-store-round-trip-1 — BANK@ returned " .
-    THEN
-    \ Restore bank 0 before BANKS-CLEAR so HERE/LATEST come back to the
-    \ kernel snapshot — leaving current_bank = 1 then clearing the list
-    \ would leave HERE pointing into bank-table[1]'s zero-init slot,
-    \ which corrupts the next colon definition compiled in the REPL.
-    0 BANK!
-    BANKS-CLEAR
+  $22 +BANK $23 +BANK
+  1 BANK! BANK@ DUP 1 = IF
+    ." PASS: bank-store-round-trip-1 — 1 BANK! round-trips after $22+$23 +BANK"
+    DROP
   ELSE
-    ." SKIP: bank-store-round-trip-1 — port 0x72 unmodelled (iz-cpm baseline)"
+    ." FAIL: bank-store-round-trip-1 — BANK@ returned " .
   THEN
+  \ Restore bank 0 before BANKS-CLEAR so HERE/LATEST come back to the
+  \ kernel snapshot — leaving current_bank = 1 then clearing the list
+  \ would leave HERE pointing into bank-table[1]'s zero-init slot,
+  \ which corrupts the next colon definition compiled in the REPL.
+  0 BANK!
+  BANKS-CLEAR
   CR
 ;
 _probe-7
 
-\ Probe 8 (re-enabled PENDING-17.3): 0 BANK! BANK@ round-trip.
-\ Surface: iz-cpm-SKIP / iz-cpm-banking-PASS / real-MicroBeast-PASS
+\ Probe 8: 0 BANK! BANK@ round-trip.
 : _probe-8 ( -- )
-  FETCH-74 1 = IF
-    $22 +BANK
-    0 BANK! BANK@ DUP 0 = IF
-      ." PASS: bank-store-round-trip-0 — 0 BANK! round-trips after $22 +BANK"
-      DROP
-    ELSE
-      ." FAIL: bank-store-round-trip-0 — BANK@ returned " .
-    THEN
-    BANKS-CLEAR
+  $22 +BANK
+  0 BANK! BANK@ DUP 0 = IF
+    ." PASS: bank-store-round-trip-0 — 0 BANK! round-trips after $22 +BANK"
+    DROP
   ELSE
-    ." SKIP: bank-store-round-trip-0 — port 0x72 unmodelled (iz-cpm baseline)"
+    ." FAIL: bank-store-round-trip-0 — BANK@ returned " .
   THEN
+  BANKS-CLEAR
   CR
 ;
 _probe-8
 
-\ Probe A (Story 17.3): +BANK known-good RAM.
-\ Surface: iz-cpm-SKIP (port 0x72 unmodelled) /
-\          iz-cpm-banking-PASS (page $22 = RAM bank 2 default) /
-\          real-MicroBeast-PASS (page $22 = user-RAM bank 0).
+\ Probe A: +BANK known-good RAM (page $22 = RAM bank 2 default).
 : _probe-a ( -- )
-  FETCH-74 1 = IF
-    $22 +BANK BANKS DUP 1 = IF
-      ." PASS: plus-bank-known-good — $22 +BANK appends; BANKS = 1"
-      DROP
-    ELSE
-      ." FAIL: plus-bank-known-good — BANKS = " .
-    THEN
-    BANKS-CLEAR
+  $22 +BANK BANKS DUP 1 = IF
+    ." PASS: plus-bank-known-good — $22 +BANK appends; BANKS = 1"
+    DROP
   ELSE
-    ." SKIP: plus-bank-known-good — port 0x72 unmodelled (iz-cpm baseline; flat memory would false-PASS)"
+    ." FAIL: plus-bank-known-good — BANKS = " .
   THEN
+  BANKS-CLEAR
   CR
 ;
 _probe-a
 
-\ Probe B (Story 17.3): +BANK known-ROM rejection.
-\ Surface: iz-cpm-SKIP (flat memory would false-PASS rejection) /
-\          iz-cpm-banking-PASS (page 0 = flash bank 0; poke ignored,
-\                               reads 0xFF; +BANK probe rejects) /
-\          real-MicroBeast-PASS (firmware flash bank 0 is ROM).
-\ Uses CATCH to trap the ABORT" probe?" THROW (-2) inside the colon
-\ definition so the surrounding IF/ELSE survives.
+\ Probe B: +BANK known-ROM rejection (page 0 = flash bank 0, reads 0xFF;
+\ +BANK probe rejects). Uses CATCH to trap the ABORT" probe?" THROW (-2)
+\ inside the colon definition so the surrounding IF/ELSE survives.
 : _do-zero-+bank ( -- ) 0 +BANK ;
 : _probe-b ( -- )
-  FETCH-74 1 = IF
-    ['] _do-zero-+bank CATCH -2 = IF
-      BANKS 0 = IF
-        ." PASS: plus-bank-rom-rejection — 0 +BANK aborts; BANKS = 0"
-      ELSE
-        ." FAIL: plus-bank-rom-rejection — BANKS = " BANKS .
-      THEN
+  ['] _do-zero-+bank CATCH -2 = IF
+    BANKS 0 = IF
+      ." PASS: plus-bank-rom-rejection — 0 +BANK aborts; BANKS = 0"
     ELSE
-      ." FAIL: plus-bank-rom-rejection — 0 +BANK did not throw -2 (CATCH)"
+      ." FAIL: plus-bank-rom-rejection — BANKS = " BANKS .
     THEN
   ELSE
-    ." SKIP: plus-bank-rom-rejection — port 0x72 unmodelled (iz-cpm baseline; flat memory would false-PASS)"
+    ." FAIL: plus-bank-rom-rejection — 0 +BANK did not throw -2 (CATCH)"
   THEN
   CR
 ;
 _probe-b
 
-\ Probe C (Story 17.3): -BANK present + absent.
-\ Surface-agnostic (no MMU touch in -BANK): iz-cpm-PASS / iz-cpm-banking-PASS
-\ / real-MicroBeast-PASS
-\
-\ Story 17.5.2 added BANKS-CLEAR at head — Story-17.3 authoring assumed
-\ BANKS=0 at entry (pre-17.4 CL parser); post-17.4 the active list starts
-\ at 12 entries so the predicate `BANKS = 0` after `+BANK -BANK` was
-\ stale. Run-time FAIL was masked by source-echo until Story 17.5.2
-\ surfaced it; project-lead-approved scope expansion 2026-05-19 per
-\ Lesson 13-B "surface, file, fix once known".
+\ Probe C: -BANK present + absent (no MMU touch in -BANK).
+\ BANKS-CLEAR at the head because the active list starts non-empty (the
+\ CL parser auto-populates it), and the probe's `BANKS = 0` predicates
+\ assume an empty list at entry.
 : _probe-c ( -- )
   BANKS-CLEAR
   $22 +BANK
@@ -311,8 +238,7 @@ _probe-b
 ;
 _probe-c
 
-\ Probe D (Story 17.3): BANKS-CLEAR zeroes bank_count; BANK! aborts.
-\ Surface-agnostic: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
+\ Probe D: BANKS-CLEAR zeroes bank_count; BANK! aborts.
 : _do-zero-bank-store ( -- ) 0 BANK! ;
 : _probe-d ( -- )
   $22 +BANK $23 +BANK BANKS-CLEAR BANKS DUP 0 = IF
@@ -393,20 +319,13 @@ _probe-minus-bank-ldir
 \ recipe-side awk-extract handles verdict-label semantics, not the
 \ probe-side text.
 \
-\ Surface-agnostic: under iz-cpm baseline the probes succeed via flat
-\ memory; under iz-cpm-banking and real MB they succeed via the modelled
-\ RAM bank $22. The cap check itself is a kernel-cell comparison —
-\ surface-independent.
+\ The cap check itself is a kernel-cell comparison.
 \
-\ Two load-bearing BANKS-CLEAR sites: the HEAD one (AC1 reset-before-seed —
+\ Two load-bearing BANKS-CLEAR sites: the HEAD one (reset-before-seed —
 \ removing it breaks every test run, since boot defaults populate 12
 \ entries and the seed loop would trip the cap mid-iteration) and the
 \ TAIL one (handoff guard for any probes added after probe G — leaves
 \ bank_count = 0 for the next probe's known state). Do not move either.
-\
-\ Story 17.5.2 root-cause-fixed probes 1-5 (top-level IF/ELSE/THEN →
-\ colon-body wrappers); BASE residue from probe 2 eliminated;
-\ defensive DECIMAL brackets retired here + at _dot-banks-setup.
 : _do-29-+bank ( -- )
   29 0 DO $22 +BANK LOOP
 ;
@@ -435,42 +354,27 @@ _probe-minus-bank-ldir
 ;
 _probe-plus-bank-cap
 
-\ === Probe 9: BANK! T-state latency probe (Story 17.2 AC5; informational) ===
-\ Surface: informational-on-all (NFR-P4-2's ≤60 T-state envelope binds
-\          cross-bank dispatch overhead per FR-P4-16 — Epic 18 scope —
-\          NOT the user-facing BANK! word; AC5 disposition (a)
-\          accept-with-rationale).
+\ === Probe 9: BANK! T-state latency probe (informational) ===
 \
-\ A T-state counter wrapped around a single BANK! invocation would
-\ require iz-cpm-banking's --trace mode or a paper-arithmetic walk
-\ through the BANK! body. Per-opcode estimate (precondition ~24 T;
-\ port write ~22 T; current_bank swap ~30 T; rpush_bc + rpop_bc ~36 T;
-\ two bank_offset_hl calls ~70 T; two LDIRs (4 bytes each, ~84 T per
-\ LDIR including loop) ~168 T; wordlist_head save+load ~50 T; POP BC
-\ + NEXT ~25 T): ~425 T-states. Well above the NFR-P4-2 60 T-state
-\ envelope. Per AC5 disposition (a): the 60 T-state envelope binds
-\ FR-P4-16 cross-bank-call dispatch overhead (Epic 18), not the
-\ REPL-level BANK! word — informational only. Story 17.6's iron-spike
-\ + Epic-18 cross-bank-call work re-measures against the binding
-\ envelope.
+\ A T-state counter around a single BANK! would require the emulator's
+\ --trace mode or a paper-arithmetic walk through the BANK! body.
+\ Per-opcode estimate (precondition ~24 T; port write ~22 T; current_bank
+\ swap ~30 T; rpush_bc + rpop_bc ~36 T; two bank_offset_hl calls ~70 T;
+\ two LDIRs (4 bytes each) ~168 T; wordlist_head save+load ~50 T; POP BC
+\ + NEXT ~25 T): ~425 T-states. The 60 T-state envelope binds cross-bank-
+\ call dispatch overhead, not the REPL-level BANK! word — informational only.
 ." INFO: bank-store-t-states — paper-arithmetic estimate ~425 T-states (precondition ~24 + port-write ~22 + offset+LDIR cascades ~322 + tail ~57); NFR-P4-2 envelope (60 T) binds cross-bank dispatch (Epic 18), not BANK! itself" CR
 
-\ === Story 17.5: .BANKS probes (Probes X, Y, Z, W) ===
-\ Per Story 17.5 AC7 (4 binding probes) — surface-AGNOSTIC PASS on both
-\ iz-cpm baseline and iz-cpm-banking (`.BANKS` reads (IY+bank_count) +
-\ (IY+current_bank) + walks active_pages[]; no MMU port operations;
-\ output is identical on both surfaces). Q7=a sentinel-and-grep pattern:
-\ each probe prints `dot-banks-probe-<name>-start` + `.BANKS` + `dot-banks-
-\ probe-<name>-end` sentinels; the Makefile test-repl-banking recipe
-\ grep-asserts on the content between sentinels.
+\ === .BANKS probes (X, Y, Z, W) ===
+\ `.BANKS` reads (IY+bank_count) + (IY+current_bank) + walks active_pages[];
+\ no MMU port operations. Sentinel-and-grep pattern: each probe prints
+\ `dot-banks-probe-<name>-start` + `.BANKS` + `dot-banks-probe-<name>-end`
+\ sentinels; the Makefile test-repl-banking recipe grep-asserts on the
+\ content between sentinels.
 \
-\ Story 17.5.2 root-cause-fixed the BASE residue (probes 1-5 colon-body
-\ wrap); the defensive DECIMAL reset retired. BANKS-CLEAR + manual 12×
-\ $22 +BANK unroll stay load-bearing — sets up the dot-banks probes'
-\ kernel-cell state at a known shape (12 entries all at PAGE 22, used=0,
-\ free=16384, totals free = 12 * 16384 = 196608). The manual unroll is
-\ defensive-but-cheap; replacing it with `12 0 DO $22 +BANK LOOP` is an
-\ Epic-22 polish item, not in scope here.
+\ BANKS-CLEAR + the manual 12× $22 +BANK unroll are load-bearing — they set
+\ up the dot-banks probes' kernel-cell state at a known shape (12 entries
+\ all at PAGE 22, used=0, free=16384, totals free = 12 * 16384 = 196608).
 
 : _dot-banks-setup ( -- )
   BANKS-CLEAR
@@ -650,17 +554,9 @@ _dot-banks-probe-w
 \ end-sentinel-on-own-line presence in raw OUTPUT independently of the awk
 \ extraction (catches the missing-end-sentinel false-PASS class).
 \
-\ Surface (Task 3 disposition): PASS-on-both-surfaces per Story 17.5.1 AC4
-\ precedent. Under iz-cpm-banking the iron-spike validates (a)+(b)+(c)
-\ above — including that the MMU port-0x72 page-map write does not
-\ disrupt main-RAM contents at `kernel_end..kernel_end+8`. Under iz-cpm
-\ baseline (flat memory), the MMU port write is unmodelled (no-op), but
-\ the per-bank state swap still fires (writes the bank-table at $D400
-\ which IS modelled as RAM); the 9-byte body still lands at the cloned-
-\ COLD HERE in flat RAM and EXECUTE reaches it. The iz-cpm-banking PASS
-\ is the binding evidence for the MMU-active case; the iz-cpm baseline
-\ PASS is a surface-agnostic round-trip witness for the per-bank-state
-\ swap mechanism alone.
+\ The iron-spike validates (a)+(b)+(c) above — including that the MMU
+\ port-0x72 page-map write does not disrupt main-RAM contents at
+\ `kernel_end..kernel_end+8`.
 DECIMAL
 : _iron-spike-test ( -- )
   DECIMAL
@@ -735,9 +631,8 @@ DECIMAL
 \ iron-spike above does not allocate stubs, so the cell still reads
 \ $D4CB when this block enters.
 \
-\ Per-probe surfaces: PASS under iz-cpm-banking AND iz-cpm baseline
-\ (allocator writes to fixed-memory CCP-evicted region $D4CB+ which
-\ is plain RAM on both surfaces; no MMU port operations).
+\ The allocator writes to the fixed-memory CCP-evicted region $D4CB+
+\ (plain RAM; no MMU port operations).
 
 VARIABLE _p18c-buf  18 ALLOT   \ 10 cells × 2 B = 20 B total (cell at VARIABLE + 18 ALLOT)
 VARIABLE _p18c-pass
@@ -875,10 +770,9 @@ _probe-18.1-b
 \ $0028 → stub_dispatch intra path (marker matches) → JP DOCOL with
 \ HL = target CF → body runs → EXIT → NEXT resumes. The 12345 result
 \ on the stack is the witness that the whole chain dispatched and
-\ returned. Surface-agnostic (fixed-memory target; no MMU change) —
-\ the cross-bank half of the handler is witnessed by probe-19.4-a
-\ (isolated fixture) + the Q2 non-DOCOL witness in
-\ tests/banking_tests_19_3.fth.
+\ returned (fixed-memory target; no MMU change). The cross-bank half of
+\ the handler is witnessed by probe-19.4-a (isolated fixture) + the
+\ non-DOCOL witness in tests/banking_tests_19_3.fth.
 \
 \ Probe-18.2-B — intra-bank EXIT round-trip (100 colon-body call/EXIT
 \ cycles), KEPT as-is: post-19.5.2 the plain pop + NEXT is the ONLY
@@ -946,7 +840,7 @@ _probe-18.2-b
 \
 \ Probe-18.3-A — fixed-memory stub EXECUTE. Allocates a stub for ' BANK@
 \ with target_bank = -1; EXECUTE dispatches via the intra-bank path
-\ (target_bank == -1 marker matches). Surface-agnostic (no MMU change).
+\ (target_bank == -1 marker matches). No MMU change.
 \
 \ Probe-18.3-B — cross-bank stub EXECUTE from bank 0. Hand-built iron-spike-
 \ shape body in bank 1's per-bank HERE (main RAM at kernel_end-vicinity per
@@ -970,17 +864,8 @@ _probe-18.2-b
 \ THROW -1; CATCH-wrapped cross-bank EXECUTE; assert CATCH returns the
 \ throw code and BANK@ is restored. Validates NFR-P4-7.
 \
-\ Per-probe surfaces:
-\   Probe-18.3-A is surface-agnostic (fixed-memory intra-bank dispatch).
-\   Probes 18.3-B/C/D/E are PASS-on-banking-emulator-only — they require
-\   real bank-table seeding and an MMU that honors port 0x72. Under iz-cpm
-\   baseline, port 0x72 is unmodelled (no-op); the per-bank state swap
-\   still fires but the cross-bank dispatch's MMU effect is invisible.
-\   No test-repl-banking-skip entry is added (the PASS shape under iz-cpm
-\   baseline matches under iz-cpm-banking for the probes that exercise
-\   the kernel paths without depending on MMU effect — Probe-18.3-A; the
-\   B/C/D/E probes don't run under iz-cpm baseline because of bank seeding
-\   precondition).
+\ Probe-18.3-A is fixed-memory intra-bank dispatch; Probes 18.3-B/C/D/E
+\ require real bank-table seeding and an MMU that honors port 0x72.
 \
 \ Per-probe state-leave: Probes 18.3-B/C/D/E each end in BANKS-CLEAR
 \ (empty bank table). Probe-18.3-A is bank-state-agnostic. The hand-built
