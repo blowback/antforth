@@ -79,7 +79,7 @@ cold_start:
         LD      (IY+UserArea.catch_top+1), 0
 
         ; 8b''. INCLUDE-TOP = 0 (no INCLUDE source-frame at REPL start —
-        ;       Story 13.4 v2; CCD-1 dual-LIFO chain head)
+        ;       dual-LIFO chain head)
         LD      (IY+UserArea.include_top), 0
         LD      (IY+UserArea.include_top+1), 0
 
@@ -94,14 +94,12 @@ cold_start:
 
         ; 8d. SEARCH-ORDER init — slot 0 = forth_wordlist; depth = 1.
         ;     ANS Forth 1994 §16.6.1.2195 SET-ORDER (-1) "minimum search order".
-        ;     Slots 1..15 zero-initialised defensively (Story 12.3 AC #11
-        ;     recommended pick) via plain DJNZ store loop. An LDIR cascade-
-        ;     zero variant was ruled out: it shifted the binary layout in
-        ;     a way that produced a layout-sensitive iz-cpm hang on the */
-        ;     stack-underflow regression test (test 643). DJNZ keeps the
-        ;     same defensive intent without that side effect — see
-        ;     _bmad-output/implementation-artifacts/12-3-… Completion Notes
-        ;     Task 8 in-pass-fix log.
+        ;     Slots 1..15 zero-initialised defensively via plain DJNZ store
+        ;     loop. An LDIR cascade-zero variant was ruled out: it shifted
+        ;     the binary layout in a way that produced a layout-sensitive
+        ;     iz-cpm hang on the */ stack-underflow regression test (test
+        ;     643). DJNZ keeps the same defensive intent without that side
+        ;     effect.
         LD      HL, forth_wordlist
         LD      (IY+UserArea.search_order),   L
         LD      (IY+UserArea.search_order+1), H
@@ -125,29 +123,28 @@ cold_start:
         LD      (IY+UserArea.current_wordlist+1), H
 
         ; 8f. DPL init — -1 (0xFFFF) sentinel meaning "no dot seen on last parse".
-        ;     Story 13.0 ANS Forth 1994 §3.4.1.3 dot-marker recogniser; DPL is a
+        ;     ANS Forth 1994 §3.4.1.3 dot-marker recogniser; DPL is a
         ;     de-facto Forth convention (fig-Forth / F83 / gforth) — NOT in ANS Core.
         LD      (IY+UserArea.dpl),   0xFF
         LD      (IY+UserArea.dpl+1), 0xFF
 
-        ; 8g. FCB pool init — Story 13.1 file-access foundation (E13-D1,
-        ;     architecture.md:354-358). Resets fcb_pool_bitmap, zeros
-        ;     fcb_pool + fcb_dma_pool, and seeds fcb_byte_pos[] = 128
+        ; 8g. FCB pool init — file-access foundation. Resets fcb_pool_bitmap,
+        ;     zeros fcb_pool + fcb_dma_pool, and seeds fcb_byte_pos[] = 128
         ;     (sentinel: refill on first read).
         CALL    pool_init
 
-        ; 8h. Phase-4 banking foundation (Story 17.1 + Story 17.2) —
+        ; 8h. Phase-4 banking foundation —
         ;     zero-init the 29-entry bank-table[] shell AND the 29-byte
         ;     active_pages[] array in the reclaimed $D400-$DBFF CCP
         ;     region (single DJNZ pass covers both: shell at $D400+0..173,
         ;     active_pages at $D400+174..202), seed the five banking
         ;     UserArea cells, snapshot the live (HERE, LATEST, wordlist
         ;     head) triple into bank-table[0] so `0 BANK!` round-trips
-        ;     once Story 17.3+17.4 populate the active list, and auto-
-        ;     enable MMU mapping (FR-P4-11; redesign §5.1).
+        ;     once the active list is populated, and auto-enable MMU
+        ;     mapping.
         ;     DJNZ loop pattern chosen for layout-stability parity with
-        ;     `.so_init_zero` at :109..112 (LDIR cascade was ruled out
-        ;     in Story 12.3 for the same layout-sensitive reason).
+        ;     `.so_init_zero` (LDIR cascade was ruled out for the same
+        ;     layout-sensitive reason).
         LD      HL, BANK_TABLE_BASE
         LD      B, BANK_TABLE_SHELL_SIZE + ACTIVE_PAGES_SIZE    ; 174 + 29 = 203
         XOR     A
@@ -156,21 +153,21 @@ cold_start:
         INC     HL
         DJNZ    .bt_init_zero
         ; Seed banking UserArea cells: saved_bank = 0, current_bank = 0
-        ; (portal page default per FR-P4-1), bank_table_base = $D400,
-        ; bank_count = 0 (active list empty until Story 17.4's CL parser).
+        ; (portal page default), bank_table_base = $D400,
+        ; bank_count = 0 (active list empty until the CL parser runs).
         LD      (IY+UserArea.saved_bank),       0
         LD      (IY+UserArea.saved_bank+1),     0
         LD      (IY+UserArea.current_bank),     0
         LD      (IY+UserArea.current_bank+1),   0
-        LD      (IY+UserArea.triple_owner),     0       ; 19.5.2 CR-F1: live triple owned by bank 0
+        LD      (IY+UserArea.triple_owner),     0       ; live triple owned by bank 0
         LD      (IY+UserArea.bank_table_base),   LOW BANK_TABLE_BASE
         LD      (IY+UserArea.bank_table_base+1), HIGH BANK_TABLE_BASE
         LD      (IY+UserArea.bank_count),       0
         LD      (IY+UserArea.bank_count+1),     0
-        ; Story 18.1: seed stub_alloc_tail = STUB_ALLOC_BASE ($D4CB), the
-        ; first free byte after active_pages[] in the reclaimed $D400-$DBFF
-        ; CCP region. stub_allocate (src/banking.asm) writes 4 B per stub
-        ; and advances this cell. PD-P4-11 (architecture.md:347..365).
+        ; Seed stub_alloc_tail = STUB_ALLOC_BASE ($D4CB), the first free
+        ; byte after active_pages[] in the reclaimed $D400-$DBFF CCP region.
+        ; stub_allocate (src/banking.asm) writes 4 B per stub and advances
+        ; this cell.
         LD      HL, STUB_ALLOC_BASE
         LD      (IY+UserArea.stub_alloc_tail),   L
         LD      (IY+UserArea.stub_alloc_tail+1), H
@@ -178,11 +175,10 @@ cold_start:
         ; HERE / LATEST live in UserArea (contiguous 4 bytes at offset
         ; UserArea.here); wordlist_head = the cell at `forth_wordlist` (the
         ; canonical FORTH-WORDLIST struct's first cell, WORDLIST_NEXT).
-        ; Without this snapshot, `0 BANK!` post-Story-17.3 would clobber
-        ; HERE / LATEST with the zero-initialised bank-table[0]. The
-        ; snapshot fires AFTER HERE (step 7) / LATEST (step 8b) / CURRENT-
-        ; WORDLIST (step 8e) have settled, BEFORE the auto-BANK-MAPPING-ON
-        ; below — Story 17.2 AC2 insertion point.
+        ; Without this snapshot, `0 BANK!` would clobber HERE / LATEST with
+        ; the zero-initialised bank-table[0]. The snapshot fires AFTER HERE
+        ; (step 7) / LATEST (step 8b) / CURRENT-WORDLIST (step 8e) have
+        ; settled, BEFORE the auto-BANK-MAPPING-ON below.
         LD      HL, user_area + UserArea.here
         LD      DE, BANK_TABLE_BASE
         LD      BC, 4                           ; 2 cells: HERE, LATEST
@@ -195,37 +191,28 @@ cold_start:
         ; the very next WORD parse (every INTERPRET cycle calls WORD) writes
         ; its counted string at $0000, overwriting the CP/M BIOS `JP wboote`
         ; + `JP bdos_entry` dispatch vectors → next BDOS call JPs to garbage.
-        ; The BANKS-CLEAR docstring (banking.asm:454-466) flagged a related
+        ; The BANKS-CLEAR docstring (src/banking.asm) flagged a related
         ; trap for "dictionary-extending words" but missed that WORD itself
-        ; writes to HERE on every parse. Story 17.4 AC8 hardware smoke at
-        ; `BANK@ .` after `1 BANK!` surfaced the crash. CR fix 2026-05-16.
+        ; writes to HERE on every parse. Hardware smoke at `BANK@ .` after
+        ; `1 BANK!` surfaced the crash.
         LD      HL, BANK_TABLE_BASE
         LD      DE, BANK_TABLE_BASE + BANK_TABLE_ENTRY_SIZE
         LD      BC, BANK_TABLE_ENTRY_SIZE * (BANK_TABLE_CAP - 1)        ; 6 × 28 = 168
         LDIR
-        ; Bank-N HERE COLD-init (Story 19.5.1 F2 — the 19.2-H5 fix,
-        ; re-landed). Override the cloned `here` field of bank-table
-        ; entries 1..28 to $8000 so every bank-N>0 dictionary starts
-        ; page-resident at the slot-2 window base: bodies compiled there
-        ; never straddle the $8000 boundary and never alias once
-        ; 19.5.2's dispatch enters them with their own page mapped.
+        ; Bank-N HERE COLD-init. Override the cloned `here` field of
+        ; bank-table entries 1..28 to $8000 so every bank-N>0 dictionary
+        ; starts page-resident at the slot-2 window base: bodies compiled
+        ; there never straddle the $8000 boundary and never alias once
+        ; stub dispatch enters them with their own page mapped.
         ; LATEST + wordlist_head clone semantics are UNCHANGED — kernel
-        ; words stay findable in bank N per the 19.3.1 bucket-skip
-        ; contract; only `here` is overridden.
+        ; words stay findable in bank N per the bucket-skip contract;
+        ; only `here` is overridden.
         ;
-        ; History: this fix first landed 2026-05-19 (Story 19.2 CR H5)
-        ; and was REVERTED 2026-05-20 when its +17 B layout shift made
-        ; probe-18.2-a hang, attributed at the time to "fragile cross-
-        ; bank dispatch trampoline". ADR 19.5 DR-1 (2026-06-04) proved
-        ; that attribution wrong: the hang class is portal-window
-        ; dictionary aliasing — a test body compiled at/above $8000
-        ; fetched under a foreign mapping after its own BANK!. The
-        ; revert was against a test-configuration hazard, not a defect
-        ; in this fix; kernel size only moves the dictionary's $8000
-        ; crossing point (PASS→HANG transition invariant at body-start
-        ; 32696/32697, ADR evidence E4). Re-landing is unblocked because
-        ; the mechanism is explained, guarded (BANK! -273 window guard,
-        ; src/banking.asm) and regression-gated (make
+        ; The relevant hang class is portal-window dictionary aliasing —
+        ; a test body compiled at/above $8000 fetched under a foreign
+        ; mapping after its own BANK!. Kernel size only moves the
+        ; dictionary's $8000 crossing point. This fix is guarded (BANK!
+        ; -273 window guard, src/banking.asm) and regression-gated (make
         ; test-straddle-regression). See docs/adr-19-5-cross-bank-dispatch.md.
         ;
         ; Loop shape: entry stride 6 ([here:2][latest:2][wordlist_head:2]);
@@ -240,21 +227,19 @@ cold_start:
         LD      (HL), HIGH SLOT2_WINDOW_BASE                    ; here.high → window base ($8000)
         ADD     HL, DE
         DJNZ    .bank_here_init
-        ; RST-$28 stub-dispatch vector install (Story 19.5.2, ADR 19.5
-        ; DR-2 option C). Descriptor stubs are self-dispatching: stub
-        ; byte 0 = $EF (RST $28) so NEXT's blind JP (HL) and the folded
-        ; EXECUTE both vector through here to stub_dispatch
-        ; (src/banking.asm) for bank-aware dispatch. Zero page is RAM
-        ; under CP/M (A2: BIOS IM-1 uses $0038; iz-cpm intercepts only
-        ; $0000/$0005); the vector address is the single EQU
-        ; STUB_DISPATCH_VECTOR (src/constants.asm) per the AC10
-        ; re-vector contingency.
+        ; RST-$28 stub-dispatch vector install. Descriptor stubs are
+        ; self-dispatching: stub byte 0 = $EF (RST $28) so NEXT's blind
+        ; JP (HL) and the folded EXECUTE both vector through here to
+        ; stub_dispatch (src/banking.asm) for bank-aware dispatch. Zero
+        ; page is RAM under CP/M (BIOS IM-1 uses $0038; iz-cpm intercepts
+        ; only $0000/$0005); the vector address is the single EQU
+        ; STUB_DISPATCH_VECTOR (src/constants.asm).
         LD      A, $C3                                          ; JP opcode
         LD      (STUB_DISPATCH_VECTOR), A
         LD      HL, stub_dispatch
         LD      (STUB_DISPATCH_VECTOR+1), HL
         ;
-        ; Auto BANK-MAPPING-ON (FR-P4-11): enable MMU mapping before banner.
+        ; Auto BANK-MAPPING-ON: enable MMU mapping before banner.
         ; Inline body matches w_BANK_MAPPING_ON_cf (src/banking.asm); inlined
         ; rather than CALLed because the DEFCODE body ends in NEXT, not RET.
         LD      A, 1
@@ -262,12 +247,11 @@ cold_start:
         LD      (IY+UserArea.bank_mapping_state),   1
         LD      (IY+UserArea.bank_mapping_state+1), 0
 
-        ; 8i. Phase-4 CL-tail parser (Story 17.4 / FR-P4-34..39) — read
-        ;     CP/M command tail at $0080, populate active_pages[] with
-        ;     portal-page + bank-list per user invocation; apply defaults
-        ;     `22 35-3F` on empty tail (FR-P4-35). Six edge-case warn-and-
-        ;     continue dispositions per PD-P4-14 (§9.3 closure). See
-        ;     cl_tail_parse below for full FR-P4-38 source comment.
+        ; 8i. Phase-4 CL-tail parser — read CP/M command tail at $0080,
+        ;     populate active_pages[] with portal-page + bank-list per
+        ;     user invocation; apply defaults `22 35-3F` on empty tail.
+        ;     Six edge-case warn-and-continue dispositions. See
+        ;     cl_tail_parse below for the full source comment.
         CALL    cl_tail_parse
 
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
@@ -294,10 +278,10 @@ cold_thread:
         DW      w_LIT_cf, STR_BANNER2_LEN
         DW      w_TYPE_cf
         ; Calculate free bytes: BANK_TABLE_BASE - HERE.
-        ; Story 17.1 lowered the dictionary HERE ceiling from
+        ; The dictionary HERE ceiling was lowered from
         ; (sp_base - PS_SIZE - RS_SIZE) ≈ $F4F6 (iz-cpm) / ~$DA00 (real MB)
         ; to BANK_TABLE_BASE = $D400 — banking infrastructure now occupies
-        ; $D400-$DBFF (PD-P4-6 closure; Story 16.1 hardware verification).
+        ; $D400-$DBFF.
         ; A MIN(stack-bottom, BANK_TABLE_BASE) - HERE form was considered;
         ; rejected because $D400 < (sp_base - 512) uniformly on both
         ; surfaces (iz-cpm sp_base≈$F6F6 → stack-bottom≈$F4F6; real MB
@@ -309,7 +293,7 @@ cold_thread:
         DW      w_LIT_cf, str_banner3
         DW      w_LIT_cf, STR_BANNER3_LEN
         DW      w_TYPE_cf               ; "bytes free"
-        ; Story 17.4 AC4 (Q2=b): " - N banks available"
+        ; " - N banks available"
         DW      w_LIT_cf, str_banner_banks_sep
         DW      w_LIT_cf, STR_BANNER_BANKS_SEP_LEN
         DW      w_TYPE_cf               ; " - "
@@ -329,7 +313,7 @@ cold_thread:
         ENDIF
 
 ; ============================================================
-; CL-tail parser (Story 17.4 / FR-P4-34..39).
+; CL-tail parser.
 ;   Invoked between cold_start step 8h (banking foundation init) and
 ;   step 10 (banner thread entry). Reads $0080 (CP/M command tail
 ;   populated by the CCP: length byte then uppercased ASCII), walks
@@ -337,12 +321,9 @@ cold_thread:
 ;   (src/banking.asm), and populates active_pages[] / bank_count.
 ;
 ;   STARTUP.FTH NOT the boot-config mechanism — bank availability
-;   needed at banner-print time, before any .FTH file could run
-;   (see docs/antforth-banking-redesign.md §6 / FR-P4-38). This
-;   comment block is the AC6 informational + future-reader-protective
-;   capture of the architectural rejection.
+;   needed at banner-print time, before any .FTH file could run.
 ;
-;   Tail syntax (FR-P4-34): `<portal> <bank-list>`
+;   Tail syntax: `<portal> <bank-list>`
 ;     portal    = 1-2 hex digits  (e.g. `22`)
 ;     bank-list = range  `NN-MM`  (e.g. `35-3F`)
 ;                 OR list `NN,MM,PP,…`
@@ -351,19 +332,13 @@ cold_thread:
 ;     The first hex byte parsed becomes active_pages[0] (portal);
 ;     all subsequent bytes append as bank-list entries.
 ;
-;   Edge-case dispositions per PD-P4-14 (§9.3 closure):
-;     (i)   no args        → silent defaults `22 35-3F` (AC2 / FR-P4-35)
+;   Edge-case dispositions:
+;     (i)   no args        → silent defaults `22 35-3F`
 ;     (ii)  bad token      → "bad? X"  warn + skip to next sep + continue
 ;     (iii) reverse range  → "range?"  warn + treat as empty + continue
-;     (iv)  dup            → "dup? NN" warn + dedup silently + continue (Q4=a)
-;     (v)   probe-fail     → "probe? NN" warn + exclude + continue (FR-P4-36)
+;     (iv)  dup            → "dup? NN" warn + dedup silently + continue
+;     (v)   probe-fail     → "probe? NN" warn + exclude + continue
 ;     (vi)  empty list     → "empty?"  warn + boot with BANKS=0
-;
-;   Story 17.4 dev-pass Q dispositions (project lead, 2026-05-16):
-;     Q1=b non-aborting helper (cl_probe_and_add factored from +BANK)
-;     Q2=b compromise banner (` - N banks available` on line 2)
-;     Q3=a marker+arg warnings  Q4=a warn-per-dup  Q7=b Makefile per-variant loop
-;     Q8=a placement here in src/antforth.asm  Q9=ASCII " - "  Q10=a `3.0.1` literal
 ;
 ;   Register convention while parsing:
 ;     HL = tail walker ptr;  B = remaining tail bytes
@@ -381,11 +356,11 @@ cold_thread:
 cl_tail_parse:
         LD      A, (0x0080)             ; tail length byte (CCP-populated)
         OR      A
-        JP      Z, .defaults            ; empty tail → AC2 defaults
+        JP      Z, .defaults            ; empty tail → defaults
 
         LD      HL, 0x0081
         LD      B, A                    ; B = remaining bytes
-        ; AC2 / edge case (i) — silent defaults applies to BOTH empty AND
+        ; edge case (i) — silent defaults applies to BOTH empty AND
         ; all-whitespace tails. Initial cl_skip_ws scoops leading ws+commas;
         ; if it exhausts the tail (CY=1) we never had any tokens → defaults.
         CALL    cl_skip_ws
@@ -448,7 +423,7 @@ cl_tail_parse:
         POP     BC
         POP     HL
 .after_token:
-        ; AC3 / edge case (vi) gate — if token 1 produces no successful adds
+        ; edge case (vi) gate — if token 1 produces no successful adds
         ; (bank_count still 0 after the first cl_process_page call), the
         ; portal page failed; fall through to .post which emits `empty?` and
         ; the banner reports `0 banks available`. For tokens 2+ bank_count
@@ -520,7 +495,7 @@ cl_tail_parse:
         JP      bdos_crlf               ; tail-call
 
 .defaults:
-        ; AC2 / FR-P4-35 — silent defaults `22 35-3F`:
+        ; silent defaults `22 35-3F`:
         ; portal $22, then banks $35..$3F (11 pages). Each routes
         ; through cl_process_page (probes; dup/cap/probe-fail warnings
         ; would still print if they ever trigger — should not on real
@@ -704,9 +679,9 @@ cl_emit_hex_digit:
         LD      E, A
         JP      bdos_putchar            ; tail-call
 
-; CL-tail parser warning string literals (Story 17.4 AC5).
+; CL-tail parser warning string literals.
 ; Note: str_probe_q / str_cap_q already exist in src/banking.asm
-; (Story 17.3) and are re-used here as cross-module label references.
+; and are re-used here as cross-module label references.
 str_bad_q:       DB "bad?"
 str_bad_q_len    EQU 4
 str_range_q:     DB "range?"
@@ -792,7 +767,7 @@ test_colon_cfa:                 ; Code field address (execution token)
         INCLUDE "tests/test_outer.asm"
         ENDIF
 
-; === Wordlist struct + canonical FORTH-WORDLIST (Epic 12) ===
+; === Wordlist struct + canonical FORTH-WORDLIST ===
 ; Must follow ALL DEFCODE/DEFWORD invocations (including TEST_MODE-only
 ; words like TESTIMM and TEST-BRIDGE) so the LUA _hash_buckets[] table is
 ; fully populated when the bucket-array is emitted.
@@ -801,23 +776,18 @@ test_colon_cfa:                 ; Code field address (execution token)
 ; === Runtime data areas ===
 sp_base:        DW      0               ; Initial SP value, set during cold start (for DEPTH)
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
-; Banner-version advances v2.0.0 → v3.0.1 at Story 17.4 close (AC11 / S11
-; per NFR-P4-38), then v3.0.1 → v3.0.2 at Story 18.5 close (AC5 / S11 per
-; NFR-P4-38), then v3.0.2 → v3.0.3 at Story 19.4 close (Epic 19 close-out;
-; AC1 / S11 per NFR-P4-38), then v3.0.3 -> v3.0.4 at the Epic 19.5 close-out
-; (cross-bank-dispatch stabilization interlude; AC5 / S11 per NFR-P4-38).
-; Same-length swap→ zero binary cost for the bump.
-; Each tag's close-out story owns the README + memory-`description` sync.
+; Banner-version is a same-length string: a same-length swap is zero
+; binary cost for a version bump.
 str_banner1:    DB      "AntForth v3.0.4 (C) ant.org 2026"
 STR_BANNER1_LEN EQU     32
 str_banner2:    DB      "MicroBeast - "
 STR_BANNER2_LEN EQU     13
 str_banner3:    DB      "bytes free"
 STR_BANNER3_LEN EQU     10
-; Story 17.4 AC4 (Q2=b compromise form): line 2 extends with
-;   " - N banks available" where N = post-CL `BANKS` count. Per Q9, the
-; separator is ASCII " - " (matches existing "MicroBeast - " convention;
-; em-dash is non-7-bit-ASCII and not representable in the binary literal).
+; Line 2 extends with " - N banks available" where N = post-CL `BANKS`
+; count. The separator is ASCII " - " (matches existing "MicroBeast - "
+; convention; em-dash is non-7-bit-ASCII and not representable in the
+; binary literal).
 str_banner_banks_sep: DB " - "
 STR_BANNER_BANKS_SEP_LEN EQU 3
 str_banner_banks: DB "banks available"
