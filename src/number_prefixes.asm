@@ -1,4 +1,4 @@
-; number_prefixes.asm — Numeric-literal prefix recogniser (Epic 9)
+; number_prefixes.asm — Numeric-literal prefix recogniser
 ; AntForth — A Forth for CP/M on Z80
 ;
 ; Implements the NUMBER-PREFIX? recogniser that handles numeric literals
@@ -7,23 +7,21 @@
 ; ASM-RECOGNIZE and NUMBER? so that prefixed tokens are handled before
 ; the default-BASE parser. Never reads or writes (IY+UserArea.base).
 ;
-; Story 9.1 scope:
+; Handlers:
 ;   - w_NUMBER_PREFIX_Q_cf   Recogniser entry; ( c-addr -- n true | c-addr false )
 ;   - '#' decimal prefix     Parses body as decimal regardless of BASE;
 ;                            supports a leading '-' in the body (mirrors
 ;                            NUMBER?'s sign-strip pattern).
 ;   - do_number_base10       Digit-accumulate helper with hard-coded base 10.
 ;   - char_to_digit_base10   ASCII '0'..'9' → 0..9; carry = invalid.
-;
-; Story 9.2 additions:
 ;   - '$' hex prefix         Forth 2014 §3.4.1.3 standard hex literal
 ;                            prefix (parses body as base 16, BASE
-;                            unchanged); mirrors 9.1 sign-in-body.
-;   - '0x'/'0X' hex prefix   antforth extension (NFR12) — C-style hex
+;                            unchanged); mirrors sign-in-body.
+;   - '0x'/'0X' hex prefix   antforth extension — C-style hex
 ;                            literal. The '0' dispatch arm PEEKS the
 ;                            second byte BEFORE entering the EXX window
 ;                            so bare '0', '00', '012', '0A'(HEX) etc.
-;                            remain hot-path NUMBER? literals (FR52).
+;                            remain hot-path NUMBER? literals.
 ;                            Case fold via OR 0x20 so both 'x' and 'X'
 ;                            are accepted.
 ;   - do_number_base16       Digit-accumulate helper with hard-coded
@@ -32,11 +30,9 @@
 ;                            OR 0x20 case-fold implements the Forth 2014
 ;                            §3.4.1.3 case-insensitivity requirement
 ;                            for hex digits.
-;
-; Story 9.3 additions:
 ;   - '%' binary prefix      Forth 2014 §3.4.1.3 binary literal prefix
 ;                            (parses body as base 2, BASE unchanged);
-;                            mirrors 9.1/9.2 sign-in-body.
+;                            mirrors sign-in-body.
 ;   - 0x27 'c' char literal  Forth 2014 §3.4.1.3 character-code literal.
 ;                            Dedicated handler — variable-length body
 ;                            with an exact-length (3-byte) check and a
@@ -50,8 +46,6 @@
 ;   - do_number_base2        Digit-accumulate helper with hard-coded
 ;                            base 2 (single ADD HL,HL for *2).
 ;   - char_to_digit_base2    ASCII '0'..'1' → 0..1; carry = invalid.
-;
-; Story 9.4 additions:
 ;   - '-' sign-before-prefix .pref_sign_entry — a pre-dispatch handler
 ;                            that peeks the second char OUTSIDE the EXX
 ;                            window and only commits if it is a known
@@ -61,29 +55,22 @@
 ;                            handle the "skip one extra byte" offset.
 ;                            Forth 2014 §3.4.1.3 — leading sign is
 ;                            standard, not an antforth extension.
-;   - .pref_check_sign       Shared in-body sign-strip helper (13 bytes,
-;                            EXX-free). Replaces the quadruplicated sign-
-;                            strip blocks in `#`, `$`, `0x`, `%` handlers
-;                            (collapses ~7 lines × 4 = ~28 lines to one
-;                            CALL per site). Pays off the M2 finding from
-;                            9.2 (re-surfaced as debt in 9.3).
+;   - .pref_check_sign       Shared in-body sign-strip helper (EXX-free).
+;                            Replaces the quadruplicated sign-strip blocks
+;                            in `#`, `$`, `0x`, `%` handlers (one CALL per
+;                            site).
 ;   - XOR-semantic flag      `.pref_negate` is initialised ONCE at
 ;                            dispatch entry; every sign source (outer
 ;                            '-' pre-pass, in-body '-' via check helper)
 ;                            XOR-toggles with 1. This discipline makes
 ;                            outer and in-body signs compose without
 ;                            special-case code — falls out of XOR.
-;   - 'c' outer-sign read    The `'c'` handler gains a sign-apply block
-;                            on its success path (~14 bytes). It still
-;                            does not WRITE `.pref_negate` — reads only.
-;   - Case-insensitivity     No new code: 9.2 already designed hex-digit
-;       (audit only)         and `0x`/`0X` prefix-letter case-fold up
-;                            front (per `feedback_design_upfront.md`).
-;                            9.4 adds test coverage that asserts the
-;                            promise observationally.
+;   - 'c' outer-sign read    The `'c'` handler has a sign-apply block
+;                            on its success path. It still does not WRITE
+;                            `.pref_negate` — reads only.
 ;
-; Prefix-dispatch scaffold for Stories 9.2–9.5
-; --------------------------------------------
+; Prefix-dispatch scaffold
+; ------------------------
 ; The dispatch is a flat CP / JR Z chain on the first byte of the token
 ; (see `w_NUMBER_PREFIX_Q_cf` below). Adding a new single-char prefix is
 ; two lines in that chain plus a dedicated `.pref_<name>_entry` handler
@@ -107,53 +94,43 @@
 ; count is the canonical idiom — it's how `.pref_zero_entry` recovers
 ; the count without disturbing the c-addr in BC.
 ;
-;   Story  Prefix    Base  Notes
-;   -----  ------    ----  ----------------------------------------------
-;   9.1    '#'       10    Forth 2014 standard (done)
-;   9.2    '$'       16    Forth 2014 standard hex (done)
-;   9.2    '0x'/'0X' 16    antforth extension (done) — two-character
-;                          prefix; the '0' dispatch arm must peek the
-;                          second byte to distinguish `0x2A` from a bare
-;                          `0` followed by more digits. This is the ONLY
-;                          2-char prefix in scope; single-char is the norm.
-;   9.3    '%'       2     Binary (done)
-;   9.3    0x27 'c'  —     Character literal (done) — variable-length
-;                          body with an exact-length (3-byte) check and a
-;                          closing-quote check. Dedicated handler, no digit
-;                          accumulator.
-;   9.4    '-'       —     Sign modifier BEFORE any other prefix (done).
-;                          Pre-pass `.pref_sign_entry` peeks the second
-;                          char outside the EXX window and, if it is a
-;                          known prefix, jumps to a per-handler
-;                          `.pref_<x>_enter_after_sign` entry. Each entry
-;                          checks the count, then XOR-toggles `.pref_negate`
-;                          only once committed, then enters the normal
-;                          handler body one byte later. Double-sign
-;                          composition (`-#-5` → +5) is a consequence of
-;                          the XOR discipline.
-;   9.5    —         —     Verification only (done) — no new dispatch code.
-;                          Story 9.5 adds 35 REPL-piped tests proving
-;                          prefix reach into colon bodies and CODE blocks.
-;                          The single shared INTERPRET thread at
-;                          outer_interpreter.asm:.try_number makes the
-;                          three contexts (REPL / colon body / CODE block)
-;                          already identical — 9.5 is the observational
-;                          proof, not a new wire-in. Zero-byte binary
-;                          delta; no new standards citations.
+;   Prefix    Base  Notes
+;   ------    ----  ----------------------------------------------------
+;   '#'       10    Forth 2014 standard
+;   '$'       16    Forth 2014 standard hex
+;   '0x'/'0X' 16    antforth extension — two-character
+;                   prefix; the '0' dispatch arm must peek the
+;                   second byte to distinguish `0x2A` from a bare
+;                   `0` followed by more digits. This is the ONLY
+;                   2-char prefix in scope; single-char is the norm.
+;   '%'       2     Binary
+;   0x27 'c'  —     Character literal — variable-length
+;                   body with an exact-length (3-byte) check and a
+;                   closing-quote check. Dedicated handler, no digit
+;                   accumulator.
+;   '-'       —     Sign modifier BEFORE any other prefix.
+;                   Pre-pass `.pref_sign_entry` peeks the second
+;                   char outside the EXX window and, if it is a
+;                   known prefix, jumps to a per-handler
+;                   `.pref_<x>_enter_after_sign` entry. Each entry
+;                   checks the count, then XOR-toggles `.pref_negate`
+;                   only once committed, then enters the normal
+;                   handler body one byte later. Double-sign
+;                   composition (`-#-5` → +5) is a consequence of
+;                   the XOR discipline.
 
 ; =====================================================================
 ; NUMBER-PREFIX? ( c-addr -- n true | c-addr false )
 ; =====================================================================
 ; Fast-fail path (no EXX): inspect the first character while BC still
 ; holds c-addr. Only enters the EXX window when a known prefix char is
-; seen, keeping the bare-literal hot path minimal (per AC #3).
+; seen, keeping the bare-literal hot path minimal.
 ; No dictionary header — only called from the INTERPRET thread.
 ;
 ; Forth 2014 §3.4.1.3      #<num>        — decimal-base numeric literal prefix
 w_NUMBER_PREFIX_Q_cf:
-        ; Story 11.5.2: -3 THROW guard. NUMBER-PREFIX? grows the data
-        ; stack by 1 cell on BOTH success (n + true) and fail (c-addr
-        ; + false) paths.
+        ; -3 THROW guard. NUMBER-PREFIX? grows the data stack by 1 cell
+        ; on BOTH success (n + true) and fail (c-addr + false) paths.
         CALL    check_overflow
         LD      H, B
         LD      L, C                    ; HL = c-addr
@@ -161,12 +138,12 @@ w_NUMBER_PREFIX_Q_cf:
         OR      A
         JR      Z, .pref_fast_false     ; empty counted string → fail
 
-        ; 9.4: dispatch-level one-time reset of .pref_negate. Every sign
+        ; Dispatch-level one-time reset of .pref_negate. Every sign
         ; source (outer '-' pre-pass, in-body '-' via pref_check_sign)
         ; XOR-toggles this byte; this single reset per recogniser entry
         ; is the anchor that makes outer+in-body sign composition work
-        ; via XOR (see AC #5, #12 in the 9.4 story spec). A is clobbered
-        ; here but re-loaded from (HL) below, so no preserve is needed.
+        ; via XOR. A is clobbered here but re-loaded from (HL) below, so
+        ; no preserve is needed.
         XOR     A
         LD      (.pref_negate), A
 
@@ -197,7 +174,7 @@ w_NUMBER_PREFIX_Q_cf:
         NEXT
 
 ; ---------------------------------------------------------------------
-; '#' decimal prefix handler (Story 9.1).
+; '#' decimal prefix handler.
 ; Enters with BC = c-addr, DE = IP, HL = c-addr+1 (→ '#' byte).
 ; Uses the shadow BC' preservation idiom from NUMBER? — a plain entry
 ; EXX leaves the original c-addr in BC' for the fail path for free.
@@ -220,18 +197,18 @@ w_NUMBER_PREFIX_Q_cf:
 
         ; Optional leading '-' in body (e.g. '#-5'). Mirrors NUMBER?
         ; sign-strip at strings.asm:387. Sign-BEFORE-prefix (-#42) is
-        ; handled by the .pref_sign_entry pre-pass (9.4) which toggles
+        ; handled by the .pref_sign_entry pre-pass which toggles
         ; .pref_negate before re-entering via .pref_hash_enter_after_sign.
         ; The shared helper XOR-toggles the flag so outer and in-body
-        ; signs compose (AC #5: `-#-5` → +5).
+        ; signs compose (`-#-5` → +5).
         CALL    .pref_check_sign
         JR      C, .pref_hash_fail      ; bare "#-" → fail
 
 .pref_hash_convert:
-        ; Story 13.0 — 32-bit dot-aware accumulator handles both bare
-        ; single-cell parses (saw_dot=0 → returns flag=0xFFFF, DPL=-1)
-        ; and double-cell with one dot (saw_dot=1 → returns flag=2,
-        ; DPL=digits-after-dot). ANS Forth 1994 §3.4.1.3 dot-marker.
+        ; 32-bit dot-aware accumulator handles both bare single-cell
+        ; parses (saw_dot=0 → returns flag=0xFFFF, DPL=-1) and double-cell
+        ; with one dot (saw_dot=1 → returns flag=2, DPL=digits-after-dot).
+        ; ANS Forth 1994 §3.4.1.3 dot-marker.
         CALL    do_double_dot_base10
         JR      C, .pref_hash_fail      ; multi-dot or invalid digit
         LD      A, B
@@ -248,19 +225,19 @@ w_NUMBER_PREFIX_Q_cf:
 
 ; Scratch for sign flag — scoped to w_NUMBER_PREFIX_Q_cf via the local
 ; label prefix, must live before the next global label. Shared by the
-; '-' pre-pass (9.4) and the '#', '$', '0x'/'0X', '%' handlers' in-body
+; '-' pre-pass and the '#', '$', '0x'/'0X', '%' handlers' in-body
 ; sign-strip (w_NUMBER_PREFIX_Q_cf is single-threaded and non-reentrant,
 ; so one scratch byte is sufficient). The 'c' character-literal handler
-; READS .pref_negate on its success path (9.4) to apply an outer '-',
+; READS .pref_negate on its success path to apply an outer '-',
 ; but never writes it.
 ;
-; Invariant (MANDATORY for any future reader) — 9.4 semantics:
+; Invariant (MANDATORY for any future reader):
 ;
 ;   Dispatch is the one-time initialiser. w_NUMBER_PREFIX_Q_cf resets
 ;   .pref_negate to 0 exactly once per recogniser entry, immediately
 ;   after the empty-count check and before the dispatch chain. Every
 ;   subsequent sign source XOR-TOGGLES the flag with 1. Sign sources
-;   in play after 9.4:
+;   in play:
 ;
 ;     (a) Outer '-' pre-pass in .pref_sign_entry — toggles once if the
 ;         '-' arm commits (second char is a recognised prefix).
@@ -269,8 +246,7 @@ w_NUMBER_PREFIX_Q_cf:
 ;
 ;   This XOR discipline is what makes outer and in-body signs compose
 ;   cleanly: `-#-5` toggles twice (outer + in-body) and yields +5,
-;   directly reflecting two's-complement arithmetic intuition. See the
-;   9.4 story AC #5 for the full composition table.
+;   directly reflecting two's-complement arithmetic intuition.
 ;
 ;   The 'c' handler is a read-only consumer: on the success path it
 ;   loads .pref_negate once and, if nonzero, applies a two's-complement
@@ -292,10 +268,10 @@ w_NUMBER_PREFIX_Q_cf:
 ; IP in DE'). Clobbers: A, F (F carries the fail/not-fail signal).
 ;
 ; EXX-free — safe to CALL from inside an EXX window. Do NOT issue EXX
-; here. Shared by every handler's in-body sign-strip call site (9.4
-; refactor — collapses the 4x duplicated block from 9.1/9.2/9.3; also
-; reused by the 9.4 .pref_<x>_enter_after_sign entries to allow double-
-; sign composition like `-#-5` → +5 via XOR toggle).
+; here. Shared by every handler's in-body sign-strip call site (collapses
+; the 4x duplicated block; also reused by the
+; .pref_<x>_enter_after_sign entries to allow double-sign composition
+; like `-#-5` → +5 via XOR toggle).
 ; ---------------------------------------------------------------------
 .pref_check_sign:
         LD      A, (HL)
@@ -311,7 +287,7 @@ w_NUMBER_PREFIX_Q_cf:
         RET                             ; body exhausted → carry set (fail signal)
 
 ; ---------------------------------------------------------------------
-; '$' hexadecimal prefix handler (Story 9.2).
+; '$' hexadecimal prefix handler.
 ; Enters with BC = c-addr, DE = IP, HL = c-addr+1 (→ '$' byte), A = '$'.
 ; Structure mirrors .pref_hash_entry — swap base-10 → base-16 helpers.
 ; ---------------------------------------------------------------------
@@ -335,7 +311,7 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_dollar_fail    ; bare "$-" → fail
 
 .pref_dollar_convert:
-        ; Story 13.0 — dot-aware (see .pref_hash_convert head-comment).
+        ; dot-aware (see .pref_hash_convert head-comment).
         CALL    do_double_dot_base16
         JR      C, .pref_dollar_fail
         LD      A, B
@@ -351,13 +327,13 @@ w_NUMBER_PREFIX_Q_cf:
         NEXT
 
 ; ---------------------------------------------------------------------
-; '0x' / '0X' hexadecimal prefix handler (Story 9.2, antforth extension).
+; '0x' / '0X' hexadecimal prefix handler (antforth extension).
 ; Enters with BC = c-addr, DE = IP, HL = c-addr+1 (→ '0' byte), A = '0'.
 ;
 ; CRITICAL: the second-byte peek happens BEFORE any EXX. Bare '0', '00',
 ; '012', '0A' etc. must fast-fail with zero stack touch so NUMBER? sees
-; the same c-addr and parses unchanged (FR52 — unprefixed hot path must
-; not regress). Only when the second byte is 'x'/'X' do we commit to
+; the same c-addr and parses unchanged (unprefixed hot path must not
+; regress). Only when the second byte is 'x'/'X' do we commit to
 ; the hex path and enter the EXX window.
 ; ---------------------------------------------------------------------
 ; antforth extension         0x<num>       — C-style hex prefix
@@ -392,7 +368,7 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_zero_fail      ; bare "0x-" → fail
 
 .pref_zero_convert:
-        ; Story 13.0 — dot-aware (see .pref_hash_convert head-comment).
+        ; dot-aware (see .pref_hash_convert head-comment).
         CALL    do_double_dot_base16
         JR      C, .pref_zero_fail
         LD      A, B
@@ -407,7 +383,7 @@ w_NUMBER_PREFIX_Q_cf:
         NEXT
 
 ; ---------------------------------------------------------------------
-; '%' binary prefix handler (Story 9.3).
+; '%' binary prefix handler.
 ; Enters with BC = c-addr, DE = IP, HL = c-addr+1 (→ '%' byte), A = '%'.
 ; Structure mirrors .pref_dollar_entry — swap base-16 → base-2 helper.
 ; ---------------------------------------------------------------------
@@ -430,7 +406,7 @@ w_NUMBER_PREFIX_Q_cf:
         JR      C, .pref_percent_fail   ; bare "%-" → fail
 
 .pref_percent_convert:
-        ; Story 13.0 — dot-aware (see .pref_hash_convert head-comment).
+        ; dot-aware (see .pref_hash_convert head-comment).
         CALL    do_double_dot_base2
         JR      C, .pref_percent_fail
         LD      A, B
@@ -446,7 +422,7 @@ w_NUMBER_PREFIX_Q_cf:
         NEXT
 
 ; ---------------------------------------------------------------------
-; "'c'" character-literal handler (Story 9.3).
+; "'c'" character-literal handler.
 ; Enters with BC = c-addr, DE = IP, HL = c-addr+1 (→ opening ' byte),
 ; A = 0x27 ('). Dedicated handler — does NOT call do_number_base<N> and
 ; does NOT touch .pref_negate. Reads exactly one middle byte and
@@ -457,11 +433,11 @@ w_NUMBER_PREFIX_Q_cf:
 ; (≥ 2 bytes) that FIND did not match. Exact-length discipline: count
 ; MUST equal 3; anything else fails.
 ;
-; 9.4 extension: the success path reads .pref_negate once and applies
-; a two's-complement negate to the char code if the outer '-' pre-pass
-; (.pref_sign_entry) set the flag. The handler still never writes to
-; .pref_negate and still has no in-body sign — a char literal's middle
-; byte is a transparent pass-through per Forth 2014 §3.4.1.3.
+; The success path reads .pref_negate once and applies a two's-complement
+; negate to the char code if the outer '-' pre-pass (.pref_sign_entry)
+; set the flag. The handler still never writes to .pref_negate and still
+; has no in-body sign — a char literal's middle byte is a transparent
+; pass-through per Forth 2014 §3.4.1.3.
 ; ---------------------------------------------------------------------
 ; Forth 2014 §3.4.1.3      'c'           — character-code literal
 .pref_quote_entry:
@@ -482,7 +458,7 @@ w_NUMBER_PREFIX_Q_cf:
         JR      NZ, .pref_quote_fail    ; missing closing '
 
 .pref_quote_ok:
-        ; 9.4: apply outer '-' prefix from .pref_negate. The 'c' handler
+        ; Apply outer '-' prefix from .pref_negate. The 'c' handler
         ; has no in-body sign; this reads the flag set by the sign-before-
         ; prefix dispatch arm (.pref_sign_entry) and applies a two's-
         ; complement negate — mirrors the digit handlers' sign-apply tail.
@@ -511,14 +487,14 @@ w_NUMBER_PREFIX_Q_cf:
         NEXT
 
 ; ---------------------------------------------------------------------
-; '-' sign-BEFORE-prefix modifier handler (Story 9.4).
+; '-' sign-BEFORE-prefix modifier handler.
 ; Enters with BC = c-addr, HL = c-addr+1 (→ '-' byte), A = '-'.
 ;
 ; Peeks the SECOND char (first char after '-') OUTSIDE the EXX window.
 ; If the second char is a recognised prefix (# $ 0 % 0x27), jumps to
 ; the corresponding .pref_<x>_enter_after_sign entry which toggles
 ; .pref_negate and proceeds. Otherwise falls through to .pref_fast_false
-; so NUMBER? owns '-42' etc. per FR47.
+; so NUMBER? owns '-42' etc.
 ;
 ; Like .pref_zero_entry's second-byte peek: runs entirely outside the
 ; EXX window, preserving BC = c-addr for the fall-through path. BC is
@@ -632,7 +608,7 @@ w_NUMBER_PREFIX_Q_cf:
 ; '-0x' / '-0X' requires an extra third-char check (second-byte peek
 ; precedent from .pref_zero_entry): we only commit to the -0x form if
 ; the third char is 'x' or 'X'. Otherwise fall through to .pref_fast_false
-; so NUMBER? gets '-0...' (e.g. '-0' as signed-zero is a pre-9.4 literal).
+; so NUMBER? gets '-0...' (e.g. '-0' as signed-zero is a bare literal).
 .pref_zero_enter_after_sign:
         ; HL → '0' (second char; was set by .pref_sign_entry's INC HL).
         ; BC = c-addr; (BC) = count.
@@ -689,7 +665,7 @@ w_NUMBER_PREFIX_Q_cf:
 
 ; ---------------------------------------------------------------------
 ; do_number_base10 — Digit-accumulate with hard-coded base = 10.
-; Near-copy of strings.asm:do_number but never reads BASE (per FR9).
+; Near-copy of strings.asm:do_number but never reads BASE.
 ; Optimised *10 via shift-and-add (5 ADDs) instead of the 16-bit
 ; shift-and-add multiplier used by the generic do_number.
 ; Input:  HL = digit string, B = count, DE = accumulator
@@ -797,9 +773,7 @@ do_number_base16:
 ; char_to_digit_base16 — ASCII → digit (0..9, a..f, A..F).
 ; Folds 'A'..'F' and 'a'..'f' into the same range via `OR 0x20` —
 ; implements the Forth 2014 §3.4.1.3 case-insensitivity requirement for
-; hex digits (cited at architecture §E9 / CCD-3, per project memory
-; `feedback_design_upfront.md`: design for the full case-insensitivity
-; scope up front rather than retrofitting in 9.4).
+; hex digits.
 ; Input:  A = ASCII char
 ; Output: A = digit 0..15 with carry clear if valid; carry set if invalid
 ; Clobbers: F
@@ -832,8 +806,8 @@ char_to_digit_base16:
 ; Third sibling in the base-N family (see do_number_base10,
 ; do_number_base16 above) — same loop structure, *2 is a single
 ; ADD HL,HL. Inlined directly (2 EX + 1 ADD) instead of the sibling
-; PUSH/POP save-restore block (3 PUSH + 3 POP + N ADD) — net ~7 bytes
-; smaller than if base-2 had reused the base-16 multiply scaffold.
+; PUSH/POP save-restore block (3 PUSH + 3 POP + N ADD) — smaller than if
+; base-2 had reused the base-16 multiply scaffold.
 ; Input:  HL = digit string, B = count, DE = accumulator
 ; Output: HL = advanced, B = remaining, DE = result
 ; Clobbers: A, F, C
@@ -883,7 +857,7 @@ char_to_digit_base2:
         RET
 
 ; =====================================================================
-; Story 13.0 — 32-bit dot-aware digit accumulator (ANS Forth 1994 §3.4.1.3)
+; 32-bit dot-aware digit accumulator (ANS Forth 1994 §3.4.1.3)
 ; =====================================================================
 ; do_double_dot_base<N> / do_double_dot_user — drop-in replacement for
 ; do_number_base<N> that ALSO handles a single '.' anywhere in the body.
@@ -904,7 +878,7 @@ char_to_digit_base2:
 ; EXX-free — safe to CALL from inside a recogniser-handler EXX window.
 ;
 ; Label scoping: the prefix recogniser already uses local label scoping
-; under w_NUMBER_PREFIX_Q_cf (e.g., .pref_negate at line 295). The new
+; under w_NUMBER_PREFIX_Q_cf (e.g., .pref_negate). The
 ; helpers below are top-level globals so their scratch RAM uses GLOBAL
 ; (no leading dot) names — `dlit_acc_lo`, `dlit_fn_digit` etc. The
 ; pref_negate flag is read via the qualified path
@@ -915,11 +889,11 @@ char_to_digit_base2:
 ; then fall through to the shared common loop below. Each stub preserves
 ; HL (= body ptr) and B (= count) for the common routine.
 ;
-; Prefix stubs (base10/16/2) also set (dlit_pref_mode)=1 to enable AC #7
+; Prefix stubs (base10/16/2) also set (dlit_pref_mode)=1 to enable
 ; "dot in prefix region" rejection (`#.100`, `$.FF`, `0x.DEAD`, `%.1010`
 ; must fail because the dot sits between the prefix and the first digit).
 ; The unprefixed `do_double_dot_user` clears the flag so a leading dot
-; like `.5` remains valid per AC #3.
+; like `.5` remains valid.
 do_double_dot_base10:
         LD      A, 1
         LD      (dlit_pref_mode), A
@@ -988,7 +962,7 @@ ddd_after_call:
         POP     BC                              ; restore count
         JR      C, ddd_fail                     ; invalid digit
         ; A = digit (0..base-1). Mark "any digit seen" (rejects bare-dot
-        ; bodies like "#." per AC #7), then multiply acc by base, add A.
+        ; bodies like "#."), then multiply acc by base, add A.
         ; ddd_mul_add_a clobbers B and C (loop counter / digit stash),
         ; so guard the count via stack push.
         PUSH    AF
@@ -1016,7 +990,7 @@ ddd_got_dot:
         LD      A, (dlit_saw_dot)
         OR      A
         JR      NZ, ddd_fail                    ; multi-dot → reject
-        ; AC #7: in prefix-mode, a dot before any digit (`#.100`, `$.FF`,
+        ; In prefix-mode, a dot before any digit (`#.100`, `$.FF`,
         ; `0x.DEAD`, `%.1010`) is "dot in the prefix region" → reject.
         ; Unprefixed (`do_double_dot_user`) clears dlit_pref_mode so leading
         ; dot stays valid (`.5`).
@@ -1034,7 +1008,7 @@ ddd_got_dot:
         JR      ddd_loop
 
 ddd_ok:
-        ; AC #7: reject bodies that contained only a dot and no digits
+        ; Reject bodies that contained only a dot and no digits
         ; (e.g. `#.`, `$.`, `%.`, `0x.`, `#-.`, `.`, `-.`). The dot-only
         ; case yields saw_dot=1 + any_digit=0; reject as parse failure.
         LD      A, (dlit_any_digit)
@@ -1162,8 +1136,7 @@ pfv_single:
         NEXT
 pfv_double:
         ; Double-cell: DPL = (dlit_dpl) zero-extended, push low then
-        ; high (high ends up TOS per ANS Forth 1994 §3.1.4.1, post-
-        ; Story-13.0.1), flag = 2.
+        ; high (high ends up TOS per ANS Forth 1994 §3.1.4.1), flag = 2.
         LD      A, (dlit_dpl)
         LD      (IY+UserArea.dpl),   A
         XOR     A
@@ -1176,7 +1149,7 @@ pfv_double:
         LD      BC, 2                           ; flag = 2 (double)
         NEXT
 
-; Story 13.0 — scratch RAM for the dot-aware accumulator. Single-threaded
+; Scratch RAM for the dot-aware accumulator. Single-threaded
 ; (the recogniser is non-reentrant), so one shared pool is sufficient.
 ; Globals (not local) so the helpers above can reference them across
 ; their own scope boundaries.
