@@ -21,7 +21,7 @@ w_TO_BODY_cf:
 ; ' (tick) ( "<spaces>name" -- xt )
 ;   Parse next word, find it, return its execution token
 ;   Error if word not found: prints "<NAME> ?" + CR then raises
-;   -13 THROW (Story 11.5) per ANS Forth 1994 §9.3.5. The dynamic
+;   -13 THROW per ANS Forth 1994 §9.3.5. The dynamic
 ;   word-name print is preserved so the user sees which name failed;
 ;   the THROW code is then dispatched to CATCH (caught) or to the
 ;   uncaught-handler's "error -13: undefined word" diagnostic.
@@ -49,7 +49,7 @@ w_TICK_cf EQU w_TICK_body - 3
         DW w_LIT_cf, '?'
         DW w_EMIT_cf                 ; question mark
         DW w_CR_cf                   ; newline
-        ; -13 THROW (Story 11.5): undefined word per ANS Forth 1994 §9.3.5
+        ; -13 THROW: undefined word per ANS Forth 1994 §9.3.5
         DW w_LIT_cf, THROW_UNDEFINED_WORD
         DW w_THROW_cf
 
@@ -87,25 +87,25 @@ bh_old_bucket_head:  DW 0   ; Previous bucket head (for error recovery)
 bh_count_flags_addr: DW 0   ; Address of count_flags byte (for unsmudging)
 bh_flags:            DB 0   ; Flags to OR into count_flags
 bh_code_field:       DW 0   ; Code field position (saved for return)
-bh_wid:              DW 0   ; Wid used for header insertion (Story 12.4 — for error recovery)
-bh_stub_xt_addr:     DW 0   ; Story 19.2 (Q1-α): address of the 2-byte stub-xt cell
+bh_wid:              DW 0   ; Wid used for header insertion (for error recovery)
+bh_stub_xt_addr:     DW 0   ; Address of the 2-byte stub-xt cell
                             ; inserted between name and CFA. build_header initial-fills
                             ; with the CFA address (so FIND extraction returns CFA for
                             ; legacy bank-0 / Phase-1/2/3 entries unchanged);
                             ; w_SEMICOLON_cf overwrites for bank-N>0 colon definitions
-                            ; with the descriptor-stub address (PD-P4-1; architecture.md:200..211).
+                            ; with the descriptor-stub address.
 
-; Story 19.2 (Q2-γ) — fixed-memory scratch read by w_IMMEDIATE_cf so the
+; Fixed-memory scratch read by w_IMMEDIATE_cf so the
 ; IMMEDIATE bit lands on the right count_flags byte even after w_SEMICOLON_cf
 ; has overwritten LATEST with a stub-xt (bank-N>0 path). Mirror-written at
 ; the tail of every successful build_header (covers `:`, CREATE, CONSTANT,
-; MARKER, CODE, LABEL). See PD-P4-1 (architecture.md:200..211) + redesign §2.1.
+; MARKER, CODE, LABEL).
 ;
-; CR fix (Story 19.2 review): assembly-time initial value points at a
+; The assembly-time initial value points at a
 ; sentinel sink so IMMEDIATE invoked before any build_header consumer has
 ; run no-ops on the sink instead of writing F_IMMEDIATE into the CP/M
 ; zero-page (the DW 0 form wrote the bit into $0002 = BDOS dispatch).
-; Pre-Story 19.2 IMMEDIATE walked LATEST (= 0 at COLD) and hit the same
+; IMMEDIATE walking LATEST (= 0 at COLD) would hit the same
 ; $0002 corruption; the sink + assembly-time init closes that latent
 ; degenerate-input bug as well.
 latest_count_flags_addr: DW latest_count_flags_sink
@@ -117,8 +117,8 @@ colon_saved_here:    DW 0
 colon_smudge_addr:   DW 0
 colon_saved_bucket:  DB 0
 colon_saved_head:    DW 0
-colon_saved_wid:     DW 0   ; Wid the colon header was inserted into (Story 12.4)
-colon_saved_xt_cell: DW 0   ; Story 19.2 (Q1-α): bh_stub_xt_addr snapshot for SEMICOLON
+colon_saved_wid:     DW 0   ; Wid the colon header was inserted into
+colon_saved_xt_cell: DW 0   ; bh_stub_xt_addr snapshot for SEMICOLON
                             ; to overwrite the cell with the descriptor-stub address
                             ; on the bank-N>0 path (intervening build_header calls
                             ; would otherwise clobber bh_stub_xt_addr).
@@ -241,12 +241,12 @@ build_header:
         LD      (bh_bucket_index), A
 
         ; Compute bucket head address: current_wordlist bucket array + A*2
-        ; Story 12.4 — bucket array now lives in (IY+UserArea.current_wordlist),
+        ; The bucket array lives in (IY+UserArea.current_wordlist),
         ; not in forth_wordlist directly. Capture the wid into bh_wid for
         ; the error-recovery paths (w_COMP_ERROR_cf, asm_cleanup,
         ; asm_unlink_labels) to read from colon_saved_wid / asm_saved_wid.
         ; Lifecycle invariant: bh_wid is written ONLY on the success path
-        ; below this point; the .bh_no_name early-exit at :161 returns CF=1
+        ; below this point; the .bh_no_name early-exit returns CF=1
         ; without touching bh_wid. Callers that consume bh_wid (colon /
         ; CODE / MARKER prologues) MUST first test the carry flag and skip
         ; the bh_wid read on error — otherwise they read a stale wid from
@@ -256,7 +256,7 @@ build_header:
         ADD     HL, HL
         LD      C, (IY+UserArea.current_wordlist)
         LD      B, (IY+UserArea.current_wordlist+1)
-        LD      (bh_wid), BC                    ; capture wid (Story 12.4)
+        LD      (bh_wid), BC                    ; capture wid
         INC     BC
         INC     BC                              ; BC = wid + WORDLIST_BUCKET0
         ADD     HL, BC                          ; HL = &<current_wordlist>.buckets[bucket]
@@ -299,18 +299,17 @@ build_header:
         INC     HL
         DJNZ    .bh_copy_name
 
-        ; --- Story 19.2 (Q1-α + Q3-β) — bank-aware stub-xt cell reservation ---
+        ; --- bank-aware stub-xt cell reservation ---
         ; Bank-0 entries: legacy layout (HL = post-name = CFA; no cell, no
-        ; flag). Preserves NFR-P4-16 byte-identical bank-0 dispatch + protects
-        ; iron-spike (tests/banking_tests.fth:705..728) which crosses the
+        ; flag). Preserves byte-identical bank-0 dispatch + protects
+        ; iron-spike (tests/banking_tests.fth) which crosses the
         ; slot-1/slot-2 boundary at $8000 — extra cells per bank-0 entry
         ; would push iron-spike's body into bank-0's slot-2 and break it on
         ; `5 BANK!` mid-execution. Bank-N>0 entries: reserve 2-byte cell
         ; between name and CFA; set F_HAS_STUB_XT_CELL bit in count_flags;
         ; initial-fill the cell with the CFA address (overwritten by
-        ; w_SEMICOLON_cf with descriptor-stub address per PD-P4-1; FIND
+        ; w_SEMICOLON_cf with descriptor-stub address; FIND
         ; discriminates on the flag at src/dictionary.asm).
-        ; architecture.md:200..211 + 347..363; redesign §2.1.
         LD      A, (IY+UserArea.current_bank)
         OR      A
         JR      Z, .bh_skip_cell                  ; bank-0: legacy layout
@@ -325,8 +324,8 @@ build_header:
         INC     HL
         INC     HL                                ; HL = CFA position (post-cell)
         ; Write CFA address (HL) into the 2-byte cell at (bh_stub_xt_addr).
-        ; Preserve DE — EXX'd callers (w_COLON_cf at :424; CREATE at :638;
-        ; CONSTANT at :681; CODE at :1248; MARKER at :36; LABEL at :2275)
+        ; Preserve DE — EXX'd callers (w_COLON_cf; CREATE; CONSTANT;
+        ; CODE; MARKER; LABEL)
         ; hold IP in shadow-DE across the call; an EX DE,HL here would
         ; clobber that and the final caller-side EXX would restore garbage
         ; into main DE → NEXT crashes. Use A-via-load idiom to write cell.
@@ -343,7 +342,7 @@ build_header:
         ; HL = CFA position (post-name for bank-0; post-cell for bank-N>0)
         LD      (bh_code_field), HL               ; save CFA position for return
 
-        ; --- Story 19.2 (Q2-γ) — latest_count_flags_addr mirror ---
+        ; --- latest_count_flags_addr mirror ---
         ; Mirror count_flags address so w_IMMEDIATE_cf reaches the right
         ; byte even after w_SEMICOLON_cf has overwritten LATEST with a
         ; stub-xt (bank-N>0 path). Always-mirror covers `:`, CREATE,
@@ -357,7 +356,7 @@ build_header:
         POP     HL                                ; restore HL = CFA address
 
         ; --- Update LATEST (always, regardless of bank) ---
-        ; LATEST is per-bank state (architecture.md PD-P4-3). Bank-0 keeps
+        ; LATEST is per-bank state. Bank-0 keeps
         ; legacy semantics (LATEST = entry_start). The bank-N>0 callers in
         ; w_CREATE_cf / w_COLON_cf overwrite LATEST with the stub-xt after
         ; stub_allocate runs, so the value written here is just the
@@ -367,7 +366,7 @@ build_header:
         LD      (IY+UserArea.latest+1), B
 
         ; --- Update hash bucket head to point to new entry ---
-        ; Story 19.3.1 — skip the bucket-head update when current_bank > 0.
+        ; Skip the bucket-head update when current_bank > 0.
         ; The FORTH-WORDLIST bucket array lives in always-mapped slot-1
         ; and is SHARED across all banks; writing a bank-N HERE address
         ; (slot-2, bank-N RAM) into a bucket leaves a dangling pointer
@@ -375,7 +374,7 @@ build_header:
         ; dereference into bank-0 slot-2 garbage and rot every word
         ; sharing the polluted bucket. Bank-N CREATEd entries remain
         ; reachable via post-CREATE `LATEST @` (the stub-xt capture
-        ; pattern); bank-N FIND-by-name is deferred to Epic 20.
+        ; pattern); bank-N FIND-by-name is deferred.
         LD      A, (IY+UserArea.current_bank)
         OR      A
         JR      NZ, .bh_skip_bucket_update
@@ -437,41 +436,29 @@ w_POSTPONE_cf EQU w_POSTPONE_body - 3
 ;   Functionally identical to , for direct-threaded Forth but
 ;   semantically distinct per ANS standard.
 ;
-;   Story 18.3 (FR-P4-14 initial stub-emission wiring; PD-P4-1 /
-;   architecture.md:207..211; PD-P4-11 / architecture.md:347..363):
 ;   xt-as-stub-address contract. The 16-bit value written here is
 ;   transparently treated as an xt — for Phase-1/2/3 fixed-memory
 ;   words it is the code-field address (the legacy CFA-as-xt
-;   contract; the folded EXECUTE JP (HL)s it directly per Story
-;   19.5.2); for Epic-18+ banked words it is the descriptor-stub
-;   address (PD-P4-11 4-byte stub layout v2 in $D4CB+; the stub's
-;   address IS the word's xt per FR-P4-13). COMPILE, performs ZERO
+;   contract; the folded EXECUTE JP (HL)s it directly); for banked
+;   words it is the descriptor-stub
+;   address (4-byte stub layout v2 in $D4CB+; the stub's
+;   address IS the word's xt). COMPILE, performs ZERO
 ;   inspection of the value — same 16-bit store-and-advance whether
 ;   the xt is a CFA or a stub. The discrimination happens at dispatch
-;   time (the stub's own RST $28 → stub_dispatch, src/banking.asm —
-;   ADR 19.5 DR-2), NOT at compile time.
+;   time (the stub's own RST $28 → stub_dispatch, src/banking.asm),
+;   NOT at compile time.
 ;
-;   This means COMPILE, requires NO functional code edit at Story
-;   18.3 — the current emit IS the xt-as-stub-address contract.
-;   Story 18.3's edit is documentation-only: this CCD-3 source
-;   comment block + a forward pointer to Epic 19 (where bank-aware
-;   `:` allocates the stub on `;` and COMPILE, is naturally consumed
-;   in the per-bank compile path).
+;   This means COMPILE, requires NO functional code edit — the
+;   current emit IS the xt-as-stub-address contract.
 ;
-;   Story 19.1 / FR-P4-14 (final integration; AC4 closure) — per-bank
-;   COMPILE,: writes through (IY+UserArea.here) into the current
-;   bank's `here` via BANK!'s LDIR triple-swap at
-;   src/banking.asm:170..193 (same per-bank-via-swap discipline as `,`
-;   in src/memory.asm). The Epic-19 forward-pointer below is CLOSED
-;   by this story; Story 19.2 will land bank-aware `:` on top of this
-;   per-bank cell-write foundation. See PD-P4-3
-;   (_bmad-output/planning-artifacts/architecture.md:229..241) and
-;   docs/antforth-banking-redesign.md §5.4.
+;   Per-bank COMPILE,: writes through (IY+UserArea.here) into the
+;   current bank's `here` via BANK!'s LDIR triple-swap (same
+;   per-bank-via-swap discipline as `,` in src/memory.asm).
 ;
-;   DOWNSTREAM CONSUMERS (Epic 18+):
-;     - Story 18.4 (BANK-OF) consumes xt-as-stub-address — BANK-OF
+;   DOWNSTREAM CONSUMERS:
+;     - BANK-OF consumes xt-as-stub-address — BANK-OF
 ;       reads byte 0 of the stub at xt.
-;     - Story 19.2 (bank-aware `:`) is the load-bearing consumer:
+;     - bank-aware `:` is the load-bearing consumer:
 ;       `:` will allocate a stub for each banked word; the stub
 ;       address is set as the word's xt; COMPILE, references via the
 ;       compiled xt resolve to the stub address transparently.
@@ -494,13 +481,13 @@ w_COMPILE_COMMA_cf:
 ; IMMEDIATE ( -- )
 ;   Set the IMMEDIATE flag (bit 7) on the most recently defined word.
 ;
-;   Story 19.2 (Q2-γ): reads through latest_count_flags_addr (mirrored at
+;   Reads through latest_count_flags_addr (mirrored at
 ;   build_header tail) instead of walking from LATEST. Required because
 ;   w_SEMICOLON_cf overwrites LATEST with a stub-xt for bank-N>0 colon
-;   definitions (PD-P4-1 / FR-P4-13 stub-as-xt) — a stub-xt + 2 lands
+;   definitions (stub-as-xt) — a stub-xt + 2 lands
 ;   inside the stub body (target_addr.lo), not on the count_flags byte.
 ;   The scratch covers all build_header consumers (`:`, CREATE, CONSTANT,
-;   MARKER, CODE, LABEL). architecture.md:200..211; redesign §2.1.
+;   MARKER, CODE, LABEL).
 ; -----------------------------------------------
 w_IMMEDIATE:
         DEFCODE "IMMEDIATE", 0
@@ -516,7 +503,7 @@ w_IMMEDIATE_cf:
 ;   Begin a new colon definition. Parse name, create dictionary header
 ;   at HERE with SMUDGE set, emit JP DOCOL, enter compile mode.
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
-;   when the parsed name is empty (Story 11.5).
+;   when the parsed name is empty.
 ; -----------------------------------------------
 w_COLON:
         DEFCODE ":", 0
@@ -536,9 +523,9 @@ w_COLON_cf:
         LD      (colon_saved_head), BC
         LD      BC, (bh_count_flags_addr)
         LD      (colon_smudge_addr), BC
-        LD      BC, (bh_wid)                     ; Story 12.4 — save wid for COMP-ERROR rollback
+        LD      BC, (bh_wid)                     ; save wid for COMP-ERROR rollback
         LD      (colon_saved_wid), BC
-        LD      BC, (bh_stub_xt_addr)            ; Story 19.2 — save cell addr for SEMICOLON
+        LD      BC, (bh_stub_xt_addr)            ; save cell addr for SEMICOLON
         LD      (colon_saved_xt_cell), BC        ; (intervening CREATE inside colon body
                                                  ; could clobber bh_stub_xt_addr; defensive)
 
@@ -562,21 +549,19 @@ w_COLON_cf:
         NEXT
 
 .colon_no_name:
-        EXX                                      ; Restore primary set (Story 11.5:
+        EXX                                      ; Restore primary set:
                                                  ; kernel-internal THROW entry contract
-                                                 ; requires primary-set BC; src/exception.asm:288-296)
-        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+                                                 ; requires primary-set BC; src/exception.asm:288-296
+        ; -16 THROW: attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
         LD      BC, THROW_ZERO_LEN_NAME
         JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
 ; COMP-ERROR ( c-addr -- ) internal, never returns
 ;   Compilation error recovery: restore HERE, unlink hash entry,
-;   print "<NAME> ?" + CR, then raise -13 THROW (Story 11.5)
-;   per ANS Forth 1994 §9.3.5. Migrated from `JP w_ABORT_cf` to
-;   `LD BC, THROW_UNDEFINED_WORD / JP w_THROW_cf.kernel_entry` —
-;   the dynamic word-name print and HERE/bucket recovery are
-;   preserved verbatim.
+;   print "<NAME> ?" + CR, then raise -13 THROW
+;   per ANS Forth 1994 §9.3.5. The dynamic word-name print and
+;   HERE/bucket recovery are preserved verbatim.
 ; -----------------------------------------------
 w_COMP_ERROR:
         DEFCODE "COMP-ERROR", 0
@@ -590,7 +575,7 @@ w_COMP_ERROR_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; --- 5.2: Restore hash bucket head (Story 12.4 — saved wid from colon prologue) ---
+        ; --- 5.2: Restore hash bucket head (saved wid from colon prologue) ---
         LD      A, (colon_saved_bucket)
         LD      L, A
         LD      H, 0
@@ -625,8 +610,8 @@ w_COMP_ERROR_cf:
         CALL    bdos_print_q_crlf
 
 .comp_err_abort:
-        ; --- 5.4: Raise -13 THROW (Story 11.5) ---
-        ; -13 THROW (Story 11.5): undefined word per ANS Forth 1994 §9.3.5
+        ; --- 5.4: Raise -13 THROW ---
+        ; -13 THROW: undefined word per ANS Forth 1994 §9.3.5
         ; STATE was already cleared above (5.3); HERE / hash bucket already
         ; restored (5.1, 5.2). EXX is not active here (COMP-ERROR is a
         ; DEFCODE called from INTERPRET which runs in primary-set context),
@@ -639,7 +624,7 @@ w_COMP_ERROR_cf:
 ;   End a colon definition. Compile EXIT, clear SMUDGE, return to
 ;   interpret mode.
 ;   Errors: -14 THROW (interpreting a compile-only word) per ANS Forth
-;   1994 §9.3.5 when invoked outside compile mode (Story 11.5).
+;   1994 §9.3.5 when invoked outside compile mode.
 ; -----------------------------------------------
 w_SEMICOLON:
         DEFCODE ";", F_IMMEDIATE
@@ -651,8 +636,8 @@ w_SEMICOLON_cf:
         LD      A, (IY+UserArea.state+1)
         OR      A
         JR      NZ, .semi_ok
-        ; STATE=0 — `;` used outside definition; raise -14 THROW (Story 11.5)
-        ; -14 THROW (Story 11.5): interpreting a compile-only word per ANS Forth 1994 §9.3.5
+        ; STATE=0 — `;` used outside definition; raise -14 THROW
+        ; -14 THROW: interpreting a compile-only word per ANS Forth 1994 §9.3.5
         LD      BC, THROW_COMPILE_ONLY
         JP      w_THROW_cf.kernel_entry
 .semi_ok:
@@ -666,38 +651,35 @@ w_SEMICOLON_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; --- Story 19.2 (Q3-β / FR-P4-13..17) — bank-aware stub allocation ---
+        ; --- bank-aware stub allocation ---
         ; If current_bank == 0: skip stub_allocate. LATEST stays at the
         ; entry-start value the build_header tail wrote (= hash_link
         ; address, NOT CFA — bank-0 entries take the .bh_skip_cell branch
         ; and have no cell; xt extraction is the legacy
-        ; post-name-= CFA path at src/dictionary.asm:187). Preserves
-        ; NFR-P4-1 (Phase-2/3 test surface; 975 PASS) and NFR-P4-16
-        ; (byte-identical bank-0 dispatch).
+        ; post-name-= CFA path at src/dictionary.asm). Preserves the
+        ; byte-identical bank-0 dispatch.
         ; If current_bank > 0: call stub_allocate (src/banking.asm);
         ; overwrite the reserved cell with the returned stub_addr; update
-        ; LATEST to stub_addr. The stub's address IS the word's xt
-        ; (PD-P4-1; architecture.md:200..211 + 347..363; redesign §2.1).
+        ; LATEST to stub_addr. The stub's address IS the word's xt.
         ; Dispatch consumes via the stub's own RST $28 → stub_dispatch
-        ; (src/banking.asm; Story 19.5.2 / ADR 19.5 DR-2; FR-P4-15/16).
+        ; (src/banking.asm).
         ; PUSH/POP DE wrap IS required: the bank-N>0 body uses DE as a
         ; scratch (EX DE,HL to set up stub_allocate's target_addr input
         ; and again to extract the stub_addr return). Without the wrap,
         ; the caller-side EXX would restore garbage into main DE → NEXT
         ; crashes. stub_allocate itself preserves main-set (its contract
-        ; at src/banking.asm:760..773) so the wrap is only protecting
+        ; in src/banking.asm) so the wrap is only protecting
         ; against SEMICOLON's own DE-scratch usage.
         LD      A, (IY+UserArea.current_bank)
         OR      A
         JR      Z, .semi_skip_stub
-        ; CR fix (Story 19.2 review): PUSH BC required — BC is TOS-in-register
+        ; PUSH BC required — BC is TOS-in-register
         ; and `LD B, A` below clobbers it for stub_allocate's target_bank
         ; input. Without this wrap, defining a SECOND banked colon while a
         ; previous banked xt sits on the data stack corrupts xt.high to
         ; current_bank (e.g., xt $D4CB → $05CB after `: _p192e-b 22 ;`
         ; with 5 BANK! active and the stash from `: _p192e-a 11 ;` on
-        ; stack). Probe-19.2-E surfaced this; pre-edit dev pass missed it
-        ; because Probes D/F/G each held only one bank-N xt on the stack.
+        ; stack).
         PUSH    BC                                ; save TOS
         PUSH    DE                                ; save IP across stub_allocate
         LD      HL, (colon_saved_xt_cell)
@@ -784,7 +766,7 @@ w_LITERAL_cf:
 ;   code field + 2-byte does-addr slot (zeroed). No SMUDGE, no
 ;   compile mode. Word is immediately findable.
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
-;   when the parsed name is empty (Story 11.5).
+;   when the parsed name is empty.
 ; -----------------------------------------------
 w_CREATE:
         DEFCODE "CREATE", 0
@@ -810,21 +792,11 @@ w_CREATE_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; --- Story 19.3 (Q1-α / FR-P4-25) — bank-aware doer-stub allocation ---
-        ; Re-applied 2026-05-20 for the real-hardware iron-spike layout test
-        ; (see _bmad-output/implementation-artifacts/19-3-*.md §"Dev-Pass
-        ; Deferral 2026-05-20"). If hardware iron-spike PASSes at this
-        ; +30 B layout, the iz-cpm-banking hang is emulator-quirk-class
-        ; (similar to project_phase4_banking_off_emulator) and Story 19.3
-        ; can ship with hardware as load-bearing verdict. If hardware
-        ; also hangs, there's a real kernel defect to root-cause.
-        ;
-        ; If current_bank == 0: skip stub_allocate (NFR-P4-16 byte-identical
+        ; --- bank-aware doer-stub allocation ---
+        ; If current_bank == 0: skip stub_allocate (byte-identical
         ; bank-0 dispatch). If current_bank > 0: call stub_allocate
-        ; (src/banking.asm:780); overwrite the reserved cell at
+        ; (src/banking.asm); overwrite the reserved cell at
         ; (bh_stub_xt_addr) with the returned stub_addr; update LATEST.
-        ; PD-P4-1 (architecture.md:200..211); PD-P4-11 (:347..363);
-        ; FR-P4-13/17/25; redesign §2.1.
         ;
         ; NO PUSH BC / PUSH DE required — w_CREATE_cf EXX'd at entry,
         ; so BC/DE inside the body are alt-set scratch (not TOS/IP).
@@ -850,10 +822,10 @@ w_CREATE_cf:
         NEXT
 
 .create_no_name:
-        EXX                                      ; Restore primary set (Story 11.5:
+        EXX                                      ; Restore primary set:
                                                  ; kernel-internal THROW entry contract
-                                                 ; requires primary-set BC; src/exception.asm:288-296)
-        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+                                                 ; requires primary-set BC; src/exception.asm:288-296
+        ; -16 THROW: attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
         LD      BC, THROW_ZERO_LEN_NAME
         JP      w_THROW_cf.kernel_entry
 
@@ -863,7 +835,7 @@ w_CREATE_cf:
 ;   store x in body.
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
 ;   when the parsed name is empty; the value-cell `x` is consumed
-;   from the data stack before the THROW raise (Story 11.5).
+;   from the data stack before the THROW raise.
 ; -----------------------------------------------
 w_CONSTANT:
         DEFCODE "CONSTANT", 0
@@ -903,15 +875,14 @@ w_CONSTANT_cf:
         NEXT
 
 .const_no_name:
-        EXX                                      ; Restore primary set (Story 11.5:
+        EXX                                      ; Restore primary set:
                                                  ; kernel-internal THROW entry contract
-                                                 ; requires primary-set BC; src/exception.asm:288-296)
+                                                 ; requires primary-set BC; src/exception.asm:288-296
         POP     BC                               ; TOS consumed, pop new TOS — must
                                                  ; precede the LD BC below or the user's
                                                  ; value-cell would be orphaned on the
-                                                 ; stack across the THROW (Story 11.5
-                                                 ; Dev Notes pitfall #3).
-        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+                                                 ; stack across the THROW.
+        ; -16 THROW: attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
         LD      BC, THROW_ZERO_LEN_NAME
         JP      w_THROW_cf.kernel_entry
 
@@ -920,7 +891,7 @@ w_CONSTANT_cf:
 ;   Compile (DOES>) into the current definition.
 ;   The DOES> body follows and is compiled normally by ;.
 ;   Errors: -14 THROW (interpreting a compile-only word) per ANS Forth
-;   1994 §9.3.5 when invoked outside compile mode (Story 11.5).
+;   1994 §9.3.5 when invoked outside compile mode.
 ; -----------------------------------------------
 w_DOES:
         DEFCODE "DOES>", F_IMMEDIATE
@@ -932,8 +903,8 @@ w_DOES_cf:
         LD      A, (IY+UserArea.state+1)
         OR      A
         JR      NZ, .does_ok
-        ; STATE=0 — DOES> used outside definition; raise -14 THROW (Story 11.5)
-        ; -14 THROW (Story 11.5): interpreting a compile-only word per ANS Forth 1994 §9.3.5
+        ; STATE=0 — DOES> used outside definition; raise -14 THROW
+        ; -14 THROW: interpreting a compile-only word per ANS Forth 1994 §9.3.5
         LD      BC, THROW_COMPILE_ONLY
         JP      w_THROW_cf.kernel_entry
 .does_ok:
@@ -958,20 +929,19 @@ w_PAREN_DOES:
 w_PAREN_DOES_cf:
         ; DE = IP = address of DOES> body (right after this word in the thread)
         ;
-        ; --- Story 19.3 (Q2-α / FR-P4-25) — bank-aware CFA walk ---
-        ; Re-applied 2026-05-20 for the real-hardware iron-spike layout test.
-        ; Pre-Story-19.3 walked LATEST → +2 → count_flags. That breaks for
-        ; bank-N>0 entries because Story 19.2 SEMICOLON Q3-β overwrites
+        ; --- bank-aware CFA walk ---
+        ; A naive walk of LATEST → +2 → count_flags breaks for
+        ; bank-N>0 entries because SEMICOLON overwrites
         ; LATEST with the descriptor-stub address (stub_xt, not entry-
         ; start); LATEST+2 lands inside the stub body, not on count_flags.
-        ; Read (latest_count_flags_addr) — Story 19.2 Q2-γ scratch mirrored
+        ; Read (latest_count_flags_addr) — scratch mirrored
         ; at build_header tail — for the count_flags byte address directly.
         ; If F_HAS_STUB_XT_CELL set (bank-N>0), skip 2-byte cell to reach
-        ; CFA; else (bank-0/legacy) HL = post-name = CFA bit-identical to
-        ; pre-edit. DE = IP preserved (does-addr write below uses DE).
+        ; CFA; else (bank-0/legacy) HL = post-name = CFA. DE = IP preserved
+        ; (does-addr write below uses DE).
         ; PUSH BC wrap: BC is TOS-in-register; `LD B, A` below uses B as
-        ; scratch for count_flags. Same CR-fix pattern as SEMICOLON
-        ; bank-N stub block at :683.
+        ; scratch for count_flags. Same pattern as SEMICOLON's
+        ; bank-N stub block.
         PUSH    BC                           ; save TOS
         LD      HL, (latest_count_flags_addr)
         LD      A, (HL)
