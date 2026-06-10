@@ -88,6 +88,12 @@ F_SIZE          EQU     35              ; BDOS function 35: compute file size in
 ; === Stack Sizes ===
 PS_SIZE         EQU     256             ; Parameter stack: 128 cells (256 bytes)
 RS_SIZE         EQU     256             ; Return stack: 128 cells (256 bytes)
+; Red-zone reserved above sp_base. A stack underflow can over-pop past sp_base
+; (>R is intentionally unguarded) and the next primitive's check_underflow CALL
+; then pushes a return address ABOVE sp_base before the underflow is caught.
+; This gap keeps that transient inside antforth's own arena instead of clobbering
+; the byte at top-of-TPA (the BDOS entry / warm-boot vector).
+SP_GUARD        EQU     8
 
 ; === Dictionary ===
 ; HASH_BUCKETS retired in Story 12.1 (AC #5(d)(i)) — single source of truth

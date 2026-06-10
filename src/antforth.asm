@@ -19,11 +19,18 @@ cold_start:
         ; 1. Read BDOS address from 0x0006 for TPA top
         LD      HL, (BDOS_ADDR_PTR)     ; HL = BDOS base = top of TPA
 
+        ; 1b. Drop sp_base by SP_GUARD so a stack-underflow over-pop + the
+        ;     following check_underflow CALL push lands in our own red-zone,
+        ;     never on the BDOS entry at top-of-TPA. (see SP_GUARD, constants.asm)
+        OR      A                       ; clear carry for SBC
+        LD      DE, SP_GUARD
+        SBC     HL, DE
+
         ; 2. SP = TPA top (parameter stack base, grows downward)
         LD      SP, HL
 
         ; 2b. Store SP base for DEPTH calculation
-        ;     Z80 has no LD (nn),SP — use HL which still holds BDOS addr
+        ;     Z80 has no LD (nn),SP — use HL which still holds the stack base
         LD      (sp_base), HL
 
         ; 3. IX = SP - PS_SIZE (return stack base, below parameter stack region)
@@ -254,17 +261,6 @@ cold_start:
         OUT     (0x74), A
         LD      (IY+UserArea.bank_mapping_state),   1
         LD      (IY+UserArea.bank_mapping_state+1), 0
-        ; NOP layout-shift slot — Story 17.1 fix for iz-cpm */ underflow hang
-        ; (feedback_iz_cpm_test_643_quirk.md). Count tuned empirically per
-        ; Story 17.4 dev-pass post +CL-parser growth; re-tuned at Story
-        ; 19.5.2 (dispatch rework shifted the layout; flat test 643
-        ; tripped at 3 NOPs) and again at the 19.5.2 CR pass (+19 B
-        ; triple-restore/rpush delta; clean at 5).
-        NOP
-        NOP
-        NOP
-        NOP
-        NOP
 
         ; 8i. Phase-4 CL-tail parser (Story 17.4 / FR-P4-34..39) — read
         ;     CP/M command tail at $0080, populate active_pages[] with
