@@ -32,19 +32,9 @@ CODE FETCH-74 ( -- byte )
   NEXT,
 END-CODE
 
-\ Inline assembler reader for port 0x72 (slot-2 MMU page register).
-\ Returns the live slot-2 mapping under iz-cpm-banking (cpm_machine.rs:138
-\ returns bank_map[2]); returns 0 / 0xFF / garbage under iz-cpm baseline
-\ (port unmodelled — surface-gate with FETCH-74 when used as an assertion).
-\ Used by Probe E (SET-BANK port-write verification) and Probe F (-BANK
-\ LDIR data verification via 0 BANK! → port-0x72 readback).
-CODE FETCH-72 ( -- byte )
-  BC PUSH,
-  $72 # A IN,
-  C A LD,
-  B 0 # LD,
-  NEXT,
-END-CODE
+\ A raw IN A,(72h) reader was retired: the page registers (0x70-0x73) are
+\ write-only, so the readback is open bus. Slot-2 mapping is now read via
+\ MBB-GET-2 (MBB_GET_PAGE; defined in 16.3-probe.fth, loaded first).
 
 \ === Probe 1: BANK-MAPPING-ON idempotence + stack effect ===
 \ Surface: iz-cpm-PASS / iz-cpm-banking-PASS / real-MicroBeast-PASS
@@ -339,35 +329,10 @@ _probe-c
 ;
 _probe-d
 
-\ Probe E (Story 17.3): SET-BANK diagnostic — split into two assertions.
-\ E1 (surface-agnostic): SET-BANK does NOT update current_bank — BANK@ stays 0.
-\ E2 (surface-gated): SET-BANK actually writes to the port — FETCH-72 readback
-\ matches the sentinel page. Uses sentinel $23 instead of the slot-2 default
-\ $22 so the readback discriminates a real write from coincidence with the
-\ pre-existing mapping (Code Review L5).
-\ Probe uses slot = 2 (portal slot; safe per Story 17.2 analysis).
-: _probe-e ( -- )
-  $23 2 SET-BANK
-  BANK@ DUP 0 = IF
-    ." PASS: set-bank-diagnostic-bank-at — $23 2 SET-BANK leaves BANK@ unchanged at 0"
-    DROP
-  ELSE
-    ." FAIL: set-bank-diagnostic-bank-at — BANK@ = " .
-  THEN
-  CR
-  FETCH-74 1 = IF
-    FETCH-72 DUP $23 = IF
-      ." PASS: set-bank-diagnostic-port-write — port-0x72 readback = $23 (SET-BANK wrote)"
-      DROP
-    ELSE
-      ." FAIL: set-bank-diagnostic-port-write — port-0x72 readback = $" BASE @ HEX SWAP . BASE !
-    THEN
-  ELSE
-    ." SKIP: set-bank-diagnostic-port-write — port 0x72 unmodelled (iz-cpm baseline)"
-  THEN
-  CR
-;
-_probe-e
+\ Probe E (SET-BANK diagnostic) was RETIRED with the SET-BANK word in the
+\ banking-correctness interlude: a raw OUT desyncs the BIOS page shadow, and
+\ the write-only port can no longer be read back to witness it (MBB_GET reads
+\ the shadow, which SET-BANK deliberately did not touch). See banking.asm.
 
 \ Probe F (Code Review H1): -BANK LDIR shift-down — count + data verification.
 \
@@ -378,10 +343,9 @@ _probe-e
 \ skipped entirely), $22 is still at index 0 after the first remove and
 \ the second remove decrements again → BANKS = 1.
 \
-\ F2 (surface-gated data check): after the shift, 0 BANK! reads
-\ active_pages[0] and writes it to port 0x72. FETCH-72 readback should
-\ equal $23 (the shifted-in value), catching the case where LDIR
-\ skipped without leaving the right page at index 0.
+\ F2 (data check): after the shift, 0 BANK! maps slot 2 to active_pages[0];
+\ MBB-GET-2 readback should equal $23 (the shifted-in value), catching the
+\ case where LDIR skipped without leaving the right page at index 0.
 : _probe-minus-bank-ldir ( -- )
   $22 +BANK $23 +BANK $24 +BANK
   $22 -BANK   \ if LDIR works: [$23, $24, ...], bank_count=2
@@ -393,21 +357,17 @@ _probe-e
     ." FAIL: minus-bank-ldir-shift-count — BANKS = " .
   THEN
   CR
-  FETCH-74 1 = IF
-    0 BANK!     \ slot 2 ← active_pages[0]
-    FETCH-72 DUP $23 = IF
-      ." PASS: minus-bank-ldir-shift-data — port-0x72 readback = $23 (shifted-in value at index 0)"
-      DROP
-    ELSE
-      ." FAIL: minus-bank-ldir-shift-data — port-0x72 readback = $" BASE @ HEX SWAP . BASE !
-    THEN
+  0 BANK!     \ slot 2 ← active_pages[0]
+  MBB-GET-2 DUP $23 = IF
+    ." PASS: minus-bank-ldir-shift-data — MBB slot-2 readback = $23 (shifted-in value at index 0)"
+    DROP
   ELSE
-    ." SKIP: minus-bank-ldir-shift-data — port 0x72 unmodelled (iz-cpm baseline)"
+    ." FAIL: minus-bank-ldir-shift-data — MBB slot-2 readback = $" BASE @ HEX SWAP . BASE !
   THEN
   CR
   \ Cleanup: restore bank 0 (HERE/LATEST snapshot) BEFORE BANKS-CLEAR
   \ so subsequent REPL state stays sane (see BANKS-CLEAR docstring).
-  FETCH-74 1 = IF 0 BANK! THEN
+  0 BANK!
   BANKS-CLEAR
 ;
 _probe-minus-bank-ldir

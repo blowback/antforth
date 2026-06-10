@@ -5,7 +5,7 @@
 ; and §1 for the Phase-4 wordset. Story 17.1 ships the file shell with the
 ; bank-table[] cap/size constants, BANK-MAPPING-ON, and BANK-MAPPING-OFF.
 ; Stories 17.2–17.6 fill in BANK@ / BANK! / BANKS / +BANK / -BANK /
-; BANKS-CLEAR / SET-BANK / .BANKS in this same file.
+; BANKS-CLEAR / .BANKS in this same file (SET-BANK retired — see below).
 ;
 ; The 2 KB region $D400-$DBFF is annexed to the kernel's fixed-memory
 ; claim per PD-P4-6 closure (CCP eviction; Story 16.1 hardware
@@ -595,33 +595,11 @@ w_BANKS_CLEAR_cf:
         LD      (IY+UserArea.bank_count), 0
         NEXT
 
-; === SET-BANK ( page slot -- ) ===
-;   Raw MMU port write: OUT (0x70+slot), page. Diagnostic-only escape
-;   hatch (FR-P4-10) for hardware investigation. Does NOT update
-;   (IY+UserArea.current_bank), does NOT update bank_count, does NOT
-;   touch active_pages[], does NOT probe. The user takes responsibility
-;   for the resulting machine state.
-;
-;   slot is NOT range-checked. FR-P4-10 explicit: "diagnostics only —
-;   bad arguments produce undefined hardware behaviour". Writing to
-;   slot 0 (port 0x70) disconnects the kernel from its own code in the
-;   next instruction fetch (Story 17.1 BANK-MAPPING-OFF analysis).
-;
-; antforth extension SET-BANK — see docs/antforth-banking-redesign.md §1;
-; diagnostics only — bad arguments produce undefined hardware behaviour;
-; does NOT update current_bank or bank_count.
-w_SET_BANK:
-        DEFCODE "SET-BANK", 0
-w_SET_BANK_cf:
-        LD      A, C                                ; A = slot (TOS low byte)
-        OR      0x70                                ; A = port (0x70 + slot)
-        LD      C, A                                ; C = port for OUT (C), A
-        LD      B, 0
-        POP     HL                                  ; HL = page (second-of-stack)
-        LD      A, L                                ; A = page low byte
-        OUT     (C), A                              ; raw MMU write
-        POP     BC                                  ; new TOS
-        NEXT
+; SET-BANK (diagnostic raw MMU port write, FR-P4-10) was RETIRED in the
+; banking-correctness interlude: a raw OUT now desyncs the BIOS page shadow
+; (the BIOS owns it and re-pages during disk ops), so a later BIOS call could
+; restore a stale mapping and clobber slot 2 — a footgun once every page write
+; must go through MBB_SET_PAGE. Use BANK! (kernel-managed) for page switching.
 
 ; ============================================================
 ; === .BANKS ( -- ) ===

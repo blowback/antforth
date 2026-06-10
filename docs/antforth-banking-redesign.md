@@ -19,7 +19,7 @@ This document is the authoritative banked-RAM design for antforth Phase 4. Where
 | Configuration | `+BANK` | `( page -- )` | Add a physical page to the available list. **Probe-on-add** verifies it is RAM (rejects ROM / unmapped pages); `ABORT`s if probe fails. |
 | Configuration | `-BANK` | `( page -- )` | Remove a page from the active list. |
 | Configuration | `BANKS-CLEAR` | `( -- )` | Empty the list (lets user rebuild from scratch in startup config). |
-| Low-level | `SET-BANK` | `( page slot -- )` | Raw MMU port write; kept for diagnostics. |
+| Low-level | `SET-BANK` | `( page slot -- )` | **Retired** (banking-correctness interlude). Was a raw MMU port write for diagnostics; a raw `OUT` desyncs the BIOS page shadow (the BIOS owns it and re-pages during disk ops), so it became a footgun once all page writes route through `MBB_SET_PAGE`. Use `BANK!` for page switching. |
 | Low-level | `BANK-MAPPING-ON` | `( -- )` | Enable mapping hardware. Auto-run in `COLD`. |
 | Low-level | `BANK-MAPPING-OFF` | `( -- )` | CP/M warm-boot escape via BIOS WBOOT (`JP $0000`). Does NOT write the MMU bit — kernel-resident port-0x74 write disconnects RAM mid-instruction-fetch (Story 17.1 AC10 hardware finding). |
 
