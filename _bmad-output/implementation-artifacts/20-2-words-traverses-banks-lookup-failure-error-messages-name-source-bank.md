@@ -1,6 +1,6 @@
 # Story 20.2: Bank-aware `WORDS` verification + FR-P4-30 (source-bank error attribution) retired
 
-Status: review
+Status: done
 
 <!-- Scope re-spec (2026-06-10): the planning artifact
      (epics-phase4-epics-16-22.md §"Story 20.2") was written against the
