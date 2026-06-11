@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -854,6 +854,57 @@ test-repl-banking-isolated-20-1: $(TARGET)
 	else \
 		echo "FAIL: probe-20.1-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
 		exit 1; \
+	fi
+
+# --- Story 20.2 — bank-aware WORDS (verify) + FR-P4-30 retired ---
+# Runs antforth under iz-cpm-banking with ONLY tests/banking_tests_20_2.fth.
+# Per-probe assertions (WORDS already shipped in 20.1 CR d078548 — this is a
+# verification gate, no kernel WORDS code is new):
+#   a — a bank-5 colon word is listed by WORDS typed from bank 0 (per-entry
+#       fat-pointer page-in reaches its bank-N header): grep the dump for the
+#       names _w52a/_w52b.
+#   b — WORDS restores the caller's bank + slot-2 page on exit: a Forth-side
+#       result=-1 (BANK@ and MBB-GET-2 identical before/after).
+#   c — one WORDS run lists both a fixed/kernel name (DUP) and a bank-5 name
+#       (_w52c): proves per-entry page-in mixes the two classes without drop.
+#   d — FR-P4-30 retired: an undefined word yields the plain `<word> ?` with
+#       no bank suffix, and QUIT recovers from the -13 so the suite finishes.
+test-repl-banking-isolated-20-2: $(TARGET)
+	@echo "Running Story 20.2 isolated bank-aware-WORDS probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.2-a-start---";re="---probe-20.2-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -q '_w52a' && echo "$$A" | grep -q '_w52b'; then \
+		echo "PASS: probe-20.2-a (isolated) — bank-5 names _w52a/_w52b listed by WORDS from bank 0"; \
+	else \
+		echo "FAIL: probe-20.2-a (isolated) — bank-5 name missing from WORDS dump"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.2-b-start---";re="---probe-20.2-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qE 'result=-1( |$$)' && ! echo "$$B" | grep -qE 'result=0( |$$)'; then \
+		echo "PASS: probe-20.2-b (isolated) — WORDS restored caller bank + slot-2 (result=-1)"; \
+	else \
+		echo "FAIL: probe-20.2-b (isolated) — bank/slot-2 not restored after WORDS"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.2-c-start---";re="---probe-20.2-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -q ' DUP ' && echo "$$C" | grep -q '_w52c'; then \
+		echo "PASS: probe-20.2-c (isolated) — fixed (DUP) + bank-5 (_w52c) both listed in one WORDS run"; \
+	else \
+		echo "FAIL: probe-20.2-c (isolated) — mixed fixed/bank-N chain incomplete"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	D=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.2-d-start---";re="---probe-20.2-d-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$D" | grep -qxF '?NOSUCH? ?'; then \
+		echo "PASS: probe-20.2-d (isolated) — undefined word -> plain '?NOSUCH? ?' (FR-P4-30 retired, no bank suffix)"; \
+	else \
+		echo "FAIL: probe-20.2-d (isolated) — undefined-word surface changed (expected plain '?NOSUCH? ?')"; \
+		echo "  D: $$D"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-20.2-suite-end---$$'; then \
+		echo "PASS: probe-20.2-suite (isolated) — suite end-sentinel present (kernel recovered from -13, no mid-suite halt)"; \
+	else \
+		echo "FAIL: probe-20.2-suite (isolated) — end-sentinel missing (mid-suite halt or no -13 recovery)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
 
 # --- Story 19.5.1 F3 — portal-aliasing straddle regression gate (ADR 19.5 DR-1) ---

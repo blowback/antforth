@@ -945,6 +945,22 @@ So that lookups transparently traverse banks while the everyday FORTH-wordlist c
 
 ### Story 20.2: `WORDS` traverses banks + lookup-failure error messages name source bank
 
+> **RE-SPEC + PARTIAL RETIREMENT (2026-06-11).** This section was written against
+> the superseded per-wordlist `bank` field design. Story 20.1 shipped a single
+> global wordlist + inline 24-bit fat pointers instead, and landed bank-aware
+> `WORDS` in its CR pass (`d078548`). Consequently:
+> - **FR-P4-29** (`WORDS` traverses banks) — already shipped; Story 20.2 *verifies*
+>   it (no kernel WORDS code). AC1/AC4/AC6(a)/AC6(b) below (per-wordlist `bank`
+>   field, search-order walk) describe the old mechanism; the dev story re-specs
+>   them against the fat-pointer deref + per-entry page-in.
+> - **FR-P4-30** (lookup-failure names source bank) — **RETIRED, not implemented.**
+>   There are no per-bank wordlists to attribute, and bank-aware FIND resolves a
+>   name in any reachable bank, so a miss means "absent everywhere" with no "wrong
+>   bank" hypothesis to name. The `<word> ?` surface stays Phase-3-identical
+>   (project-lead decision). AC4 (error-formatter extension) and AC6(b)/(c)
+>   attribution probes are retired with it. See the dev story
+>   `_bmad-output/implementation-artifacts/20-2-…md` for the full rationale.
+
 As Marc (OG user) listing words across all wordlists in the search order or seeing a typo error,
 I want `WORDS` to list the words across the current search order with bank switches invisible in the output, and lookup-failure error messages to name the source-bank context where appropriate,
 So that I get a coherent view of the current dictionary and can disambiguate "forgot to switch banks" from "never defined that word" at typo time.

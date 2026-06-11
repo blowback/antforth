@@ -100,7 +100,7 @@ Because the bank travels *with the pointer*, a single global wordlist whose entr
 
 ### Known limitations / follow-ups
 
-- **WORDS** does not page-in to display bank-N names yet (shows them only when their bank is mapped) — Story 20.2.
+- **WORDS** bank-aware page-in: resolved in this story's CR pass `d078548` (bank-N names list flat from any bank); verified by Story 20.2 probes (`tests/banking_tests_20_2.fth`).
 - **AC5** — the fixed-path fat-pointer deref is now inlined (≈7.8 % pure-FIND, was ≈14 %); re-validated 975/0 · 61/0 · 20.1 6/6 after the change. Binary 27516 B (+10 B for the inlined code).
 - **Error-recovery bank byte** (COMP-ERROR / assembler): the fat bank byte is left at the failed entry's `current_bank` on rollback — correct for the bank-0 error path (the only tested one; restored head is fixed memory). A bank-N compile-error edge would need the old head's bank saved in the prologue.
 - **AC8 hardware smoke** deferred; recipe in closing message.
