@@ -16,9 +16,9 @@ w_BYE_cf:
 ; MARKER ( "<spaces>name" -- )
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
-;   Body layout: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
-;   the wordlist struct's next-link cell is NOT snapshotted (byte-count
-;   stays at 128 for binary-compat with earlier markers).
+;   Body layout: [saved_here(2)][saved_buckets(192)]   ; FORTH-WORDLIST bucket array only —
+;   the wordlist struct's next-link cell is NOT snapshotted (byte-count is
+;   192 = 64 × 3-byte fat bucket heads, Story 20.1).
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
 ;   when the parsed name is empty.
 ;   Limitation: MARKER snapshots FORTH-WORDLIST's

@@ -538,7 +538,7 @@ asm_alloc_label_slot:
 .als_have_room:
         PUSH    AF                  ; save new index
         CALL    asm_slot_addr       ; HL = &slot
-        ; Zero 8 bytes
+        ; Zero 9 bytes (full ASM_LABEL_REC_SIZE)
         LD      (HL), 0             ; resolved=0
         INC     HL
         LD      (HL), 0             ; target lo
@@ -554,6 +554,8 @@ asm_alloc_label_slot:
         LD      (HL), 0             ; cf_ptr lo
         INC     HL
         LD      (HL), 0             ; cf_ptr hi
+        INC     HL
+        LD      (HL), 0             ; old_head fat bank byte (+8)
         ; Bump count
         LD      A, (asm_label_count)
         INC     A

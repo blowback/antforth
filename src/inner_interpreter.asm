@@ -127,7 +127,7 @@ DODOES:
 
 ; === DOMARKER — Restore dictionary state from marker body ===
 ; HL points to code field (JP DOMARKER)
-; Body at cf+3: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
+; Body at cf+3: [saved_here(2)][saved_buckets(192)]   ; FORTH-WORDLIST bucket array only —
 ; the wordlist struct's next-link cell is NOT snapshotted.
 ; ( -- ) no stack effect
 DOMARKER:

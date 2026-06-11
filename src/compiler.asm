@@ -358,9 +358,9 @@ build_header:
         ; byte even after w_SEMICOLON_cf has overwritten LATEST with a
         ; stub-xt (bank-N>0 path). Always-mirror covers `:`, CREATE,
         ; CONSTANT, MARKER, CODE, LABEL — every build_header consumer in
-        ; either bank-0 (LATEST = entry-start, +2 = count_flags) or
-        ; bank-N>0 (LATEST = stub-xt post-SEMICOLON, no longer +2 to
-        ; count_flags).
+        ; either bank-0 (LATEST = entry-start, +3 = count_flags past the
+        ; 3-byte fat hash_link) or bank-N>0 (LATEST = stub-xt
+        ; post-SEMICOLON, no longer +3 to count_flags).
         PUSH    HL
         LD      HL, (bh_count_flags_addr)
         LD      (latest_count_flags_addr), HL
