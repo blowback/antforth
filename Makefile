@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -992,6 +992,37 @@ test-repl-banking-isolated-21-1: $(TARGET)
 		echo "PASS: probe-21.1-suite (isolated) — suite end-sentinel present (kernel recovered from -13, no mid-suite halt)"; \
 	else \
 		echo "FAIL: probe-21.1-suite (isolated) — end-sentinel missing (mid-suite halt or no -13 recovery)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
+
+test-repl-banking-isolated-21-2: $(TARGET)
+	@echo "Running Story 21.2 isolated saved-bank / QUIT re-assert probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.2-a-start---";re="---probe-21.2-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -qE '^bank=5 ?$$'; then \
+		echo "PASS: probe-21.2-a (isolated) — interactive 5 BANK! saved + re-asserted across ABORT (BANK@ -> 5)"; \
+	else \
+		echo "FAIL: probe-21.2-a (isolated) — interactive bank not restored after ABORT"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.2-b-start---";re="---probe-21.2-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qE '^bank=0 ?$$' && ! echo "$$B" | grep -qE '^bank=7 ?$$'; then \
+		echo "PASS: probe-21.2-b (isolated) — colon-internal 7 BANK! did NOT save; QUIT un-stranded to 0 (BANK@ -> 0)"; \
+	else \
+		echo "FAIL: probe-21.2-b (isolated) — colon-internal BANK! polluted saved_bank or strand not recovered"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.2-c-start---";re="---probe-21.2-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qE '^bank=3 ?$$' && ! echo "$$C" | grep -qE '^bank=5 ?$$'; then \
+		echo "PASS: probe-21.2-c (isolated, F6) — INCLUDEd BANK! did NOT pollute saved_bank (BANK@ -> 3)"; \
+	else \
+		echo "FAIL: probe-21.2-c (isolated, F6) — INCLUDEd BANK! leaked into saved_bank"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-21.2-suite-end---$$'; then \
+		echo "PASS: probe-21.2-suite (isolated) — suite end-sentinel present (kernel recovered from ABORT/THROW, no mid-suite halt)"; \
+	else \
+		echo "FAIL: probe-21.2-suite (isolated) — end-sentinel missing (mid-suite halt or no ABORT/THROW recovery)"; \
 		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
 

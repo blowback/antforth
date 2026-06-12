@@ -57,4 +57,10 @@ triple_owner        DB      0       ; bank index that owns the live (HERE, LATES
                                     ; cross-bank dispatch window (stub_dispatch does NOT swap the triple).
                                     ; Written by COLD (0), real BANK! (new bank), and THROW's caught-path
                                     ; triple restore (CATCH frame +9). Single byte: bank index ≤ 28.
+interp_bank_pending DB      0       ; one-shot flag set by the interpret loop's pre-execute (QMARK-BANK)
+                                    ; peek when the token about to run IS an interactive BANK!, cleared
+                                    ; otherwise; QSAVE-BANK (post-execute) commits current_bank->saved_bank
+                                    ; iff still set. Carries the recognition across EXECUTE without using
+                                    ; either stack (executed words may rearrange both). Always written
+                                    ; before read (QMARK runs every direct-execute), so no COLD init needed.
     ENDS

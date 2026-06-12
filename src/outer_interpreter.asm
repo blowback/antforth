@@ -210,9 +210,23 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_BRANCH_cf
         DW      .interp_loop - $
 .interp_execute:
-        ; Interpret mode: ( xt flag ) — drop flag, execute
+        ; Interpret mode: ( xt flag ) — drop flag, recognise an interactive
+        ; BANK! (peek), execute, then commit the save. Token identity at THIS
+        ; site (xt == BANK!, executed directly by the text interpreter) is the
+        ; only signal distinguishing a typed `n BANK!` from a colon word that
+        ; internally calls BANK! — the latter runs BANK! nested under its own
+        ; DOCOL frame and never re-enters here (docs/antforth-banking-redesign.md
+        ; §5.6; arch Findings F6). QMARK-BANK peeks xt WITHOUT touching either
+        ; stack and sets a one-shot flag; EXECUTE then consumes xt (and BANK!'s
+        ; n arg below it); QSAVE-BANK commits current_bank->saved_bank iff the
+        ; flag survived. The flag (not a stack slot) carries the recognition
+        ; across EXECUTE because the executed word may rearrange BOTH stacks
+        ; (e.g. an interactively-typed >R/R>). If BANK! THROWs, the unwind skips
+        ; QSAVE-BANK so a failed switch is never saved.
         DW      w_DROP_cf               ; ( xt flag -- xt )
-        DW      w_EXECUTE_cf            ; execute the word
+        DW      w_QMARK_BANK_cf         ; ( xt -- xt )   peek: flag := interactive BANK!?
+        DW      w_EXECUTE_cf            ; ( xt -- )      executes the word
+        DW      w_QSAVE_BANK_cf         ; ( -- )         commit if flag set
         DW      w_BRANCH_cf             ; loop back
         DW      .interp_loop - $
 .try_number:
@@ -319,6 +333,85 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      EXIT_CODE               ; return to caller (QUIT loop)
 
 ; -----------------------------------------------
+; (QMARK-BANK) ( xt -- xt )            [headerless kernel-internal]
+;   Pre-execute peek at the interpret loop's direct-execute path. Sets the
+;   one-shot interp_bank_pending flag iff the token about to run IS an
+;   interactive BANK! — xt == BANK! AND include_top == 0 (not inside an
+;   INCLUDEd source frame; F6: an INCLUDEd file's BANK! must not pollute
+;   saved_bank). Clears the flag otherwise. STATE is 0 by construction here
+;   (the STATE QBRANCH upstream), so it is not re-tested. xt is left untouched
+;   on the data stack for EXECUTE. See docs/antforth-banking-redesign.md §5.6.
+; -----------------------------------------------
+w_QMARK_BANK_cf:
+        LD      (IY+UserArea.interp_bank_pending), 0   ; default: not an interactive BANK!
+        LD      A, C                                   ; BC = xt (TOS); compare without disturbing it
+        CP      LOW w_BANK_STORE_cf
+        JR      NZ, .qmb_done
+        LD      A, B
+        CP      HIGH w_BANK_STORE_cf
+        JR      NZ, .qmb_done                          ; not BANK! -> leave flag clear
+        LD      A, (IY+UserArea.include_top)
+        OR      (IY+UserArea.include_top+1)
+        JR      NZ, .qmb_done                          ; inside INCLUDE -> do not save (F6)
+        LD      (IY+UserArea.interp_bank_pending), 1   ; interactive BANK! about to run -> mark pending
+.qmb_done:
+        NEXT
+
+; -----------------------------------------------
+; (QSAVE-BANK) ( -- )                  [headerless kernel-internal]
+;   Post-execute commit. If interp_bank_pending is set (the just-run token was
+;   an interactive BANK! that did NOT throw — a throwing BANK! skips this word
+;   on the unwind), snapshot current_bank -> saved_bank and clear the flag.
+;   Touches neither stack. See docs/antforth-banking-redesign.md §5.6.
+; -----------------------------------------------
+w_QSAVE_BANK_cf:
+        LD      A, (IY+UserArea.interp_bank_pending)
+        OR      A
+        JR      Z, .qsb_done                    ; not a pending interactive BANK! -> nothing to save
+        LD      A, (IY+UserArea.current_bank)
+        LD      (IY+UserArea.saved_bank), A     ; saved_bank.low <- current_bank.low
+        XOR     A
+        LD      (IY+UserArea.saved_bank+1), A   ; saved_bank.high <- 0 (current_bank.high invariant 0)
+        LD      (IY+UserArea.interp_bank_pending), A   ; clear one-shot flag (A == 0 here)
+.qsb_done:
+        NEXT
+
+; -----------------------------------------------
+; (REASSERT-BANK) ( -- )               [headerless kernel-internal]
+;   Run at the head of .quit_loop on every REPL re-entry. If the live bank
+;   drifted from the saved interactive bank (an ABORT/THROW unwind, or a
+;   colon word that switched bank), restore saved_bank as the live bank so
+;   the user is never stranded. The saved_bank == current_bank guard makes
+;   this a permanent no-op on the single-bank iz-cpm build (0 == 0 always),
+;   keeping that path byte-for-byte unchanged. The .throw_uncaught "KNOWN
+;   LIMIT" comment (src/exception.asm) names QUIT as this restorer.
+;   Reuses the factored mbb_set_slot2 + bank_triple_swap helpers so the live
+;   (HERE,LATEST,wordlist_head) triple stays coherent after the restore.
+;   Preserves the data-stack TOS (BC). See docs/antforth-banking-redesign.md §5.6.
+; -----------------------------------------------
+w_REASSERT_BANK_cf:
+        LD      A, (IY+UserArea.current_bank)
+        LD      L, (IY+UserArea.saved_bank)     ; L = saved bank (keep BC=TOS intact)
+        CP      L
+        JR      Z, .rab_done                    ; saved == current -> no-op (entire iz-cpm case)
+        PUSH    BC                              ; preserve data-stack TOS across the switch
+        LD      C, L
+        LD      B, 0
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                          ; HL = &active_pages[saved]
+        LD      A, (HL)                         ; A = physical page
+        CALL    mbb_set_slot2                   ; map slot 2; preserves BC, DE
+        LD      A, (IY+UserArea.current_bank)   ; A = old bank (save-target)
+        LD      (IY+UserArea.current_bank), C   ; current_bank <- saved
+        LD      (IY+UserArea.triple_owner), C
+        PUSH    DE                              ; bank_triple_swap clobbers DE (IP)
+        CALL    bank_triple_swap                ; A = old, C = new
+        POP     DE
+        POP     BC                              ; restore data-stack TOS
+.rab_done:
+        NEXT
+
+; -----------------------------------------------
 ; QUIT ( -- )
 ;   Reset return stack, set interpret mode, enter REPL loop
 ;   Never returns — loops forever (or until BYE)
@@ -343,6 +436,10 @@ w_QUIT_cf:
         NEXT
 
 .quit_loop:
+        ; Re-assert the saved interactive bank on every REPL re-entry (no-op
+        ; when saved_bank == current_bank — the common case and the entire
+        ; iz-cpm case). Restores the user's bank after an ABORT/THROW unwind.
+        DW      w_REASSERT_BANK_cf
         ; Read line of input, set #TIB and >IN (stack-neutral)
         DW      w_QUERY_cf
         ; Interpret the line
