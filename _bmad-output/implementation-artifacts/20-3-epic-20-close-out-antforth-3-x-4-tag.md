@@ -1,6 +1,6 @@
 # Story 20.3: Epic 20 close-out + antforth 3.0.5 tag
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
