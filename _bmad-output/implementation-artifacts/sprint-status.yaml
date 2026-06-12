@@ -236,11 +236,11 @@ development_status:
   19-5-4-hw-investigation-epic-close-out-tag: done
   epic-19-5-retrospective: done
 
-  epic-20: in-progress
+  epic-20: done
   20-1-per-wordlist-bank-field-find-save-switch-walk-restore: done
   20-2-words-traverses-banks-lookup-failure-error-messages-name-source-bank: done
   20-3-epic-20-close-out-antforth-3-x-4-tag: done
-  epic-20-retrospective: optional
+  epic-20-retrospective: done
 
   epic-21: backlog
   21-1-marker-forget-per-bank-dictionary-tail-descriptor-stub-allocator-tail-reclamation: backlog
