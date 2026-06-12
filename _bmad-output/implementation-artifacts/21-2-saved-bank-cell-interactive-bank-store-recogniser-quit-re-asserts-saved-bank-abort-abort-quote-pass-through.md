@@ -1,6 +1,6 @@
 # Story 21.2: Saved-bank cell + interactive-`BANK!` recogniser + `QUIT` re-asserts saved bank + `ABORT` / `ABORT"` pass-through
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -243,3 +243,4 @@ Covers AC7's hardware-typed batch for AC6(a)/(b)/(d). AC6(c) F6/INCLUDE is emula
 
 - 2026-06-12 — Story 21.2 implemented: interactive-`BANK!` recogniser at the interpret loop's direct-execute path (peek/flag/commit design) + `QUIT` saved-bank re-assertion on REPL re-entry; `ABORT`/`ABORT"` pass-through verified (no code change). New isolated fixture `banking_tests_21_2.fth` (3 emulator probes + suite sentinel) + `test-repl-banking-isolated-21-2`. Binary +109 B (over AC9 ~70 B; flagged for SCP eval at 21.3). All gates green: test-repl 975/0, banking-main 61/0, all isolated targets, straddle 3/0, file-sanity, doc-sync 0 drift. Status → review.
 - 2026-06-12 — HW smoke PASS on real MicroBeast (`beastty-20260612-122451.bin`, v3.0.5): AC6(a) bank=5, AC6(b) bank=0 (anti-stranding; inner -273 sequencing artifact), AC6(d) bank=7. AC7 hardware batch satisfied.
+- 2026-06-12 — Code-review CR-fix (`4d7d7ef`): recogniser gate changed `include_top == 0` → `source_id == 0` in `QMARK-BANK`. The `include_top` proxy only excluded INCLUDE; `EVALUATE` sets `source_id=-1` but never bumps `include_top`, so an EVALUATEd `BANK!` (e.g. `S" n BANK!" EVALUATE` in a REPL-run word) was mis-recognised as interactive and polluted `saved_bank`, defeating AC6b anti-stranding. `source_id == 0` is the exact keyboard predicate and subsumes `include_top == 0`. Added probe-21.2-d (EVALUATE leak; proven to FAIL under the old gate) + Makefile assertion. Zero binary-size delta (same-encoding offset swap; 28069 B). Gates re-run green (banking 61/0, isolated 21.2 a/b/c/d/suite). **HW UAT PASS** (`beastty-20260612-133209.bin`, v3.0.5): `S" 5 bank!" EVALUATE` then `ABORT` → `BANK@` = **3** (not 5) on silicon. Status → done.
