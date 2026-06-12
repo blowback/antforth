@@ -446,3 +446,201 @@ words_saved_ip:     DW 0
 words_bucket_count: DB 0
 words_bucket_ptr:   DW 0
 words_entry:        DW 0
+
+; -----------------------------------------------
+; scrub_forth_buckets ( A = selector -- )
+;   Unlink / renumber fat-pointer entries in the global FORTH-WORDLIST
+;   bucket chains when a bank is dropped, so no bucket head or hash_link is
+;   left pointing at an entry whose bank has been removed/renumbered. Without
+;   this, a later FIND/WORDS would page a stale/garbage physical bank into
+;   slot 2 and walk a wild pointer. Called by -BANK and BANKS-CLEAR BEFORE
+;   they mutate active_pages[] / bank_count — the walk pages each entry's
+;   bank in via the still-valid active_pages[] using the pre-shift logical
+;   indices stored in the fat pointers.
+;
+;   Selector (A):
+;     $00..$1C  -BANK: remove every entry whose bank byte == A; decrement the
+;               bank byte of every surviving pointer whose bank byte > A (the
+;               active_pages[] tail shifts down by one, renumbering indices).
+;     $FE       BANKS-CLEAR: remove every window-resident entry (bank != $FF).
+;               Survivors are all fixed ($FF), so no renumber is needed.
+;
+;   Only forth_wordlist is scrubbed — the single global wordlist every
+;   `:` / bank-N definition chains into, and the only one WORDS and the
+;   default search order enumerate. Bank-N entries placed in a custom
+;   WORDLIST are out of scope (consistent with WORDS' forth_wordlist-only
+;   reach).
+;
+;   The walk threads a "prevslot" P (the 3-byte fat pointer that points AT
+;   the current entry — either &buckets[b] for the head, or the previous
+;   surviving entry's hash_link) plus PB (the bank P physically lives in,
+;   for paging P itself). REMOVE rewrites P to skip the current entry;
+;   KEEP advances P to the current entry's link and renumbers the incoming
+;   pointer's bank byte when its index shifts.
+;   Clobbers A, BC, DE, HL. Saves+restores the caller's slot-2 page.
+SCRUB_ALL_WINDOW    EQU 0xFE        ; selector: remove every window entry (BANKS-CLEAR)
+
+scrub_forth_buckets:
+        LD      (scrub_mode_k), A
+        CALL    mbb_get_slot2           ; save caller's slot-2 page for restore
+        LD      (scrub_caller_pg), A
+        LD      A, WORDLIST_BUCKETS     ; 64
+        LD      (scrub_bkt_cnt), A
+        LD      HL, forth_wordlist + WORDLIST_BUCKET0
+.sfb_bucket:
+        LD      (scrub_bucket_ptr), HL
+        LD      (scrub_P), HL           ; P = &buckets[b] (fixed)
+        LD      A, BANK_FIXED
+        LD      (scrub_PB), A           ; the bucket head lives in fixed memory
+.sfb_walk:
+        CALL    scrub_read_P            ; (scrub_cur_addr, scrub_cur_bank) <- *P
+        LD      HL, (scrub_cur_addr)
+        LD      A, H
+        OR      L
+        JR      Z, .sfb_next_bucket     ; addr 0 -> end of chain
+        ; Only WINDOW-RESIDENT entries ($8000..$BFFF) are removable/renumberable
+        ; — those are the ones whose body actually lives in a bank. A fixed
+        ; entry (addr < $8000) is never paged by the deref, so its bank byte is
+        ; dead data: keep it untouched regardless of byte value. (Bank-0
+        ; definitions carry bank byte 0 but live in fixed main RAM, so the bank
+        ; byte alone must NOT decide removal.)
+        BIT     7, H
+        JR      Z, .sfb_advance         ; addr < $8000 -> fixed, keep untouched
+        BIT     6, H
+        JR      NZ, .sfb_advance        ; addr >= $C000 -> fixed, keep untouched
+        ; --- window-resident entry: decide its fate by its bank byte ---
+        LD      A, (scrub_mode_k)
+        CP      SCRUB_ALL_WINDOW
+        JR      NZ, .sfb_minus_bank
+        ; BANKS-CLEAR: bank 0 is the HOME/portal — it persists across the
+        ; clear (only banks 1..N are dropped; active_pages[0] is never shifted
+        ; and stays the portal page mapped in slot 2). So keep window entries
+        ; whose bank byte is 0; remove those in banks 1..N.
+        LD      A, (scrub_cur_bank)
+        OR      A
+        JR      Z, .sfb_advance         ; bank 0 (home) -> keep
+        JR      .sfb_remove             ; bank 1..N -> remove
+.sfb_minus_bank:
+        ; -BANK k: compare current bank byte (cb) against k. Bank 0 is not
+        ; special here — the active_pages[] shift is pure index arithmetic:
+        ; cb == k removed (page gone), cb > k renumbered down, cb < k kept.
+        LD      A, (scrub_cur_bank)     ; A = cb
+        LD      HL, scrub_mode_k        ; (HL) = k
+        CP      (HL)
+        JR      Z, .sfb_remove          ; cb == k -> removed bank, unlink
+        JR      C, .sfb_advance         ; cb <  k -> keep unchanged
+        ; cb > k -> keep, but the incoming pointer's index shifts down by one
+        DEC     A                       ; A = cb - 1 (renumbered index)
+        CALL    scrub_write_P_bank      ; rewrite P's bank byte in place
+.sfb_advance:
+        ; keep current: P := &(current.hash_link) = cur_addr; PB := cur_bank
+        LD      HL, (scrub_cur_addr)
+        LD      (scrub_P), HL
+        LD      A, (scrub_cur_bank)
+        LD      (scrub_PB), A
+        JR      .sfb_walk
+.sfb_remove:
+        ; unlink current: *P := next (addr+bank copied through unchanged; any
+        ; renumber of next happens when next is later visited as a kept entry)
+        CALL    scrub_read_cur          ; (scrub_next_addr, scrub_next_bank) <- *cur
+        CALL    scrub_write_P_ptr
+        JR      .sfb_walk               ; P/PB unchanged; reprocess the new head
+.sfb_next_bucket:
+        LD      HL, (scrub_bucket_ptr)
+        LD      BC, WORDLIST_BUCKET_STRIDE
+        ADD     HL, BC                  ; next bucket (+3)
+        LD      A, (scrub_bkt_cnt)
+        DEC     A
+        LD      (scrub_bkt_cnt), A
+        JR      NZ, .sfb_bucket
+        ; restore the caller's slot-2 page and return
+        LD      A, (scrub_caller_pg)
+        JP      mbb_set_slot2
+
+; scrub_map_if ( HL = slot addr, A = slot's location bank ) — if the slot is
+;   window-resident ($8000..$BFFF), page active_pages[bank] into slot 2 so the
+;   3 bytes at HL can be read/written. Preserves HL/DE/BC; clobbers A/F.
+scrub_map_if:
+        BIT     7, H
+        RET     Z                       ; addr < $8000 -> fixed, no page-in
+        BIT     6, H
+        RET     NZ                      ; addr >= $C000 -> fixed
+        PUSH    HL
+        PUSH    DE
+        LD      L, A
+        LD      H, 0
+        LD      DE, ACTIVE_PAGES_BASE
+        ADD     HL, DE                  ; &active_pages[bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2
+        POP     DE
+        POP     HL
+        RET
+
+; scrub_read_P — read the fat pointer at P (paging P's bank) into cur.
+scrub_read_P:
+        LD      HL, (scrub_P)
+        LD      A, (scrub_PB)
+        CALL    scrub_map_if
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = cur bank; DE = cur addr
+        LD      (scrub_cur_addr), DE
+        LD      (scrub_cur_bank), A
+        RET
+
+; scrub_read_cur — read the current entry's hash_link (offset 0; paging the
+;   current entry's bank) into next.
+scrub_read_cur:
+        LD      HL, (scrub_cur_addr)
+        LD      A, (scrub_cur_bank)
+        CALL    scrub_map_if
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = next bank; DE = next addr
+        LD      (scrub_next_addr), DE
+        LD      (scrub_next_bank), A
+        RET
+
+; scrub_write_P_ptr — write next (addr:2 + bank:1) into *P (paging P's bank).
+scrub_write_P_ptr:
+        LD      HL, (scrub_P)
+        LD      A, (scrub_PB)
+        CALL    scrub_map_if
+        LD      A, (scrub_next_addr)
+        LD      (HL), A
+        INC     HL
+        LD      A, (scrub_next_addr+1)
+        LD      (HL), A
+        INC     HL
+        LD      A, (scrub_next_bank)
+        LD      (HL), A
+        RET
+
+; scrub_write_P_bank ( A = new bank byte ) — rewrite only P's bank byte (P+2),
+;   paging P's bank. Used to renumber a surviving pointer after a -BANK shift.
+scrub_write_P_bank:
+        LD      C, A                    ; C = new bank byte (survives scrub_map_if)
+        LD      HL, (scrub_P)
+        LD      A, (scrub_PB)
+        CALL    scrub_map_if
+        INC     HL
+        INC     HL                      ; HL = P+2 (bank byte)
+        LD      (HL), C
+        RET
+
+; scrub scratch storage
+scrub_mode_k:       DB 0    ; selector: -BANK index k (0..28) or SCRUB_ALL_WINDOW
+scrub_caller_pg:    DB 0    ; caller's slot-2 physical page (restored on exit)
+scrub_bkt_cnt:      DB 0    ; remaining buckets in the 64-bucket sweep
+scrub_bucket_ptr:   DW 0    ; &buckets[b] for the current bucket
+scrub_P:            DW 0    ; prevslot: the fat pointer that points at current
+scrub_PB:           DB 0    ; bank prevslot physically lives in ($FF = fixed)
+scrub_cur_addr:     DW 0    ; current entry address
+scrub_cur_bank:     DB 0    ; current entry's bank byte
+scrub_next_addr:    DW 0    ; current entry's hash_link target address
+scrub_next_bank:    DB 0    ; current entry's hash_link target bank byte

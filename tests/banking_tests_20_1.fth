@@ -57,6 +57,7 @@ AND                                  \ ( verdict )
 \ lives in a CREATE'd buffer (not HERE) so the outer interpreter's own
 \ token-parse into HERE can't clobber it before FIND runs.
 CREATE _p201c-name  4 C,  90 C, 90 C, 81 C, 81 C,   \ counted "ZZQQ" (undefined)
+CREATE _p201f-name  6 C,  95 C, 112 C, 50 C, 48 C, 49 C, 102 C,  \ counted "_p201f"
 ." ---probe-20.1-c-start---" CR
 _p201c-name FIND 0= SWAP DROP        \ ( -- correctly-missed? )  flag=0 -> -1
 ." result=" . CR
@@ -81,6 +82,24 @@ _p201c-name FIND 0= SWAP DROP        \ ( -- correctly-missed? )  flag=0 -> -1
 _p201e 77 =                          \ ( ran-bank-5-body-by-name? )
 ." result=" . CR
 ." ---probe-20.1-e-end---" CR
+
+\ --- Probe-20.1-F (CR follow-up): bank-removal scrubs the bucket chains ------
+\ A bank-6 word is findable before BANKS-CLEAR and CLEANLY gone after — and a
+\ kernel word (DUP) is still findable, proving the scrub unlinked the bank-6
+\ entry without orphaning the shared chain or leaving a stale window pointer
+\ that a post-clear FIND would page in as garbage. (BANKS-CLEAR keeps bank-0
+\ home entries; banks 1..N go away.) The suite-end sentinel below witnesses
+\ that the post-scrub FIND walks completed without a wild-pointer halt.
+." ---probe-20.1-f-start---" CR
+6 BANK! : _p201f 55 ; 0 BANK!
+_p201f-name FIND SWAP DROP 0= INVERT \ ( found-before-clear? )  TRUE
+BANKS-CLEAR                          \ scrub unlinks the bank-6 entry
+_p201f-name FIND SWAP DROP 0=        \ ( found-before  missed-after? )  TRUE
+AND                                  \ ( both-correct )
+' DUP 0= INVERT                      \ ( both  kernel-still-findable? )
+AND                                  \ ( verdict )
+." result=" . CR
+." ---probe-20.1-f-end---" CR
 
 ." ---probe-20.1-suite-end---" CR
 BYE

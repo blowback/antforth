@@ -456,6 +456,22 @@ w_MINUS_BANK_cf:
 
 .found:
         ; HL → &active_pages[k]; B = bank_count - k. Bytes to shift = B - 1.
+        ; --- Scrub the bucket chains BEFORE the active_pages[] shift, while
+        ; the pre-shift logical indices in the fat pointers still resolve via
+        ; active_pages[]. scrub_forth_buckets unlinks entries in bank k and
+        ; renumbers surviving pointers with index > k. It clobbers A/BC/DE/HL,
+        ; so save the match pos (HL), IP (DE), and shift counter (B/C).
+        PUSH    HL                                  ; save &active_pages[k]
+        PUSH    DE                                  ; save IP
+        PUSH    BC                                  ; save B = bank_count - k
+        LD      DE, ACTIVE_PAGES_BASE
+        OR      A
+        SBC     HL, DE                              ; HL = k (0..28)
+        LD      A, L                                ; A = k (scrub selector)
+        CALL    scrub_forth_buckets
+        POP     BC
+        POP     DE
+        POP     HL                                  ; HL = &active_pages[k] again
         DEC     B
         JR      Z, .post_shift                      ; match at tail — skip LDIR
         ; Save IP across LDIR — LDIR uses DE as the copy destination and
@@ -501,6 +517,17 @@ w_MINUS_BANK_cf:
 w_BANKS_CLEAR:
         DEFCODE "BANKS-CLEAR", 0
 w_BANKS_CLEAR_cf:
+        ; Scrub every window-resident entry out of the bucket chains BEFORE
+        ; zeroing bank_count — once a bank is dropped its window entries are
+        ; unmappable, and a FIND/WORDS that walked a surviving fat pointer
+        ; into a dropped bank would page garbage. scrub clobbers A/BC/DE/HL,
+        ; so save TOS (BC) and IP (DE).
+        PUSH    DE                                  ; save IP
+        PUSH    BC                                  ; save TOS
+        LD      A, SCRUB_ALL_WINDOW
+        CALL    scrub_forth_buckets
+        POP     BC
+        POP     DE
         LD      (IY+UserArea.bank_count), 0
         NEXT
 

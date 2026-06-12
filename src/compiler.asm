@@ -242,7 +242,8 @@ build_header:
         CALL    hash_name                       ; A = bucket index
         LD      (bh_bucket_index), A
 
-        ; Compute bucket head address: current_wordlist bucket array + A*2
+        ; Compute bucket head address: current_wordlist bucket array + A*3
+        ; (fat-bucket stride = WORDLIST_BUCKET_STRIDE = 3; [addr:2][bank:1])
         ; The bucket array lives in (IY+UserArea.current_wordlist),
         ; not in forth_wordlist directly. Capture the wid into bh_wid for
         ; the error-recovery paths (w_COMP_ERROR_cf, asm_cleanup,

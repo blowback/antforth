@@ -839,7 +839,7 @@ test-repl-banking-isolated-19-5-1: $(TARGET)
 test-repl-banking-isolated-20-1: $(TARGET)
 	@echo "Running Story 20.1 isolated bank-aware-FIND probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	for pid in a b c d e; do \
+	for pid in a b c d e f; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-20.1-"p"-start---";re="---probe-20.1-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-20.1-$$pid-end---$$"; then \
 			echo "PASS: probe-20.1-$$pid (isolated) — bank-aware FIND invariant (result=-1) under $(IZCPM_BANKING)"; \
