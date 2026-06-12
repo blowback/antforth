@@ -127,8 +127,10 @@ DODOES:
 
 ; === DOMARKER — Restore dictionary state from marker body ===
 ; HL points to code field (JP DOMARKER)
-; Body at cf+3: [saved_here(2)][saved_buckets(192)]   ; FORTH-WORDLIST bucket array only —
-; the wordlist struct's next-link cell is NOT snapshotted.
+; Body at cf+3: [saved_here(2)][saved_buckets(192)][bank_table(174)][stub_tail(2)]
+; saved_buckets = FORTH-WORDLIST bucket array only (the wordlist struct's
+; next-link cell is NOT in it). bank_table = full 29-entry bank-table[]
+; region; stub_tail = the descriptor-stub allocator next-free pointer.
 ; ( -- ) no stack effect
 DOMARKER:
         ; Skip code field to reach body
@@ -140,20 +142,58 @@ DOMARKER:
         CALL    rpush_de
         CALL    rpush_bc
 
-        ; Read saved HERE from body
-        LD      E, (HL)
+        ; Skip saved_here (2 B) to reach the bucket array. HERE is NOT written
+        ; here: the triple reload below (from the just-restored bank-table[owner])
+        ; authoritatively sets HERE = bank-table[owner].here, which equals
+        ; saved_here for the marker's own owner and correctly reverts the current
+        ; bank when it differs from the marker's create bank. (The body still
+        ; carries saved_here as the documented layout's first field.)
         INC     HL
-        LD      D, (HL)
-        INC     HL                      ; DE = saved_here, HL = &saved_hash_data
-
-        ; Restore HERE
-        LD      (IY+UserArea.here), E
-        LD      (IY+UserArea.here+1), D
+        INC     HL                      ; HL = &saved_buckets (past saved_here)
 
         ; Copy 192 bytes from body to FORTH-WORDLIST fat bucket array
         LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only)
         LD      BC, 192
         LDIR                            ; Restore all 64 × 3-byte fat bucket heads
+                                        ; HL now points past the buckets -> bank_table field
+
+        ; --- Restore per-bank tails + stub-allocator tail (Story 21.1) ---
+        ; Restore the full bank-table[] region: reverts every bank's
+        ; (here, latest, wordlist_head) triple, so words defined in ANY bank
+        ; since MARKER become unreachable and their stubs are reclaimed.
+        ; This touches only $D400..$D4AD — active_pages[] ($D4AE) and bank_count
+        ; are NOT in that range, so FORGET reverts dictionary tails + the stub
+        ; allocator only; +BANK / -BANK membership changes since MARKER are NOT
+        ; rolled back. Worse, a -BANK between MARKER and FORGET renumbers logical
+        ; banks without renumbering bank-table[], so this restore can reassert
+        ; triples onto the wrong banks — MARKER with mid-span -BANK is unsupported
+        ; until Epic 22 (user-doc gotcha).
+        LD      DE, BANK_TABLE_BASE     ; $D400 destination
+        LD      BC, BANK_TABLE_SHELL_SIZE   ; 174
+        LDIR                            ; body -> bank-table[]; HL -> stub_tail field
+
+        ; Restore the descriptor-stub allocator tail (2 B) — reclaims stubs.
+        LD      A, (HL)
+        LD      (IY+UserArea.stub_alloc_tail), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+UserArea.stub_alloc_tail+1), A
+        INC     HL
+
+        ; Reload the live triple for the current owner from the reverted table,
+        ; so the live allocation pointers reflect the rolled-back tail. This is
+        ; the authoritative HERE/LATEST/wordlist_head restore (the body's
+        ; saved_here was skipped above). For the marker's own owner,
+        ; bank-table[owner].here == saved_here and latest == the PRE-MARKER
+        ; latest; when the current bank differs, it is reverted to its snapshot.
+        LD      A, (IY+UserArea.triple_owner)
+        CALL    bank_offset_hl          ; HL = &bank-table[owner]
+        LD      DE, user_area + UserArea.here
+        LD      BC, 4
+        LDIR                            ; [0..3] -> HERE, LATEST
+        LD      DE, forth_wordlist
+        LD      BC, 2
+        LDIR                            ; [4..5] -> (forth_wordlist) head
 
         ; Restore BC (TOS) and DE (IP)
         LD      B, (IX+1)

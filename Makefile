@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -946,6 +946,52 @@ test-repl-banking-isolated-20-3: $(TARGET)
 		echo "PASS: probe-20.3-suite (isolated) — suite end-sentinel present (kernel recovered from -13, no mid-suite halt)"; \
 	else \
 		echo "FAIL: probe-20.3-suite (isolated) — end-sentinel missing (mid-suite halt or no -13 recovery)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
+
+# Story 21.1 MARKER/FORGET per-bank tail + stub-allocator reclamation probes:
+#   a — FORGET across banks: a bank-5 word (_w5a) and a bank-7 word (_w7a)
+#       defined after a bank-0 MARKER are both undefined after FORGET (grep
+#       the section for the plain `_w5a ?` / `_w7a ?` undefined-word lines).
+#   b — stub-allocator tail reclamation: a bank word's stub xt after FORGET
+#       reuses the pre-MARKER allocator tail (Forth-side result=-1).
+#   c — cross-bank-MARKER survival: a bank-5-set MARKER invoked from bank 5
+#       reclaims a bank-7 word's tail (grep for the plain `_wc7 ?` line).
+test-repl-banking-isolated-21-1: $(TARGET)
+	@echo "Running Story 21.1 isolated MARKER/FORGET reclamation probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.1-a-start---";re="---probe-21.1-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -qxF '_w5a ?' && echo "$$A" | grep -qxF '_w7a ?'; then \
+		echo "PASS: probe-21.1-a (isolated) — bank-5 (_w5a) + bank-7 (_w7a) words forgotten after FORGET across banks"; \
+	else \
+		echo "FAIL: probe-21.1-a (isolated) — a bank-N word still defined after FORGET"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.1-b-start---";re="---probe-21.1-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qE 'result=-1( |$$)' && ! echo "$$B" | grep -qE 'result=0( |$$)'; then \
+		echo "PASS: probe-21.1-b (isolated) — stub-allocator tail reclaimed, region reused after FORGET (result=-1)"; \
+	else \
+		echo "FAIL: probe-21.1-b (isolated) — stub region NOT reused (allocator tail leaked across FORGET)"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.1-c-start---";re="---probe-21.1-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qxF '_wc7 ?'; then \
+		echo "PASS: probe-21.1-c (isolated) — bank-5-set MARKER reclaimed bank-7 word _wc7 (cross-bank survival)"; \
+	else \
+		echo "FAIL: probe-21.1-c (isolated) — bank-7 word survived FORGET via bank-5 marker"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	D=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.1-d-start---";re="---probe-21.1-d-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$D" | grep -qE 'result=-1( |$$)' && ! echo "$$D" | grep -qE 'result=0( |$$)'; then \
+		echo "PASS: probe-21.1-d (isolated) — per-bank dictionary HERE rolled back on FORGET (bank-table[] restore, R==P)"; \
+	else \
+		echo "FAIL: probe-21.1-d (isolated) — bank-5 HERE NOT rolled back (bank-table[] tail leaked across FORGET)"; \
+		echo "  D: $$D"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-21.1-suite-end---$$'; then \
+		echo "PASS: probe-21.1-suite (isolated) — suite end-sentinel present (kernel recovered from -13, no mid-suite halt)"; \
+	else \
+		echo "FAIL: probe-21.1-suite (isolated) — end-sentinel missing (mid-suite halt or no -13 recovery)"; \
 		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
 

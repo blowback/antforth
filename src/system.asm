@@ -16,9 +16,12 @@ w_BYE_cf:
 ; MARKER ( "<spaces>name" -- )
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
-;   Body layout: [saved_here(2)][saved_buckets(192)]   ; FORTH-WORDLIST bucket array only —
-;   the wordlist struct's next-link cell is NOT snapshotted (byte-count is
-;   192 = 64 × 3-byte fat bucket heads, Story 20.1).
+;   Body layout: [saved_here(2)][saved_buckets(192)][bank_table(174)][stub_tail(2)]
+;   saved_buckets = FORTH-WORDLIST bucket array only (64 × 3-byte fat heads,
+;   Story 20.1); the wordlist struct's next-link cell is NOT in it.
+;   bank_table = full 29-entry bank-table[] region ($D400, 174 B) — the
+;   per-bank (here, latest, wordlist_head) triples. stub_tail = the
+;   descriptor-stub allocator next-free pointer. FORGET reverts both tails.
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
 ;   when the parsed name is empty.
 ;   Limitation: MARKER snapshots FORTH-WORDLIST's
@@ -34,6 +37,30 @@ w_MARKER:
         DEFCODE "MARKER", 0
 w_MARKER_cf:
         EXX                                      ; Save TOS/IP/W to shadows
+
+        ; --- Snapshot the PRE-MARKER per-bank tail into bank-table[owner] ---
+        ; Sync the live (here, latest, wordlist_head) triple into
+        ; bank-table[triple_owner] BEFORE build_header runs. build_header
+        ; overwrites UserArea.latest with the MARKER's own entry, so capturing
+        ; the triple first records the PRE-MARKER latest — FORGET then reverts
+        ; LATEST to the word defined just before MARKER (ANS MARKER semantics)
+        ; rather than the now-forgotten MARKER. here/wordlist_head are not
+        ; advanced by build_header, so this is also a valid saved_here snapshot.
+        ; triple_owner (not current_bank — they diverge mid cross-bank dispatch)
+        ; owns the live copy; the full-table copy below folds the entry into the
+        ; marker body. Runs unconditionally: writing the current live triple to
+        ; its own stale-until-reparked table slot is a no-op on the abort path.
+        LD      A, (IY+UserArea.triple_owner)
+        CALL    bank_offset_hl                  ; HL = &bank-table[owner]
+        EX      DE, HL                          ; DE = &bank-table[owner]
+        LD      HL, user_area + UserArea.here
+        LD      BC, 4
+        LDIR                                    ; here,latest -> [0..3]
+        LD      HL, (forth_wordlist)
+        EX      DE, HL                          ; HL = &bank-table[owner]+4
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                         ; wordlist_head -> [4..5]
 
         ; Build dictionary header (flags=0, no SMUDGE)
         XOR     A
@@ -99,7 +126,32 @@ w_MARKER_cf:
         LD      (HL), A                 ; restore fat bank byte too
 .marker_skip_fixup:
 
-        ; Update HERE = DE (past end of body, from LDIR)
+        ; --- Append per-bank tails + stub-allocator tail to the marker body ---
+        ; DE = next free body byte (past [saved_here][saved_buckets]). The live
+        ; (here, latest, wordlist_head) triple was already synced into
+        ; bank-table[triple_owner] above (pre-build_header, so the captured
+        ; latest is the PRE-MARKER one). Append the full 29-entry bank-table[]
+        ; region: full-table (174 B) beats active-only (two LDIRs, no per-bank
+        ; loop or stored count — cheapest binary; inactive entries are inert).
+        ; FORGET reverts every bank's dictionary tail. active_pages[]/bank_count
+        ; sit OUTSIDE $D400..$D4AD, so +BANK / -BANK membership changes are not
+        ; snapshotted; worse, a -BANK between MARKER and FORGET renumbers logical
+        ; banks without renumbering bank-table[], so this restore can reassert
+        ; triples onto the wrong banks — MARKER with mid-span -BANK is
+        ; unsupported until Epic 22.
+        LD      HL, BANK_TABLE_BASE             ; $D400 source
+        LD      BC, BANK_TABLE_SHELL_SIZE       ; 174
+        LDIR                                    ; bank-table[] -> body; DE advanced
+
+        ; Append the descriptor-stub allocator tail (2 B) to the body.
+        LD      A, (IY+UserArea.stub_alloc_tail)
+        LD      (DE), A
+        INC     DE
+        LD      A, (IY+UserArea.stub_alloc_tail+1)
+        LD      (DE), A
+        INC     DE
+
+        ; Update HERE = DE (past end of enlarged body, from LDIR + stub tail)
         LD      (IY+UserArea.here), E
         LD      (IY+UserArea.here+1), D
 
