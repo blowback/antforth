@@ -53,6 +53,21 @@ ABORT
 ." bank=" BANK@ . CR
 ." ---probe-21.2-c-end---" CR
 
+\ --- Probe-21.2-d (EVALUATE leak): EVALUATEd BANK! must not save ----------
+\ Interactive `3 BANK!` (saved=3), then EVALUATE a string whose body does
+\ `5 BANK!`. Inside EVALUATE source_id = -1 (not the keyboard 0), so the
+\ recogniser gates it out: saved stays 3; current becomes 5. ABORT; QUIT
+\ re-asserts saved=3, so BANK@ -> 3 (NOT 5). Pre-fix (include_top gate) this
+\ leaked 5 because EVALUATE never bumps include_top. Mirrors probe-c via
+\ EVALUATE instead of INCLUDE.
+0 BANK!
+3 BANK!
+." ---probe-21.2-d-start---" CR
+S" 5 BANK!" EVALUATE
+ABORT
+." bank=" BANK@ . CR
+." ---probe-21.2-d-end---" CR
+
 ." ---probe-21.2-suite-end---" CR
 BYE
 

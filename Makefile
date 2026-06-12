@@ -1019,6 +1019,13 @@ test-repl-banking-isolated-21-2: $(TARGET)
 		echo "FAIL: probe-21.2-c (isolated, F6) — INCLUDEd BANK! leaked into saved_bank"; \
 		echo "  C: $$C"; exit 1; \
 	fi && \
+	D=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.2-d-start---";re="---probe-21.2-d-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$D" | grep -qE '^bank=3 ?$$' && ! echo "$$D" | grep -qE '^bank=5 ?$$'; then \
+		echo "PASS: probe-21.2-d (isolated, F6) — EVALUATEd BANK! did NOT pollute saved_bank (BANK@ -> 3)"; \
+	else \
+		echo "FAIL: probe-21.2-d (isolated, F6) — EVALUATEd BANK! leaked into saved_bank"; \
+		echo "  D: $$D"; exit 1; \
+	fi && \
 	if echo "$$OUTPUT" | grep -qE '^---probe-21.2-suite-end---$$'; then \
 		echo "PASS: probe-21.2-suite (isolated) — suite end-sentinel present (kernel recovered from ABORT/THROW, no mid-suite halt)"; \
 	else \

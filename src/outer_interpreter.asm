@@ -214,8 +214,10 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         ; BANK! (peek), execute, then commit the save. Token identity at THIS
         ; site (xt == BANK!, executed directly by the text interpreter) is the
         ; only signal distinguishing a typed `n BANK!` from a colon word that
-        ; internally calls BANK! — the latter runs BANK! nested under its own
-        ; DOCOL frame and never re-enters here (docs/antforth-banking-redesign.md
+        ; internally calls BANK! — a compiled BANK! runs nested under its own
+        ; DOCOL frame and never re-enters here, while a BANK! reached via
+        ; EVALUATE/INCLUDE DOES re-enter but is gated out by QMARK-BANK's
+        ; source_id == 0 (keyboard-only) test (docs/antforth-banking-redesign.md
         ; §5.6; arch Findings F6). QMARK-BANK peeks xt WITHOUT touching either
         ; stack and sets a one-shot flag; EXECUTE then consumes xt (and BANK!'s
         ; n arg below it); QSAVE-BANK commits current_bank->saved_bank iff the
@@ -336,9 +338,11 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
 ; (QMARK-BANK) ( xt -- xt )            [headerless kernel-internal]
 ;   Pre-execute peek at the interpret loop's direct-execute path. Sets the
 ;   one-shot interp_bank_pending flag iff the token about to run IS an
-;   interactive BANK! — xt == BANK! AND include_top == 0 (not inside an
-;   INCLUDEd source frame; F6: an INCLUDEd file's BANK! must not pollute
-;   saved_bank). Clears the flag otherwise. STATE is 0 by construction here
+;   interactive BANK! — xt == BANK! AND source_id == 0 (typed at the keyboard,
+;   not an INCLUDEd file's BANK! [FID > 0] and not an EVALUATEd BANK! [-1];
+;   F6: neither may pollute saved_bank). source_id == 0 is the exact "from the
+;   keyboard" predicate and subsumes include_top == 0 (you cannot be inside
+;   INCLUDE with source_id == 0). Clears the flag otherwise. STATE is 0 here
 ;   (the STATE QBRANCH upstream), so it is not re-tested. xt is left untouched
 ;   on the data stack for EXECUTE. See docs/antforth-banking-redesign.md §5.6.
 ; -----------------------------------------------
@@ -350,9 +354,9 @@ w_QMARK_BANK_cf:
         LD      A, B
         CP      HIGH w_BANK_STORE_cf
         JR      NZ, .qmb_done                          ; not BANK! -> leave flag clear
-        LD      A, (IY+UserArea.include_top)
-        OR      (IY+UserArea.include_top+1)
-        JR      NZ, .qmb_done                          ; inside INCLUDE -> do not save (F6)
+        LD      A, (IY+UserArea.source_id)
+        OR      (IY+UserArea.source_id+1)
+        JR      NZ, .qmb_done                          ; not keyboard (INCLUDE FID>0 / EVALUATE -1) -> do not save (F6)
         LD      (IY+UserArea.interp_bank_pending), 1   ; interactive BANK! about to run -> mark pending
 .qmb_done:
         NEXT
