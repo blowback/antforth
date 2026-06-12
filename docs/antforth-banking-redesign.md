@@ -139,23 +139,27 @@ never alias once dispatch enters them with their own page mapped.
 LATEST/wordlist-head clone semantics are unchanged (kernel words remain
 findable from bank N).
 
-### 5.5 Bank-aware FIND (S3 resolution)
+### 5.5 Bank-aware FIND (S3 resolution — shipped Epic 20 / story 20.1)
 
-Each wordlist gets a `bank` field. `FIND` saves current bank, switches, walks the chain, restores. System wordlists (FORTH, ASSEMBLER) are tagged `bank=fixed` so the common case incurs no MMU switch.
+There is a single global wordlist; the per-wordlist `bank` field of
+the original sketch was **not** the mechanism shipped. Instead, every
+dictionary link is an inline **24-bit fat pointer** — `[addr:2][bank:1]`
+— in both the hash-bucket heads and each header's `hash_link`. `FIND`
+walks the chain reading these fat links; before dereferencing any
+window-resident address (`$8000..$BFFF`) it pages in the link's bank
+byte, reads the header under the correct page, then restores the
+caller's bank and slot-2 page before returning. A name therefore
+resolves by its own header's bank regardless of which bank is current,
+and the everyday FORTH-wordlist path (links whose bank byte is the
+fixed bank) incurs no MMU switch.
 
-**INTERIM GOTCHA (until Epic 20 / story 20-1 lands).** The hash-bucket
-chains are shared across banks (only `here`/`latest`/`wordlist_head`
-swap on `BANK!`), and FIND walks them under whatever page is mapped.
-Once the bank-0 dictionary has grown past `$8000`, its chains contain
-window-resident entries; any token lookup while a foreign bank is
-mapped can walk such a chain into the window and read the foreign page
-— the DR-1 aliasing mechanism on the *lookup* path (observed at the
-19.5.1 dev-pass: interactive `1 BANK!` then any word → `-13` strand;
-retro-explains 19.3.1 Defect-2). The F1 `BANK!` guard (§5.4) covers
-only the threading path; until the per-wordlist bank field ships,
-interpret across a `BANK!` cycle only while the bank-0 dictionary is
-below `$8000`, or restrict foreign-bank interpretation to kernel words
-(the isolated-fixture discipline in tests/banking_tests_19_5_1.fth).
+This closes the prior DR-1 aliasing hazard on the *lookup* path: the
+fat link's bank byte is authoritative, so FIND can no longer walk a
+shared chain into the window and read the wrong foreign page. The F1
+`BANK!` guard (§5.4) still covers the threading path; together they
+make interpretation across a `BANK!` cycle safe even with the bank-0
+dictionary grown past `$8000`. `WORDS` reuses the same fat-link walk to
+produce one unified flat listing spanning all banks.
 
 ### 5.6 ABORT/QUIT bank-state restore (S5 resolution)
 

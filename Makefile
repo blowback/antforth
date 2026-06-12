@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -907,6 +907,48 @@ test-repl-banking-isolated-20-2: $(TARGET)
 		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
 
+# Story 20.3 Epic-20 close-out integration probe: the bank-aware lookup
+# surface end-to-end in one fixture — three-bank WORDS unified listing (a),
+# bank-aware FIND + BANK-OF home-bank resolution (b), bank/slot-2 restore
+# after the traversals (c), and the FR-P4-30-retired plain `<word> ?` (d).
+test-repl-banking-isolated-20-3: $(TARGET)
+	@echo "Running Story 20.3 Epic-20 close-out integration probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.3-a-start---";re="---probe-20.3-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -q '_w53a' && echo "$$A" | grep -q '_w53b' && echo "$$A" | grep -q '_w53c'; then \
+		echo "PASS: probe-20.3-a (isolated) — bank-5/6/7 names _w53a/_w53b/_w53c all listed by WORDS from bank 0"; \
+	else \
+		echo "FAIL: probe-20.3-a (isolated) — a bank-N name missing from unified WORDS dump"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.3-b-start---";re="---probe-20.3-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qE 'result=-1( |$$)' && ! echo "$$B" | grep -qE 'result=0( |$$)'; then \
+		echo "PASS: probe-20.3-b (isolated) — bank-aware FIND + BANK-OF resolve _w53a->5 and _w53c->7 (result=-1)"; \
+	else \
+		echo "FAIL: probe-20.3-b (isolated) — name-to-home-bank resolution wrong"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.3-c-start---";re="---probe-20.3-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qE 'result=-1( |$$)' && ! echo "$$C" | grep -qE 'result=0( |$$)'; then \
+		echo "PASS: probe-20.3-c (isolated) — bank + slot-2 restored after WORDS + FIND traversals (result=-1)"; \
+	else \
+		echo "FAIL: probe-20.3-c (isolated) — bank/slot-2 not restored after traversals"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	D=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.3-d-start---";re="---probe-20.3-d-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$D" | grep -qxF '?NOSUCH? ?'; then \
+		echo "PASS: probe-20.3-d (isolated) — undefined word -> plain '?NOSUCH? ?' (FR-P4-30 retired, no bank suffix)"; \
+	else \
+		echo "FAIL: probe-20.3-d (isolated) — undefined-word surface changed (expected plain '?NOSUCH? ?')"; \
+		echo "  D: $$D"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-20.3-suite-end---$$'; then \
+		echo "PASS: probe-20.3-suite (isolated) — suite end-sentinel present (kernel recovered from -13, no mid-suite halt)"; \
+	else \
+		echo "FAIL: probe-20.3-suite (isolated) — end-sentinel missing (mid-suite halt or no -13 recovery)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
+
 # --- Story 19.5.1 F3 — portal-aliasing straddle regression gate (ADR 19.5 DR-1) ---
 # Drives tests/straddle_repro_sweep.sh at K=0 (NO kernel-source mutation;
 # the K>0 kernel-size knob stays sweep-only/diagnostic) and asserts the
@@ -1652,10 +1694,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.4'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.4'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.5'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.5'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.4' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.5' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \

@@ -983,6 +983,29 @@ So that I get a coherent view of the current dictionary and can disambiguate "fo
 
 ### Story 20.3: Epic 20 close-out + antforth 3.x.4 tag
 
+> **DEV-PASS RECONCILIATION (2026-06-12). This planning section's `3.x.4`
+> slug and several ACs are STALE placeholders — superseded as follows by
+> the dev-passed Story 20.3 file (`_bmad-output/implementation-artifacts/20-3-…md`):**
+> - **Version = v3.0.5, NOT 3.x.4.** `git tag v3.0.4` was already consumed
+>   by the Epic-19.5 close (commit `2808ce3`); the banner/README already
+>   read v3.0.4 before Epic 20. Epic 20 therefore ships **v3.0.5**. This
+>   shifts the downstream tag mapping: **Epic 21 → v3.0.6, Epic 22 → v3.0.7**.
+> - **AC5 / FR-P4-30 retired.** The "attributed error message naming the
+>   source bank" clause is dead — Story 20.1 shipped a single global
+>   wordlist with inline 24-bit fat dictionary pointers (the per-wordlist
+>   `bank` field was NOT built), and Story 20.2 retired FR-P4-30: a `FIND`
+>   miss is "absent everywhere", so the typo surface is the plain
+>   Phase-3 `<word> ?` with no bank suffix. The AC5 integration probe
+>   asserts the plain error (new isolated fixture `tests/banking_tests_20_3.fth`).
+> - **AC7 envelope: +680 B, 3.4× over the ~200 B target → re-baselined.**
+>   The mechanism was substituted mid-epic (per-wordlist-`bank`-field FIND
+>   → 24-bit fat-pointer header-format migration); the ~200 B target was
+>   scoped against the abandoned design. Recorded as accept-with-rationale
+>   in `sprint-change-proposal-2026-06-12.md`; NFR-P4-5 8 KB cap unaffected.
+> - FR-P4-27 (per-wordlist `bank` field) is SUPERSEDED by the fat-pointer
+>   mechanism; FR-P4-28/FR-P4-29 (FIND traversal / `WORDS` across banks)
+>   are delivered.
+
 As Ant (project lead applying the Epic 20 close-out tag),
 I want the user-visible version surface aligned (banner / README / memory-`description` all reading `3.x.4`), the full test surface clean across iz-cpm + banking-capable emulator + real MicroBeast, the banked-word stub-count metric updated per CCD-4 close-out, and the verdict-table walk recorded,
 So that the bank-aware lookup surface (FIND / WORDS / error attribution) is shipped as antforth 3.x.4 with a clean integration test pass.

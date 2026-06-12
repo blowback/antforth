@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.0.4
+## Version 3.0.5
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -31,12 +31,16 @@ fixed-memory return thunk, portal-aliasing `BANK!` window guards, and
 caught-`THROW` cross-bank state restore. The behavioural compiler-
 transparent-banking north-star — calling a banked word from a
 compiled definition *by name* — is now delivered on the emulator, and
-the dispatch mechanism is confirmed on real MicroBeast silicon. The
-one remaining portal-aliasing limit (bank-N words are not yet
-`FIND`-able by name from another bank) is contained by the `BANK!`
-guard and carried to Epic 20 (bank-aware `FIND`).
+the dispatch mechanism is confirmed on real MicroBeast silicon. (In
+3.0.4 one portal-aliasing limit remained: bank-N words were not yet
+`FIND`-able by name from another bank, contained by the `BANK!` guard
+and carried to Epic 20.) 3.0.5 delivers the bank-aware lookup surface
+(Epic 20): `FIND` now traverses every bank invisibly via 24-bit fat
+dictionary pointers — a banked word resolves by name from any bank,
+and the everyday FORTH-wordlist path incurs no MMU switch — while
+`WORDS` produces a single unified flat listing spanning all banks.
 
-V3.0.4 supports the following ANS Forth standard words:
+V3.0.5 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
