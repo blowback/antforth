@@ -459,6 +459,12 @@ w_QUIT_cf:
         DW      w_BRANCH_cf
         DW      .quit_loop - $
 .quit_ok:
+        ; Optional "[N]" current-bank prefix (opt-in via PROMPT-SHOW-BANK,
+        ; default OFF → prints nothing → byte-identical to Phase-3). Gives
+        ; visible feedback before compiling into bank N; see the cross-bank
+        ; pointer hazards in docs/banking-pointer-hazards.md (F4 mitigation).
+        ; The leading space of str_ok below is the "] ok" separator.
+        DW      w_BANK_PROMPT_cf        ; "[N]" or nothing
         DW      w_LIT_cf, str_ok        ; ( -- addr )
         DW      w_LIT_cf, STR_OK_LEN    ; ( addr -- addr len )
         DW      w_TYPE_cf               ; print " ok"

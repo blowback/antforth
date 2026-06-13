@@ -164,6 +164,10 @@ cold_start:
         LD      (IY+UserArea.bank_table_base+1), HIGH BANK_TABLE_BASE
         LD      (IY+UserArea.bank_count),       0
         LD      (IY+UserArea.bank_count+1),     0
+        ; Prompt bank-indicator opt-in flag — default OFF (Story 22.2): the
+        ; QUIT prompt is byte-identical to Phase-3 until PROMPT-SHOW-BANK enables it.
+        LD      (IY+UserArea.prompt_show_bank),   0
+        LD      (IY+UserArea.prompt_show_bank+1), 0
         ; Seed stub_alloc_tail = STUB_ALLOC_BASE ($D4CB), the first free
         ; byte after active_pages[] in the reclaimed $D400-$DBFF CCP region.
         ; stub_allocate (src/banking.asm) writes 4 B per stub and advances

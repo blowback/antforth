@@ -250,7 +250,7 @@ development_status:
 
   epic-22: in-progress
   22-1-dot-banks-final-formatting-polish-per-bank-used-free-reflect-real-here-values: done
-  22-2-repl-prompt-indicator-current-bank-visibility-f4-cross-bank-pointer-hazard-user-docs-entry: backlog
+  22-2-repl-prompt-indicator-current-bank-visibility-f4-cross-bank-pointer-hazard-user-docs-entry: review
   22-3-cross-bank-code-words-disposition-implementation-per-story-16-4-9-1-closure: backlog
   22-4-phase-4-close-out-three-test-surface-sweep-verdict-table-walk-antforth-3-x-6-final-tag-phase-4-retrospective: backlog
   epic-22-retrospective: optional

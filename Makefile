@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -949,6 +949,44 @@ test-repl-banking-isolated-22-1: $(TARGET)
 	else \
 		echo "FAIL: probe-22.1 (isolated) - define-then-check/totals/summary mismatch (before=$$BEFORE after=$$AFTER tu=$$TU sw=$$SW sb=$$SB)"; \
 		echo "  OUTPUT: $$OUTPUT"; exit 1; \
+	fi
+
+
+
+# Story 22.2 isolated REPL prompt bank-indicator probe: verifies the three
+# prompt states by calling (BANK-PROMPT) directly and anchoring its output
+# as "P=[N]=" / "P==". (a) flag ON + bank 5 -> [5]; (b) bank 0 -> suppressed
+# even with the flag ON; (c) flag OFF + bank 5 -> nothing. Isolated because
+# each probe switches into a non-zero bank (feedback_phase4_probe_bank_switch_limitation).
+test-repl-banking-isolated-22-2: $(TARGET)
+	@echo "Running Story 22.2 isolated prompt bank-indicator probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.2-a-start---";re="---probe-22.2-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -qF 'P=[5]='; then \
+		echo "PASS: probe-22.2-a (isolated) — flag ON + bank 5: (BANK-PROMPT) emits [5]"; \
+	else \
+		echo "FAIL: probe-22.2-a (isolated) — expected indicator [5] not emitted"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.2-b-start---";re="---probe-22.2-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qF 'P==' && ! echo "$$B" | grep -qF '['; then \
+		echo "PASS: probe-22.2-b (isolated) — bank 0: indicator suppressed even with the flag ON"; \
+	else \
+		echo "FAIL: probe-22.2-b (isolated) — bracket leaked in bank 0"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.2-c-start---";re="---probe-22.2-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qF 'P==' && ! echo "$$C" | grep -qF '['; then \
+		echo "PASS: probe-22.2-c (isolated) — flag OFF + bank 5: no indicator"; \
+	else \
+		echo "FAIL: probe-22.2-c (isolated) — bracket leaked with the flag OFF"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-22.2-suite-end---$$'; then \
+		echo "PASS: probe-22.2-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-22.2-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
 
 

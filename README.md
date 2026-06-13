@@ -86,6 +86,28 @@ And a whopping 81 words in the assembler, which are a mix of opcode mnemonics wi
 pseudo-ops (`DB`, `DW`, `DS`, `EQU`), addressing-mode helpers (`()`, `#`, `+D`), and stack/flow 
 primitives (`PUSH`, `POP`, `JR`, `NEXT,`).
 
+> **Banking note — define `CODE` words from bank 0.** `CODE` words are intended to live in
+> fixed (unbanked) memory, where — like the kernel primitives — they stay callable from every
+> bank. Defining a `CODE` word while another bank is mapped is not a supported configuration yet.
+> In-bank CODE words are a planned future-phase capability: the assembler in a CODE word only
+> ever branches within its own body or calls BIOS / fixed-memory routines (both always mapped),
+> so a future phase can host CODE bodies in banks via the descriptor-stub mechanism, with the
+> single rule "no absolute jump into another bank's body."
+
+## Banking
+
+Each memory bank carries its own dictionary state (`HERE`, `LATEST`,
+wordlist heads), swapped by `BANK!`. That makes addresses bank-relative: a
+pointer captured in one bank is not valid after you switch to another. Before
+you write your first multi-bank application, read
+[Cross-bank pointer hazards](docs/banking-pointer-hazards.md) — it names the
+bank-sensitive pointers, shows the anti-pattern to avoid, and covers the
+cross-bank return-stack overflow gotcha.
+
+Tip: enable the opt-in prompt indicator with `-1 PROMPT-SHOW-BANK` to show the
+current bank as a `[N]` prefix on the `ok` prompt (off by default; suppressed
+in bank 0).
+
 ## Coming up in the next version 
 
 - Bank-aware compilation — cross-bank colon definitions transparent to the user (descriptor-stub mechanism; antforth 3.1+)

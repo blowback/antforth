@@ -67,6 +67,67 @@ w_BANK_MAPPING_OFF:
 w_BANK_MAPPING_OFF_cf:
         JP      0x0000          ; BIOS WBOOT — never returns
 
+; === PROMPT-SHOW-BANK ( flag -- ) ===
+;   Opt-in REPL prompt bank indicator. Non-zero flag → the QUIT prompt shows
+;   "[N]" (current bank) before " ok"; zero → the plain Phase-3 prompt.
+;   Default OFF (COLD zero-inits prompt_show_bank). Bank 0 is always
+;   suppressed. See (BANK-PROMPT) and docs/banking-pointer-hazards.md (F4).
+w_PROMPT_SHOW_BANK:
+        DEFCODE "PROMPT-SHOW-BANK", 0
+w_PROMPT_SHOW_BANK_cf:
+        CALL    check_underflow
+        LD      (IY+UserArea.prompt_show_bank),   C
+        LD      (IY+UserArea.prompt_show_bank+1), B
+        POP     BC                                  ; drop flag → new TOS
+        NEXT
+
+; === (BANK-PROMPT) ( -- ) ===
+;   QUIT-loop prompt prefix. When prompt_show_bank is set AND the current
+;   bank is non-zero, prints "[N]" (decimal bank index); otherwise prints
+;   nothing, leaving the prompt byte-identical to Phase-3. Bank 0 is always
+;   suppressed ("[0]" would be noise). Why this matters: visible feedback that
+;   the next definition compiles into bank N — see the cross-bank pointer
+;   hazards in docs/banking-pointer-hazards.md (F4 mitigation).
+w_BANK_PROMPT:
+        DEFCODE "(BANK-PROMPT)", 0
+w_BANK_PROMPT_cf:
+        LD      A, (IY+UserArea.prompt_show_bank)
+        OR      (IY+UserArea.prompt_show_bank+1)
+        JR      Z, .bp_done                         ; flag OFF → nothing
+        LD      A, (IY+UserArea.current_bank)       ; high byte invariantly 0 (<29)
+        OR      A
+        JR      Z, .bp_done                         ; bank 0 → suppressed
+        ; BDOS clobbers A/BC/DE/HL; save caller TOS (BC) + caller IP (DE) so
+        ; this word is stack-neutral ( -- ). Restored before NEXT.
+        PUSH    BC                                  ; save caller TOS
+        CALL    rpush_de                            ; save caller IP
+        PUSH    AF                                  ; stash bank index across '['
+        LD      E, '['
+        CALL    bdos_putchar
+        POP     AF                                  ; A = bank index (1..28)
+        CP      10
+        JR      C, .bp_ones                         ; single digit
+        LD      C, '0' - 1                          ; peel tens (≤2 for ≤28)
+.bp_tens:
+        INC     C
+        SUB     10
+        JR      NC, .bp_tens
+        ADD     A, 10                               ; A = ones; C = tens char
+        PUSH    AF
+        LD      E, C
+        CALL    bdos_putchar                        ; emit tens digit
+        POP     AF
+.bp_ones:
+        ADD     A, '0'
+        LD      E, A
+        CALL    bdos_putchar                        ; emit ones digit
+        LD      E, ']'
+        CALL    bdos_putchar
+        CALL    rpop_de                             ; restore caller IP
+        POP     BC                                  ; restore caller TOS
+.bp_done:
+        NEXT
+
 ; === mbb_set_slot2 / mbb_get_slot2 — blessed slot-2 page accessors ===
 ;   The page registers are write-only and the BIOS owns the authoritative
 ;   page shadow (and re-pages under disk ops), so slot 2 is switched/read

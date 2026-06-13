@@ -405,19 +405,21 @@ _dot-banks-probe-x
 \ Makefile grep targets: between the start/mid1 sentinels, marker `*` on
 \ the row whose BANK col reads `   0`; between mid1/mid2, on the row whose
 \ BANK col reads `   1`; between mid2/end, back to row 0.
-: _dot-banks-probe-y ( -- )
-  _dot-banks-setup
-  ." ---dot-banks-probe-y-start---" CR
-  .BANKS
-  ." ---dot-banks-probe-y-mid1---" CR
-  1 BANK!
-  .BANKS
-  ." ---dot-banks-probe-y-mid2---" CR
-  0 BANK!
-  .BANKS
-  ." ---dot-banks-probe-y-end---" CR
-;
-_dot-banks-probe-y
+\ Run INTERACTIVELY (not wrapped in a colon body): the `1 BANK!` switch must
+\ execute with the caller IP in the kernel QUIT loop (< $8000), not inside a
+\ window-resident colon body. A colon wrapper trips the portal-window guard
+\ (THROW -273, Story 19.5.1) once kernel growth pushes the body above $8000 —
+\ this probe is layout-fragile in colon form (feedback_phase4_probe_bank_switch_limitation).
+_dot-banks-setup
+." ---dot-banks-probe-y-start---" CR
+.BANKS
+." ---dot-banks-probe-y-mid1---" CR
+1 BANK!
+.BANKS
+." ---dot-banks-probe-y-mid2---" CR
+0 BANK!
+.BANKS
+." ---dot-banks-probe-y-end---" CR
 
 \ Probe Z — empty-banked-row guard + bank-0 exemption. Empty banked windows
 \ still read used=0 / free=16384; bank 0 (row 0) is EXEMPT — it shows the

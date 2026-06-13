@@ -63,4 +63,8 @@ interp_bank_pending DB      0       ; one-shot flag set by the interpret loop's 
                                     ; iff still set. Carries the recognition across EXECUTE without using
                                     ; either stack (executed words may rearrange both). Always written
                                     ; before read (QMARK runs every direct-execute), so no COLD init needed.
+prompt_show_bank    DW      0       ; opt-in REPL prompt bank indicator (Story 22.2). Non-zero → QUIT prompt
+                                    ; prepends "[N]" (current bank) before " ok"; 0 → Phase-3 prompt. Default OFF
+                                    ; (COLD zero-inits). DEFCODE-readable kernel cell (not an ANS VALUE, per the
+                                    ; bank_mapping_state precedent above). Set/cleared by PROMPT-SHOW-BANK.
     ENDS
