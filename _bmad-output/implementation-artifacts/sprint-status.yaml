@@ -246,10 +246,10 @@ development_status:
   21-1-marker-forget-per-bank-dictionary-tail-descriptor-stub-allocator-tail-reclamation: done
   21-2-saved-bank-cell-interactive-bank-store-recogniser-quit-re-asserts-saved-bank-abort-abort-quote-pass-through: done
   21-3-epic-21-close-out-antforth-3-x-5-tag: done
-  epic-21-retrospective: optional
+  epic-21-retrospective: done
 
   epic-22: in-progress
-  22-1-dot-banks-final-formatting-polish-per-bank-used-free-reflect-real-here-values: ready-for-dev
+  22-1-dot-banks-final-formatting-polish-per-bank-used-free-reflect-real-here-values: review
   22-2-repl-prompt-indicator-current-bank-visibility-f4-cross-bank-pointer-hazard-user-docs-entry: backlog
   22-3-cross-bank-code-words-disposition-implementation-per-story-16-4-9-1-closure: backlog
   22-4-phase-4-close-out-three-test-surface-sweep-verdict-table-walk-antforth-3-x-6-final-tag-phase-4-retrospective: backlog

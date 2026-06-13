@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -242,10 +242,18 @@ test-repl-banking: $(TARGET)
 	@echo "Running Story 17.5 .BANKS probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | tr -d '\r' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
-	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && echo "$$PROBE_X" | grep -qE '^TOTAL[ ]+0 196608$$' && [ $$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') -ge 12 ]; then \
-		echo "PASS: dot-banks-probe-x — header + 12 rows at PAGE 22 + totals 196608 under $(IZCPM_BANKING)"; \
+	X_BANKED=$$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
+	X_ROW0=$$(echo "$$PROBE_X" | grep -E '^[ ]+0[ ]+22[ ]') && \
+	X_R0U=$$(echo "$$X_ROW0" | awk '{print $$(NF-1)}') && \
+	X_R0F=$$(echo "$$X_ROW0" | awk '{print $$NF}') && \
+	X_TOT=$$(echo "$$PROBE_X" | grep -E '^TOTAL') && \
+	X_TU=$$(echo "$$X_TOT" | awk '{print $$(NF-1)}') && \
+	X_TF=$$(echo "$$X_TOT" | awk '{print $$NF}') && \
+	X_EXP=$$((X_R0F + 180224)) && \
+	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && [ "$$X_BANKED" -eq 11 ] && [ -n "$$X_R0U" ] && [ "$$X_TU" = "$$X_R0U" ] && [ "$$X_TF" = "$$X_EXP" ]; then \
+		echo "PASS: dot-banks-probe-x — header + 11 banked rows + bank-0-inclusive totals invariant (TU=$$X_TU TF=$$X_TF) under $(IZCPM_BANKING)"; \
 	else \
-		echo "FAIL: dot-banks-probe-x — header/rows/totals missing"; \
+		echo "FAIL: dot-banks-probe-x — header/rows/totals-invariant mismatch (banked=$$X_BANKED r0u=$$X_R0U r0f=$$X_R0F tu=$$X_TU tf=$$X_TF exp=$$X_EXP)"; \
 		echo "  PROBE_X: $$PROBE_X"; exit 1; \
 	fi
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
@@ -267,19 +275,38 @@ test-repl-banking: $(TARGET)
 	fi
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_Z=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-z-start---$$/{p=1; next} /---dot-banks-probe-z-end---$$/{p=0} p') && \
-	if [ $$(echo "$$PROBE_Z" | grep -cE '0[ ]+16384$$') -ge 12 ]; then \
-		echo "PASS: dot-banks-probe-z — at least 12 rows carry the '0  16384' placeholder under $(IZCPM_BANKING)"; \
+	Z_BANKED=$$(echo "$$PROBE_Z" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
+	if [ "$$Z_BANKED" -eq 11 ]; then \
+		echo "PASS: dot-banks-probe-z — exactly 11 empty banked rows read 0/16384; bank 0 exempt (kernel free) under $(IZCPM_BANKING)"; \
 	else \
-		echo "FAIL: dot-banks-probe-z — placeholder rows missing or wrong count (got $$(echo "$$PROBE_Z" | grep -cE '0[ ]+16384$$'))"; \
+		echo "FAIL: dot-banks-probe-z — expected 11 empty banked rows with bank-0 exempt, got $$Z_BANKED"; \
 		echo "  PROBE_Z: $$PROBE_Z"; exit 1; \
 	fi
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_W=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-w-start---$$/{p=1; next} /---dot-banks-probe-w-end---$$/{p=0} p') && \
-	if echo "$$PROBE_W" | grep -qE '^TOTAL[ ]+0 196608$$'; then \
-		echo "PASS: dot-banks-probe-w — TOTAL row reports 196608 (= 12 × 16384) under $(IZCPM_BANKING)"; \
+	W_ROW0=$$(echo "$$PROBE_W" | grep -E '^[ ]+0[ ]+22[ ]') && \
+	W_R0U=$$(echo "$$W_ROW0" | awk '{print $$(NF-1)}') && \
+	W_R0F=$$(echo "$$W_ROW0" | awk '{print $$NF}') && \
+	W_TOT=$$(echo "$$PROBE_W" | grep -E '^TOTAL') && \
+	W_TU=$$(echo "$$W_TOT" | awk '{print $$(NF-1)}') && \
+	W_TF=$$(echo "$$W_TOT" | awk '{print $$NF}') && \
+	W_EXP=$$((W_R0F + 180224)) && \
+	W_SW=$$(echo "$$PROBE_W" | grep -E '^BANKED-WORDS' | awk '{print $$NF}') && \
+	W_SB=$$(echo "$$PROBE_W" | grep -E '^STUB-BYTES' | awk '{print $$NF}') && \
+	W_SBEXP=$$((W_SW * 4)) && \
+	if [ -n "$$W_TOT" ] && [ "$$W_TU" = "$$W_R0U" ] && [ "$$W_TF" = "$$W_EXP" ] && [ -n "$$W_SW" ] && [ "$$W_SB" = "$$W_SBEXP" ]; then \
+		echo "PASS: dot-banks-probe-w — TOTAL invariant + BANKED-WORDS=$$W_SW / STUB-BYTES=$$W_SB summary rows under $(IZCPM_BANKING)"; \
 	else \
-		echo "FAIL: dot-banks-probe-w — TOTAL row missing or value wrong"; \
+		echo "FAIL: dot-banks-probe-w — totals/summary mismatch (tu=$$W_TU r0u=$$W_R0U tf=$$W_TF exp=$$W_EXP sw=$$W_SW sb=$$W_SB)"; \
 		echo "  PROBE_W: $$PROBE_W"; exit 1; \
+	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	PROBE_M1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-m1-start---$$/{p=1; next} /---dot-banks-probe-m1-end---$$/{p=0} p') && \
+	if echo "$$PROBE_M1" | grep -qE '16384' && ! echo "$$PROBE_M1" | grep -qE '[ ]4000$$'; then \
+		echo "PASS: dot-banks-probe-m1 — byte columns forced decimal in HEX mode (free reads 16384, not 4000) under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: dot-banks-probe-m1 — byte columns not base-stable (Story-17.5 M1 regression)"; \
+		echo "  PROBE_M1: $$PROBE_M1"; exit 1; \
 	fi
 	@# Story 17.5.1 AC3 — sentinel-bounded probe G (+BANK cap check at
 	@# bank_count == 29). Replaces the prior `grep -q 'PASS: plus-bank-cap'`
@@ -906,6 +933,25 @@ test-repl-banking-isolated-20-2: $(TARGET)
 		echo "FAIL: probe-20.2-suite (isolated) — end-sentinel missing (mid-suite halt or no -13 recovery)"; \
 		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
+
+test-repl-banking-isolated-22-1: $(TARGET)
+	@echo "Running Story 22.1 isolated .BANKS define-then-check probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	BEFORE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.1-before---";re="---probe-22.1-mid---"} $$0==rs{q=1;next} $$0==re{q=0} q' | grep -E '^[ ]+5[ ]+' | awk '{print $$(NF-1)}') && \
+	AFT=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.1-mid---";re="---probe-22.1-after---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	AFTER=$$(echo "$$AFT" | grep -E '^[ ]+5[ ]+' | awk '{print $$(NF-1)}') && \
+	TU=$$(echo "$$AFT" | grep -E '^TOTAL' | awk '{print $$(NF-1)}') && \
+	SW=$$(echo "$$AFT" | grep -E '^BANKED-WORDS' | awk '{print $$NF}') && \
+	SB=$$(echo "$$AFT" | grep -E '^STUB-BYTES' | awk '{print $$NF}') && \
+	SBEXP=$$((SW * 4)) && \
+	if [ -n "$$BEFORE" ] && [ -n "$$AFTER" ] && [ "$$AFTER" -gt "$$BEFORE" ] && [ "$$TU" = "$$AFTER" ] && [ "$$SW" -ge 2 ] && [ "$$SB" = "$$SBEXP" ] && echo "$$OUTPUT" | grep -qE '^---probe-22.1-suite-end---$$'; then \
+		echo "PASS: probe-22.1 (isolated) - bank-5 used $$BEFORE->$$AFTER after 2 defs; totals_used=$$TU; BANKED-WORDS=$$SW STUB-BYTES=$$SB under $(IZCPM_BANKING)"; \
+	else \
+		echo "FAIL: probe-22.1 (isolated) - define-then-check/totals/summary mismatch (before=$$BEFORE after=$$AFTER tu=$$TU sw=$$SW sb=$$SB)"; \
+		echo "  OUTPUT: $$OUTPUT"; exit 1; \
+	fi
+
+
 
 # Story 20.3 Epic-20 close-out integration probe: the bank-aware lookup
 # surface end-to-end in one fixture — three-bank WORDS unified listing (a),

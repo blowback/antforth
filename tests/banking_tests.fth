@@ -373,8 +373,13 @@ _probe-plus-bank-cap
 \ content between sentinels.
 \
 \ BANKS-CLEAR + the manual 12× $22 +BANK unroll are load-bearing — they set
-\ up the dot-banks probes' kernel-cell state at a known shape (12 entries
-\ all at PAGE 22, used=0, free=16384, totals free = 12 * 16384 = 196608).
+\ up the dot-banks probes' kernel-cell state at a known shape: 12 entries
+\ (logical banks 0..11) all at PAGE 22. Bank 0 is row 0 and is the KERNEL
+\ dictionary (used = HERE-kernel_end, free = $D400-HERE — non-zero, grows
+\ with compiled state). Banks 1..11 are empty slot-2 windows (used=0,
+\ free=16384). Totals SUM all 12 rows, so the totals are NOT a fixed literal;
+\ the deterministic invariant used below is: totals_used == bank-0 used (the
+\ only non-zero used) and totals_free == bank-0 free + 11*16384.
 
 : _dot-banks-setup ( -- )
   BANKS-CLEAR
@@ -383,9 +388,10 @@ _probe-plus-bank-cap
   $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
 ;
 
-\ Probe X — header + row-count + totals at 12 banks.
-\ Makefile grep targets: `BANK PAGE` header substring + `TOTAL` keyword
-\ + `196608` (= 12 * 16384) on the totals line.
+\ Probe X — header + banked-row shape + totals self-consistency.
+\ Makefile grep targets: `BANK PAGE` header + ≥11 banked rows reading
+\ `used=0 free=16384` + a TOTAL row whose used/free satisfy the
+\ bank-0-inclusive invariant (computed in the recipe, not a fixed literal).
 : _dot-banks-probe-x ( -- )
   _dot-banks-setup
   ." ---dot-banks-probe-x-start---" CR
@@ -413,11 +419,10 @@ _dot-banks-probe-x
 ;
 _dot-banks-probe-y
 
-\ Probe Z — placeholder-values guard. Asserts every per-bank row carries
-\ the literal `0  16384` substring (i.e. no accidental scope creep into
-\ reading real per-bank-HERE values; Epic 19 owns the real-values upgrade).
-\ Makefile grep targets: between sentinels, at least 12 lines containing
-\ the substring `0  16384`.
+\ Probe Z — empty-banked-row guard + bank-0 exemption. Empty banked windows
+\ still read used=0 / free=16384; bank 0 (row 0) is EXEMPT — it shows the
+\ kernel-region free (≠ 16384). Makefile grep targets: ≥11 banked rows carry
+\ `0  16384`, and the bank-0 row does NOT read free 16384.
 : _dot-banks-probe-z ( -- )
   _dot-banks-setup
   ." ---dot-banks-probe-z-start---" CR
@@ -426,8 +431,22 @@ _dot-banks-probe-y
 ;
 _dot-banks-probe-z
 
-\ Probe W — totals row. Asserts `TOTAL` keyword present and `196608`
-\ (= 12 * 16384) on the totals line.
+\ Probe M1 — BASE-independence guard (Story-17.5 M1 close-out). The byte-count
+\ columns are FORCED decimal regardless of BASE, so an empty banked row still
+\ reads `16384` (decimal) in HEX mode — not `4000` (hex). Makefile grep target:
+\ between the sentinels (emitted while BASE=HEX), a banked row still shows
+\ `16384`, and no row shows the hex form ` 4000`.
+: _dot-banks-probe-m1 ( -- )
+  _dot-banks-setup
+  ." ---dot-banks-probe-m1-start---" CR
+  HEX .BANKS DECIMAL
+  ." ---dot-banks-probe-m1-end---" CR
+;
+_dot-banks-probe-m1
+
+\ Probe W — totals row + summary rows. Asserts `TOTAL` present with the
+\ bank-0-inclusive totals invariant, plus the BANKED-WORDS / STUB-BYTES
+\ summary rows (both 0 at this point — no banked words defined in the setup).
 : _dot-banks-probe-w ( -- )
   _dot-banks-setup
   ." ---dot-banks-probe-w-start---" CR

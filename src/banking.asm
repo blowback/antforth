@@ -575,45 +575,58 @@ w_BANKS_CLEAR_cf:
 ; for page switching.
 
 ; ============================================================
-; === .BANKS ( -- ) ===
+; === .BANKS ( -- ) ===   Phase-4 final form — see Story 22.1
 ;   Print a status table of the current banking configuration:
-;     header row + one row per active bank + totals row.
-;   Each row shows: logical-bank-index (decimal, right-aligned), physical-page
-;   (2-hex uppercase), current-bank marker ('*' for the row whose index
-;   matches BANK@; space otherwise), per-bank `used` and `free` columns.
+;     header row + one row per active bank + totals row + two summary rows.
+;   Each row shows: logical-bank-index (decimal), physical-page (2-hex),
+;   current-bank marker ('*' for the row whose index matches BANK@; space
+;   otherwise), then per-bank `used` / `free` computed from that bank's real
+;   HERE.
 ;
-;   Format (compact, 23 chars per row + CRLF; fits 80 cols at the 29-bank
-;   cap — worst case "TOTAL          0 475136\r\n"):
-;     "BANK PAGE   USED   FREE\r\n"   ; header — USED right-edge col 15,
-;     "   0   22 *    0  16384\r\n"   ; FREE right-edge col 22; column
-;     "   1   35      0  16384\r\n"   ; right-edges aligned across header,
-;     ...                              ; per-bank rows, and totals row
-;     "TOTAL          0 196608\r\n"   ; (totals via D.R width-6).
+;   Format (24-char rows + CRLF; fits 80 cols at the 29-bank cap). USED and
+;   FREE are width-6 right-aligned with a single separating space, so a
+;   6-digit value never butts against its neighbour:
+;     "BANK PAGE    USED   FREE\r\n"  ; header — USED right-edge col 17,
+;     "   0   22 *    269  25698\r\n" ; FREE right-edge col 24.
+;     "   1   35        0  16384\r\n"
+;     ...
+;     "TOTAL     269 205922\r\n"      ; Σ used + Σ free (both real)
+;     "BANKED-WORDS         3\r\n"    ; descriptor-stub count
+;     "STUB-BYTES          12\r\n"    ; stub fixed-memory bytes (count*4)
 ;
-;   Per-bank used = 0 and per-bank free = 16384 are PLACEHOLDERS (literal
-;   strings); a future bank-aware ':' makes per-bank HERE real.
+;   used/free memory model branches on bank index:
+;     bank 0   — the kernel/portal dictionary: base = kernel_end,
+;                ceiling = BANK_TABLE_BASE ($D400). Its HERE grows up toward
+;                the banking annex (the COLD banner computes bank-0 free the
+;                same way).
+;     bank N≥1 — a slot-2 window: base = SLOT2_WINDOW_BASE ($8000),
+;                ceiling = $C000 (size $4000 = 16384). Empty → used 0,
+;                free 16384.
+;   HERE is read live from UserArea for the CURRENT bank (the triple is
+;   flushed to bank-table[] only at BANK! time, so bank-table[current] is
+;   stale); for every other row HERE is read from bank-table[N].
 ;
-;   Totals: used = 0; free = bank_count * 16384, computed post-loop as a
-;   double-cell value (d-low = (bank_count & 3) << 14, d-high =
-;   bank_count >> 2) and printed via D.R right-aligned in a 6-char field.
-;   D.R (double) is used rather than U.R (single) because max free total
-;   = 29*16384 = 475136 overflows a 16-bit single cell, and U.R is a
-;   DEFWORD not a DEFCODE.
-;
-;   BANK col: hand-rolled decimal via print_bank_col_4. PAGE col: bare hex
-;   via cl_emit_hex_byte. Zero-bank case: header + totals row only (totals
-;   = 0), no per-bank loop.
+;   Numeric columns (USED/FREE/totals/summary) are forced decimal regardless
+;   of BASE so the table is base-stable; PAGE stays hex (hardware page-id),
+;   BANK stays decimal (logical index). Totals can exceed 16 bits at high
+;   bank counts, so used/free are accumulated as 32-bit running sums and
+;   printed via print_udword_w6. Zero-bank case: header + zero totals +
+;   summary rows, no per-bank loop.
 w_DOT_BANKS:
         DEFCODE ".BANKS", 0
 w_DOT_BANKS_cf:
-        ; --- Save caller's TOS + IP so the body can use BC/DE/HL freely. ---
-        ; Caller TOS → data stack (becomes SP-top-2 after we push d-low/d-high
-        ; for the totals D.R call; D.R consumes 3 cells and lands BC back on
-        ; the saved caller-TOS at exit).
-        ; Caller IP → R-stack (recovered by EXIT_CODE in the inline totals
-        ; thread; resumes caller's thread after the trailing CR).
+        ; Save caller TOS (data stack) + caller IP (return stack); restored
+        ; before the closing NEXT so the body runs straight-line assembly
+        ; with free use of BC/DE/HL.
         PUSH    BC                                  ; save caller TOS
         CALL    rpush_de                            ; save caller IP
+
+        ; --- Zero the per-column 32-bit running totals ---
+        LD      HL, 0
+        LD      (dbk_used_tot), HL
+        LD      (dbk_used_tot+2), HL
+        LD      (dbk_free_tot), HL
+        LD      (dbk_free_tot+2), HL
 
         ; --- Print header row ---
         LD      HL, str_dot_banks_hdr
@@ -623,7 +636,7 @@ w_DOT_BANKS_cf:
 
         ; --- Per-row loop ---
         ; B = remaining row count (DJNZ); C = current logical index (counts up).
-        ; bank_count == 0: skip the loop (header + totals only).
+        ; bank_count == 0: skip the loop (header + zero totals + summary).
         LD      A, (IY+UserArea.bank_count)
         OR      A
         JR      Z, .totals
@@ -668,10 +681,11 @@ w_DOT_BANKS_cf:
         LD      E, L
         CALL    bdos_putchar
 
-        ; 6. USED + FREE placeholders + CRLF as one literal
-        LD      HL, str_used_free_crlf
-        LD      B, str_used_free_crlf_len
-        CALL    bdos_print_str
+        ; 6. Real USED + FREE for this row (computed from its live/saved HERE)
+        ;    + CRLF; also accumulates into the 32-bit running totals.
+        POP     BC                                  ; recover B=count, C=index
+        PUSH    BC
+        CALL    dot_banks_row_usedfree              ; uses C; clobbers A/BC/DE/HL
 
         ; 7. Loop epilogue
         POP     BC                                  ; recover B=count, C=index
@@ -679,46 +693,42 @@ w_DOT_BANKS_cf:
         DJNZ    .row_loop
 
 .totals:
-        ; --- Totals row: "TOTAL          0 " prefix + 6-char right-aligned free ---
+        ; --- Totals row: "TOTAL" + Σ used + Σ free (both real, width-6,
+        ;     forced decimal; printed from the 32-bit accumulators). ---
         LD      HL, str_total_pfx
         LD      B, str_total_pfx_len
         CALL    bdos_print_str
+        LD      HL, dbk_used_tot
+        CALL    print_dword_at_hl_w6
+        LD      E, ' '                              ; USED/FREE column separator
+        CALL    bdos_putchar
+        LD      HL, dbk_free_tot
+        CALL    print_dword_at_hl_w6
+        CALL    bdos_crlf
 
-        ; Compute bank_count * 16384 as double:
-        ;   d-low  = (bank_count & 3) << 14  → high byte = (bank_count & 3) << 6, low = 0
-        ;   d-high = bank_count >> 2         (max 29 >> 2 = 7)
-        LD      A, (IY+UserArea.bank_count)
-        LD      D, A                                ; D = bank_count
-        AND     3                                   ; A = bank_count & 3
-        ADD     A, A
-        ADD     A, A
-        ADD     A, A
-        ADD     A, A
-        ADD     A, A
-        ADD     A, A                                ; A = (bank_count & 3) << 6
-        LD      H, A
-        LD      L, 0                                ; HL = d-low
-        SRL     D
-        SRL     D                                   ; D = bank_count >> 2 = d-high
-        PUSH    HL                                  ; d-low → data stack
-        LD      C, D
-        LD      B, 0                                ; BC = d-high
-        PUSH    BC                                  ; d-high → data stack
-        LD      BC, 6                               ; TOS = +n field width
+        ; --- CCD-4 / F2 summary rows: descriptor-stub count + stub bytes ---
+        ;   bytes = stub_alloc_tail - STUB_ALLOC_BASE   (= count * 4)
+        ;   count = bytes >> 2
+        LD      L, (IY+UserArea.stub_alloc_tail)
+        LD      H, (IY+UserArea.stub_alloc_tail+1)
+        LD      DE, STUB_ALLOC_BASE
+        OR      A
+        SBC     HL, DE                              ; HL = stub bytes
+        PUSH    HL                                  ; save bytes
+        SRL     H
+        RR      L
+        SRL     H
+        RR      L                                   ; HL = count = bytes >> 2
+        LD      DE, str_banked_words
+        CALL    print_summary_row                   ; label + count + CRLF
+        POP     HL                                  ; bytes
+        LD      DE, str_stub_bytes
+        CALL    print_summary_row                   ; label + bytes + CRLF
 
-        ; Switch IP to inline totals thread: NEXT will dispatch through
-        ; D.R (double-cell right-aligned) → CR → EXIT_CODE.
-        ; EXIT_CODE pops the caller's IP (saved at entry via rpush_de) and
-        ; resumes the caller's thread. D.R consumes (d-low d-high +n) and
-        ; lands BC on the caller TOS saved at the top of PUSH BC at entry,
-        ; satisfying the ( -- ) stack effect.
-        LD      DE, .totals_thread
+        ; --- Restore caller IP + TOS, resume caller's thread ---
+        CALL    rpop_de
+        POP     BC
         NEXT
-
-.totals_thread:
-        DW      w_D_DOT_R_cf                        ; ( d-low d-high +n -- )
-        DW      w_CR_cf                             ; emit CRLF
-        DW      EXIT_CODE                           ; restore caller IP, return
 
 ; print_bank_col_4 — Print A as decimal right-aligned in a 4-char field.
 ;   Input:  A = value in [0..29] (logical bank index)
@@ -762,6 +772,179 @@ print_bank_col_4:
         ADD     A, '0'
         LD      E, A
         JP      bdos_putchar                        ; tail-call
+
+; ------------------------------------------------------------
+; .BANKS helpers (Story 22.1) — real per-bank used/free + width-6 decimal.
+; ------------------------------------------------------------
+
+; dot_banks_row_usedfree — print one row's USED + FREE + CRLF and accumulate
+;   both into the 32-bit running totals.
+;   ENTRY: C = logical bank index. IY = UserArea.
+;   The current bank's HERE is live in UserArea (the triple is flushed to
+;   bank-table[] only at BANK! time); every other bank's HERE is the saved
+;   bank-table[N].here. Bank 0 is the kernel dictionary (base kernel_end,
+;   ceiling $D400); banks N≥1 are slot-2 windows (base $8000, ceiling $C000).
+;   Clobbers A/BC/DE/HL.
+dot_banks_row_usedfree:
+        ; --- this row's HERE → HL ---
+        LD      A, C
+        CP      (IY+UserArea.current_bank)
+        JR      NZ, .saved
+        LD      L, (IY+UserArea.here)               ; live HERE for current bank
+        LD      H, (IY+UserArea.here+1)
+        JR      .have_here
+.saved:
+        LD      A, C
+        CALL    bank_offset_hl                      ; HL = &bank-table[C].here
+        LD      A, (HL)
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                                ; HL = saved HERE
+.have_here:
+        ; --- base → DE, ceiling → BC per bank class ---
+        LD      A, C
+        OR      A
+        JR      NZ, .banked
+        LD      DE, kernel_end                      ; bank 0 base
+        LD      BC, BANK_TABLE_BASE                 ; bank 0 ceiling ($D400)
+        JR      .compute
+.banked:
+        LD      DE, SLOT2_WINDOW_BASE               ; $8000
+        LD      BC, SLOT2_WINDOW_BASE + 0x4000      ; $C000
+.compute:
+        PUSH    BC                                  ; save ceiling
+        PUSH    HL                                  ; save HERE
+        OR      A
+        SBC     HL, DE                              ; HL = used = HERE - base
+        LD      DE, dbk_used_tot
+        CALL    add16_to_tot                        ; preserves HL
+        CALL    print_val16_w6                      ; print used (clobbers all)
+        LD      E, ' '                              ; USED/FREE column separator
+        CALL    bdos_putchar
+        POP     HL                                  ; HERE
+        POP     DE                                  ; ceiling (was BC)
+        EX      DE, HL                              ; HL = ceiling, DE = HERE
+        OR      A
+        SBC     HL, DE                              ; HL = free = ceiling - HERE
+        LD      DE, dbk_free_tot
+        CALL    add16_to_tot
+        CALL    print_val16_w6                      ; print free
+        JP      bdos_crlf                           ; tail: CRLF + RET
+
+; add16_to_tot — (DE..DE+3) += HL  (32-bit LE total += 16-bit unsigned).
+;   Preserves HL. Clobbers A, DE.
+add16_to_tot:
+        LD      A, (DE)
+        ADD     A, L
+        LD      (DE), A
+        INC     DE
+        LD      A, (DE)
+        ADC     A, H
+        LD      (DE), A
+        INC     DE
+        LD      A, (DE)
+        ADC     A, 0
+        LD      (DE), A
+        INC     DE
+        LD      A, (DE)
+        ADC     A, 0
+        LD      (DE), A
+        RET
+
+; print_summary_row — print 17-char label at DE + value HL width-6 + CRLF.
+print_summary_row:
+        PUSH    HL
+        EX      DE, HL                              ; HL = label
+        LD      B, 18
+        CALL    bdos_print_str
+        POP     HL
+        CALL    print_val16_w6
+        JP      bdos_crlf                           ; tail
+
+; print_val16_w6 — print 16-bit HL right-aligned width-6, forced decimal.
+print_val16_w6:
+        LD      (dbk_val), HL
+        XOR     A
+        LD      (dbk_val+2), A
+        LD      (dbk_val+3), A
+        JP      print_udword_w6                     ; tail
+
+; print_dword_at_hl_w6 — copy the 32-bit LE value at HL into dbk_val, then
+;   print it right-aligned width-6, forced decimal.
+print_dword_at_hl_w6:
+        LD      DE, dbk_val
+        LD      BC, 4
+        LDIR
+        JP      print_udword_w6                     ; tail
+
+; print_udword_w6 — print the 32-bit unsigned value in dbk_val (little-endian)
+;   right-aligned in a 6-char field, forced decimal (ignores BASE). Destroys
+;   dbk_val (in-place division). Clobbers A/BC/DE/HL.
+;   Max value across .BANKS (Σ bank capacities at the 29-bank cap) < 10^6, so
+;   six digits always suffice.
+print_udword_w6:
+        LD      HL, dbk_numbuf                      ; pre-fill 6 spaces
+        LD      B, 6
+.pf:
+        LD      (HL), ' '
+        INC     HL
+        DJNZ    .pf
+        EX      DE, HL                              ; DE = &dbk_numbuf[6] (RTL cursor)
+.dig:
+        PUSH    DE
+        CALL    dbk_div10                           ; dbk_val /= 10; A = remainder
+        POP     DE
+        ADD     A, '0'
+        DEC     DE
+        LD      (DE), A
+        PUSH    DE
+        CALL    dbk_val_nz                          ; Z iff dbk_val == 0
+        POP     DE
+        JR      NZ, .dig
+        LD      HL, dbk_numbuf
+        LD      B, 6
+        JP      bdos_print_str                      ; tail
+
+; dbk_div10 — dbk_val (4-byte LE) /= 10 in place; A = remainder (0..9).
+;   MSB-first restoring long division. Clobbers A/B/C/D/E/H/L.
+dbk_div10:
+        LD      HL, dbk_val+3                       ; MSB
+        LD      B, 4
+        XOR     A                                   ; remainder = 0
+.byte:
+        LD      E, (HL)                             ; dividend byte
+        LD      D, 0                                ; quotient byte (built here)
+        LD      C, 8                                ; bit count
+.bit:
+        SLA     E                                   ; E <<= 1, dividend bit7 → CF
+        RLA                                         ; rem = rem*2 + CF (rem<10 so no overflow)
+        CP      10
+        JR      C, .q0
+        SUB     10
+        SCF                                         ; quotient bit = 1
+        JR      .shift
+.q0:
+        OR      A                                   ; CF = 0 → quotient bit = 0
+.shift:
+        RL      D                                   ; D = D<<1 | quotient bit
+        DEC     C
+        JR      NZ, .bit
+        LD      (HL), D                             ; store quotient byte
+        DEC     HL
+        DJNZ    .byte
+        RET                                         ; A = remainder
+
+; dbk_val_nz — Z iff dbk_val (4 bytes) == 0. Clobbers A, HL.
+dbk_val_nz:
+        LD      HL, dbk_val
+        LD      A, (HL)
+        INC     HL
+        OR      (HL)
+        INC     HL
+        OR      (HL)
+        INC     HL
+        OR      (HL)
+        RET
 
 ; ============================================================
 ; === Descriptor-stub allocator (the γ mechanism) ===
@@ -1134,11 +1317,20 @@ xbank_restore:
         INC     IX
         NEXT                                        ; resume caller in restored bank
 
-; --- .BANKS string literals ---
-str_dot_banks_hdr:     DB "BANK PAGE   USED   FREE"
-str_dot_banks_hdr_len  EQU 23
+; --- .BANKS string literals + scratch ---
+; Header/totals/summary widths keep USED right-edge at col 17, FREE at col 23
+; (two adjacent width-6 numeric columns after the 11-char BANK/PAGE/marker
+; prefix). Labels are space-padded to 17 chars so their value lands in the
+; FREE column.
+str_dot_banks_hdr:     DB "BANK PAGE    USED   FREE"    ; 24 chars
+str_dot_banks_hdr_len  EQU 24
 str_3sp:               DB "   "
-str_used_free_crlf:    DB "    0  16384", 0x0D, 0x0A
-str_used_free_crlf_len EQU 14
-str_total_pfx:         DB "TOTAL          0 "
-str_total_pfx_len      EQU 17
+str_total_pfx:         DB "TOTAL      "                 ; "TOTAL" + 6 sp → col 11
+str_total_pfx_len      EQU 11
+str_banked_words:      DB "BANKED-WORDS      "          ; 18 chars
+str_stub_bytes:        DB "STUB-BYTES        "          ; 18 chars
+; Scratch for the forced-decimal width-6 printer + 32-bit running totals.
+dbk_val:               DS 4                             ; 32-bit dividend (LE)
+dbk_numbuf:            DS 6                             ; right-aligned digit field
+dbk_used_tot:          DS 4                             ; Σ used (32-bit)
+dbk_free_tot:          DS 4                             ; Σ free (32-bit)
