@@ -851,7 +851,7 @@ add16_to_tot:
         LD      (DE), A
         RET
 
-; print_summary_row — print 17-char label at DE + value HL width-6 + CRLF.
+; print_summary_row — print 18-char label at DE + value HL width-6 + CRLF.
 print_summary_row:
         PUSH    HL
         EX      DE, HL                              ; HL = label
@@ -880,9 +880,13 @@ print_dword_at_hl_w6:
 ; print_udword_w6 — print the 32-bit unsigned value in dbk_val (little-endian)
 ;   right-aligned in a 6-char field, forced decimal (ignores BASE). Destroys
 ;   dbk_val (in-place division). Clobbers A/BC/DE/HL.
-;   Max value across .BANKS (Σ bank capacities at the 29-bank cap) < 10^6, so
-;   six digits always suffice.
+;   Six digits suffice because every value .BANKS prints (per-row used/free and
+;   the running totals) is bounded by Σ bank capacities. A 7th digit would
+;   underrun dbk_numbuf into dbk_val+3 (the live dividend MSB), so the bound is
+;   ASSERTed against the actual constants rather than left as a comment: any
+;   future cap/window/ceiling change that breaks it fails the build here.
 print_udword_w6:
+    ASSERT (BANK_TABLE_BASE - kernel_end) + (BANK_TABLE_CAP - 1) * 0x4000 < 1000000
         LD      HL, dbk_numbuf                      ; pre-fill 6 spaces
         LD      B, 6
 .pf:
@@ -1318,9 +1322,9 @@ xbank_restore:
         NEXT                                        ; resume caller in restored bank
 
 ; --- .BANKS string literals + scratch ---
-; Header/totals/summary widths keep USED right-edge at col 17, FREE at col 23
+; Header/totals/summary widths keep USED right-edge at col 17, FREE at col 24
 ; (two adjacent width-6 numeric columns after the 11-char BANK/PAGE/marker
-; prefix). Labels are space-padded to 17 chars so their value lands in the
+; prefix). Labels are space-padded to 18 chars so their value lands in the
 ; FREE column.
 str_dot_banks_hdr:     DB "BANK PAGE    USED   FREE"    ; 24 chars
 str_dot_banks_hdr_len  EQU 24
