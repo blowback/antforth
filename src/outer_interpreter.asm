@@ -389,28 +389,30 @@ w_QSAVE_BANK_cf:
 ;   this a permanent no-op on the single-bank iz-cpm build (0 == 0 always),
 ;   keeping that path byte-for-byte unchanged. The .throw_uncaught "KNOWN
 ;   LIMIT" comment (src/exception.asm) names QUIT as this restorer.
-;   Reuses the factored mbb_set_slot2 + bank_triple_swap helpers so the live
-;   (HERE,LATEST,wordlist_head) triple stays coherent after the restore.
-;   Preserves the data-stack TOS (BC). See docs/antforth-banking-redesign.md §5.6.
+;   Delegates the activation to the shared switch_live_bank_to_c helper
+;   (src/banking.asm) so the live (HERE,LATEST,wordlist_head) triple stays
+;   coherent after the restore. Preserves the data-stack TOS (BC).
+;   See docs/antforth-banking-redesign.md §5.6.
 ; -----------------------------------------------
 w_REASSERT_BANK_cf:
         LD      A, (IY+UserArea.current_bank)
         LD      L, (IY+UserArea.saved_bank)     ; L = saved bank (keep BC=TOS intact)
         CP      L
         JR      Z, .rab_done                    ; saved == current -> no-op (entire iz-cpm case)
+        ; Bounds guard: -BANK / BANKS-CLEAR shrink bank_count WITHOUT
+        ; reconciling saved_bank, so a stale saved_bank can index past the
+        ; live active_pages[] region. Skip the restore when saved_bank is no
+        ; longer a valid logical index (mirrors BANK!'s n < bank_count
+        ; precondition) — mapping active_pages[saved] there would page a
+        ; vacated/garbage byte into slot 2 and set an out-of-range
+        ; current_bank. The user keeps the post-unwind live bank instead.
+        LD      A, L
+        CP      (IY+UserArea.bank_count)
+        JR      NC, .rab_done                   ; saved_bank >= bank_count -> stale, no-op
         PUSH    BC                              ; preserve data-stack TOS across the switch
         LD      C, L
         LD      B, 0
-        LD      HL, ACTIVE_PAGES_BASE
-        ADD     HL, BC                          ; HL = &active_pages[saved]
-        LD      A, (HL)                         ; A = physical page
-        CALL    mbb_set_slot2                   ; map slot 2; preserves BC, DE
-        LD      A, (IY+UserArea.current_bank)   ; A = old bank (save-target)
-        LD      (IY+UserArea.current_bank), C   ; current_bank <- saved
-        LD      (IY+UserArea.triple_owner), C
-        PUSH    DE                              ; bank_triple_swap clobbers DE (IP)
-        CALL    bank_triple_swap                ; A = old, C = new
-        POP     DE
+        CALL    switch_live_bank_to_c           ; map slot 2 + current_bank/owner + triple swap
         POP     BC                              ; restore data-stack TOS
 .rab_done:
         NEXT

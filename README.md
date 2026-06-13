@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.0.5
+## Version 3.0.6
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -39,8 +39,16 @@ and carried to Epic 20.) 3.0.5 delivers the bank-aware lookup surface
 dictionary pointers — a banked word resolves by name from any bank,
 and the everyday FORTH-wordlist path incurs no MMU switch — while
 `WORDS` produces a single unified flat listing spanning all banks.
+3.0.6 delivers the bank-aware *lifecycle* surface (Epic 21):
+`MARKER`/`FORGET` now snapshot and revert each active bank's
+dictionary tail *and* the descriptor-stub allocator tail (a banked
+word defined after a `FORGET` reuses the reclaimed stub slot rather
+than leaking it); `QUIT` re-asserts the user's last interactive bank
+on an `ABORT`/`THROW` unwind, so a crash never strands you in the
+bank the aborted thread happened to be in; and an `INCLUDE`d file's
+`BANK!` calls no longer pollute that saved-bank cell.
 
-V3.0.5 supports the following ANS Forth standard words:
+V3.0.6 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|

@@ -1095,6 +1095,30 @@ So that an `ABORT` inside a colon definition or inside an `INCLUDE`d file does n
 
 ### Story 21.3: Epic 21 close-out + antforth 3.x.5 tag
 
+> **DEV-PASS RECONCILIATION (2026-06-12).** The "3.x.5" slug below is a stale
+> planning placeholder. Repo reality at dev-pass: `git tag v3.0.5` already
+> exists on `0fb4434` (Epic 20 close — the 19.5+MBB interlude consumed v3.0.4,
+> shifting every downstream point release +1). **Epic 21 ships v3.0.6**;
+> downstream **Epic 22 → v3.0.7** (final). The same off-by-one Story 20.3
+> caught. Three further re-specs applied in the dev-pass story file
+> (`21-3-…md`), superseding the AC text below:
+> - **AC5 integration probe** moved to an **isolated fixture**
+>   `tests/banking_tests_21_3.fth` (not the main `tests/banking_tests.fth` —
+>   it straddles `$8000` and would strand a non-zero-bank lookup, ADR 19.5
+>   DR-1); the `MARKER ZZZ` is created in bank 0 so the FORGET runs from its
+>   **home bank** (`0 BANK! ZZZ`) — a banked MARKER has no dispatch stub and a
+>   cross-bank invoke hangs (`project_banked_marker_no_stub`). The cross-bank
+>   `7 BANK! W5` call is fine (W5 is a `:` word with a stub). Expected
+>   `BANK@`=7 after the ABORT (last interactive bank). **6/0 PASS.**
+> - **AC7 envelope** realised **+181 B (start→close) / +191 B (per-story sum)**
+>   vs the ~150 B target (~1.2–1.27× over) — a normal-calibration **pure-
+>   addition** overshoot inside the empirical ~2.4× Phase-4 multiplier;
+>   disposition = accept-with-rationale in Dev Notes only (NO SCP — lighter
+>   than Epic 20's 3.4× design-substitution breach). NFR-P4-5 8 KB fixed-memory
+>   cap unaffected.
+> - **AC1** version surface is a **fourth** surface too: the Makefile REPL
+>   test-80 banner assertion (`Makefile:1781-1784`), bumped to v3.0.6.
+
 As Ant (project lead applying the Epic 21 close-out tag),
 I want the user-visible version surface aligned (banner / README / memory-`description` all reading `3.x.5`), the full test surface clean across iz-cpm + banking-capable emulator + real MicroBeast, the banked-word stub-count metric updated per CCD-4 close-out, and the verdict-table walk recorded,
 So that the bank-aware lifecycle surface (MARKER/FORGET per-bank + saved-bank restore on QUIT/ABORT) is shipped as antforth 3.x.5 with a clean integration test pass.

@@ -191,24 +191,12 @@ w_BANK_STORE_cf:
         LD      BC, THROW_BANK_FROM_BANKED          ; -273
         JP      w_THROW_cf.kernel_entry
 .window_ok:
-        ; --- Map slot 2 to active_pages[n] via the BIOS (preserves BC=n) ---
-        LD      HL, ACTIVE_PAGES_BASE
-        ADD     HL, BC                              ; BC.high == 0 validated
-        LD      A, (HL)
-        CALL    mbb_set_slot2
-        ; --- Swap current_bank (read old; write new). High byte stays 0. ---
-        LD      A, (IY+UserArea.current_bank)       ; A = old_bank
-        LD      (IY+UserArea.current_bank), C       ; current_bank.low ← new
-        LD      (IY+UserArea.triple_owner), C       ; live triple now keyed to new bank
-        ; DE = IP (inner-interpreter convention). The helper's LDIR cascade
-        ; clobbers DE; preserve IP across the swap so the trailing NEXT
-        ; resumes at the caller (same PUSH DE / POP DE shape as WORDLIST).
-        PUSH    DE                                  ; save IP — LDIR clobbers DE
-        ; --- Triple swap: save live → table[A=old], load table[C=new] → live.
-        ;     Factored to bank_triple_swap so THROW's caught path
-        ;     (src/exception.asm) can share the swap shape. ---
-        CALL    bank_triple_swap
-        POP     DE                                  ; restore IP
+        ; --- Activate bank C as the live bank (map slot 2, point
+        ;     current_bank/triple_owner at C, swap the per-bank triple). The
+        ;     shared helper preserves DE (IP) so the trailing NEXT resumes at
+        ;     the caller; BC is clobbered, recovered by the POP below. C = n
+        ;     (validated < bank_count, B == 0) from the precondition above. ---
+        CALL    switch_live_bank_to_c
         ; --- Pop new TOS (BC = previous-second-from-top) ---
         POP     BC
         NEXT
@@ -245,6 +233,42 @@ bank_offset_hl:
         LD      H, HIGH BANK_TABLE_BASE             ; HL = &bank-table[A]
         RET
 
+; bank_triple_save — save the live (HERE, LATEST, wordlist_head) triple
+;   into bank-table[A][0..5].
+;   ENTRY:  A = bank index in [0..28].
+;   EXIT:   bank-table[A] = live triple. Clobbers A, BC, DE, HL.
+;           IX / IY preserved. No system-stack push (leaf after bank_offset_hl).
+;   Shared by bank_triple_swap and MARKER's pre-build_header snapshot
+;   (src/system.asm), which previously hand-copied this cascade.
+bank_triple_save:
+        CALL    bank_offset_hl                      ; HL = &bank-table[A]
+        EX      DE, HL                              ; DE = &bank-table[A]
+        LD      HL, user_area + UserArea.here
+        LD      BC, 4
+        LDIR                                        ; HERE,LATEST → [0..3]; DE += 4
+        LD      HL, (forth_wordlist)
+        EX      DE, HL
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                             ; wordlist_head → [4..5]
+        RET
+
+; bank_triple_load — load bank-table[A][0..5] into the live triple.
+;   ENTRY:  A = bank index in [0..28].
+;   EXIT:   live triple = bank-table[A]'s. Clobbers A, BC, DE, HL.
+;           IX / IY preserved. No system-stack push.
+;   Shared by bank_triple_swap and DOMARKER's reload (src/inner_interpreter.asm),
+;   which previously hand-copied this cascade.
+bank_triple_load:
+        CALL    bank_offset_hl                      ; HL = &bank-table[A]
+        LD      DE, user_area + UserArea.here
+        LD      BC, 4
+        LDIR                                        ; [0..3] → HERE,LATEST; HL += 4
+        LD      DE, forth_wordlist
+        LD      BC, 2
+        LDIR                                        ; [4..5] → (forth_wordlist)
+        RET
+
 ; bank_triple_swap — save the live (HERE, LATEST, wordlist_head) triple
 ;   to bank-table[A], then load bank-table[C]'s triple into the live
 ;   cells. Factored out of w_BANK_STORE_cf so THROW's caught-path triple
@@ -254,35 +278,48 @@ bank_offset_hl:
 ;           (both in [0..28]; B is ignored).
 ;   EXIT:   live triple = bank-table[C]'s. Clobbers A, BC, DE, HL.
 ;           IX / IY preserved. Transient 2-byte PUSH BC on the system
-;           stack, balanced before RET — safe both in DEFCODE context
-;           and on the THROW caught path (completed before the stash-
-;           restore LDIR touches [SP_safe..sp_base-1]).
+;           stack, balanced before the tail call — safe both in DEFCODE
+;           context and on the THROW caught path (completed before the
+;           stash-restore LDIR touches [SP_safe..sp_base-1]).
 ;   Callers must NOT rely on the IX R-stack here: on the THROW caught
 ;   path IX = frame base with the stash zone live directly below it, so
 ;   an rpush would clobber the depth word.
 bank_triple_swap:
-        PUSH    BC                                  ; preserve load-bank across save cascade
-        ; --- Save live → bank-table[A][0..5] ---
-        CALL    bank_offset_hl                      ; HL = &bank-table[A=save]
-        EX      DE, HL                              ; DE = &bank-table[save]
-        LD      HL, user_area + UserArea.here
-        LD      BC, 4
-        LDIR                                        ; HERE,LATEST → [0..3]; DE += 4
-        LD      HL, (forth_wordlist)
-        EX      DE, HL
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D                             ; wordlist_head → [4..5]
-        ; --- Load bank-table[C][0..5] → live ---
+        PUSH    BC                                  ; preserve load-source across save
+        CALL    bank_triple_save                    ; live → bank-table[A=save]
         POP     BC                                  ; C = load-source bank
         LD      A, C
-        CALL    bank_offset_hl                      ; HL = &bank-table[C=load]
-        LD      DE, user_area + UserArea.here
-        LD      BC, 4
-        LDIR                                        ; [0..3] → HERE,LATEST; HL += 4
-        LD      DE, forth_wordlist
-        LD      BC, 2
-        LDIR                                        ; [4..5] → (forth_wordlist)
+        JP      bank_triple_load                    ; bank-table[C=load] → live (tail)
+
+; switch_live_bank_to_c — activate logical bank C as the live bank: map
+;   slot 2 to active_pages[C], point current_bank + triple_owner at C, and
+;   swap the per-bank (HERE,LATEST,wordlist_head) triple (save old → table,
+;   load C → live). The identical sequence formerly appeared inline in
+;   BANK!'s .window_ok and REASSERT-BANK (src/outer_interpreter.asm); both
+;   now CALL here.
+;
+;   NOT shared with THROW's caught-path restore (src/exception.asm): that
+;   path restores current_bank from CATCH frame +8 but triple_owner from
+;   frame +9 (they diverge across a cross-bank dispatch live at CATCH) and
+;   swaps the triple CONDITIONALLY — a different shape, not "switch both to
+;   one C", so factoring it here would lose the +8/+9 distinction.
+;
+;   ENTRY:  C = target bank index (B == 0 — C is a logical index 0..28).
+;           DE = IP (preserved across the call).
+;   EXIT:   live bank = C. Clobbers A, BC, HL. DE / IX / IY preserved.
+;   Callers own the data-stack TOS (BC is clobbered here): BANK! POPs the
+;   consumed arg after; REASSERT-BANK brackets the call in PUSH/POP BC.
+switch_live_bank_to_c:
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                              ; HL = &active_pages[C] (B == 0)
+        LD      A, (HL)
+        CALL    mbb_set_slot2                       ; map slot 2; preserves BC, DE
+        LD      A, (IY+UserArea.current_bank)       ; A = old bank (swap save-target)
+        LD      (IY+UserArea.current_bank), C       ; current_bank ← C
+        LD      (IY+UserArea.triple_owner), C       ; live triple keyed to C
+        PUSH    DE                                  ; bank_triple_swap clobbers DE (IP)
+        CALL    bank_triple_swap                    ; A = old, C = new
+        POP     DE
         RET
 
 ; === BANKS ( -- n ) ===

@@ -16,12 +16,16 @@ w_BYE_cf:
 ; MARKER ( "<spaces>name" -- )
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
-;   Body layout: [saved_here(2)][saved_buckets(192)][bank_table(174)][stub_tail(2)]
+;   Body layout: [saved_buckets(192)][snap_count(1)][bank_triples(snap_count*6)][stub_tail(2)]
 ;   saved_buckets = FORTH-WORDLIST bucket array only (64 × 3-byte fat heads,
 ;   Story 20.1); the wordlist struct's next-link cell is NOT in it.
-;   bank_table = full 29-entry bank-table[] region ($D400, 174 B) — the
-;   per-bank (here, latest, wordlist_head) triples. stub_tail = the
-;   descriptor-stub allocator next-free pointer. FORGET reverts both tails.
+;   bank_triples = the live prefix of bank-table[] — snap_count entries of the
+;   per-bank (here, latest, wordlist_head) triple, where snap_count =
+;   max(bank_count, triple_owner+1) (always >= 1; covers every reachable bank
+;   plus the owner reloaded at FORGET; entries >= snap_count are inert under
+;   BANK!'s n < bank_count precondition, so snapshotting them is wasted TPA).
+;   stub_tail = the descriptor-stub allocator next-free pointer. FORGET reverts
+;   both tails.
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
 ;   when the parsed name is empty.
 ;   Limitation: MARKER snapshots FORTH-WORDLIST's
@@ -45,22 +49,15 @@ w_MARKER_cf:
         ; the triple first records the PRE-MARKER latest — FORGET then reverts
         ; LATEST to the word defined just before MARKER (ANS MARKER semantics)
         ; rather than the now-forgotten MARKER. here/wordlist_head are not
-        ; advanced by build_header, so this is also a valid saved_here snapshot.
+        ; advanced by build_header, so this captures the pre-MARKER HERE too.
         ; triple_owner (not current_bank — they diverge mid cross-bank dispatch)
-        ; owns the live copy; the full-table copy below folds the entry into the
+        ; owns the live copy; the bounded snapshot below folds the entry into the
         ; marker body. Runs unconditionally: writing the current live triple to
         ; its own stale-until-reparked table slot is a no-op on the abort path.
+        ; Shares bank_triple_save (src/banking.asm) — the SAVE half of the
+        ; BANK! triple swap (CR 21.3 #3).
         LD      A, (IY+UserArea.triple_owner)
-        CALL    bank_offset_hl                  ; HL = &bank-table[owner]
-        EX      DE, HL                          ; DE = &bank-table[owner]
-        LD      HL, user_area + UserArea.here
-        LD      BC, 4
-        LDIR                                    ; here,latest -> [0..3]
-        LD      HL, (forth_wordlist)
-        EX      DE, HL                          ; HL = &bank-table[owner]+4
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D                         ; wordlist_head -> [4..5]
+        CALL    bank_triple_save                ; live triple -> bank-table[owner]
 
         ; Build dictionary header (flags=0, no SMUDGE)
         XOR     A
@@ -75,15 +72,11 @@ w_MARKER_cf:
         LD      (HL), HIGH DOMARKER
         INC     HL
 
-        ; Emit saved HERE (2 bytes) — bh_entry_start is pre-header HERE
-        LD      DE, (bh_entry_start)
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D
-        INC     HL
-
-        ; Save body hash start address for fixup later
-        PUSH    HL                      ; body_hash_start on stack
+        ; Save body hash start address for fixup later. The body now opens
+        ; directly with saved_buckets: the old saved_here field was emitted but
+        ; never read (DOMARKER takes HERE from the reloaded bank-table[owner]
+        ; triple), so it is dropped (CR 21.3 #2).
+        PUSH    HL                      ; body_hash_start (= cf+3, start of saved_buckets)
 
         ; Copy 192 bytes from FORTH-WORDLIST fat bucket array to body
         ; (64 × 3-byte fat heads). Need LDIR: HL=src, DE=dst, BC=count
@@ -126,22 +119,46 @@ w_MARKER_cf:
         LD      (HL), A                 ; restore fat bank byte too
 .marker_skip_fixup:
 
-        ; --- Append per-bank tails + stub-allocator tail to the marker body ---
-        ; DE = next free body byte (past [saved_here][saved_buckets]). The live
-        ; (here, latest, wordlist_head) triple was already synced into
-        ; bank-table[triple_owner] above (pre-build_header, so the captured
-        ; latest is the PRE-MARKER one). Append the full 29-entry bank-table[]
-        ; region: full-table (174 B) beats active-only (two LDIRs, no per-bank
-        ; loop or stored count — cheapest binary; inactive entries are inert).
-        ; FORGET reverts every bank's dictionary tail. active_pages[]/bank_count
-        ; sit OUTSIDE $D400..$D4AD, so +BANK / -BANK membership changes are not
-        ; snapshotted; worse, a -BANK between MARKER and FORGET renumbers logical
-        ; banks without renumbering bank-table[], so this restore can reassert
-        ; triples onto the wrong banks — MARKER with mid-span -BANK is
-        ; unsupported until Epic 22.
-        LD      HL, BANK_TABLE_BASE             ; $D400 source
-        LD      BC, BANK_TABLE_SHELL_SIZE       ; 174
-        LDIR                                    ; bank-table[] -> body; DE advanced
+        ; --- Append snap_count + live per-bank triples + stub-allocator tail ---
+        ; DE = next free body byte (past saved_buckets). The live (here, latest,
+        ; wordlist_head) triple was already synced into bank-table[triple_owner]
+        ; above (pre-build_header, so the captured latest is the PRE-MARKER one).
+        ; Snapshot only the LIVE prefix of bank-table[]: entry k >= bank_count is
+        ; inert (BANK!'s n < bank_count precondition makes it unreachable), so
+        ; copying it back per FORGET burns ~168 B of TPA + copy time for provably
+        ; constant data (CR 21.3 #5).
+        ;   snap_count = max(bank_count, triple_owner+1)
+        ; bounds the copy: bank_count covers every reachable bank, and the
+        ; owner+1 clause guarantees the owner entry (reloaded by DOMARKER) is
+        ; captured even when bank_count == 0 (fresh boot / nested MARKER) or a
+        ; BANKS-CLEAR left owner > bank_count. snap_count >= 1 always, which also
+        ; rules out the BC==0 -> LDIR-copies-64KB trap. snap_count is stored in
+        ; the body so DOMARKER reverts exactly the entries live at MARKER time.
+        ; active_pages[]/bank_count sit OUTSIDE bank-table[], so +BANK / -BANK
+        ; membership changes are not snapshotted; worse, a -BANK between MARKER
+        ; and FORGET renumbers logical banks without renumbering bank-table[], so
+        ; this restore can reassert triples onto the wrong banks — MARKER with
+        ; mid-span -BANK is unsupported until Epic 22.
+        LD      A, (IY+UserArea.bank_count)
+        LD      C, A                            ; C = bank_count
+        LD      A, (IY+UserArea.triple_owner)
+        INC     A                               ; A = triple_owner + 1
+        CP      C
+        JR      NC, .marker_snap_count          ; owner+1 >= bank_count -> snap = owner+1
+        LD      A, C                            ; else snap = bank_count
+.marker_snap_count:
+        LD      (DE), A                         ; snap_count -> body
+        INC     DE
+        ; BC = snap_count * 6 (entry stride). snap_count in [1..29] => *6 in
+        ; [6..174] < 256 (no carry, never 0).
+        ADD     A, A                            ; *2
+        LD      C, A
+        ADD     A, A                            ; *4
+        ADD     A, C                            ; *6
+        LD      C, A
+        LD      B, 0                            ; BC = snap_count * 6
+        LD      HL, BANK_TABLE_BASE             ; $D400 source (live prefix)
+        LDIR                                    ; bank-table[0..snap_count-1] -> body; DE advanced
 
         ; Append the descriptor-stub allocator tail (2 B) to the body.
         LD      A, (IY+UserArea.stub_alloc_tail)

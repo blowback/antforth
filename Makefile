@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -1033,6 +1033,88 @@ test-repl-banking-isolated-21-2: $(TARGET)
 		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
 	fi
 
+test-repl-banking-isolated-21-3: $(TARGET)
+	@echo "Running Story 21.3 Epic-21 close-out integration probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.3-a-start---";re="---probe-21.3-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -qE '^x5=42 ?$$'; then \
+		echo "PASS: probe-21.3-a (isolated) — cross-bank call W5 (bank 5) from bank 7 ran via stub (x5=42)"; \
+	else \
+		echo "FAIL: probe-21.3-a (isolated) — cross-bank call to W5 did not run / wrong value"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.3-b-start---";re="---probe-21.3-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qE '^bank=7 ?$$'; then \
+		echo "PASS: probe-21.3-b (isolated) — QUIT re-asserted last interactive bank after ABORT (BANK@ -> 7)"; \
+	else \
+		echo "FAIL: probe-21.3-b (isolated) — user stranded in wrong bank after ABORT (expected 7)"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.3-c-start---";re="---probe-21.3-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qE 'recl=-1( |$$)' && ! echo "$$C" | grep -qE 'recl=0( |$$)'; then \
+		echo "PASS: probe-21.3-c (isolated) — stub-allocator tail reclaimed + reused after FORGET (recl=-1)"; \
+	else \
+		echo "FAIL: probe-21.3-c (isolated) — stub region NOT reused (allocator tail leaked across FORGET)"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	D=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.3-d-start---";re="---probe-21.3-d-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$D" | grep -qxF 'W5 ?' && echo "$$D" | grep -qxF 'W7 ?'; then \
+		echo "PASS: probe-21.3-d (isolated) — W5 (bank 5) + W7 (bank 7) forgotten after FORGET from home bank 0"; \
+	else \
+		echo "FAIL: probe-21.3-d (isolated) — a bank-N word still defined after FORGET"; \
+		echo "  D: $$D"; exit 1; \
+	fi && \
+	E=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.3-e-start---";re="---probe-21.3-e-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$E" | grep -qE 'result=-1( |$$)' && ! echo "$$E" | grep -qE 'result=0( |$$)'; then \
+		echo "PASS: probe-21.3-e (isolated) — caller bank + slot-2 page restored; fresh definition resumes (result=-1)"; \
+	else \
+		echo "FAIL: probe-21.3-e (isolated) — bank or slot-2 not restored / resume broken"; \
+		echo "  E: $$E"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-21.3-suite-end---$$'; then \
+		echo "PASS: probe-21.3-suite (isolated) — suite end-sentinel present (kernel recovered from ABORT + -13, no mid-suite halt)"; \
+	else \
+		echo "FAIL: probe-21.3-suite (isolated) — end-sentinel missing (mid-suite halt or no recovery)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
+
+# --- CR 21.3 fix regressions — nested MARKER under the bounded snapshot ---
+# Guards the post-review CR-fix dev pass (findings #2 saved_here drop +
+# #5 bounded bank-table snapshot): a nested MARKER must still revert HERE to
+# the pre-outer-marker value, every nested-defined word must be forgotten, and
+# the dictionary must keep working afterward. Bank-0-only (the workable REPL
+# pattern); BANKS=12 at boot here, so snap_count=12 spans banks 0..11.
+test-repl-cr-21-3: $(TARGET)
+	@echo "Running CR 21.3 fix regression (nested MARKER / bounded snapshot) under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/cr_21_3_fixes.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-cr-a-start---";re="---probe-cr-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -qE 'revert=-1( |$$)' && ! echo "$$A" | grep -qE 'revert=0( |$$)'; then \
+		echo "PASS: probe-cr-a — nested MARKER reverted HERE to pre-outer-marker (revert=-1)"; \
+	else \
+		echo "FAIL: probe-cr-a — HERE not reverted across nested MARKER/FORGET"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-cr-b-start---";re="---probe-cr-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qxF 'NW1 ?' && echo "$$B" | grep -qxF 'NW2 ?' && echo "$$B" | grep -qxF 'MB ?'; then \
+		echo "PASS: probe-cr-b — NW1 + NW2 + inner marker MB all forgotten after outer FORGET"; \
+	else \
+		echo "FAIL: probe-cr-b — a nested-defined word still resolves after FORGET"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-cr-c-start---";re="---probe-cr-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qE '^ok=789 ?$$'; then \
+		echo "PASS: probe-cr-c — fresh definition compiles + runs after bounded FORGET (ok=789)"; \
+	else \
+		echo "FAIL: probe-cr-c — dictionary broken after bounded FORGET"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-cr-suite-end---$$'; then \
+		echo "PASS: probe-cr-suite — end-sentinel present (kernel recovered from -13, no mid-suite halt)"; \
+	else \
+		echo "FAIL: probe-cr-suite — end-sentinel missing (mid-suite halt or no recovery)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
+
 # --- Story 19.5.1 F3 — portal-aliasing straddle regression gate (ADR 19.5 DR-1) ---
 # Drives tests/straddle_repro_sweep.sh at K=0 (NO kernel-source mutation;
 # the K>0 kernel-size knob stays sweep-only/diagnostic) and asserts the
@@ -1778,10 +1860,10 @@ test-repl: $(TARGET)
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.5'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.5'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.6'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.6'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.5' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.6' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \
