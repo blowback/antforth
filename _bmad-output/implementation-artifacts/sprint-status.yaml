@@ -242,10 +242,10 @@ development_status:
   20-3-epic-20-close-out-antforth-3-x-4-tag: done
   epic-20-retrospective: done
 
-  epic-21: in-progress
+  epic-21: done
   21-1-marker-forget-per-bank-dictionary-tail-descriptor-stub-allocator-tail-reclamation: done
   21-2-saved-bank-cell-interactive-bank-store-recogniser-quit-re-asserts-saved-bank-abort-abort-quote-pass-through: done
-  21-3-epic-21-close-out-antforth-3-x-5-tag: review
+  21-3-epic-21-close-out-antforth-3-x-5-tag: done
   epic-21-retrospective: optional
 
   epic-22: in-progress

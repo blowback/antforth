@@ -134,6 +134,11 @@ w_MARKER_cf:
         ; BANKS-CLEAR left owner > bank_count. snap_count >= 1 always, which also
         ; rules out the BC==0 -> LDIR-copies-64KB trap. snap_count is stored in
         ; the body so DOMARKER reverts exactly the entries live at MARKER time.
+        ; INVARIANT (correctness rests on it): triple_owner must stay < snap_count
+        ; between this snapshot and its FORGET, so DOMARKER's final bank_triple_load
+        ; reads a RESTORED owner entry. Holds today because owner only moves via
+        ; BANK!/THROW to indices < bank_count <= snap_count. Epic 22 bank-renumber
+        ; work MUST preserve it (or re-snapshot) — see DOMARKER (CR 21.3 review).
         ; active_pages[]/bank_count sit OUTSIDE bank-table[], so +BANK / -BANK
         ; membership changes are not snapshotted; worse, a -BANK between MARKER
         ; and FORGET renumbers logical banks without renumbering bank-table[], so
