@@ -1,6 +1,6 @@
 # Story 22.1: `.BANKS` final formatting polish + per-bank used / free reflect real `here` values
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
