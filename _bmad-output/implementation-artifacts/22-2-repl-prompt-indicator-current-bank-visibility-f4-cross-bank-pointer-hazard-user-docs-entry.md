@@ -1,6 +1,6 @@
 # Story 22.2: REPL prompt indicator (current-bank visibility) + F4 cross-bank-pointer-hazard user-docs entry
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -294,3 +294,4 @@ claude-opus-4-8 (Opus 4.8)
 ### Change Log
 
 - 2026-06-13 — Story 22.2 dev-pass: opt-in REPL prompt bank indicator (`PROMPT-SHOW-BANK` + `(BANK-PROMPT)`, default OFF, bank-0 suppressed); F4 user-docs entry `docs/banking-pointer-hazards.md` + README `## Banking` link; isolated probe fixture `tests/banking_tests_22_2.fth` + Makefile target. Binary 28331 → 28463 B (+132 B, accept-with-rationale). Fixed an exposed layout-fragility in `tests/banking_tests.fth` probe-y (colon-body foreign `BANK!` crossed $8000 → interactive). All gates green. **HW UAT PASS on real MicroBeast** (transcript `beastty-20260613-165829.bin`): `[5] ok` indicator + bank-0/flag-OFF suppression all confirmed on silicon. Commit deferred to Ant. Status → review.
+- 2026-06-14 — Story 22.2 CR-fix (2 code-review findings, commit `a9208d9`): (1) cleanup — extracted shared `bdos_emit_dec_byte` leaf; `(BANK-PROMPT)`'s `[N]` prompt and `print_bank_col_4`'s `.BANKS` column now share one base-10 decode (binary −17 B → 28446 B, byte-identical output); (2) test robustness — probe-y switch+print combined onto one input line (`1 BANK! .BANKS`) to drop the `source_id==0` / REASSERT-BANK coupling. Gates green (test-repl 975/0 · banking 62/0 · isolated-22-2 4/4 · straddle 3/3 · asm thread PASS). **HW UAT PASS** (transcript `beastty-20260614-084832.bin`): `[5]`/bank-0/flag-OFF + `.BANKS` right-align (single+double digit, marker row 5) on v3.0.6 silicon. Status → done.
