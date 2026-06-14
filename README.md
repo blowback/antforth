@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.0.6
+## Version 3.0.7
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -47,8 +47,16 @@ than leaking it); `QUIT` re-asserts the user's last interactive bank
 on an `ABORT`/`THROW` unwind, so a crash never strands you in the
 bank the aborted thread happened to be in; and an `INCLUDE`d file's
 `BANK!` calls no longer pollute that saved-bank cell.
+3.0.7 closes Phase 4 (Epic 22): the bank-aware reflection and UX
+surface. `.BANKS` now reports real per-bank `used`/`free` figures with
+bank-0-inclusive totals; the REPL prompt shows the current bank so a
+cross-bank session never loses track of where new definitions land;
+the cross-bank-pointer hazards are documented for users; and `CODE`
+words are redirected to fixed memory so machine-code definitions stay
+cross-bank-findable. This is the final Phase-4 point release — the
+banked-RAM enablement promise, opened in 3.0.1, delivered in full.
 
-V3.0.6 supports the following ANS Forth standard words:
+V3.0.7 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
