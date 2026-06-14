@@ -1,6 +1,6 @@
 # Story 22.3: Cross-bank CODE-words disposition implementation (per Story 16.4 §9.1 closure)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -209,3 +209,4 @@ This is **+3 B over AC9's ~50 B soft ceiling**. Re-itemised and surfaced per Tas
 |---|---|
 | 2026-06-14 | Story 22.3 dev-pass: CODE→fixed-memory redirect implemented via `build_header`→`triple_owner` (project-lead mechanism election) + `w_CODE_cf`/`END-CODE`/`asm_cleanup` triple swap-and-restore. New isolated probe fixture + Makefile target. Gates green (975/0 · 62/0 · isolated-22-3 4/4 · straddle 3/3 · file-sanity · doc-sync 0-drift). Binary +53 B (project-lead-approved +3 B over the ~50 B soft ceiling; keeps the defensive disarm guard). Status → review; HW UAT pending. |
 | 2026-06-14 | HW UAT PASS on real MicroBeast (transcript `beastty-20260614-164138.bin`): AC7 batch byte-identical to emulator (`bankof=-1`/`home=42`/`cross=42`/`baseline=7`/`barbank=-1`/suite-end; no errors/halt). AC8 satisfied. Status stays `review` pending adversarial code-review. |
+| 2026-06-14 | Adversarial code-review closed (high effort). Two correctness candidates surfaced — (1) caught-then-re-raised THROW double-restoring the live triple via `exception.asm` frame+9 + `asm_cleanup`; (2) `build_header`/stub-allocator `triple_owner`-vs-`current_bank` asymmetry corrupting `bank-table[0]` in a cross-bank dispatch window — both **empirically refuted** across ~6 instrumented probes (HERE rolled back, `LATEST` stable, words findable, at-risk xt unchanged). Root: the per-bank triple excludes the shared fat bucket array, so triple swaps never affect findability and compose back correctly; one proposed fix was net-harmful (correct HERE rollback → 10 B leak). No code-behaviour change warranted; 22.3 correct as shipped. Single survivor: comment-accuracy fix in `compiler.asm` (`triple_owner`/`current_bank` also diverge in a cross-bank dispatch window), binary byte-identical, commit `58d493c`. Status → done. |
