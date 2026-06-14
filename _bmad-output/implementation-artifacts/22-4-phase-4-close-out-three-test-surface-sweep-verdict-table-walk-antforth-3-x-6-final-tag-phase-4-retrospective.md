@@ -1,6 +1,6 @@
 # Story 22.4: Phase-4 close-out — three-test-surface sweep + verdict-table walk + antforth v3.0.7 (final) tag + Phase-4 retrospective
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
