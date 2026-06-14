@@ -410,15 +410,20 @@ _dot-banks-probe-x
 \ window-resident colon body. A colon wrapper trips the portal-window guard
 \ (THROW -273, Story 19.5.1) once kernel growth pushes the body above $8000 —
 \ this probe is layout-fragile in colon form (feedback_phase4_probe_bank_switch_limitation).
+\ Each `BANK! .BANKS` is kept on ONE input line so the switch and the print
+\ run in a single INTERPRET pass with no QUIT re-entry between them. That
+\ matters: a re-entry would run REASSERT-BANK, which reverts current_bank to
+\ saved_bank — and saved_bank only tracks `1 BANK!` when QSAVE-BANK recognises
+\ it as an interactive BANK! (source_id==0, Story 21.2). Combining the two
+\ words removes that coupling, so the marker tracks the live bank no matter how
+\ the fixture is fed (piped console vs INCLUDE), not just on console stdin.
 _dot-banks-setup
 ." ---dot-banks-probe-y-start---" CR
 .BANKS
 ." ---dot-banks-probe-y-mid1---" CR
-1 BANK!
-.BANKS
+1 BANK! .BANKS
 ." ---dot-banks-probe-y-mid2---" CR
-0 BANK!
-.BANKS
+0 BANK! .BANKS
 ." ---dot-banks-probe-y-end---" CR
 
 \ Probe Z — empty-banked-row guard + bank-0 exemption. Empty banked windows

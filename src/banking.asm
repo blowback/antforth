@@ -105,22 +105,7 @@ w_BANK_PROMPT_cf:
         LD      E, '['
         CALL    bdos_putchar
         POP     AF                                  ; A = bank index (1..28)
-        CP      10
-        JR      C, .bp_ones                         ; single digit
-        LD      C, '0' - 1                          ; peel tens (≤2 for ≤28)
-.bp_tens:
-        INC     C
-        SUB     10
-        JR      NC, .bp_tens
-        ADD     A, 10                               ; A = ones; C = tens char
-        PUSH    AF
-        LD      E, C
-        CALL    bdos_putchar                        ; emit tens digit
-        POP     AF
-.bp_ones:
-        ADD     A, '0'
-        LD      E, A
-        CALL    bdos_putchar                        ; emit ones digit
+        CALL    bdos_emit_dec_byte                  ; "N" / "NN" — shared decode (no padding)
         LD      E, ']'
         CALL    bdos_putchar
         CALL    rpop_de                             ; restore caller IP
@@ -791,6 +776,33 @@ w_DOT_BANKS_cf:
         POP     BC
         NEXT
 
+; bdos_emit_dec_byte — emit A as 1-or-2 decimal digits via BDOS, no padding.
+;   Input:  A = value in [0..99] (callers pass a logical bank index 0..28)
+;   Output: "0".."99" via BDOS (no leading zero, no padding)
+;   Clobbers: A, BC, DE, HL.  Preserves IX, IY, SP.
+;
+;   One base-10 two-digit decode shared by (BANK-PROMPT)'s "[N]" REPL prefix
+;   and print_bank_col_4's right-aligned .BANKS column, so the prompt and the
+;   table can never diverge on how a bank index renders.
+bdos_emit_dec_byte:
+        CP      10
+        JR      C, .bedb_ones                       ; single digit
+        ; Two-digit: peel tens via subtract-loop (≤9 iterations for ≤99).
+        LD      C, '0' - 1
+.bedb_tens:
+        INC     C
+        SUB     10
+        JR      NC, .bedb_tens
+        ADD     A, 10                               ; A = ones; C = tens char
+        PUSH    AF
+        LD      E, C
+        CALL    bdos_putchar                        ; emit tens digit
+        POP     AF
+.bedb_ones:
+        ADD     A, '0'
+        LD      E, A
+        JP      bdos_putchar                        ; tail-call: emit ones digit
+
 ; print_bank_col_4 — Print A as decimal right-aligned in a 4-char field.
 ;   Input:  A = value in [0..29] (logical bank index)
 ;   Output: 4 chars emitted via BDOS ("   0".."  28")
@@ -799,40 +811,24 @@ w_DOT_BANKS_cf:
 ;   Single call site (per-row BANK column); kept as a helper for readability
 ;   and future re-use if .BANKS gains a second decimal column.
 print_bank_col_4:
-        ; A is clobbered by bdos_putchar (BDOS func 2 returns through A);
-        ; stash via PUSH AF across the two leading-space emissions so the
-        ; tens/ones decode below sees the original index value.
+        ; Right-align: 2 leading spaces always, + a 3rd for single digits, so
+        ; the field is "  NN" or "   N". A is clobbered by bdos_putchar (BDOS
+        ; func 2 returns through A), so stash via PUSH AF across each space.
         PUSH    AF
         LD      E, ' '
         CALL    bdos_putchar
         LD      E, ' '
         CALL    bdos_putchar
         POP     AF
-        ; Decide single vs two digits.
         CP      10
-        JR      C, .pbc_single
-        ; Two-digit: peel tens via subtract-loop (max 2 iterations for 0..29).
-        LD      C, '0' - 1
-.pbc_tens:
-        INC     C
-        SUB     10
-        JR      NC, .pbc_tens
-        ADD     A, 10                               ; A = ones; C = tens char
-        PUSH    AF
-        LD      E, C
-        CALL    bdos_putchar
-        POP     AF
-        JR      .pbc_ones
-.pbc_single:
-        ; A also clobbered by bdos_putchar — re-stash across 3rd leading space.
+        JR      NC, .pbc_emit                       ; two digits → no extra pad
         PUSH    AF
         LD      E, ' '
-        CALL    bdos_putchar                        ; 3rd leading space
+        CALL    bdos_putchar                        ; 3rd leading space (single digit)
         POP     AF
-.pbc_ones:
-        ADD     A, '0'
-        LD      E, A
-        JP      bdos_putchar                        ; tail-call
+.pbc_emit:
+        ; Digits themselves come from the shared decode leaf.
+        JP      bdos_emit_dec_byte                  ; tail-call: emit 1 or 2 digits
 
 ; ------------------------------------------------------------
 ; .BANKS helpers (Story 22.1) — real per-bank used/free + width-6 decimal.
