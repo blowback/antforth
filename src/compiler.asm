@@ -324,10 +324,14 @@ build_header:
         ; discriminates on the flag at src/dictionary.asm).
         ; Keyed off triple_owner (the bank that OWNS the live HERE/LATEST/
         ; wordlist triple = the bank the entry physically lands in), not
-        ; current_bank. The two coincide on every ordinary build_header path;
-        ; they diverge only in Story 22.3's CODE→fixed-memory redirect, where
-        ; the triple is swapped to bank 0 while current_bank stays on the
-        ; user's bank — there the entry must take the bank-0 legacy layout.
+        ; current_bank. The two coincide on every ordinary path but diverge
+        ; whenever the live triple is keyed to a bank other than current_bank:
+        ; (1) Story 22.3's CODE→fixed-memory redirect (triple swapped to bank
+        ; 0 while current_bank stays on the user's bank); (2) a cross-bank
+        ; dispatch window (stub_dispatch sets current_bank=target but does NOT
+        ; swap the triple → triple_owner stays the caller's, per
+        ; structures.asm). In both, the entry takes the layout of the bank it
+        ; physically lands in = the triple owner.
         LD      A, (IY+UserArea.triple_owner)
         OR      A
         JR      Z, .bh_skip_cell                  ; bank-0: legacy layout
