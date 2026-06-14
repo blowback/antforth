@@ -322,7 +322,13 @@ build_header:
         ; initial-fill the cell with the CFA address (overwritten by
         ; w_SEMICOLON_cf with descriptor-stub address; FIND
         ; discriminates on the flag at src/dictionary.asm).
-        LD      A, (IY+UserArea.current_bank)
+        ; Keyed off triple_owner (the bank that OWNS the live HERE/LATEST/
+        ; wordlist triple = the bank the entry physically lands in), not
+        ; current_bank. The two coincide on every ordinary build_header path;
+        ; they diverge only in Story 22.3's CODE→fixed-memory redirect, where
+        ; the triple is swapped to bank 0 while current_bank stays on the
+        ; user's bank — there the entry must take the bank-0 legacy layout.
+        LD      A, (IY+UserArea.triple_owner)
         OR      A
         JR      Z, .bh_skip_cell                  ; bank-0: legacy layout
         ; bank-N>0: set F_HAS_STUB_XT_CELL flag in count_flags
@@ -388,7 +394,9 @@ build_header:
         INC     HL
         LD      (HL), B
         INC     HL
-        LD      A, (IY+UserArea.current_bank)   ; bank the entry lives in
+        LD      A, (IY+UserArea.triple_owner)   ; bank the entry lives in
+                                                ; (= triple owner; see the cell-
+                                                ; reservation note above re Story 22.3)
         LD      (HL), A
 
         ; Restore HL = code field position, clear carry = success

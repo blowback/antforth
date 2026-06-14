@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -990,6 +990,43 @@ test-repl-banking-isolated-22-2: $(TARGET)
 	fi
 
 
+
+# Story 22.3 CODE-words-into-fixed-memory redirect probe (PD-P4-15 §9.1
+# closure): (a) a CODE word defined while bank 5 is live lands in fixed memory
+# (' FOO BANK-OF = -1, not 5); (b) the same word executes from its home bank
+# AND cross-bank after 0 BANK! (direct fixed-memory reachability, no stub-
+# dispatch hang); (c) bank-0 CODE still behaves as the legacy path. Isolated
+# because every probe switches into a non-zero bank.
+test-repl-banking-isolated-22-3: $(TARGET)
+	@echo "Running Story 22.3 isolated CODE-into-fixed-memory redirect probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.3-a-start---";re="---probe-22.3-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$A" | grep -qF 'bankof=-1'; then \
+		echo "PASS: probe-22.3-a (isolated) - bank-5 CODE FOO lands in fixed memory (BANK-OF=-1)"; \
+	else \
+		echo "FAIL: probe-22.3-a (isolated) - expected BANK-OF=-1 (fixed); FOO leaked into a bank"; \
+		echo "  A: $$A"; exit 1; \
+	fi && \
+	B=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.3-b-start---";re="---probe-22.3-b-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$B" | grep -qF 'home=42' && echo "$$B" | grep -qF 'cross=42'; then \
+		echo "PASS: probe-22.3-b (isolated) - FOO executes from home bank 5 AND cross-bank from bank 0"; \
+	else \
+		echo "FAIL: probe-22.3-b (isolated) - cross-bank execute failed (expected home=42 and cross=42)"; \
+		echo "  B: $$B"; exit 1; \
+	fi && \
+	C=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.3-c-start---";re="---probe-22.3-c-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
+	if echo "$$C" | grep -qF 'baseline=7' && echo "$$C" | grep -qF 'barbank=-1'; then \
+		echo "PASS: probe-22.3-c (isolated) - bank-0 CODE BAR unchanged (runs, BANK-OF=-1)"; \
+	else \
+		echo "FAIL: probe-22.3-c (isolated) - bank-0 baseline CODE regressed"; \
+		echo "  C: $$C"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---probe-22.3-suite-end---$$'; then \
+		echo "PASS: probe-22.3-suite (isolated) - suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: probe-22.3-suite (isolated) - end-sentinel missing (mid-suite halt)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
 
 # Story 20.3 Epic-20 close-out integration probe: the bank-aware lookup
 # surface end-to-end in one fixture — three-bank WORDS unified listing (a),

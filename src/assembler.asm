@@ -104,6 +104,13 @@ asm_throw_code:    DW 0   ; THROW code carrier for
                           ; by the post-print epilogue into BC for the
                           ; w_THROW_cf.kernel_entry raise. Single-threaded
                           ; (asm errors are not re-entrant).
+asm_code_home_bank: DB 0xFF ; Story 22.3 CODE→fixed-memory redirect sentinel.
+                          ; $FF = no redirect active (bank-0 CODE / idle).
+                          ; 0..28 = originating bank whose live triple was
+                          ; swapped out to bank 0 for the duration of a
+                          ; CODE..END-CODE built while that bank was live;
+                          ; restored by asm_code_restore_home. Single-threaded
+                          ; (CODE is not re-entrant — asm_mode nesting guard).
 
 ; =====================================================================
 ; Per-CODE label and fixup pools
@@ -447,6 +454,40 @@ asm_cleanup:
         ; Clear asm_mode
         XOR     A
         LD      (asm_mode), A
+        ; Story 22.3: if an uncaught THROW aborted a CODE built while a
+        ; non-zero bank was live, the live triple is still swapped to bank 0
+        ; (with HERE + the bucket head rolled back above). Save that rolled-
+        ; back bank-0 triple to table[0] and reload the originating bank's
+        ; triple so the next `:`/CODE compiles against the user's bank again.
+        ; No-op for bank-0 CODE / no-redirect (sentinel disarmed). Primary-set
+        ; context (uncaught-THROW recovery chain); A/BC/DE/HL free.
+        CALL    asm_code_restore_home
+        RET
+
+; -----------------------------------------------
+; asm_code_restore_home — Story 22.3: undo the CODE→fixed-memory triple
+;   redirect armed in w_CODE_cf. If a redirect is active
+;   (asm_code_home_bank != $FF): re-point triple_owner at the originating
+;   bank, save the live (bank-0) triple to bank-table[0], reload the
+;   originating bank's triple into the live cells, and disarm the sentinel.
+;   No-op when no redirect is active. Clobbers A, BC, DE, HL; IX/IY preserved
+;   (bank_triple_swap's contract). current_bank is deliberately NOT touched —
+;   only the live triple + triple_owner diverge across the CODE window, which
+;   keeps the THROW caught-path frame+9 triple restore coherent
+;   (src/exception.asm). Shared by END-CODE (success), the build_header
+;   no-name path, and asm_cleanup (uncaught-THROW rollback).
+; -----------------------------------------------
+asm_code_restore_home:
+        LD      A, (asm_code_home_bank)
+        INC     A                       ; $FF + 1 = 0 ⟹ sentinel: no redirect
+        RET     Z
+        DEC     A                       ; A = originating bank N (0..28)
+        LD      (IY+UserArea.triple_owner), A   ; live triple keyed back to N
+        LD      C, A                    ; load-source bank = N
+        XOR     A                       ; save-target bank = 0 (live = bank-0 triple)
+        CALL    bank_triple_swap        ; save live→table[0]; load table[N]→live
+        LD      A, 0xFF
+        LD      (asm_code_home_bank), A ; disarm sentinel
         RET
 
 ; -----------------------------------------------
@@ -1263,6 +1304,37 @@ w_CODE_cf:
 
         EXX                                      ; Save TOS/IP/W to shadows
 
+        ; --- Story 22.3: redirect the CODE body into fixed memory (bank 0) ---
+        ; architecture.md PD-P4-15 (§9.1 closure): "No, CODE words must live
+        ; in fixed memory ... reachable directly from fixed memory like the
+        ; existing kernel words." Post-Epic-19/20 the live (HERE, LATEST,
+        ; wordlist_head) triple is swapped to the active bank when a non-zero
+        ; bank is live, so a CODE word would otherwise land in the bank window
+        ; (reachable only from its home bank). Swap the triple to bank 0 for
+        ; the CODE..END-CODE window so build_header (keyed off triple_owner)
+        ; builds the header AND native body in the fixed-memory dictionary.
+        ; current_bank stays on the user's bank — only the triple +
+        ; triple_owner diverge; the restore is symmetric in END-CODE /
+        ; asm_cleanup / the no-name path via asm_code_restore_home, mirroring
+        ; THROW's caught-path frame+9 triple restore (src/exception.asm).
+        ; Mechanism = redirect (force body to fixed memory), a project-lead
+        ; election over the doc-only reading of (b) — Story 22.3, 2026-06-14;
+        ; supersedes the architecture's "0 B / no behavioural change" budget
+        ; line (architecture.md:461, :499). Runs in the post-EXX scratch main
+        ; set: TOS/IP/W are parked in the shadow set, so bank_triple_swap's
+        ; A/BC/DE/HL clobber is harmless and IP(DE) needs no preservation.
+        LD      A, 0xFF
+        LD      (asm_code_home_bank), A          ; default: disarmed (bank-0 CODE)
+        LD      A, (IY+UserArea.current_bank)    ; low byte (bank index ≤ 28)
+        OR      A
+        JR      Z, .code_build_header            ; bank 0: legacy path, no swap
+        LD      (asm_code_home_bank), A          ; arm: stash originating bank N
+        LD      C, 0                             ; load-source = bank 0
+        CALL    bank_triple_swap                 ; A=N save→table[N]; table[0]→live
+        XOR     A
+        LD      (IY+UserArea.triple_owner), A    ; live triple now owned by bank 0
+.code_build_header:
+
         LD      A, F_SMUDGE
         CALL    build_header
         JR      C, .code_no_name
@@ -1298,6 +1370,12 @@ w_CODE_cf:
         NEXT
 
 .code_no_name:
+        ; build_header parsed no name. If the triple was redirected to bank 0
+        ; above (Story 22.3), restore the originating bank's triple before the
+        ; THROW so a failed banked `CODE` (no name) does not strand the live
+        ; triple on bank 0. Runs in the post-EXX scratch main set (clobbers
+        ; A/BC/DE/HL — TOS/IP/W safe in shadows); no-op when not redirected.
+        CALL    asm_code_restore_home
         EXX                                      ; Restore TOS/IP/W from shadows
         JP      asm_err_noname
 
@@ -1344,6 +1422,14 @@ w_END_CODE_cf:
         ; Leave assembler mode
         XOR     A
         LD      (asm_mode), A
+
+        ; Story 22.3: if this CODE word was redirected into fixed memory (a
+        ; non-zero bank was live at CODE), swap the originating bank's triple
+        ; back in. Done AFTER the LATEST restore above so table[0].LATEST is
+        ; saved pointing at the new fixed-memory word (correct per-bank tail);
+        ; current_bank is untouched, so the user remains on their bank. No-op
+        ; for bank-0 CODE (sentinel disarmed). Runs in post-EXX scratch set.
+        CALL    asm_code_restore_home
 
         EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
