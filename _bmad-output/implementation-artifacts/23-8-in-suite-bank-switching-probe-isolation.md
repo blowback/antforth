@@ -1,6 +1,6 @@
 # Story 23.8: In-suite bank-switching probe isolation (close AI-22-5)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -287,3 +287,6 @@ PASS: lint-banking-probes — no un-allow-listed foreign BANK! in tests/banking_
   `lint-banking-probes` regression lint; allow-listed 4 legitimate stayers;
   authoring rule documented. 0 binary bytes (29091 byte-identical). Discharges
   AI-22-5 / AI-23-1. Status → review.
+- 2026-06-28 — Code review complete (zero binary delta, emulator-only test
+  infra, no S9 HW-smoke required); `lint-banking-probes` + `test-repl` re-run
+  green. All ACs met. Status → done.

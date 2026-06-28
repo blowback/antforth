@@ -271,7 +271,7 @@ development_status:
   23-5-epic-23-close-out-ccd-4-regression-gate-v3-1-0-tag: done
   23-6-banked-dictionary-window-top-overflow-guard: done
   23-7-banked-marker-window-top-guard: done
-  23-8-in-suite-bank-switching-probe-isolation: review
-  23-9-complete-banked-window-top-guard-coverage: review
+  23-8-in-suite-bank-switching-probe-isolation: done
+  23-9-complete-banked-window-top-guard-coverage: done
   epic-23-retrospective: done
 

@@ -1,6 +1,6 @@
 # Story 23.9: Complete banked window-top guard coverage
 
-Status: review
+Status: done
 
 <!-- Drafted 2026-06-28 from a /code-review of the banked_memory branch (Stories
      23.5-23.8). The review surfaced that the Story 23.6/23.7 window-top guard,
@@ -156,10 +156,15 @@ review: the 23.6 ALIVE gate made echo-proof via a computed `===42`; the
 - [x] 23.6 ALIVE gate → computed `===42` (`tests/banking_tests_23_6.fth` + Makefile).
 - [x] `lint-banking-probes` regex hardened (strip `."` strings, flag any non-`0`
   `BANK!`).
-- [ ] **Hardware-smoke (PENDING — project-lead/Ant to run; recipe posted in the
-  closing chat message per `feedback_post_hw_smoke_steps_at_review`).** Same-mechanism
-  additions to the HW-verified 23.6/23.7 guard, so risk is low, but a binary-delta
-  story → HW-smoke before `done`.
+- [x] **Hardware-smoke: PASS on real MicroBeast (2026-06-28).** `1 BANK!` (boot's
+  12 banks; no `BANKS-CLEAR`/`+BANK` needed on silicon) → `$C000 HERE - 300 - ALLOT`
+  → `: WA [ $C000 HERE - 1 - ALLOT ] ;` raised `error -8: dictionary overflow` with
+  the REPL staying live (the `;`/EXIT guard fired at the window top on real silicon).
+  Accept control on a fresh bank: `2 BANK!` → `: WG S" hi" 2DROP ;` + `WG` both `ok`
+  (the guarded string copier did not over-reject a fitting banked def). Bank-0 brink
+  case intentionally skipped on HW (no RAM at `$C000` in bank 0 → would scribble
+  CCP/BDOS; the no-op is covered by the 1005/0 bank-0 emulator suite). Same mechanism
+  as the HW-verified 23.6/23.7 guard, now confirmed at the new call sites.
 
 ## Dev Notes
 
@@ -242,10 +247,34 @@ S"/ABORT" framing are guarded as separate fixed writes; the string bodies per-ch
   `test-repl-banking-23-6` 7/0 (now with computed ALIVE gate) ·
   `test-repl-banking-23-7` 4/0 · **`test-repl-banking-23-9` 8/0 (new)** ·
   `lint-banking-probes` PASS · **non-vacuity:** A-F FAIL against an unguarded kernel.
-- **HW-smoke: PENDING** (recipe in closing chat message). Same-mechanism extension of
-  the HW-verified 23.6/23.7 guard.
-- AC1✓ AC2✓ AC3✓ AC4✓ AC5✓ AC6✓ AC7✓ AC8✓ (HW-smoke item open).
+- **HW-smoke: PASS on real MicroBeast (2026-06-28).** See Task 4 for the transcript;
+  `;`/EXIT raised `-8` at the window top in bank 1, fitting banked def in bank 2
+  accepted. Same-mechanism extension of the HW-verified 23.6/23.7 guard.
+- AC1✓ AC2✓ AC3✓ AC4✓ AC5✓ AC6✓ AC7✓ AC8✓ — all closed (HW-smoke now PASS).
 - Committed as `1b3c3eb` (`feedback_no_claude_coauthor` — no co-author trailer).
+
+### Code-review record (2026-06-28, independent re-verification)
+
+Adversarial review re-ran every gate from committed source: `test-repl` **1005/0**,
+`test-repl-banking-23-9` **8/0**, 23-6/23-7/lint green, binary **29,179 B** (= 29,091
++ 88, confirmed by a clean `$(TARGET)` rebuild). Non-vacuity independently reproduced
+(reverted the three source guards → unguarded 29,091 B → cases **A–F FAIL**, G/H pass).
+Mechanism audited line-by-line: `check_banked_headroom` preserves BC(=TOS); the
+inline-string framing width-3 covers xt(2)+count(1) with the count addr at HERE+2 and
+first char at HERE+3 (contiguous, no gap); the alignment pad can never land ≥`$C000`
+(max post-loop HL is `$C000`, even → no pad); the orphaned `PUSH AF` on the per-char
+overflow path is discarded by THROW's SP reset (`LD SP,(sp_base)` on the uncaught path
+`src/exception.asm:569`, SP-from-frame on the caught path). No HIGH/MEDIUM defects.
+
+LOW findings (recorded, not blocking; deferred unless picked up later):
+- **L1 (test-hardening):** AC3 exact-`$C000`-accept is not *directly* probed for the
+  five new paths — accept case G is far below `$C000`, H is bank-0. Relies on the
+  shared 23.6 brink test (cases E/F). Optional: add a new-path exact-boundary accept.
+- **L2 (process):** `make build` is a silent no-op (no `build:` target; matches the
+  `build/` dir), so the Pre-edit-baseline `wc -c` recipe can read a stale artifact —
+  hit live during review. Optional: add `.PHONY: build` aliasing `$(TARGET)`.
+- **L3 (informational):** per-char `CALL check_banked_headroom` runs even on bank 0
+  (early `RET Z`). Negligible at compile time; accepted as-is.
 
 ### File List
 
@@ -267,3 +296,4 @@ S"/ABORT" framing are guarded as separate fixed writes; the string bodies per-ch
 | Date | Change |
 |------|--------|
 | 2026-06-28 | Story 23.9 implemented (commit 1b3c3eb): banked window-top guard coverage completed for `;`/`LITERAL`/`DOES>` (fixed-width `GUARD_BANKED_WRITE`) and `S"`/`."`/`ABORT"` (framing guard + per-char `check_banked_headroom`). +88 B (29,091→29,179). New probe `tests/banking_tests_23_9.fth` + `make test-repl-banking-23-9` (8/0, non-vacuity confirmed). Opportunistic test hardening: 23.6 ALIVE gate → computed `===42`; `lint-banking-probes` regex tightened. Stale 23.7 comment corrected; `docs/throw-codes.md` updated. All gates green; bank-0 `test-repl` 1005/0. Status → review (HW-smoke pending). |
+| 2026-06-28 | Code review (independent re-verification): all gates re-run green from committed source (1005/0 · 23-9 8/0 · 23-6/23-7/lint · 29,179 B), non-vacuity reproduced (A–F fail unguarded), mechanism audited line-by-line — no HIGH/MEDIUM defects; 3 LOW findings recorded as optional follow-ups. HW-smoke PASS on real MicroBeast (`;`/EXIT raised `-8` at the window top in bank 1; fitting banked def accepted in bank 2; REPL stayed live). All 8 ACs closed. **Status → done.** |
