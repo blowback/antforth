@@ -258,8 +258,9 @@ development_status:
   epic-23: in-progress
   23-1-assembler-in-out-operand-order-fix-zilog-dst-src: done
   23-2-value-to-ans-core-named-values: done
-  23-3-z80-runtime-in-out-port-words: backlog
+  23-3-z80-runtime-in-out-port-words: done
   23-4-ud-environment-query-gaps: backlog
   23-5-epic-23-close-out-ccd-4-regression-gate-v3-1-0-tag: backlog
+  23-6-banked-dictionary-window-top-overflow-guard: backlog
   epic-23-retrospective: optional
 

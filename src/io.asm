@@ -183,6 +183,42 @@ w_KEYQ_cf:
         NEXT
 
 ; -----------------------------------------------
+; Z80 hardware port I/O (antforth extensions)
+;   Raw register-indirect port access. BC is TOS, and the Z80 register-
+;   indirect forms take the full 16-bit port in BC (B = A8..A15, C = A0..A7),
+;   so the port needs no marshalling. MMU-agnostic fixed-memory code words.
+; -----------------------------------------------
+
+; -----------------------------------------------
+; IN ( port -- byte )
+;   Read one byte from Z80 I/O port BC via IN A,(C)
+; antforth extension — raw Z80 port read; BC=port (B=A8..A15)
+; -----------------------------------------------
+w_IN:
+        DEFCODE "IN", 0
+w_IN_cf:
+        CALL    check_underflow ; needs 1 cell (port); preserves BC
+        IN      A, (C)          ; ED 78 — read port BC into A
+        LD      C, A            ; zero-extend to a cell (cf. C@)
+        LD      B, 0            ; high byte provably 0
+        NEXT
+
+; -----------------------------------------------
+; OUT ( x port -- )
+;   Write the low byte of x to Z80 I/O port BC via OUT (C),A
+; antforth extension — raw Z80 port write; ( x port -- ), datum below address like !
+; -----------------------------------------------
+w_OUT:
+        DEFCODE "OUT", 0
+w_OUT_cf:
+        CALL    check_underflow_2 ; needs 2 cells (x, port); preserves BC
+        POP     HL              ; HL = x (NOS); BC still = port (TOS)
+        LD      A, L            ; A = low byte of x
+        OUT     (C), A          ; ED 79 — write A to port BC
+        POP     BC              ; new TOS (OUT consumed x and port)
+        NEXT
+
+; -----------------------------------------------
 ; Internal BDOS output helpers (not Forth words)
 ; -----------------------------------------------
 bdos_putchar:               ; Entry: E = character

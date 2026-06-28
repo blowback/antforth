@@ -877,6 +877,8 @@ antforth also defines words that are useful but outside the Core word sets:
 | `.BANKS` | `banking.asm:552` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-6 — minimal form; per-bank `used`/`free` are placeholders, Epic 19's bank-aware `:` makes them real, Epic 22 polishes formatting; totals row prints `bank_count * 16384` via D.R, follows current BASE) |
 | `BANK-OF` | `banking.asm:857` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-5 — one-byte read of descriptor-stub byte 0, sign-extended; `-1` for fixed-memory words, `0..28` for banked words) |
 | `IN-BANK` | `banking.asm:952` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-4 — save current bank, switch, EXECUTE xt, restore caller's bank; CATCH-safe via DEFWORD-with-internal-CATCH discipline so saved bank is restored on the THROW unwind path; kernel-blessed, NOT user library) |
+| `IN` | `io.asm:199` | Non-standard (antforth extension — Story 23.3; `( port -- byte )` raw Z80 port read via `IN A,(C)` with `BC = port` (B = A8..A15); result zero-extended to a cell (high byte provably 0). Distinct from the assembler's `IN,`. Underflow → -4) |
+| `OUT` | `io.asm:213` | Non-standard (antforth extension — Story 23.3; `( x port -- )` raw Z80 port write via `OUT (C),A` with `BC = port`; datum below address like `!`, both cells consumed. Distinct from the assembler's `OUT,`. Underflow → -4) |
 
 ---
 

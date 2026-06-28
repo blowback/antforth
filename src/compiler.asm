@@ -683,17 +683,20 @@ w_SEMICOLON_cf:
         LD      (IY+UserArea.here+1), H
 
         ; --- bank-aware stub allocation ---
-        ; If current_bank == 0: skip stub_allocate. LATEST stays at the
+        ; If triple_owner == 0: skip stub_allocate. LATEST stays at the
         ; entry-start value the build_header tail wrote (= hash_link
         ; address, NOT CFA — bank-0 entries take the .bh_skip_cell branch
         ; and have no cell; xt extraction is the legacy
         ; post-name-= CFA path at src/dictionary.asm). Preserves the
         ; byte-identical bank-0 dispatch.
-        ; If current_bank > 0: call stub_allocate (src/banking.asm);
+        ; If triple_owner > 0: call stub_allocate (src/banking.asm);
         ; overwrite the reserved cell with the returned stub_addr; update
         ; LATEST to stub_addr. The stub's address IS the word's xt.
         ; Dispatch consumes via the stub's own RST $28 → stub_dispatch
         ; (src/banking.asm).
+        ; Gated on triple_owner (the bank that owns the live triple = the
+        ; bank this entry lands in), matching build_header's cell reservation;
+        ; current_bank diverges only inside a cross-bank dispatch window.
         ; PUSH/POP DE wrap IS required: the bank-N>0 body uses DE as a
         ; scratch (EX DE,HL to set up stub_allocate's target_addr input
         ; and again to extract the stub_addr return). Without the wrap,
@@ -701,14 +704,14 @@ w_SEMICOLON_cf:
         ; crashes. stub_allocate itself preserves main-set (its contract
         ; in src/banking.asm) so the wrap is only protecting
         ; against SEMICOLON's own DE-scratch usage.
-        LD      A, (IY+UserArea.current_bank)
+        LD      A, (IY+UserArea.triple_owner)
         OR      A
         JR      Z, .semi_skip_stub
         ; PUSH BC required — BC is TOS-in-register
         ; and `LD B, A` below clobbers it for stub_allocate's target_bank
         ; input. Without this wrap, defining a SECOND banked colon while a
         ; previous banked xt sits on the data stack corrupts xt.high to
-        ; current_bank (e.g., xt $D4CB → $05CB after `: _p192e-b 22 ;`
+        ; the bank index (e.g., xt $D4CB → $05CB after `: _p192e-b 22 ;`
         ; with 5 BANK! active and the stash from `: _p192e-a 11 ;` on
         ; stack).
         PUSH    BC                                ; save TOS
@@ -717,7 +720,7 @@ w_SEMICOLON_cf:
         INC     HL
         INC     HL                                ; HL = CFA address
         EX      DE, HL                             ; DE = CFA = stub target_addr
-        LD      B, A                               ; B = target_bank (A still = current_bank)
+        LD      B, A                               ; B = target_bank (A still = triple_owner)
         CALL    stub_allocate                     ; HL = stub_addr (= xt); main-set preserved
         LD      DE, (colon_saved_xt_cell)         ; DE = cell address
         EX      DE, HL                             ; HL = cell address; DE = stub_addr
@@ -792,6 +795,43 @@ w_LITERAL_cf:
         NEXT
 
 ; -----------------------------------------------
+; alloc_doer_stub — bank-aware descriptor-stub allocation for a defining word.
+;   Shared by CREATE and VALUE (identical EXX'd context). Call after the code
+;   field + body are emitted and HERE is updated, with bh_stub_xt_addr set by
+;   build_header. On a bank that owns no stub (triple_owner == 0) it is a no-op;
+;   otherwise it allocates a stub, patches the reserved cell to the stub addr,
+;   and points LATEST at it (the stub addr IS the bank-stable xt).
+;
+;   Keyed off triple_owner — the bank the entry physically lands in (= the
+;   owner of the live HERE/LATEST triple), matching build_header's stub-cell
+;   reservation. current_bank would diverge from triple_owner under a cross-bank
+;   dispatch window (stub_dispatch sets current_bank without swapping the
+;   triple), reserving no cell yet still allocating a stub through a stale
+;   bh_stub_xt_addr = wild write; gating on triple_owner keeps the two in step.
+;
+;   Caller is EXX'd, so BC/DE are alt-set scratch (no PUSH wrap needed).
+;   stub_allocate preserves the main set. Clobbers A/BC/DE/HL/F.
+; -----------------------------------------------
+alloc_doer_stub:
+        LD      A, (IY+UserArea.triple_owner)
+        OR      A
+        RET     Z                                ; bank-0: no stub, legacy dispatch
+        LD      B, A                              ; B = target_bank
+        LD      HL, (bh_stub_xt_addr)             ; HL = cell address
+        INC     HL
+        INC     HL                                ; HL = CFA address (post-cell)
+        EX      DE, HL                            ; DE = CFA = stub target_addr
+        CALL    stub_allocate                     ; HL = stub_addr (= xt)
+        LD      DE, (bh_stub_xt_addr)             ; DE = cell address
+        EX      DE, HL                            ; HL = cell addr; DE = stub_addr
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                           ; cell ← stub_addr
+        LD      (IY+UserArea.latest), E
+        LD      (IY+UserArea.latest+1), D         ; LATEST ← stub_addr
+        RET
+
+; -----------------------------------------------
 ; CREATE ( "<spaces>name" -- )
 ;   Parse name, build dictionary header at HERE with JP DOVAR
 ;   code field + 2-byte does-addr slot (zeroed). No SMUDGE, no
@@ -823,31 +863,9 @@ w_CREATE_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; --- bank-aware doer-stub allocation ---
-        ; If current_bank == 0: skip stub_allocate (byte-identical
-        ; bank-0 dispatch). If current_bank > 0: call stub_allocate
-        ; (src/banking.asm); overwrite the reserved cell at
-        ; (bh_stub_xt_addr) with the returned stub_addr; update LATEST.
-        ;
-        ; NO PUSH BC / PUSH DE required — w_CREATE_cf EXX'd at entry,
-        ; so BC/DE inside the body are alt-set scratch (not TOS/IP).
-        LD      A, (IY+UserArea.current_bank)
-        OR      A
-        JR      Z, .create_skip_stub
-        LD      B, A                              ; B = target_bank
-        LD      HL, (bh_stub_xt_addr)             ; HL = cell address
-        INC     HL
-        INC     HL                                ; HL = CFA address (post-cell)
-        EX      DE, HL                            ; DE = CFA = stub target_addr
-        CALL    stub_allocate                     ; HL = stub_addr (= xt)
-        LD      DE, (bh_stub_xt_addr)             ; DE = cell address
-        EX      DE, HL                            ; HL = cell addr; DE = stub_addr
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D                           ; cell ← stub_addr
-        LD      (IY+UserArea.latest), E
-        LD      (IY+UserArea.latest+1), D         ; LATEST ← stub_addr
-.create_skip_stub:
+        ; --- bank-aware doer-stub allocation (shared helper) ---
+        ; EXX'd at entry, so BC/DE are alt-set scratch (no PUSH wrap needed).
+        CALL    alloc_doer_stub
 
         EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
@@ -961,27 +979,9 @@ w_VALUE_cf:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
 
-        ; --- bank-aware doer-stub allocation (clone of w_CREATE_cf) ---
-        ; bank-0: skip (byte-identical legacy dispatch). bank-N>0: stub so
-        ; the xt is bank-stable. BC/DE are alt-set scratch here (EXX'd at
-        ; entry), so no PUSH wrap is required.
-        LD      A, (IY+UserArea.current_bank)
-        OR      A
-        JR      Z, .value_skip_stub
-        LD      B, A                              ; B = target_bank
-        LD      HL, (bh_stub_xt_addr)             ; HL = cell address
-        INC     HL
-        INC     HL                                ; HL = CFA address (post-cell)
-        EX      DE, HL                            ; DE = CFA = stub target_addr
-        CALL    stub_allocate                     ; HL = stub_addr (= xt)
-        LD      DE, (bh_stub_xt_addr)             ; DE = cell address
-        EX      DE, HL                            ; HL = cell addr; DE = stub_addr
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D                           ; cell ← stub_addr
-        LD      (IY+UserArea.latest), E
-        LD      (IY+UserArea.latest+1), D         ; LATEST ← stub_addr
-.value_skip_stub:
+        ; --- bank-aware doer-stub allocation (shared helper) ---
+        ; EXX'd at entry, so BC/DE are alt-set scratch (no PUSH wrap needed).
+        CALL    alloc_doer_stub
 
         EXX                                      ; Restore TOS/IP/W from shadows
         POP     BC                               ; value consumed — pop new TOS
@@ -1100,7 +1100,13 @@ to_verify:
 ;   genuine VALUE as a stub (→ wild active_pages[] index + wild cross-bank
 ;   write). Window-resident xts therefore skip straight to the non-stub
 ;   (target_bank 0) path, which then maps bank 0 in .trm_decide.
+;
+;   This rests on stubs being unreachable in the window: they grow upward from
+;   STUB_ALLOC_BASE, so they must all land in fixed memory (>= $C000). Enforce
+;   that structurally — a future STUB_ALLOC_BASE move into the window would
+;   silently void the heuristic.
 ; -----------------------------------------------
+        ASSERT STUB_ALLOC_BASE >= 0xC000
 to_resolve_map_hl:
         BIT     7, H
         JR      Z, .trm_fixed           ; <$8000 → fixed memory, marker is safe to read

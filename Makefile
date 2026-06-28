@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -140,6 +140,18 @@ ASM_PROBE = tests/asm_in_out_tests.fth
 # `^FAIL:` negative guard catches a real runtime FAIL.
 VALUE_TO_PROBE = tests/value_to_tests.fth
 
+# --- Z80 runtime IN / OUT port-word probe (Story 23.3) ---
+# Self-printing PASS/FAIL probe: IN zero-extension (72 IN < 100h), OUT runs
+# without throw and consumes exactly 2 cells, IN/IN, + OUT/OUT, all resolve,
+# and IN/OUT underflow each raise -4. NO value round-trip is asserted — the
+# OUT target (FE) is an inert/undecoded port and does not latch, by definition.
+#
+# Verdict matching is COLUMN-0-ANCHORED (`^PASS:` / `^FAIL:` / `^error -4`):
+# runtime verdicts land at column 0, while the echoed source (indented colon
+# bodies + a comment that quotes the `error -4` phrase) does not — so neither
+# the echoed PASS/FAIL literals nor the echoed error phrase can false-green.
+IN_OUT_PROBE = tests/in_out_tests.fth
+
 test-repl-value-to: $(TARGET)
 	@echo "Running VALUE/TO named-value probe under $(IZCPM)..."
 	@OUTPUT=$$({ sed 's/$$/\r/' $(VALUE_TO_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
@@ -166,6 +178,33 @@ test-repl-value-to: $(TARGET)
 		echo "PASS: REPL value/to probe — TO on undefined name throws -13"; \
 	else \
 		echo "FAIL: REPL value/to probe — expected 'error -13: undefined word' in output"; \
+		FAILED=1; \
+	fi; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+
+test-repl-in-out: $(TARGET)
+	@echo "Running Z80 runtime IN/OUT port-word probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(IN_OUT_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	FAILED=0; \
+	if echo "$$OUTPUT" | grep -qE '^FAIL: io-'; then \
+		echo "FAIL: REPL in/out probe — a runtime '^FAIL: io-*' verdict was printed"; \
+		FAILED=1; \
+	fi; \
+	for pat in 'PASS: io-distinct-words' 'PASS: io-in-zero-extend' 'PASS: io-out-no-throw'; do \
+		if echo "$$OUTPUT" | grep -qE "^$$pat"; then \
+			echo "PASS: REPL in/out probe — $$pat"; \
+		else \
+			echo "FAIL: REPL in/out probe — expected '$$pat' at column 0 in output"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if [ $$(echo "$$OUTPUT" | grep -c '^error -4: stack underflow') -ge 2 ]; then \
+		echo "PASS: REPL in/out probe — IN and OUT underflow both throw -4"; \
+	else \
+		echo "FAIL: REPL in/out probe — expected two column-0 'error -4: stack underflow' lines"; \
 		FAILED=1; \
 	fi; \
 	if [ $$FAILED -ne 0 ]; then \
@@ -1418,7 +1457,10 @@ test: $(SRCS) | $(BUILDDIR)
 	fi
 
 # See tests/README.md for probe-authoring conventions (PAD-as-canonical-transient-buffer; S12 hardware-typed-probe lints)
-test-repl: $(TARGET)
+# Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
+# prerequisites so a bare `make test-repl` exercises them — they are otherwise
+# green-by-omission, caught only when invoked by hand.
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \
