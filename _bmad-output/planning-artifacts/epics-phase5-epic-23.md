@@ -303,9 +303,10 @@ rule).
 
 > These stories were added to Epic 23 **after** the v3.1.0 close-out (Story 23.5).
 > 23.6 came from the 23.2/23.3 code review; 23.7 and 23.8 came from the Epic-23
-> retrospective (2026-06-28, action items AI-23-2 and AI-23-1). They are correctness
-> and test-infra hardening — **no new feature FRs** — and do **not** gate the
-> already-applied/authorised v3.1.0 tag. 23.7 carries a small binary delta (next
+> retrospective (2026-06-28, action items AI-23-2 and AI-23-1); 23.9 came from a
+> /code-review of the 23.5–23.8 branch (2026-06-28). They are correctness and
+> test-infra hardening — **no new feature FRs** — and do **not** gate the
+> already-applied/authorised v3.1.0 tag. 23.7/23.9 carry small binary deltas (next
 > release / v3.1.1); 23.8 is 0 B test-infra. Full specs live in the per-story files
 > under `_bmad-output/implementation-artifacts/`.
 
@@ -353,6 +354,33 @@ are presently at risk (the `.BANKS` probes were de-coloned to interpret level du
 isolated fixture so the main suite is structurally immune, and add a minimal
 grep-based `make lint-banking-probes` (with a negative test) so the discipline
 can't silently rot back. **0 kernel bytes.**
+
+### Story 23.9 — Complete banked window-top guard coverage *(review — correctness)*
+
+**As** a MicroBeast Forth programmer compiling into a banked dictionary,
+**I want** *every* word that grows the dictionary at `HERE` in a bank — not just the
+`,`/`C,`/`ALLOT`/`COMPILE,`/defining-word/`MARKER` paths 23.6/23.7 cover — to raise a
+clean `-8` before it would cross `$C000`,
+**so that** `;`, `LITERAL`, `DOES>`, `S"`, `."` and `ABORT"` in a near-full bank can
+never silently write through slot 3 and corrupt it.
+
+**Why:** a /code-review of the 23.5–23.8 branch found the 23.6/23.7 guard *mechanism*
+correct but the *coverage* incomplete — five more paths write to `HERE` through their
+own hand-rolled stores with no headroom check. `;` is the sharpest (every banked
+colon ends with it, and the 23.6-guarded body compilers legally let `HERE` reach
+exactly `$C000`); `S"`/`."`/`ABORT"` are the most damaging (overrun scales with the
+string length). **Design:** reuse the 23.6 infra — fixed-width writes (`;`=2,
+`LITERAL`=4, `DOES>`=2) take one `GUARD_BANKED_WRITE`; the inline-string copiers take
+a framing `GUARD_BANKED_WRITE 3` plus a **per-character** `check_banked_headroom`
+(an up-front TIB bound would over-reject a short string with a long line tail). All
+sites run primary-set → direct `dict_overflow_throw`, no EXX; no new throw code.
+**+88 B (29,091→29,179).** Probe `tests/banking_tests_23_9.fth` +
+`make test-repl-banking-23-9` (8 cases A–H; non-vacuity proven — A–F fail vs an
+unguarded kernel). Opportunistic same-review hardening: 23.6 ALIVE gate →
+echo-proof computed `===42`; `lint-banking-probes` regex tightened to catch
+hex/variable/computed/post-string `BANK!`. Real (narrow) correctness gap in shipped
+v3.1.0; S9 hardware-smoke required (pending). Full AC set in
+`23-9-complete-banked-window-top-guard-coverage.md`.
 
 ---
 
