@@ -918,6 +918,265 @@ w_CONSTANT_cf:
         JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
+; VALUE ( x "<spaces>name" -- )
+;   Define a named mutable cell: executing the name pushes the stored x;
+;   TO rewrites it. Shaped like CONSTANT but with two deliberate changes:
+;     1. Emit JP DOVALUE (not JP DOCON) so TO can recognise a VALUE by its
+;        code field and reject a CONSTANT / colon word / VARIABLE.
+;     2. Append the CREATE-style bank-aware stub block so a bank-N>0 VALUE
+;        gets a descriptor stub and a bank-stable xt — without it a banked
+;        VALUE would be invocable only from its home bank.
+;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5; the
+;   value-cell x is consumed before the THROW raise.
+; -----------------------------------------------
+w_VALUE:
+        DEFCODE "VALUE", 0
+w_VALUE_cf:
+        EXX                                      ; Save TOS (value)/IP/W to shadows
+        XOR     A                                ; flags = 0
+        CALL    build_header
+        JR      C, .value_no_name
+
+        ; HL = code field — emit JP DOVALUE
+        LD      (HL), 0xC3                       ; JP opcode
+        INC     HL
+        LD      (HL), LOW DOVALUE
+        INC     HL
+        LD      (HL), HIGH DOVALUE
+        INC     HL
+
+        ; Body: emit initial value from BC' (shadow), as CONSTANT does
+        EXX                                      ; BC = saved value (TOS)
+        LD      A, C                             ; A = value low byte
+        EXX                                      ; back to main, HL = body pos
+        LD      (HL), A
+        INC     HL
+        EXX                                      ; BC = saved value again
+        LD      A, B                             ; A = value high byte
+        EXX                                      ; back to main
+        LD      (HL), A
+        INC     HL
+
+        ; Update HERE
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H
+
+        ; --- bank-aware doer-stub allocation (clone of w_CREATE_cf) ---
+        ; bank-0: skip (byte-identical legacy dispatch). bank-N>0: stub so
+        ; the xt is bank-stable. BC/DE are alt-set scratch here (EXX'd at
+        ; entry), so no PUSH wrap is required.
+        LD      A, (IY+UserArea.current_bank)
+        OR      A
+        JR      Z, .value_skip_stub
+        LD      B, A                              ; B = target_bank
+        LD      HL, (bh_stub_xt_addr)             ; HL = cell address
+        INC     HL
+        INC     HL                                ; HL = CFA address (post-cell)
+        EX      DE, HL                            ; DE = CFA = stub target_addr
+        CALL    stub_allocate                     ; HL = stub_addr (= xt)
+        LD      DE, (bh_stub_xt_addr)             ; DE = cell address
+        EX      DE, HL                            ; HL = cell addr; DE = stub_addr
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                           ; cell ← stub_addr
+        LD      (IY+UserArea.latest), E
+        LD      (IY+UserArea.latest+1), D         ; LATEST ← stub_addr
+.value_skip_stub:
+
+        EXX                                      ; Restore TOS/IP/W from shadows
+        POP     BC                               ; value consumed — pop new TOS
+        NEXT
+
+.value_no_name:
+        EXX                                      ; Restore primary set (THROW entry contract)
+        POP     BC                               ; value consumed — pop new TOS first so the
+                                                 ; user's value-cell is not orphaned across THROW
+        ; -16 THROW: zero-length name per ANS Forth 1994 §9.3.5
+        LD      BC, THROW_ZERO_LEN_NAME
+        JP      w_THROW_cf.kernel_entry
+
+; -----------------------------------------------
+; TO ( x "<spaces>name" -- ) / compile: ( "<spaces>name" -- )  IMMEDIATE
+;   Parse the name, verify it is a VALUE, then store/compile-a-store.
+;   STATE-aware: interpreting stores x now; compiling emits LIT <xt> (TO)
+;   so the store happens at run time. Compiling the xt (not a raw cell
+;   address) keeps the banked case correct — the xt is bank-stable.
+;   Errors: -13 (undefined name, via the ' path); -32 (name is not a
+;   VALUE, via to_verify).
+; -----------------------------------------------
+w_TO:
+        DEFIMMED "TO"
+w_TO_body:
+w_TO_cf EQU w_TO_body - 3
+        DW w_TICK_cf                 ; ( [x] "name" -- [x] xt ) parse+find; -13 on miss
+        DW to_verify                 ; ( ... xt -- ... xt ) require VALUE; -32 otherwise
+        DW w_STATE_cf                ; ( -- a-addr )
+        DW w_FETCH_cf                ; ( a-addr -- state )
+        DW w_QBRANCH_cf              ; consume state; 0 (interpret) → branch
+        DW .to_interpret - $
+        ; compile arm (STATE != 0): ( xt -- ) compile  LIT xt  then  (TO)
+        DW w_LITERAL_cf              ; compile LIT xt (consumes xt)
+        DW w_LIT_cf, w_PAREN_TO_cf   ; push (TO)'s xt
+        DW w_COMPILE_COMMA_cf        ; compile (TO)
+        DW EXIT_CODE
+.to_interpret:
+        ; ( x xt -- ) store x into the VALUE's cell now
+        DW w_PAREN_TO_cf
+        DW EXIT_CODE
+
+; -----------------------------------------------
+; (TO) ( x xt -- )  — run-time store compiled by TO in compile mode.
+;   Bank-aware: resolves xt → (bank, cell) and writes x into the cell,
+;   mapping the target bank into the window when it is not the current one.
+; -----------------------------------------------
+w_PAREN_TO:
+        DEFCODE "(TO)", 0
+w_PAREN_TO_cf:
+        ; ( x xt -- ) BC = xt (TOS); x = NOS on the data stack
+        PUSH    DE                      ; save IP (DE is free across resolve)
+        LD      H, B
+        LD      L, C                    ; HL = xt
+        CALL    to_resolve_map_hl       ; HL = CFA (slot 2 mapped if cross-bank)
+        INC     HL
+        INC     HL
+        INC     HL                      ; HL = value cell (CFA+3)
+        POP     DE                      ; restore IP
+        POP     BC                      ; BC = x (was NOS) — data stack is fixed-memory
+        LD      (HL), C
+        INC     HL
+        LD      (HL), B                 ; cell ← x
+        CALL    to_unmap                ; restore slot 2 if it was switched
+        POP     BC                      ; new TOS
+        NEXT
+
+; -----------------------------------------------
+; to_verify — bare runtime ( xt -- xt ): require xt to be a VALUE.
+;   Reads xt's code-field JP operand (paging in the home bank for a banked
+;   stub xt) and compares it to DOVALUE. Leaves xt untouched on a match;
+;   raises -32 (invalid name argument) otherwise. Reached via DW to_verify.
+; -----------------------------------------------
+to_verify:
+        PUSH    BC                      ; save xt (left as TOS on success)
+        PUSH    DE                      ; save IP
+        LD      H, B
+        LD      L, C                    ; HL = xt
+        CALL    to_resolve_map_hl       ; HL = CFA (mapped if needed)
+        INC     HL                      ; CFA+1 (JP operand lo)
+        LD      E, (HL)
+        INC     HL                      ; CFA+2 (JP operand hi)
+        LD      D, (HL)                 ; DE = code-field handler address
+        CALL    to_unmap                ; restore slot 2 (preserves DE)
+        LD      HL, DOVALUE
+        LD      A, E
+        CP      L
+        JR      NZ, .tv_bad
+        LD      A, D
+        CP      H
+        JR      NZ, .tv_bad
+        POP     DE                      ; restore IP
+        POP     BC                      ; restore xt (TOS)
+        NEXT
+.tv_bad:
+        ; not a VALUE — -32. THROW resets SP from the catch frame, so the
+        ; two abandoned PUSHes need no cleanup; BC is primary-set here.
+        LD      BC, THROW_INVALID_NAME_ARG
+        JP      w_THROW_cf.kernel_entry
+
+; -----------------------------------------------
+; to_resolve_map_hl — shared xt → CFA resolver (TO's verify + (TO) store).
+;   In:  HL = xt (descriptor-stub xt $EF.., or a bank-0/kernel CFA).
+;   Out: HL = CFA. If the CFA is window-resident ($8000..$BFFF) and lives
+;        in a bank other than current_bank, that bank is mapped into slot 2
+;        and to_switched is set so to_unmap restores the caller's page.
+;   Clobbers: A, BC, DE. Preserves IX, IY and the data stack.
+;
+;   Stub-marker sampling is GUARDED on HL being fixed-memory. A descriptor
+;   stub always lives in fixed memory (STUB_ALLOC_BASE = $D4CB+), so a
+;   window-resident xt ($8000..$BFFF) can ONLY be a bank-0 portal CFA — the
+;   bank-0 dictionary grows up through $8000 and those words get no stub.
+;   The marker byte must NOT be sampled at a window address: TO may be invoked
+;   from another bank, so slot 2 then holds a FOREIGN bank; an `LD A,(HL)`
+;   there reads the wrong bank, and a coincidental $EF would mis-decode a
+;   genuine VALUE as a stub (→ wild active_pages[] index + wild cross-bank
+;   write). Window-resident xts therefore skip straight to the non-stub
+;   (target_bank 0) path, which then maps bank 0 in .trm_decide.
+; -----------------------------------------------
+to_resolve_map_hl:
+        BIT     7, H
+        JR      Z, .trm_fixed           ; <$8000 → fixed memory, marker is safe to read
+        BIT     6, H
+        JR      NZ, .trm_fixed          ; >=$C000 → fixed memory, marker is safe to read
+        ; window-resident ($8000..$BFFF) → bank-0 portal CFA, never a stub
+        XOR     A                       ; target_bank 0; HL already = CFA
+        JR      .trm_decide
+.trm_fixed:
+        LD      A, (HL)
+        CP      0xEF                    ; descriptor-stub marker (RST $28)?
+        JR      Z, .trm_stub
+        ; non-stub: HL already = CFA; bank-0/kernel word → target_bank 0
+        XOR     A
+        JR      .trm_decide
+.trm_stub:
+        INC     HL                      ; xt+1
+        LD      A, (HL)                 ; A = target_bank
+        INC     HL                      ; xt+2
+        LD      E, (HL)
+        INC     HL                      ; xt+3
+        LD      D, (HL)                 ; DE = CFA in target bank
+        EX      DE, HL                  ; HL = CFA
+.trm_decide:
+        ; HL = CFA, A = target_bank (0 for a bank-0/window/fixed CFA, else the
+        ; stub's 0..28 bank byte). Map only if the CFA is window-resident and
+        ; the target bank is not the one already in slot 2.
+        BIT     7, H
+        JR      Z, .trm_nomap           ; <$8000 fixed memory
+        BIT     6, H
+        JR      NZ, .trm_nomap          ; >=$C000 fixed memory
+        CP      (IY+UserArea.current_bank)
+        JR      Z, .trm_nomap           ; already mapped
+        CALL    to_map_target           ; A = target_bank → slot 2 (preserves HL)
+        LD      A, 1
+        LD      (to_switched), A
+        RET
+.trm_nomap:
+        XOR     A
+        LD      (to_switched), A
+        RET
+
+; to_map_target — A = target_bank: save the caller's slot-2 page, then map
+;   active_pages[target_bank] into slot 2. Preserves BC, DE, HL.
+to_map_target:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+        LD      C, A                    ; C = target_bank
+        CALL    mbb_get_slot2           ; A = caller's slot-2 page (preserves BC,DE,HL)
+        LD      (to_saved_page), A
+        LD      B, 0                    ; BC = target_bank
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                  ; &active_pages[target_bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2           ; map slot 2 (preserves BC,DE,HL)
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
+
+; to_unmap — restore slot 2 to the saved page iff to_resolve_map_hl mapped.
+;   Preserves BC, DE, HL (clobbers A/F).
+to_unmap:
+        LD      A, (to_switched)
+        OR      A
+        RET     Z
+        XOR     A
+        LD      (to_switched), A
+        LD      A, (to_saved_page)
+        JP      mbb_set_slot2           ; tail; restores slot 2
+
+to_saved_page:  DB 0                    ; caller's slot-2 page during a TO cross-bank access
+to_switched:    DB 0                    ; non-zero iff to_resolve_map_hl mapped slot 2
+
+; -----------------------------------------------
 ; DOES> ( -- ) IMMEDIATE
 ;   Compile (DOES>) into the current definition.
 ;   The DOES> body follows and is compiled normally by ;.

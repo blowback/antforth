@@ -859,6 +859,9 @@ throw_desc_table:
         DW      -58
         DB      23
         DB      "unexpected end of input"
+        DW      THROW_INVALID_NAME_ARG      ; -32
+        DB      21
+        DB      "invalid name argument"
         ; --- File-Access codes ---
         DW      THROW_FILE_IO               ; -37
         DB      14

@@ -309,15 +309,16 @@ _probe-minus-bank-ldir
 \ branch unreached and the recipe-side grep false-PASSing on the
 \ source-echo of the ." PASS: ..." literal).
 \
-\ Sentinel-bounded output (Story 17.5.1 AC2): the Makefile recipes
-\ (test-repl-banking + test-repl-banking-skip) use awk to extract the
-\ runtime-output region between ---plus-bank-cap-start--- and
-\ ---plus-bank-cap-end--- sentinels, then grep within that region for
-\ assertion text ("cap-check-fired-after-29-seed") plus the seed-loop
-\ completion witness ("seeded: 29") and negative-assert on FAIL strings.
-\ The assertion text deliberately lacks a "PASS:" prefix — the
-\ recipe-side awk-extract handles verdict-label semantics, not the
-\ probe-side text.
+\ Sentinel-bounded output: the test-repl-banking recipe uses awk to extract
+\ the runtime-output region between ---plus-bank-cap-start--- and
+\ ---plus-bank-cap-end--- sentinels, then asserts the witnesses the
+\ interpret-level driver below prints — "seeded: 29" (seed-loop completion),
+\ "cap-catch-code: -2" (the 30th +BANK threw the cap code via CATCH), and
+\ "cap-banks-after: 29" (count intact after the caught abort) — and
+\ negative-asserts on FAIL strings. The witnesses deliberately lack a "PASS:"
+\ prefix — the recipe handles verdict-label semantics, not the probe text.
+\ See the Story 23.2 restructure note above _do-one-more-+bank for why the
+\ verdict is driven at interpret level rather than from a colon body.
 \
 \ The cap check itself is a kernel-cell comparison.
 \
@@ -330,29 +331,28 @@ _probe-minus-bank-ldir
   29 0 DO $22 +BANK LOOP
 ;
 : _do-one-more-+bank ( -- ) $22 +BANK ;
-: _probe-plus-bank-cap ( -- )
-  BANKS-CLEAR
-  ." ---plus-bank-cap-start---" CR
-  _do-29-+bank
-  ." seeded: " BANKS . CR
-  BANKS DUP 29 = IF
-    DROP
-    ['] _do-one-more-+bank CATCH -2 = IF
-      BANKS 29 = IF
-        ." cap-check-fired-after-29-seed" CR
-      ELSE
-        ." FAIL: plus-bank-cap — BANKS = " BANKS . ." (expected 29 after cap abort)" CR
-      THEN
-    ELSE
-      ." FAIL: plus-bank-cap — 30th +BANK did not throw -2 (CATCH)" CR
-    THEN
-  ELSE
-    ." FAIL: plus-bank-cap — could not seed 29 entries; BANKS = " . CR
-  THEN
-  ." ---plus-bank-cap-end---" CR
-  BANKS-CLEAR
-;
-_probe-plus-bank-cap
+\ Story 23.2 restructure: the +BANK cap probe is now DRIVEN AT INTERPRET
+\ LEVEL, so the running IP stays kernel-resident (<$8000). The prior single
+\ `: _probe-plus-bank-cap ... ;` colon body straddled the $8000 slot-2 window
+\ once cumulative kernel growth pushed HERE past the boundary; after the
+\ seed/cap bank ops, the IP crossing into the body's >$8000 tail tripped the
+\ F1-unguardable straddle halt (the class enumerated by
+\ test-straddle-regression). Driving the orchestration line-by-line keeps the
+\ verdict out of a straddling body — the raw -2 cap-throw code and the
+\ post-abort BANKS count are printed for the Makefile to assert, so no
+\ compile-mode IF/THEN (and hence no straddle-prone verdict word) is needed.
+\ _do-29-+bank / _do-one-more-+bank stay as compiled helpers: they execute
+\ fine (each +BANK restores slot 2 before returning, and the seed witness
+\ prints), and a DO/LOOP / CATCH target must be compiled.
+BANKS-CLEAR
+." ---plus-bank-cap-start---" CR
+_do-29-+bank
+." seeded: " BANKS . CR
+' _do-one-more-+bank CATCH
+." cap-catch-code: " . CR
+." cap-banks-after: " BANKS . CR
+." ---plus-bank-cap-end---" CR
+BANKS-CLEAR
 
 \ === Probe 9: BANK! T-state latency probe (informational) ===
 \

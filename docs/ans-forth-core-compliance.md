@@ -450,12 +450,12 @@ under the A.1-D3 canonical six-step shape.
 | §6.2.2218 | `SOURCE-ID ( -- 0 \| -1 \| fileid )` | Deliberately-omitted | N-A | v2.0 baseline | The cell exists in UserArea (used internally by EVALUATE / INCLUDE-FILE), but no user-facing fetcher word. Deferred — out of v2.0 scope. |
 | §6.2.2240 | `SPAN ( -- a-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — paired with EXPECT (also omitted). |
 | §6.2.2290 | `TIB ( -- c-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent in Forth-2012 — replaced by `SOURCE`. Deferred. |
-| §6.2.2295 | `TO ( i*x "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Pairs with VALUE (also omitted); deferred — out of v2.0 scope. |
+| §6.2.2295 | `TO ( i*x "<spaces>name" -- )` | Implemented | `src/compiler.asm:1010` (`w_TO_cf`) | Story 23.2 | IMMEDIATE + STATE-aware: interpreting stores TOS into the named VALUE's cell now; compiling emits `LIT <xt> (TO)` (`w_PAREN_TO_cf`) so the store runs at run time. Compiles the bank-stable xt, not a raw cell addr, so it is correct across banks. Name parsed via the `'` path (undefined → -13); a non-VALUE target raises -32 (`THROW_INVALID_NAME_ARG`). |
 | §6.2.2298 | `TRUE ( -- true )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `-1`; deferred — out of v2.0 scope. |
 | §6.2.2300 | `TUCK ( x1 x2 -- x2 x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP OVER`; deferred — out of v2.0 scope. |
 | §6.2.2350 | `U> ( u1 u2 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP U<`; deferred — out of v2.0 scope. |
 | §6.2.2395 | `UNUSED ( -- u )` | Deliberately-omitted | N-A | v2.0 baseline | Reports remaining dictionary space; deferred — out of v2.0 scope. |
-| §6.2.2405 | `VALUE ( x "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Pairs with TO (also omitted); deferred — out of v2.0 scope. |
+| §6.2.2405 | `VALUE ( x "<spaces>name" -- )` | Implemented | `src/compiler.asm:934` (`w_VALUE_cf`) | Story 23.2 | Defining word: emits `JP DOVALUE` (`src/inner_interpreter.asm:106`, runtime = push cell at cf+3, distinct address from DOCON so TO can type-check) and stores the initial cell value. Carries the CREATE-style bank-aware descriptor-stub block, so a VALUE defined in bank N>0 gets a bank-stable xt and is read+written cross-bank. Zero-length name → -16. Paired with `TO` (§6.2.2295). |
 | §6.2.2440 | `WITHIN ( n1 n2 n3 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `OVER - >R - R> U<`; deferred — out of v2.0 scope. |
 | §6.2.2530 | `[COMPILE] ( "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — replaced by `POSTPONE` (§6.1.2033); not exposed because `POSTPONE` is the modern equivalent. |
 
@@ -870,7 +870,7 @@ antforth also defines words that are useful but outside the Core word sets:
 | `BANK-MAPPING-OFF` | `banking.asm:86` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
 | `BANK@` | `banking.asm:99` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
 | `BANK!` | `banking.asm:148` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
-| `BANKS` | `banking.asm:252` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4; DEFCODE proxy for the `VALUE` specified in FR-P4-3 — `VALUE` / `TO` are `Deliberately-omitted` in v2.0 per §6.2.2295 + §6.2.2405) |
+| `BANKS` | `banking.asm:252` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4; DEFCODE proxy for the `VALUE` specified in FR-P4-3 — `VALUE` / `TO` themselves landed in Story 23.2 per §6.2.2295 + §6.2.2405) |
 | `+BANK` | `banking.asm:289` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; probe-on-add per FR-P4-7; ABORTs `probe?` on ROM/unmapped, `cap?` on 29-entry cap) |
 | `-BANK` | `banking.asm:380` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-8 — no-op on miss) |
 | `BANKS-CLEAR` | `banking.asm:432` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-9 — resets `bank_count` to 0; subsequent `BANK!` aborts `bank?`) |

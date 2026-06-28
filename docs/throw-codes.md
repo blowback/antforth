@@ -103,7 +103,7 @@ back to the per-file inventory in §d.
 | -29 | compiler nesting | no | — |
 | -30 | obsolescent feature | no | — |
 | -31 | >BODY used on non-CREATEd definition | no | — |
-| -32 | invalid name argument (e.g., TO xxx) | no | — |
+| -32 | invalid name argument (e.g., TO xxx) | **done — Story 23.2** | `THROW_INVALID_NAME_ARG EQU -32` (`constants.asm`, cites ANS Forth 1994 §9.3.5) — raised by `TO`'s `to_verify` (`compiler.asm`) when the parsed name resolves to a non-`VALUE` (a `CONSTANT`, a `:`-defined word, `VARIABLE`, …); message row added to `throw_desc_table` (`exception.asm`). `TO` on an undefined name reuses the `'` path's -13 instead |
 | -33 | block read exception | no | — |
 | -34 | block write exception | no | — |
 | -35 | invalid block number | no | — |

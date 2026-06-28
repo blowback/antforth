@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -123,6 +123,55 @@ BANKING_PROBES = _bmad-output/implementation-artifacts/16.3-probe.fth tests/bank
 # Echoed source (lines beginning with `."`) is stripped before matching so the
 # echoed `." PASS: ..."` literals cannot false-green.
 ASM_PROBE = tests/asm_in_out_tests.fth
+
+# --- VALUE / TO named-value probe (Story 23.2) ---
+# Self-printing PASS/FAIL probe: interpret get+set, compiled-store cumulative,
+# and a banked cross-bank round (define in bank 5, read+write from bank 0).
+# Two uncaught rounds at the tail assert the -32 (not-a-VALUE) and -13
+# (undefined name) THROWs. Runs under the banking emulator for the banked round.
+#
+# Verdict matching is COLUMN-0-ANCHORED (`^PASS:` / `^FAIL:`). The probe's
+# verdicts are emitted by `."` at the start of a fresh CR'd line, so they land
+# at column 0; the REPL also echoes the input source, and the colon-body lines
+# that hold these literals (e.g. `  VX 42 = IF ." PASS: ..." ELSE ." FAIL: ..."`)
+# are INDENTED. A bare substring grep would match the echoed source — which
+# carries BOTH the PASS and FAIL literals — and false-PASS even if the runtime
+# verdict was FAIL. Anchoring to ^ excludes the indented echo, and the explicit
+# `^FAIL:` negative guard catches a real runtime FAIL.
+VALUE_TO_PROBE = tests/value_to_tests.fth
+
+test-repl-value-to: $(TARGET)
+	@echo "Running VALUE/TO named-value probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(VALUE_TO_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	FAILED=0; \
+	if echo "$$OUTPUT" | grep -qE '^FAIL: value-'; then \
+		echo "FAIL: REPL value/to probe — a runtime '^FAIL: value-*' verdict was printed"; \
+		FAILED=1; \
+	fi; \
+	for pat in 'PASS: value-interpret-get' 'PASS: value-interpret-set' 'PASS: value-compile-bump' 'PASS: value-banked-read' 'PASS: value-banked-write'; do \
+		if echo "$$OUTPUT" | grep -qE "^$$pat"; then \
+			echo "PASS: REPL value/to probe — $$pat"; \
+		else \
+			echo "FAIL: REPL value/to probe — expected '$$pat' at column 0 in output"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if [ $$(echo "$$OUTPUT" | grep -c 'error -32: invalid name argument') -ge 2 ]; then \
+		echo "PASS: REPL value/to probe — TO on CONSTANT and on : word both throw -32"; \
+	else \
+		echo "FAIL: REPL value/to probe — expected two 'error -32: invalid name argument' lines"; \
+		FAILED=1; \
+	fi; \
+	if echo "$$OUTPUT" | grep -q 'error -13: undefined word'; then \
+		echo "PASS: REPL value/to probe — TO on undefined name throws -13"; \
+	else \
+		echo "FAIL: REPL value/to probe — expected 'error -13: undefined word' in output"; \
+		FAILED=1; \
+	fi; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
@@ -339,26 +388,26 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: dot-banks-probe-m1 — byte columns not base-stable (Story-17.5 M1 regression)"; \
 		echo "  PROBE_M1: $$PROBE_M1"; exit 1; \
 	fi
-	@# Story 17.5.1 AC3 — sentinel-bounded probe G (+BANK cap check at
-	@# bank_count == 29). Replaces the prior `grep -q 'PASS: plus-bank-cap'`
-	@# substring match (false-PASSed on source-echo of the colon-body `."`
-	@# literal regardless of whether the probe's PASS branch executed).
-	@# Extract the runtime-output region between ---plus-bank-cap-start---
-	@# and ---plus-bank-cap-end--- sentinels, then assert (a) AC2 assertion
-	@# literal `cap-check-fired-after-29-seed` present, (b) seed-loop
-	@# completion witness `seeded: 29` present (sanity probe against silent
-	@# regressions where the seed loop early-aborts), (c) no FAIL: substring
-	@# in PROBE_G, (d) end-sentinel `---plus-bank-cap-end---` actually
-	@# present in OUTPUT (catches the case where the end sentinel goes
-	@# missing — awk extraction would otherwise swallow all downstream
-	@# probe output and false-PASS; surfaced by Story 17.5.1 code-review M4
-	@# live negative-test sweep).
+	@# Story 17.5.1 AC3 / Story 23.2 restructure — sentinel-bounded probe G
+	@# (+BANK cap check at bank_count == 29). The probe is now driven at
+	@# INTERPRET level (kernel-resident IP <$8000) so it cannot trip the
+	@# $8000-straddle halt that a colon body hits once kernel growth pushes
+	@# HERE past the slot-2 window boundary. Extract the runtime-output region
+	@# between ---plus-bank-cap-start--- / ---plus-bank-cap-end--- sentinels,
+	@# then assert (a) seed-loop completion witness `seeded: 29` present
+	@# (guards against a silent early-abort of the seed loop), (b) the 30th
+	@# +BANK threw the cap code: `cap-catch-code: -2`, (c) the list still holds
+	@# 29 after the caught cap abort: `cap-banks-after: 29`, (d) no FAIL:
+	@# substring in PROBE_G, (e) end-sentinel `---plus-bank-cap-end---`
+	@# actually present in OUTPUT (catches a missing end sentinel — awk
+	@# extraction would otherwise swallow downstream output and false-PASS;
+	@# surfaced by Story 17.5.1 code-review M4 live negative-test sweep).
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_G=$$(echo "$$OUTPUT" | awk '/---plus-bank-cap-start---$$/{p=1; next} /---plus-bank-cap-end---$$/{p=0} p') && \
-	if echo "$$PROBE_G" | grep -q 'cap-check-fired-after-29-seed' && echo "$$PROBE_G" | grep -q 'seeded: 29' && ! echo "$$PROBE_G" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---plus-bank-cap-end---$$'; then \
+	if echo "$$PROBE_G" | grep -q 'seeded: 29' && echo "$$PROBE_G" | grep -q 'cap-catch-code: -2' && echo "$$PROBE_G" | grep -q 'cap-banks-after: 29' && ! echo "$$PROBE_G" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---plus-bank-cap-end---$$'; then \
 		echo "PASS: plus-bank-cap — cap-check fired after 29-entry seed under $(IZCPM_BANKING)"; \
 	else \
-		echo "FAIL: plus-bank-cap — assertion text missing OR 'seeded: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT"; \
+		echo "FAIL: plus-bank-cap — 'seeded: 29' OR 'cap-catch-code: -2' OR 'cap-banks-after: 29' witness missing OR FAIL: present in PROBE_G OR end-sentinel missing from OUTPUT"; \
 		echo "  PROBE_G: $$PROBE_G"; exit 1; \
 	fi
 	@# Story 17.6 AC1..AC4 — iron-spike sentinel-bounded recipe. Mirrors

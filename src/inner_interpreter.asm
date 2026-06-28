@@ -96,6 +96,16 @@ DOCON:
         LD      B, (HL)         ; BC = value at body (new TOS)
         NEXT
 
+; === DOVALUE — Push named-value cell (runtime of VALUE) ===
+; HL points to code field (JP DOVALUE). Runtime is identical to DOCON
+; (push the cell at cf+3); the only reason DOVALUE exists as a DISTINCT
+; address is so TO can recognise a VALUE by its code field and reject a
+; CONSTANT (JP DOCON) / a colon word (JP DOCOL) / a VARIABLE (JP DOVAR).
+; HL (= code field addr) is unchanged by the JP→JP, so DOCON's cf+3 read
+; lands on the value cell.
+DOVALUE:
+        JP      DOCON
+
 ; === DODOES — Enter DOES> definition, push body address ===
 ; HL points to code field (JP DODOES)
 ; cf+3 = does-addr, cf+5 = body
