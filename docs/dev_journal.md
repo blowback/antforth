@@ -7,7 +7,10 @@
  - "DOUBLE" and "DOUBLE-EXT" environment queries
  - "SEARCH-ORDER" and "SEARCH-ORDER-EXT" environment queries
 
-## 2025-05-20
+## 2025-05-20 (RESOLVED 2026-06-28, Story 23.1)
 
-OUT and IN don't follow the <dst> <src> convention for register order 
-- `A C OUT,` (in the incumbent convention) gives "bad operand". 
+OUT and IN didn't follow the Zilog `<dst> <src>` convention for operand order.
+Now fixed: `(C) A OUT,` = `OUT (C),A`, `$74 # A OUT,` = `OUT (n),A`,
+`A (C) IN,` = `IN A,(C)`, `A $74 # IN,` = `IN A,(n)` — consistent with every
+other mnemonic (`B C LD,` = `LD B,C`). The old src-dst order no longer
+assembles.

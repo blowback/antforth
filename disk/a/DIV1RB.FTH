@@ -38,11 +38,11 @@ CODE PORT72-RT ( testpage restorepage -- readback )
   H C LD,            \ H <- restorepage (low byte of TOS is in C)
   BC POP,            \ BC <- testpage cell (C = testpage low)
   A C LD,            \ A <- testpage
-  A 72 # OUT,        \ OUT (0x72),A   -- map test page into slot 2
-  72 # A IN,         \ IN  A,(0x72)   -- read it back (the experiment)
+  72 # A OUT,        \ OUT (0x72),A   -- map test page into slot 2
+  A 72 # IN,         \ IN  A,(0x72)   -- read it back (the experiment)
   L A LD,            \ L <- readback
   A H LD,            \ A <- restorepage
-  A 72 # OUT,        \ OUT (0x72),A   -- restore caller's slot-2 page
+  72 # A OUT,        \ OUT (0x72),A   -- restore caller's slot-2 page
   C L LD,            \ C <- readback  (new TOS low byte)
   B 0 # LD,          \ B <- 0         (zero-extend to a cell)
   NEXT,

@@ -1,4 +1,4 @@
-# generated: 2026-05-11
+# generated: 2026-06-28
 # project: antforth
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-05-11
+generated: 2026-06-28
 project: antforth
 project_key: NOKEY
 tracking_system: file-system
@@ -254,4 +254,12 @@ development_status:
   22-3-cross-bank-code-words-disposition-implementation-per-story-16-4-9-1-closure: done
   22-4-phase-4-close-out-three-test-surface-sweep-verdict-table-walk-antforth-3-x-6-final-tag-phase-4-retrospective: done
   epic-22-retrospective: done
+
+  epic-23: in-progress
+  23-1-assembler-in-out-operand-order-fix-zilog-dst-src: review
+  23-2-value-to-ans-core-named-values: backlog
+  23-3-z80-runtime-in-out-port-words: backlog
+  23-4-ud-environment-query-gaps: backlog
+  23-5-epic-23-close-out-ccd-4-regression-gate-v3-1-0-tag: backlog
+  epic-23-retrospective: optional
 

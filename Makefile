@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -115,6 +115,37 @@ check-doc-sync:
 # round-trip assertion (AC5/AC6); the iron 16.3 probe stays as the
 # first-light bank-register round-trip surface check.
 BANKING_PROBES = _bmad-output/implementation-artifacts/16.3-probe.fth tests/banking_tests.fth
+
+# --- Inline-assembler IN,/OUT, operand-order probe (Story 23.1) ---
+# Asserts the emitted opcode bytes for all four IN,/OUT, Zilog dst-src forms
+# (IN A,(C) / IN A,(n) / OUT (C),A / OUT (n),A) plus one bad-operand round.
+# The inline assembler is MMU-agnostic, so this runs under plain $(IZCPM).
+# Echoed source (lines beginning with `."`) is stripped before matching so the
+# echoed `." PASS: ..."` literals cannot false-green.
+ASM_PROBE = tests/asm_in_out_tests.fth
+
+test-repl-asm: $(TARGET)
+	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(ASM_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	FAILED=0; \
+	for pat in 'PASS: asm-in-indirect' 'PASS: asm-in-imm' 'PASS: asm-out-indirect' 'PASS: asm-out-imm'; do \
+		if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q "$$pat"; then \
+			echo "PASS: REPL asm probe — $$pat"; \
+		else \
+			echo "FAIL: REPL asm probe — expected '$$pat' in output"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if echo "$$OUTPUT" | grep -q 'error -258: bad operand'; then \
+		echo "PASS: REPL asm probe — bad operand 'B \$$74 # IN,' throws -258"; \
+	else \
+		echo "FAIL: REPL asm probe — expected 'error -258: bad operand' in output"; \
+		FAILED=1; \
+	fi; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 test-repl-banking: $(TARGET)
 	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
@@ -2592,31 +2623,31 @@ test-repl: $(TARGET)
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK151 (C) A IN, A (C) OUT, NEXT, END-CODE\r\nXT OK151 0 + C@ . XT OK151 1 + C@ . XT OK151 2 + C@ . XT OK151 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK151 A (C) IN, (C) A OUT, NEXT, END-CODE\r\nXT OK151 0 + C@ . XT OK151 1 + C@ . XT OK151 2 + C@ . XT OK151 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 120 237 121 '; then \
-		echo "PASS: REPL test 151 — (C) A IN,=ED78, A (C) OUT,=ED79"; \
+		echo "PASS: REPL test 151 — A (C) IN,=ED78, (C) A OUT,=ED79"; \
 	else \
 		echo "FAIL: REPL test 151 — expected '237 120 237 121 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK152 42 # A IN, A 42 # OUT, NEXT, END-CODE\r\nDECIMAL\r\nXT OK152 0 + C@ . XT OK152 1 + C@ . XT OK152 2 + C@ . XT OK152 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nHEX\r\nCODE OK152 A 42 # IN, 42 # A OUT, NEXT, END-CODE\r\nDECIMAL\r\nXT OK152 0 + C@ . XT OK152 1 + C@ . XT OK152 2 + C@ . XT OK152 3 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '219 66 211 66 '; then \
-		echo "PASS: REPL test 152 — 42h # A IN,=DB42, A 42h # OUT,=D342"; \
+		echo "PASS: REPL test 152 — A 42h # IN,=DB42, 42h # A OUT,=D342"; \
 	else \
 		echo "FAIL: REPL test 152 — expected '219 66 211 66 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK153 (C) B IN, NEXT, END-CODE\r\nXT OK153 0 + C@ . XT OK153 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf ': XT BL WORD FIND DROP ;\r\nCODE OK153 B (C) IN, NEXT, END-CODE\r\nXT OK153 0 + C@ . XT OK153 1 + C@ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '237 64 '; then \
-		echo "PASS: REPL test 153 — (C) B IN,=ED40"; \
+		echo "PASS: REPL test 153 — B (C) IN,=ED40"; \
 	else \
 		echo "FAIL: REPL test 153 — expected '237 64 '"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf 'HEX\r\nCODE BAD154 42 # B IN, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'HEX\r\nCODE BAD154 B 42 # IN, END-CODE\r\nDECIMAL\r\n1 2 + .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'error -258: bad operand' && echo "$$OUTPUT" | tr -d '\r\n' | grep -qE '3 '; then \
 		echo "PASS: REPL test 154 — immediate-port IN with B: bad operand, clean recovery"; \
 	else \

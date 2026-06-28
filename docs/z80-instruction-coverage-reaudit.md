@@ -348,10 +348,10 @@ LD (nn),HL / LD HL,(nn) use unprefixed 0x22/0x2A forms (forms #13/#14), also sup
 
 | # | Z80 Mnemonic | Opcode | Antforth Syntax | Handler Path | Status |
 |---|-------------|--------|-----------------|--------------|--------|
-| 160 | IN r, (C) | ED 0x40\|r<<3 | `(C) A IN,` | `IN,` → `.in_indirect` | **Supported** |
-| 161 | OUT (C), r | ED 0x41\|r<<3 | `A (C) OUT,` | `OUT,` → `.out_indirect` | **Supported** |
-| 162 | IN A, (n) | 0xDB nn | `0x42 # A IN,` | `IN,` → `.in_imm` | **Supported** |
-| 163 | OUT (n), A | 0xD3 nn | `A 0x42 # OUT,` | `OUT,` → `.out_imm` | **Supported** |
+| 160 | IN r, (C) | ED 0x40\|r<<3 | `A (C) IN,` | `IN,` → `.in_indirect` | **Supported** |
+| 161 | OUT (C), r | ED 0x41\|r<<3 | `(C) A OUT,` | `OUT,` → `.out_indirect` | **Supported** |
+| 162 | IN A, (n) | 0xDB nn | `A 0x42 # IN,` | `IN,` → `.in_imm` | **Supported** |
+| 163 | OUT (n), A | 0xD3 nn | `0x42 # A OUT,` | `OUT,` → `.out_imm` | **Supported** |
 
 ---
 

@@ -12,7 +12,7 @@
 \ Pushes the live mapping_enabled byte (1 after BANK-MAPPING-ON).
 CODE FETCH-74 ( -- byte )
   BC PUSH,          \ save old TOS to SP
-  $74 # A IN,       \ IN A, (74h)
+  A $74 # IN,       \ IN A, (74h)
   C A LD,           \ C <- A (low byte)
   B 0 # LD,         \ B <- 0     (zero-extend to cell)
   NEXT,

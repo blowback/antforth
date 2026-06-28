@@ -3329,16 +3329,10 @@ w_IN_COMMA:
         DEFCODE "IN,", 0
 w_IN_COMMA_cf:
         CALL    check_asm_mode
-        CALL    asm_check_tagged
-        ; TOS = register tag (destination)
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand     ; must be REG8
-        CALL    asm_get_index
-        CP      8
-        JP      NC, asm_bad_operand
-        LD      (asm_tmp), A            ; save r-field
-        ; Pop NOS = port specifier
-        POP     BC
+        ; Zilog dst-src order: `A (C) IN,` / `A $74 # IN,`. TOS = src port
+        ; specifier ((C) or imm marker, possibly 2 cells); dst register is
+        ; below it. Read the port first so the immediate's value cell is
+        ; popped in place (a fixed TOS<->NOS swap can't — the imm is 2 cells).
         CALL    asm_check_tagged
         CALL    asm_is_indirect_tag
         JR      Z, .in_indirect
@@ -3351,7 +3345,16 @@ w_IN_COMMA_cf:
         CALL    asm_get_index
         CP      ASM_IND_C
         JP      NZ, asm_bad_operand
+        ; Pop NOS = register tag (destination)
+        POP     BC
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand     ; must be REG8
+        CALL    asm_get_index
+        CP      8
+        JP      NC, asm_bad_operand
         ; IN r,(C) = ED 40|(r<<3)
+        LD      (asm_tmp), A            ; save r-field
         LD      A, 0xED
         CALL    asm_emit_byte
         LD      A, (asm_tmp)
@@ -3364,15 +3367,21 @@ w_IN_COMMA_cf:
         NEXT
 
 .in_imm:
-        ; Immediate port — only valid for A (r=7)
-        LD      A, (asm_tmp)
-        CP      7
-        JP      NZ, asm_bad_operand
+        ; Immediate port: TOS was imm marker, pop port value, then register
         POP     BC                      ; BC = port number
+        LD      A, C
+        LD      (asm_tmp), A            ; save port
+        POP     BC                      ; BC = register tag (destination)
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand
+        CALL    asm_get_index
+        CP      7
+        JP      NZ, asm_bad_operand     ; immediate port only valid for A
         ; IN A,(n) = DB nn
         LD      A, 0xDB
         CALL    asm_emit_byte
-        LD      A, C
+        LD      A, (asm_tmp)
         CALL    asm_emit_byte
         POP     BC
         NEXT
@@ -3381,8 +3390,20 @@ w_OUT_COMMA:
         DEFCODE "OUT,", 0
 w_OUT_COMMA_cf:
         CALL    check_asm_mode
+        ; Zilog dst-src order: `(C) A OUT,` / `$74 # A OUT,`. TOS = src
+        ; register; dst port specifier ((C) or imm marker, possibly 2 cells)
+        ; is below it. Read the register first (1 cell), so the port — which
+        ; may be a 2-cell immediate — is popped in its own branch below.
         CALL    asm_check_tagged
-        ; TOS = port specifier ((C) or imm marker)
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand     ; must be REG8
+        CALL    asm_get_index
+        CP      8
+        JP      NC, asm_bad_operand
+        LD      (asm_tmp), A            ; save r-field
+        ; Pop NOS = port specifier
+        POP     BC
+        CALL    asm_check_tagged
         CALL    asm_is_indirect_tag
         JR      Z, .out_indirect
         CALL    asm_is_imm_tag
@@ -3394,16 +3415,7 @@ w_OUT_COMMA_cf:
         CALL    asm_get_index
         CP      ASM_IND_C
         JP      NZ, asm_bad_operand
-        ; Pop NOS = register tag
-        POP     BC
-        CALL    asm_check_tagged
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand     ; must be REG8
-        CALL    asm_get_index
-        CP      8
-        JP      NC, asm_bad_operand
         ; OUT (C),r = ED 41|(r<<3)
-        LD      (asm_tmp), A            ; save r-field
         LD      A, 0xED
         CALL    asm_emit_byte
         LD      A, (asm_tmp)
@@ -3416,21 +3428,15 @@ w_OUT_COMMA_cf:
         NEXT
 
 .out_imm:
-        ; Immediate port: TOS was imm marker, pop port value, pop register
-        POP     BC                      ; BC = port number
-        LD      A, C
-        LD      (asm_tmp), A            ; save port
-        POP     BC                      ; BC = register tag
-        CALL    asm_check_tagged
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand
-        CALL    asm_get_index
+        ; Immediate port — only valid for A (r=7)
+        LD      A, (asm_tmp)
         CP      7
-        JP      NZ, asm_bad_operand     ; only A
+        JP      NZ, asm_bad_operand
+        POP     BC                      ; BC = port number
         ; OUT (n),A = D3 nn
         LD      A, 0xD3
         CALL    asm_emit_byte
-        LD      A, (asm_tmp)
+        LD      A, C
         CALL    asm_emit_byte
         POP     BC
         NEXT
