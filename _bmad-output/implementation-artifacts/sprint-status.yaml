@@ -263,7 +263,7 @@ development_status:
   # 23.6/23.7 window-top guard was correct but INCOMPLETE — five more HERE-growth
   # paths (`;`/LITERAL/DOES>/S"/."/ABORT") were unguarded. Same post-tag, does NOT
   # gate v3.1.0.
-  epic-23: in-progress
+  epic-23: done
   23-1-assembler-in-out-operand-order-fix-zilog-dst-src: done
   23-2-value-to-ans-core-named-values: done
   23-3-z80-runtime-in-out-port-words: done
