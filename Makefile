@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-23-6 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-23-6 test-repl-banking-23-7 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -161,6 +161,7 @@ IN_OUT_PROBE = tests/in_out_tests.fth
 # runtime output lands at column 0 while echoed source (." , : ) does not.
 UD_ENV_PROBE = tests/ud_env_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
+BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
 
 # Story 23.6 — banked dictionary window-top overflow guard regression probe.
 # Drives a bank's HERE to the $C000 brink under iz-cpm-banking and asserts an
@@ -194,6 +195,56 @@ test-repl-banking-23-6: $(TARGET)
 			FAILED=1; \
 		else \
 			echo "PASS: dict-overflow-$$c — accepted without -8 (boundary/bank-0 no-op)"; \
+		fi; \
+	done; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+
+# Story 23.7 — banked MARKER window-top overflow guard regression probe.
+# MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
+# 23.7 folds it into build_header's pre-commit guard. Drives a bank's HERE to
+# the $C000 brink under iz-cpm-banking and asserts an uncaught -8 ("dictionary
+# overflow") for a banked MARKER one byte over the boundary (A); the exact
+# acceptance boundary (B, no throw); a bank-0 strict-no-op control (C, no
+# throw); and post-THROW liveness (D, no throw + the ALIVE witness). Per-case
+# verdict is awk-extracted from each ---X-start---..---X-end--- span (a global
+# count is polluted by the probe's own echoed header comment). Single-feature
+# target like test-repl-banking-23-6; NOT folded into plain `test-repl`.
+# The accept cases (B/C/D) and the ALIVE gate match RUNTIME-COMPUTED tokens
+# (`X-OK=-1`, `PROBE-ALIVE===42`), never bare sentinels: iz-cpm echoes piped
+# stdin, so a sentinel-only gate would pass on echo alone even if the interpreter
+# silently wedged without executing. The `-1`/`42` are produced by U< / `6 7 *`
+# at run time and cannot appear in the echoed source, so presence proves genuine
+# execution. Each accept case still also asserts NO error text in its span.
+test-repl-banking-23-7: $(TARGET)
+	@echo "Running Story 23.7 banked MARKER-overflow probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_7_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	FAILED=0; \
+	if ! echo "$$OUTPUT" | grep -q '===23-7-PROBE-ALIVE===42'; then \
+		echo "FAIL: marker-overflow probe — interpreter did not EXECUTE to the ALIVE witness (computed PROBE-ALIVE===42 absent; echo-only sentinel does not count)"; \
+		FAILED=1; \
+	fi; \
+	for c in A; do \
+		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
+		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
+			echo "PASS: marker-overflow-$$c — banked MARKER over \$$C000 raised -8 (dictionary overflow)"; \
+		else \
+			echo "FAIL: marker-overflow-$$c — expected an uncaught -8 between ---$$c-start--- and ---$$c-end---"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	for c in B C D; do \
+		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
+		if echo "$$SPAN" | grep -qE 'error -|ABORT|bank\?'; then \
+			echo "FAIL: marker-overflow-$$c — unexpected error/abort (this case must complete cleanly: no -8, no failed BANK!)"; \
+			FAILED=1; \
+		elif ! echo "$$SPAN" | grep -q "$$c-OK=-1"; then \
+			echo "FAIL: marker-overflow-$$c — missing runtime witness $$c-OK=-1 (MARKER not built in-window, or the case never executed past the echo)"; \
+			FAILED=1; \
+		else \
+			echo "PASS: marker-overflow-$$c — accepted, MARKER built with one-past-end <= \$$C000 (runtime witness $$c-OK=-1)"; \
 		fi; \
 	done; \
 	if [ $$FAILED -ne 0 ]; then \

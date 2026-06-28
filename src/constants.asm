@@ -125,6 +125,22 @@ F_HAS_STUB_XT_CELL EQU  0x20            ; Bit 5: entry has a 2-byte
                                         ; unaffected.
 F_LENMASK       EQU     0x1F            ; Bits 0-4: name length (max 31)
 
+; === Dictionary code-field reserve (banked window-top guard) ===
+; build_header's window-top guard reserves, beyond the header (6 B) + name,
+; a code-field+body allowance via the bh_code_reserve cell. DOER_RESERVE is
+; the default: the largest fixed code field among the doers (CREATE/CONSTANT/
+; VALUE emit JP doer (3) + 2-byte body; `:` emits JP DOCOL (3) and grows its
+; body later under the ,/COMPILE, guard), so 5 covers every ordinary caller.
+DOER_RESERVE        EQU 5
+; MARKER is the exception: it emits a large fixed body after the code field
+; (JP DOMARKER (3) + saved FORTH-WORDLIST bucket array (192) + snap_count (1) +
+; live bank-table prefix (snap_count*6, worst case BANK_TABLE_CAP=29 → 174) +
+; stub-allocator tail (2)). w_MARKER_cf raises bh_code_reserve to this before
+; build_header so the single pre-commit guard covers MARKER's whole footprint
+; (all-or-nothing — the 192-byte body is emitted AFTER build_header commits the
+; header, so a body-time guard could not unwind it). 3+192+1+174+2 = 372.
+MARKER_CODE_RESERVE EQU 3 + 192 + 1 + (29 * 6) + 2     ; 372
+
 ; === ANS THROW Codes ===
 ; Codes -1..-58 reserved for ANS standard, -59..-255 reserved for future
 ; ANS extensions, -256..-32767 for antforth extensions. Every EQU carries

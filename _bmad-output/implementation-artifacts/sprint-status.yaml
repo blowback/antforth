@@ -255,6 +255,10 @@ development_status:
   22-4-phase-4-close-out-three-test-surface-sweep-verdict-table-walk-antforth-3-x-6-final-tag-phase-4-retrospective: done
   epic-22-retrospective: done
 
+  # Reopened 2026-06-28: retro (held, status done below) spawned two follow-up
+  # stories AI-23-2 → 23.7 (MARKER guard, correctness) and AI-23-1 → 23.8 (probe
+  # isolation, test-infra). 23.1-23.6 shipped in v3.1.0; 23.7/23.8 are post-tag
+  # follow-ups tracked under Epic 23 (do NOT gate the already-shipped v3.1.0 tag).
   epic-23: in-progress
   23-1-assembler-in-out-operand-order-fix-zilog-dst-src: done
   23-2-value-to-ans-core-named-values: done
@@ -262,5 +266,7 @@ development_status:
   23-4-ud-environment-query-gaps: done
   23-5-epic-23-close-out-ccd-4-regression-gate-v3-1-0-tag: done
   23-6-banked-dictionary-window-top-overflow-guard: done
-  epic-23-retrospective: optional
+  23-7-banked-marker-window-top-guard: done
+  23-8-in-suite-bank-switching-probe-isolation: ready-for-dev
+  epic-23-retrospective: done
 

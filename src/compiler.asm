@@ -95,6 +95,17 @@ bh_stub_xt_addr:     DW 0   ; Address of the 2-byte stub-xt cell
                             ; legacy bank-0 / Phase-1/2/3 entries unchanged);
                             ; w_SEMICOLON_cf overwrites for bank-N>0 colon definitions
                             ; with the descriptor-stub address.
+bh_code_reserve:     DW DOER_RESERVE
+                            ; Code-field+body byte allowance the window-top guard
+                            ; reserves beyond the header (6 B) + name. 16-bit: MARKER's
+                            ; 372-byte footprint exceeds a byte. CONTRACT: build_header
+                            ; resets this to DOER_RESERVE on EVERY exit — the guard
+                            ; consumes-then-resets on the found-name path, and .bh_no_name
+                            ; resets on the no-name error path — so a caller that does not
+                            ; set it always sees the default and is byte-for-byte unchanged,
+                            ; and a caller that does set it cannot leak it on the no-name
+                            ; throw. MARKER raises it to MARKER_CODE_RESERVE before CALL
+                            ; build_header (src/system.asm).
 
 ; Fixed-memory scratch read by w_IMMEDIATE_cf so the
 ; IMMEDIATE bit lands on the right count_flags byte even after w_SEMICOLON_cf
@@ -185,6 +196,16 @@ build_header:
         JR      .bh_skip
 
 .bh_no_name:
+        ; Reset the caller-supplied code-field reserve on the no-name error path
+        ; too. w_MARKER_cf raises bh_code_reserve to MARKER_CODE_RESERVE before
+        ; CALL build_header, and this early-out returns BEFORE the consume-then-
+        ; reset at the window-top guard below — so without this a `MARKER` typed
+        ; with no name would leave bh_code_reserve latched at 372, and the next
+        ; ordinary defining word (CREATE/VALUE/`:`/…) would over-reserve and raise
+        ; a spurious -8 near the window top. HL is dead on the error return (callers
+        ; only test CF), so clobbering it is safe. Story 23.7.
+        LD      HL, DOER_RESERVE
+        LD      (bh_code_reserve), HL
         SCF                                     ; Set carry = error
         RET
 
@@ -236,25 +257,32 @@ build_header:
 .bh_len_ok:
         LD      (bh_name_len), A
 
-        ; --- Story 23.6: banked dictionary window-top overflow guard ---
-        ; Refuse a defining word whose header + worst-case fixed code field
-        ; would place any byte at/past the slot-2 window top ($C000). A = the
-        ; clamped name_len here. prospective one-past-end =
-        ;   HERE + header_overhead(6) + name_len + DOER_RESERVE(5)
+        ; --- Story 23.6/23.7: banked dictionary window-top overflow guard ---
+        ; Refuse a defining word whose header + code field + body would place any
+        ; byte at/past the slot-2 window top ($C000). prospective one-past-end =
+        ;   HERE + header_overhead(6) + name_len + bh_code_reserve
         ; header_overhead = 3 (fat hash_link) + 1 (count_flags) + 2 (bank-N
-        ; stub-xt cell). DOER_RESERVE = 5 = the largest fixed code field among
-        ; the doers: CREATE/CONSTANT/VALUE each emit JP doer (3) + 2-byte body;
-        ; `:` emits JP DOCOL (3) and grows its body later under the COMPILE,/,
-        ; guard, so 5 is conservative-safe for it. check_banked_headroom no-ops
-        ; on bank 0. This runs BEFORE the first dictionary write (the hash_link
-        ; emit below), so the -8 THROW leaves HERE/LATEST/bucket untouched.
-        ; build_header runs in the EXX shadow set (every caller EXX's at entry),
-        ; so EXX-restore to primary before the THROW per the kernel-internal
-        ; THROW contract (src/exception.asm:288-296).
-        LD      HL, (bh_entry_start)            ; HERE at entry (nothing written yet)
-        ADD     A, 6 + 5                        ; A = name_len + header_overhead + DOER_RESERVE
-        LD      C, A                            ; name_len <= 31 → A <= 42, no carry
-        LD      B, 0
+        ; stub-xt cell). bh_code_reserve is the caller-supplied code-field+body
+        ; allowance, default DOER_RESERVE (5 = the largest fixed code field among
+        ; CREATE/CONSTANT/VALUE/`:`); MARKER raises it to its 372-byte footprint
+        ; (Story 23.7) so this single pre-commit check covers MARKER's body too.
+        ; The add is 16-bit because the reserve exceeds a byte. Consume-then-reset:
+        ; restore bh_code_reserve to the default here so the next caller that does
+        ; not set it sees DOER_RESERVE. check_banked_headroom no-ops on bank 0.
+        ; This runs BEFORE the first dictionary write (the hash_link emit below),
+        ; so the -8 THROW leaves HERE/LATEST/bucket untouched. build_header runs
+        ; in the EXX shadow set (every caller EXX's at entry), so EXX-restore to
+        ; primary before the THROW per the kernel-internal THROW contract
+        ; (src/exception.asm:288-296).
+        LD      BC, (bh_code_reserve)           ; BC = code-field+body reserve
+        LD      HL, DOER_RESERVE
+        LD      (bh_code_reserve), HL           ; reset to default for next caller
+        LD      A, (bh_name_len)
+        ADD     A, 6                            ; A = name_len + header_overhead (<= 37, no carry)
+        LD      L, A
+        LD      H, 0                            ; HL = name_len + 6
+        ADD     HL, BC                          ; + reserve
+        LD      BC, (bh_entry_start)            ; HERE at entry (nothing written yet)
         ADD     HL, BC                          ; HL = prospective one-past-end
         CALL    check_banked_headroom
         JR      NC, .bh_headroom_ok

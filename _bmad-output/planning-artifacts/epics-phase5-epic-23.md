@@ -299,6 +299,63 @@ rule).
 
 ---
 
+## Post-close-out follow-up stories (appended after the original 23.1–23.5 plan)
+
+> These stories were added to Epic 23 **after** the v3.1.0 close-out (Story 23.5).
+> 23.6 came from the 23.2/23.3 code review; 23.7 and 23.8 came from the Epic-23
+> retrospective (2026-06-28, action items AI-23-2 and AI-23-1). They are correctness
+> and test-infra hardening — **no new feature FRs** — and do **not** gate the
+> already-applied/authorised v3.1.0 tag. 23.7 carries a small binary delta (next
+> release / v3.1.1); 23.8 is 0 B test-infra. Full specs live in the per-story files
+> under `_bmad-output/implementation-artifacts/`.
+
+### Story 23.6 — Banked dictionary window-top overflow guard *(done — shipped in v3.1.0)*
+
+**Summary:** banked defining words and raw `,`/`C,`/`ALLOT`/`COMPILE,` growth that
+would place any byte at or past the slot-2 window top (`$C000`) now raise a clean
+`-8` dictionary-overflow THROW (shared `check_banked_headroom` guard +
+`GUARD_BANKED_WRITE` macro), instead of silently corrupting a banked word through
+slot 3. From code-review finding #5 of 23.2/23.3. **+115 B.** Done; full AC set and
+boundary semantics in `23-6-banked-dictionary-window-top-overflow-guard.md`.
+
+### Story 23.7 — Banked MARKER window-top overflow guard *(done — correctness)*
+
+**As** a MicroBeast Forth programmer using `MARKER` inside a banked dictionary,
+**I want** a banked `MARKER <name>` whose 192-byte saved-bucket body would cross
+`$C000` to raise a clean `-8` **before anything commits**,
+**so that** I never get a silently-corrupt MARKER whose body reads back through
+slot 3 — the one banked-growth path 23.6 left unguarded.
+
+**Why:** 23.6 surfaced this residual and scoped it out — MARKER calls `build_header`
+(commits header/LATEST/bucket) then LDIRs the 192-byte body with no headroom check;
+a MARKER within ~195 B of `$C000` on a bank straddles silently. **Design:** the
+guard must be all-or-nothing, so it cannot sit at the LDIR (half-built-header trap);
+instead parameterise 23.6's `build_header` guard with a caller-supplied
+code-field/body reserve (default `DOER_RESERVE=5`) that MARKER raises to its full
+footprint pre-commit. Reuses the `-8` / `check_banked_headroom` infra — no new throw
+code. **Est. ≈ 28–36 B.** Real (narrow) correctness gap in shipped v3.1.0; S9
+hardware-smoke required.
+
+### Story 23.8 — In-suite bank-switching probe isolation *(ready-for-dev — test-infra, closes AI-22-5)*
+
+**As** a maintainer of the banking test suite,
+**I want** the main in-suite `test-repl-banking` run to carry no foreign-`BANK!`
+probe, plus a lint that fails the build if one is re-introduced,
+**so that** future kernel growth can never again push a bank-switching probe across
+the `$8000` portal boundary and trip the unguardable straddle halt.
+
+**Why:** the portal-aliasing halt was patched reactively three times (22.2 / 23.2 /
+23.6); Epic-22's AI-22-5 committed to migrating in-suite non-zero-bank probes to
+isolated fixtures and it was never done. The retro chose hardening over blessing the
+reactive pattern. **Honest current state (verified 2026-06-28):** 0 in-suite probes
+are presently at risk (the `.BANKS` probes were de-coloned to interpret level during
+23.6) — so this is *prevention*: move the `.BANKS` bank-switching probes into an
+isolated fixture so the main suite is structurally immune, and add a minimal
+grep-based `make lint-banking-probes` (with a negative test) so the discipline
+can't silently rot back. **0 kernel bytes.**
+
+---
+
 ## Deferred (considered for Phase 5, deliberately out of scope)
 
 - **Cooperative multitasker** (`TASK` / `ACTIVATE` / `PAUSE`, `KEY`-yields,

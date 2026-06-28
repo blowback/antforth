@@ -59,6 +59,18 @@ w_MARKER_cf:
         LD      A, (IY+UserArea.triple_owner)
         CALL    bank_triple_save                ; live triple -> bank-table[owner]
 
+        ; Raise the build_header window-top reserve to MARKER's full footprint
+        ; (code field + 192-byte saved body + bank-table prefix + stub tail) so
+        ; the single pre-commit guard inside build_header is all-or-nothing: if
+        ; the body would cross $C000 it throws -8 BEFORE the header/LATEST/bucket
+        ; are committed (the body LDIR below runs only after build_header has
+        ; already committed them, so it cannot self-guard). build_header resets the
+        ; cell on EVERY exit — the window-top guard on the found-name path and
+        ; .bh_no_name on the no-name (-16) path — so no cleanup is needed here on
+        ; either the success or the no-name error return (Story 23.7).
+        LD      HL, MARKER_CODE_RESERVE
+        LD      (bh_code_reserve), HL
+
         ; Build dictionary header (flags=0, no SMUDGE)
         XOR     A
         CALL    build_header
@@ -80,7 +92,11 @@ w_MARKER_cf:
 
         ; Copy 192 bytes from FORTH-WORDLIST fat bucket array to body
         ; (64 × 3-byte fat heads). Need LDIR: HL=src, DE=dst, BC=count
-        ; Currently HL = body dest, need to swap
+        ; Currently HL = body dest, need to swap.
+        ; No inline window-top guard here: build_header's pre-commit check already
+        ; reserved MARKER_CODE_RESERVE (this body + the tail below), so the whole
+        ; footprint is proven to fit before any byte was committed (Story 23.7).
+        ; A guard at this point would throw with a half-built MARKER — do NOT add one.
         EX      DE, HL                  ; DE = body dest
         LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only)
         LD      BC, 192
