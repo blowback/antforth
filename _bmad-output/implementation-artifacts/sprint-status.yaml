@@ -256,7 +256,7 @@ development_status:
   epic-22-retrospective: done
 
   epic-23: in-progress
-  23-1-assembler-in-out-operand-order-fix-zilog-dst-src: review
+  23-1-assembler-in-out-operand-order-fix-zilog-dst-src: done
   23-2-value-to-ans-core-named-values: done
   23-3-z80-runtime-in-out-port-words: backlog
   23-4-ud-environment-query-gaps: backlog
