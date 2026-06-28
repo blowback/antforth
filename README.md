@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.0.7
+## Version 3.1.0
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -55,8 +55,16 @@ the cross-bank-pointer hazards are documented for users; and `CODE`
 words are redirected to fixed memory so machine-code definitions stay
 cross-bank-findable. This is the final Phase-4 point release — the
 banked-RAM enablement promise, opened in 3.0.1, delivered in full.
+3.1.0 opens Phase 5 (Epic 23) — the first minor release since the 3.0
+banked-memory line, and a round of ANS conformance and ergonomics work
+that stands apart from banking: `VALUE`/`TO` named values (Core-Ext),
+the `IN`/`OUT` Z80 runtime port words, double-number `UD.` output, six
+honest `ENVIRONMENT?` wordset-presence rows (the wordsets antforth does
+not implement now answer `false` rather than over-claiming), and a fix
+to the assembler's `IN,`/`OUT,` words so they take Zilog
+destination-source operand order like the rest of the instruction set.
 
-V3.0.7 supports the following ANS Forth standard words:
+V3.1.0 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
@@ -118,10 +126,9 @@ in bank 0).
 
 ## Coming up in the next version 
 
-- Bank-aware compilation — cross-bank colon definitions transparent to the user (descriptor-stub mechanism; antforth 3.1+)
-- Per-bank dictionary search-order traversal and `WORDS`
 - Co-operative multi-tasking and event handlers
-- Local variable support 
+- Semaphores for task synchronisation
+- Full ANS `{: :}` local variable support 
 
 ## Bluesky wishlist 
 

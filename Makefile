@@ -429,13 +429,13 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: cl-probe-bank-roundtrip (H3 AC8) — kernel crashed (BIOS dispatch corruption from HERE=0)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@# Story 17.5 AC7 — .BANKS probes X/Y/Z/W. Per-probe colon defs in
-	@# tests/banking_tests.fth open with _dot-banks-setup which forces
-	@# DECIMAL + BANKS-CLEAR + seeds 12 entries via 12 unrolled `$$22 +BANK`
-	@# (no DO LOOP — the polluted state from probe G makes a 12-iteration
-	@# DO LOOP unreliable). Greps below assert on output strings that only
-	@# .BANKS emits (e.g. `TOTAL          0 196608`); source comments and
-	@# sentinels don't collide.
+	@# Story 17.5 AC7 — .BANKS probes X/Y/Z/W. Each probe in
+	@# tests/banking_tests.fth runs at INTERPRET level (de-coloned in 23.6 —
+	@# a probe colon body near $8000 halts the emulator) and inlines its setup:
+	@# BANKS-CLEAR + 12 unrolled `$$22 +BANK` (no DO LOOP — the polluted state
+	@# from probe G makes a 12-iteration DO LOOP unreliable). Greps below assert
+	@# on output strings that only .BANKS emits (e.g. `TOTAL          0 196608`);
+	@# source comments and sentinels don't collide.
 	@echo "Running Story 17.5 .BANKS probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | tr -d '\r' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
@@ -2181,10 +2181,10 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.0.7'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.0.7'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.1.0'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.1.0'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.0.7' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.1.0' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \
