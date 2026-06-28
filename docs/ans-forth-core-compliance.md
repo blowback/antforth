@@ -49,7 +49,7 @@
 |---|------|---------|--------|---------|-------|
 | §9.3.4 / §9.6.1.0875 | `CATCH ( i*x xt -- j*x 0 \| i*x n )` | Implemented | src/exception.asm (Story 11.2) | Stories 11.2 + 11.4.1 | 8-byte CCD-1 frame; saved-BC repurposed from saved-IX (Story 11.4.1 fixed i*x preservation). |
 | §9.3.4 / §9.6.1.2275 | `THROW ( k*x n -- k*x \| i*x n )` | Implemented | src/exception.asm (Story 11.3) | Stories 11.3 + 11.7 | Caught path restores via PUSH BC after LD SP, HL; uncaught path routes to `.throw_uncaught` recovery chain at `src/exception.asm:412+`. |
-| §9.3.5 | Standard THROW codes -1..-58 (subset) | Implemented | src/exception.asm + per-call-site | Stories 11.4 / 11.5 / 11.6 | -1 ABORT, -2 ABORT", -13 undefined word, -17 pictured-output overflow, -37/-38 file I/O, -69 FCB exhaust, -70 invalid FID (re-purposed), -271/-272 asm-error block. Allocation ranges per CCD-2. |
+| §9.3.5 | Standard THROW codes -1..-58 (subset) | Implemented | src/exception.asm + per-call-site | Stories 11.4 / 11.5 / 11.6 / 23.6 | -1 ABORT, -2 ABORT", -8 dictionary overflow (Story 23.6 — banked window-top guard), -13 undefined word, -17 pictured-output overflow, -37/-38 file I/O, -69 FCB exhaust, -70 invalid FID (re-purposed), -271/-272 asm-error block. Allocation ranges per CCD-2. |
 | §9.3.5 | Application-defined THROW codes -256..-32767 | Implemented | src/exception.asm + src/assembler.asm | Story 11.5 | Asm-error block -258..-272 (15 codes; A.2 closes caught-form coverage gap for the existing block). -256 reserved gap; -257 reserved THROW_ASM_LOAD_FAIL (never raised; reserved). |
 
 ## Summary

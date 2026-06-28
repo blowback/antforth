@@ -79,7 +79,7 @@ back to the per-file inventory in §d.
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |
 | -7  | do-loops nested too deeply during execution | no | — |
-| -8  | dictionary overflow | no | — |
+| -8  | dictionary overflow | done — Story 23.6 | `banking.asm` (`check_banked_headroom` + `dict_overflow_throw`; banked window-top guard wired at `build_header` and `,`/`C,`/`ALLOT`/`COMPILE,`) |
 | -9  | invalid memory address | no | — |
 | -10 | division by zero | done — Story 11.4 | `arithmetic.asm:126` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm:569` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
 | -11 | result out of range | no | — |

@@ -834,6 +834,9 @@ throw_desc_table:
         DW      -4
         DB      15
         DB      "stack underflow"
+        DW      THROW_DICT_OVERFLOW     ; -8 (Story 23.6)
+        DB      19
+        DB      "dictionary overflow"
         DW      -10
         DB      16
         DB      "division by zero"

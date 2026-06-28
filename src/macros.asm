@@ -143,6 +143,24 @@
         DEFWORD name?, F_IMMEDIATE
     ENDM
 
+; === GUARD_BANKED_WRITE — banked dictionary window-top overflow guard ===
+; HL = HERE on entry. Advances HL by `width?` bytes to the prospective
+; one-past-end, asks check_banked_headroom whether that crosses the slot-2
+; window top ($C000), and JP's to dict_overflow_throw (-8) on overflow; then
+; restores HL = HERE so the caller's store proceeds unchanged. Strict no-op on
+; bank 0 (check_banked_headroom). Clobbers AF; preserves BC/DE/HL/IX/IY. Shared
+; by the fixed-width store primitives (`,` w=2, `C,` w=1, `COMPILE,` w=2).
+    MACRO GUARD_BANKED_WRITE width?
+        DUP width?
+        INC     HL
+        EDUP
+        CALL    check_banked_headroom
+        JP      C, dict_overflow_throw
+        DUP width?
+        DEC     HL
+        EDUP
+    ENDM
+
 ; === BDOS_SAVE — Save registers before BDOS call ===
 ; BDOS clobbers all registers; save DE (IP) and BC (TOS)
     MACRO BDOS_SAVE

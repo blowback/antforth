@@ -146,6 +146,50 @@ mbb_get_slot2:
         POP     DE
         RET
 
+; === check_banked_headroom — banked dictionary window-top guard (Story 23.6) ===
+;   ( HL = prospective one-past-end address -- )  [non-throwing predicate]
+;
+;   The banked dictionary lives in the slot-2 window $8000..$BFFF; $C000 is
+;   the first ILLEGAL byte address (it resolves through slot 3 = wrong bank /
+;   fixed memory). HERE = next byte to write; a width-w write at HERE touches
+;   HERE..HERE+w-1, legal iff HERE+w <= $C000. Callers pass the prospective
+;   one-past-end p = HERE+w in HL; overflow is p > $C000 (so p == $C000, i.e.
+;   a last byte at exactly $BFFF, is LEGAL — the compare is strictly > $C000,
+;   not >=).
+;
+;   Returns CY=1 on overflow, CY=0 otherwise. Does NOT throw — each caller
+;   raises via dict_overflow_throw in whatever EXX state it owns (build_header
+;   runs EXX-shadow and must EXX-restore first; the ,/C,/ALLOT/COMPILE, sites
+;   run primary-set). Bank 0 (triple_owner == 0 = fixed memory, no slot-2
+;   window) always returns CY=0: fixed-memory HERE legitimately runs past
+;   $C000 toward the stub-allocator region, so the guard is a strict no-op.
+;
+;   Clobbers: AF only. Preserves: BC, DE, HL, IX, IY, SP. (HL preserved so the
+;   ,/C,/ALLOT sites keep their store pointer across the call.)
+check_banked_headroom:
+        LD      A, (IY+UserArea.triple_owner)
+        OR      A
+        RET     Z                       ; bank 0: OR A cleared CY → no overflow
+        PUSH    HL
+        PUSH    DE
+        EX      DE, HL                  ; DE = prospective one-past-end
+        LD      HL, SLOT2_WINDOW_BASE + 0x4000   ; $C000 = inclusive legal ceiling for one-past
+        OR      A                       ; clear CY
+        SBC     HL, DE                  ; CY set iff prospective > $C000
+        POP     DE                      ; POP/PUSH do not disturb flags
+        POP     HL
+        RET                             ; CY = overflow verdict
+
+; === dict_overflow_throw — shared -8 raise (primary-set entry) ===
+;   Raise THROW -8 (dictionary overflow). Per the kernel-internal THROW
+;   contract the primary register set MUST be active on entry (BC is read as
+;   the code; see src/exception.asm:288-296,:398). The ,/C,/ALLOT/COMPILE,
+;   sites JP here directly (already primary-set); build_header EXX-restores to
+;   primary before jumping here.
+dict_overflow_throw:
+        LD      BC, THROW_DICT_OVERFLOW
+        JP      w_THROW_cf.kernel_entry
+
 ; === BANK@ ( -- n ) ===
 ;   Return the current logical bank index — i.e. (IY+UserArea.current_bank).
 ;   n is the index into the active bank list (NOT the physical page number).

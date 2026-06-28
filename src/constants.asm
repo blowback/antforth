@@ -138,6 +138,7 @@ THROW_ABORT             EQU -1   ; ANS Forth 1994 §9.3.5
 THROW_ABORT_QUOTE       EQU -2   ; ANS Forth 1994 §9.3.5
 THROW_STACK_OVERFLOW    EQU -3   ; ANS Forth 1994 §9.3.5
 THROW_STACK_UNDERFLOW   EQU -4   ; ANS Forth 1994 §9.3.5
+THROW_DICT_OVERFLOW     EQU -8   ; ANS Forth 1994 §9.3.5 (dictionary overflow; banked window-top guard, Story 23.6)
 THROW_DIV_BY_ZERO       EQU -10  ; ANS Forth 1994 §9.3.5
 THROW_UNDEFINED_WORD    EQU -13  ; ANS Forth 1994 §9.3.5
 THROW_COMPILE_ONLY      EQU -14  ; ANS Forth 1994 §9.3.5

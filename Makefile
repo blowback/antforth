@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-23-6 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -160,6 +160,46 @@ IN_OUT_PROBE = tests/in_out_tests.fth
 # NOPE regression. Verdicts are COLUMN-0-ANCHORED (^PASS: / ^FAIL: / ^udA= ...):
 # runtime output lands at column 0 while echoed source (." , : ) does not.
 UD_ENV_PROBE = tests/ud_env_tests.fth
+BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
+
+# Story 23.6 — banked dictionary window-top overflow guard regression probe.
+# Drives a bank's HERE to the $C000 brink under iz-cpm-banking and asserts an
+# uncaught -8 ("dictionary overflow") for a defining word (A), a colon body (B),
+# and raw ALLOT/, growth (C,D); plus the $BFFF acceptance boundary (E, no throw)
+# and a bank-0 no-op control (F, no throw). Per-case verdict is awk-extracted
+# from each ---X-start---..---X-end--- span (a global count is polluted by the
+# probe's own echoed header comment). Single-feature target like
+# test-repl-ud-env / test-repl-value-to; NOT folded into plain `test-repl`.
+test-repl-banking-23-6: $(TARGET)
+	@echo "Running Story 23.6 banked dictionary-overflow probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_6_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	FAILED=0; \
+	if ! echo "$$OUTPUT" | grep -q '===23-6-PROBE-ALIVE==='; then \
+		echo "FAIL: dict-overflow probe — interpreter did not survive to the ALIVE witness"; \
+		FAILED=1; \
+	fi; \
+	for c in A B C D G; do \
+		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
+		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
+			echo "PASS: dict-overflow-$$c — banked over-\$$C000 growth raised -8 (dictionary overflow)"; \
+		else \
+			echo "FAIL: dict-overflow-$$c — expected an uncaught -8 between ---$$c-start--- and ---$$c-end---"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	for c in E F; do \
+		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
+		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
+			echo "FAIL: dict-overflow-$$c — unexpected -8 (this case must NOT throw)"; \
+			FAILED=1; \
+		else \
+			echo "PASS: dict-overflow-$$c — accepted without -8 (boundary/bank-0 no-op)"; \
+		fi; \
+	done; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
 
 test-repl-value-to: $(TARGET)
 	@echo "Running VALUE/TO named-value probe under $(IZCPM)..."

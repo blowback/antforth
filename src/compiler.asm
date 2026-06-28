@@ -236,6 +236,33 @@ build_header:
 .bh_len_ok:
         LD      (bh_name_len), A
 
+        ; --- Story 23.6: banked dictionary window-top overflow guard ---
+        ; Refuse a defining word whose header + worst-case fixed code field
+        ; would place any byte at/past the slot-2 window top ($C000). A = the
+        ; clamped name_len here. prospective one-past-end =
+        ;   HERE + header_overhead(6) + name_len + DOER_RESERVE(5)
+        ; header_overhead = 3 (fat hash_link) + 1 (count_flags) + 2 (bank-N
+        ; stub-xt cell). DOER_RESERVE = 5 = the largest fixed code field among
+        ; the doers: CREATE/CONSTANT/VALUE each emit JP doer (3) + 2-byte body;
+        ; `:` emits JP DOCOL (3) and grows its body later under the COMPILE,/,
+        ; guard, so 5 is conservative-safe for it. check_banked_headroom no-ops
+        ; on bank 0. This runs BEFORE the first dictionary write (the hash_link
+        ; emit below), so the -8 THROW leaves HERE/LATEST/bucket untouched.
+        ; build_header runs in the EXX shadow set (every caller EXX's at entry),
+        ; so EXX-restore to primary before the THROW per the kernel-internal
+        ; THROW contract (src/exception.asm:288-296).
+        LD      HL, (bh_entry_start)            ; HERE at entry (nothing written yet)
+        ADD     A, 6 + 5                        ; A = name_len + header_overhead + DOER_RESERVE
+        LD      C, A                            ; name_len <= 31 → A <= 42, no carry
+        LD      B, 0
+        ADD     HL, BC                          ; HL = prospective one-past-end
+        CALL    check_banked_headroom
+        JR      NC, .bh_headroom_ok
+        EXX                                     ; shadow → primary for THROW contract
+        JP      dict_overflow_throw
+.bh_headroom_ok:
+        LD      A, (bh_name_len)                ; restore A = name_len for the hash
+
         ; --- Hash the name ---
         LD      HL, (bh_name_start)
         LD      B, A                            ; B = name length
@@ -487,6 +514,7 @@ w_COMPILE_COMMA:
 w_COMPILE_COMMA_cf:
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if a banked colon body crosses $C000 (AC2)
         LD      (HL), C
         INC     HL
         LD      (HL), B

@@ -197,11 +197,28 @@ w_ALLOT:
 w_ALLOT_cf:                             ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = current HERE
-        ADD     HL, BC                     ; HL = HERE + n
+        ADD     HL, BC                     ; HL = HERE + n  (prospective one-past-end)
+        JR      C, .allot_carry            ; 16-bit wrap (huge +n) OR normal -n release
+.allot_store:
+        CALL    check_banked_headroom      ; Story 23.6: -8 if HERE+n straddles $C000 on a bank
+        JP      C, dict_overflow_throw     ; (no-op on bank 0; HL preserved across the call)
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
         POP     BC              ; New TOS (n consumed)
         NEXT
+.allot_carry:
+        ; ADD HL,BC carried out of 16 bits. For a NEGATIVE n (sign bit set) this
+        ; is a normal space-release — HL already holds the correct lower HERE
+        ; (< $C000) so just store it. For a NON-NEGATIVE n the request wrapped
+        ; past $FFFF and cannot fit a 16 KB window, so raise -8 — except on bank 0
+        ; (fixed memory, no window) where the guard stays a strict no-op and the
+        ; pre-guard wrapped-HERE behaviour is preserved.
+        BIT     7, B                       ; B = n high byte → bit 7 = sign
+        JR      NZ, .allot_store           ; n < 0: legitimate release, no overflow
+        LD      A, (IY+UserArea.triple_owner)
+        OR      A
+        JR      Z, .allot_store            ; bank 0: no window, keep wrapped HERE
+        JP      dict_overflow_throw        ; banked +n wrapped past $FFFF → -8
 
 ; -----------------------------------------------
 ; , (COMMA) ( x -- )
@@ -219,6 +236,7 @@ w_COMMA:
 w_COMMA_cf:                             ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = HERE
+        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if the cell straddles $C000 on a bank
         LD      (HL), C
         INC     HL
         LD      (HL), B         ; Store cell (little-endian)
@@ -244,6 +262,7 @@ w_C_COMMA:
 w_C_COMMA_cf:                           ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        GUARD_BANKED_WRITE 1               ; Story 23.6: -8 if the byte straddles $C000 on a bank
         LD      (HL), C         ; Store byte
         INC     HL              ; HERE + 1
         LD      (IY+UserArea.here), L

@@ -381,24 +381,25 @@ BANKS-CLEAR
 \ the deterministic invariant used below is: totals_used == bank-0 used (the
 \ only non-zero used) and totals_free == bank-0 free + 11*16384.
 
-: _dot-banks-setup ( -- )
-  BANKS-CLEAR
-  $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
-  $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
-  $22 +BANK  $22 +BANK  $22 +BANK  $22 +BANK
-;
+\ The dot-banks setup (BANKS-CLEAR + 12× $22 +BANK) is INLINED at each probe
+\ site below rather than factored into a `_dot-banks-setup` colon word, and the
+\ probes themselves run at INTERPRET level (no colon wrappers). A colon body
+\ here straddles $8000 at current kernel sizes (HERE ~32686 at this point in the
+\ file), and invoking a >$8000 body AFTER a foreign BANK! (probe Y) portal-
+\ aliases and halts the emulator. De-coloned 2026-06-28 (Story 23.6, whose +100 B
+\ banked-overflow guard tipped exactly this section); same class as the probe-Y
+\ note below and feedback_banking_probe_straddle_halt. Interpret-level keeps the
+\ caller IP in the kernel QUIT loop (< $8000), so it is layout-robust.
 
 \ Probe X — header + banked-row shape + totals self-consistency.
 \ Makefile grep targets: `BANK PAGE` header + ≥11 banked rows reading
 \ `used=0 free=16384` + a TOTAL row whose used/free satisfy the
 \ bank-0-inclusive invariant (computed in the recipe, not a fixed literal).
-: _dot-banks-probe-x ( -- )
-  _dot-banks-setup
-  ." ---dot-banks-probe-x-start---" CR
-  .BANKS
-  ." ---dot-banks-probe-x-end---" CR
-;
-_dot-banks-probe-x
+BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+." ---dot-banks-probe-x-start---" CR
+.BANKS
+." ---dot-banks-probe-x-end---" CR
 
 \ Probe Y — current-bank marker tracking. Asserts `*` on row 0 at boot,
 \ then on row 1 after `1 BANK!`, then back to row 0 after `0 BANK!`.
@@ -417,7 +418,8 @@ _dot-banks-probe-x
 \ it as an interactive BANK! (source_id==0, Story 21.2). Combining the two
 \ words removes that coupling, so the marker tracks the live bank no matter how
 \ the fixture is fed (piped console vs INCLUDE), not just on console stdin.
-_dot-banks-setup
+BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
 ." ---dot-banks-probe-y-start---" CR
 .BANKS
 ." ---dot-banks-probe-y-mid1---" CR
@@ -430,37 +432,39 @@ _dot-banks-setup
 \ still read used=0 / free=16384; bank 0 (row 0) is EXEMPT — it shows the
 \ kernel-region free (≠ 16384). Makefile grep targets: ≥11 banked rows carry
 \ `0  16384`, and the bank-0 row does NOT read free 16384.
-: _dot-banks-probe-z ( -- )
-  _dot-banks-setup
-  ." ---dot-banks-probe-z-start---" CR
-  .BANKS
-  ." ---dot-banks-probe-z-end---" CR
-;
-_dot-banks-probe-z
+\ Run INTERACTIVELY (de-coloned 2026-06-28, Story 23.6 — mirrors probe Y at
+\ line 420): a colon body here is layout-fragile. Cumulative kernel + bank-0
+\ dictionary growth eventually pushes the body across $8000; the window-resident
+\ body then halts mid-.BANKS (feedback_banking_probe_straddle_halt). Story 23.6's
+\ +100 B banked-overflow guard tipped exactly this probe. Interpret-level keeps
+\ the caller IP in the kernel QUIT loop (< $8000), so .BANKS runs from fixed RAM.
+BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+." ---dot-banks-probe-z-start---" CR
+.BANKS
+." ---dot-banks-probe-z-end---" CR
 
 \ Probe M1 — BASE-independence guard (Story-17.5 M1 close-out). The byte-count
 \ columns are FORCED decimal regardless of BASE, so an empty banked row still
 \ reads `16384` (decimal) in HEX mode — not `4000` (hex). Makefile grep target:
 \ between the sentinels (emitted while BASE=HEX), a banked row still shows
 \ `16384`, and no row shows the hex form ` 4000`.
-: _dot-banks-probe-m1 ( -- )
-  _dot-banks-setup
-  ." ---dot-banks-probe-m1-start---" CR
-  HEX .BANKS DECIMAL
-  ." ---dot-banks-probe-m1-end---" CR
-;
-_dot-banks-probe-m1
+\ De-coloned 2026-06-28 (Story 23.6) — same layout-fragility as probe Z above.
+BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+." ---dot-banks-probe-m1-start---" CR
+HEX .BANKS DECIMAL
+." ---dot-banks-probe-m1-end---" CR
 
 \ Probe W — totals row + summary rows. Asserts `TOTAL` present with the
 \ bank-0-inclusive totals invariant, plus the BANKED-WORDS / STUB-BYTES
 \ summary rows (both 0 at this point — no banked words defined in the setup).
-: _dot-banks-probe-w ( -- )
-  _dot-banks-setup
-  ." ---dot-banks-probe-w-start---" CR
-  .BANKS
-  ." ---dot-banks-probe-w-end---" CR
-;
-_dot-banks-probe-w
+\ De-coloned 2026-06-28 (Story 23.6) — same layout-fragility as probe Z above.
+BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+." ---dot-banks-probe-w-start---" CR
+.BANKS
+." ---dot-banks-probe-w-end---" CR
 
 \ === Probe IRON-SPIKE: hand-built cross-bank call (Story 17.6 AC1..AC4) ===
 \ Epic 17 iron-spike — Story 17.6 AC1..AC4. Hand-built cross-bank call.
