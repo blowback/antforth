@@ -1,6 +1,16 @@
 \ banking_tests.fth — Phase-4 banking word tests
 \ Run under the banking-capable emulator (make test-repl-banking).
 \
+\ === Authoring rule (Story 23.8 / AI-22-5; enforced by make lint-banking-probes) ===
+\ No probe in THIS in-suite file may `BANK!` into a non-zero bank — bank-switching
+\ probes go in an isolated fixture (test-repl-banking-isolated-*), e.g.
+\ tests/banking_tests_dot_banks.fth. A foreign BANK! here lets kernel growth push
+\ the probe body across $8000 and trip the F1-unguardable portal straddle halt
+\ (feedback_banking_probe_straddle_halt). The few legitimate `N BANK!` lines that
+\ MUST stay (negative/guard probes that ABORT or CATCH before any switch, and the
+\ iron-spike body invoked only in an isolated subprocess) carry a trailing
+\ `\ LINT-ALLOW-BANK:` marker so the lint passes them.
+\
 \ === Architectural note: BANK-MAPPING-OFF emulator coverage ===
 \ BANK-MAPPING-OFF is a one-way warm-boot escape: it disconnects the kernel
 \ from the RAM that hosts its code, so it cannot be exercised under the
@@ -117,7 +127,7 @@ _probe-4
 \ verifying via DEPTH avoids the brittleness of an inline string
 \ match).
 \ No MMU touch on the precondition-fail path.
-: _99-bank-store ( -- ) 99 BANK! ;
+: _99-bank-store ( -- ) 99 BANK! ;  \ LINT-ALLOW-BANK: out-of-range, ABORTs before any switch
 : _probe-5 ( -- )
   ['] _99-bank-store CATCH -2 = IF
     DEPTH 0 = IF
@@ -152,24 +162,10 @@ _probe-5
 ;
 _probe-6
 
-\ Probe 7: 1 BANK! BANK@ round-trip.
-: _probe-7 ( -- )
-  $22 +BANK $23 +BANK
-  1 BANK! BANK@ DUP 1 = IF
-    ." PASS: bank-store-round-trip-1 — 1 BANK! round-trips after $22+$23 +BANK"
-    DROP
-  ELSE
-    ." FAIL: bank-store-round-trip-1 — BANK@ returned " .
-  THEN
-  \ Restore bank 0 before BANKS-CLEAR so HERE/LATEST come back to the
-  \ kernel snapshot — leaving current_bank = 1 then clearing the list
-  \ would leave HERE pointing into bank-table[1]'s zero-init slot,
-  \ which corrupts the next colon definition compiled in the REPL.
-  0 BANK!
-  BANKS-CLEAR
-  CR
-;
-_probe-7
+\ Probe 7 (1 BANK! BANK@ round-trip) moved to tests/banking_tests_dot_banks.fth
+\ (make test-repl-banking-isolated-dot-banks). It switches slot 2 into bank 1
+\ inside a colon body; in-suite that body straddles $8000 once the kernel grows
+\ (Story 23.8 / AI-22-5 — no foreign BANK! belongs in this file).
 
 \ Probe 8: 0 BANK! BANK@ round-trip.
 : _probe-8 ( -- )
@@ -365,106 +361,11 @@ BANKS-CLEAR
 \ call dispatch overhead, not the REPL-level BANK! word — informational only.
 ." INFO: bank-store-t-states — paper-arithmetic estimate ~425 T-states (precondition ~24 + port-write ~22 + offset+LDIR cascades ~322 + tail ~57); NFR-P4-2 envelope (60 T) binds cross-bank dispatch (Epic 18), not BANK! itself" CR
 
-\ === .BANKS probes (X, Y, Z, W) ===
-\ `.BANKS` reads (IY+bank_count) + (IY+current_bank) + walks active_pages[];
-\ no MMU port operations. Sentinel-and-grep pattern: each probe prints
-\ `dot-banks-probe-<name>-start` + `.BANKS` + `dot-banks-probe-<name>-end`
-\ sentinels; the Makefile test-repl-banking recipe grep-asserts on the
-\ content between sentinels.
-\
-\ BANKS-CLEAR + the manual 12× $22 +BANK unroll are load-bearing — they set
-\ up the dot-banks probes' kernel-cell state at a known shape: 12 entries
-\ (logical banks 0..11) all at PAGE 22. Bank 0 is row 0 and is the KERNEL
-\ dictionary (used = HERE-kernel_end, free = $D400-HERE — non-zero, grows
-\ with compiled state). Banks 1..11 are empty slot-2 windows (used=0,
-\ free=16384). Totals SUM all 12 rows, so the totals are NOT a fixed literal;
-\ the deterministic invariant used below is: totals_used == bank-0 used (the
-\ only non-zero used) and totals_free == bank-0 free + 11*16384.
-
-\ The dot-banks setup (BANKS-CLEAR + 12× $22 +BANK) is INLINED at each probe
-\ site below rather than factored into a `_dot-banks-setup` colon word, and the
-\ probes themselves run at INTERPRET level (no colon wrappers). A colon body
-\ here straddles $8000 at current kernel sizes (HERE ~32686 at this point in the
-\ file), and invoking a >$8000 body AFTER a foreign BANK! (probe Y) portal-
-\ aliases and halts the emulator. De-coloned 2026-06-28 (Story 23.6, whose +100 B
-\ banked-overflow guard tipped exactly this section); same class as the probe-Y
-\ note below and feedback_banking_probe_straddle_halt. Interpret-level keeps the
-\ caller IP in the kernel QUIT loop (< $8000), so it is layout-robust.
-
-\ Probe X — header + banked-row shape + totals self-consistency.
-\ Makefile grep targets: `BANK PAGE` header + ≥11 banked rows reading
-\ `used=0 free=16384` + a TOTAL row whose used/free satisfy the
-\ bank-0-inclusive invariant (computed in the recipe, not a fixed literal).
-BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-." ---dot-banks-probe-x-start---" CR
-.BANKS
-." ---dot-banks-probe-x-end---" CR
-
-\ Probe Y — current-bank marker tracking. Asserts `*` on row 0 at boot,
-\ then on row 1 after `1 BANK!`, then back to row 0 after `0 BANK!`.
-\ Makefile grep targets: between the start/mid1 sentinels, marker `*` on
-\ the row whose BANK col reads `   0`; between mid1/mid2, on the row whose
-\ BANK col reads `   1`; between mid2/end, back to row 0.
-\ Run INTERACTIVELY (not wrapped in a colon body): the `1 BANK!` switch must
-\ execute with the caller IP in the kernel QUIT loop (< $8000), not inside a
-\ window-resident colon body. A colon wrapper trips the portal-window guard
-\ (THROW -273, Story 19.5.1) once kernel growth pushes the body above $8000 —
-\ this probe is layout-fragile in colon form (feedback_phase4_probe_bank_switch_limitation).
-\ Each `BANK! .BANKS` is kept on ONE input line so the switch and the print
-\ run in a single INTERPRET pass with no QUIT re-entry between them. That
-\ matters: a re-entry would run REASSERT-BANK, which reverts current_bank to
-\ saved_bank — and saved_bank only tracks `1 BANK!` when QSAVE-BANK recognises
-\ it as an interactive BANK! (source_id==0, Story 21.2). Combining the two
-\ words removes that coupling, so the marker tracks the live bank no matter how
-\ the fixture is fed (piped console vs INCLUDE), not just on console stdin.
-BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-." ---dot-banks-probe-y-start---" CR
-.BANKS
-." ---dot-banks-probe-y-mid1---" CR
-1 BANK! .BANKS
-." ---dot-banks-probe-y-mid2---" CR
-0 BANK! .BANKS
-." ---dot-banks-probe-y-end---" CR
-
-\ Probe Z — empty-banked-row guard + bank-0 exemption. Empty banked windows
-\ still read used=0 / free=16384; bank 0 (row 0) is EXEMPT — it shows the
-\ kernel-region free (≠ 16384). Makefile grep targets: ≥11 banked rows carry
-\ `0  16384`, and the bank-0 row does NOT read free 16384.
-\ Run INTERACTIVELY (de-coloned 2026-06-28, Story 23.6 — mirrors probe Y at
-\ line 420): a colon body here is layout-fragile. Cumulative kernel + bank-0
-\ dictionary growth eventually pushes the body across $8000; the window-resident
-\ body then halts mid-.BANKS (feedback_banking_probe_straddle_halt). Story 23.6's
-\ +100 B banked-overflow guard tipped exactly this probe. Interpret-level keeps
-\ the caller IP in the kernel QUIT loop (< $8000), so .BANKS runs from fixed RAM.
-BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-." ---dot-banks-probe-z-start---" CR
-.BANKS
-." ---dot-banks-probe-z-end---" CR
-
-\ Probe M1 — BASE-independence guard (Story-17.5 M1 close-out). The byte-count
-\ columns are FORCED decimal regardless of BASE, so an empty banked row still
-\ reads `16384` (decimal) in HEX mode — not `4000` (hex). Makefile grep target:
-\ between the sentinels (emitted while BASE=HEX), a banked row still shows
-\ `16384`, and no row shows the hex form ` 4000`.
-\ De-coloned 2026-06-28 (Story 23.6) — same layout-fragility as probe Z above.
-BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-." ---dot-banks-probe-m1-start---" CR
-HEX .BANKS DECIMAL
-." ---dot-banks-probe-m1-end---" CR
-
-\ Probe W — totals row + summary rows. Asserts `TOTAL` present with the
-\ bank-0-inclusive totals invariant, plus the BANKED-WORDS / STUB-BYTES
-\ summary rows (both 0 at this point — no banked words defined in the setup).
-\ De-coloned 2026-06-28 (Story 23.6) — same layout-fragility as probe Z above.
-BANKS-CLEAR  $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-$22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-." ---dot-banks-probe-w-start---" CR
-.BANKS
-." ---dot-banks-probe-w-end---" CR
+\ The .BANKS display probes (X/Y/Z/M1/W) moved to
+\ tests/banking_tests_dot_banks.fth (make test-repl-banking-isolated-dot-banks).
+\ Probe Y switches slot 2 into bank 1 (`1 BANK!`); an in-suite body straddles
+\ $8000 once the kernel grows, so the whole set lives in an isolated fixture
+\ now (Story 23.8 / AI-22-5).
 
 \ === Probe IRON-SPIKE: hand-built cross-bank call (Story 17.6 AC1..AC4) ===
 \ Epic 17 iron-spike — Story 17.6 AC1..AC4. Hand-built cross-bank call.
@@ -593,14 +494,14 @@ DECIMAL
   ." ---iron-spike-start---" CR
   BANKS-CLEAR
   $22 +BANK $35 +BANK $36 +BANK $37 +BANK $38 +BANK $39 +BANK
-  5 BANK!
+  5 BANK!  \ LINT-ALLOW-BANK: body invoked only in isolated subprocess
   HERE                            \ ( start-addr )
   ['] NEGATE HERE 3 MOVE  3 ALLOT \ JP DOCOL prefix (3 bytes) at HERE..HERE+2
   ['] LIT ,                       \ w_LIT_cf at HERE+3..HERE+4
   12345 ,                         \ sentinel at HERE+5..HERE+6
   ['] EXIT ,                      \ w_EXIT_cf at HERE+7..HERE+8
   0 BANK!
-  5 BANK!
+  5 BANK!  \ LINT-ALLOW-BANK: same isolated-subprocess body
   EXECUTE                         \ ( 12345 )  — kernel runs banked body
   12345 = IF
     ." iron-spike-sentinel-12345-returned" CR
@@ -1890,7 +1791,7 @@ _p1951a-start
 BANKS-CLEAR  $22 +BANK  $35 +BANK
 0 BANK!
 HERE $8000 U< INVERT _p1951a-precond !
-: _p1951a-victim 1 BANK! ;
+: _p1951a-victim 1 BANK! ;  \ LINT-ALLOW-BANK: F1 portal-guard probe, CATCHes -273
 ' _p1951a-victim DUP _p1951a-xt ! @ _p1951a-cell-pre !
 BANK@ _p1951a-bank-pre !
 ' _p1951a-victim CATCH _p1951a-throw !

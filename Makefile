@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-23-6 test-repl-banking-23-7 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -364,11 +364,34 @@ test-repl-asm: $(TARGET)
 		exit 1; \
 	fi
 
-test-repl-banking: $(TARGET)
+# Story 23.8 (AI-22-5) — durability lint: the main in-suite tests/banking_tests.fth
+# must carry no foreign (non-zero-bank) `N BANK!`. A switch here lets kernel growth
+# push the probe body across $8000 and trip the F1-unguardable portal straddle halt
+# (feedback_banking_probe_straddle_halt); bank-switching probes belong in isolated
+# fixtures (test-repl-banking-isolated-*). The handful of legitimate `N BANK!`
+# stayers — negative/guard probes that ABORT/CATCH before any switch, and the
+# iron-spike body invoked only in a subprocess — carry a trailing
+# `\ LINT-ALLOW-BANK:` marker. Comment lines (`\ ...`) and verdict strings
+# (`." ..."`) are skipped structurally; everything else must be allow-listed or
+# moved. Grep, not a framework (feedback_ceremony_diminishing_returns).
+lint-banking-probes:
+	@viol=$$(grep -nE '[1-9][0-9]*[[:space:]]+BANK!' tests/banking_tests.fth \
+		| grep -vE '^[0-9]+:[[:space:]]*\\' \
+		| grep -vE '^[0-9]+:[[:space:]]*\."' \
+		| grep -vE 'LINT-ALLOW-BANK' || true); \
+	if [ -n "$$viol" ]; then \
+		echo "FAIL: lint-banking-probes — foreign (non-zero) BANK! in main in-suite tests/banking_tests.fth."; \
+		echo "  Move it to an isolated fixture (test-repl-banking-isolated-*), or if it ABORTs/CATCHes before any switch add a trailing '\\ LINT-ALLOW-BANK:' marker:"; \
+		echo "$$viol"; \
+		exit 1; \
+	fi; \
+	echo "PASS: lint-banking-probes — no un-allow-listed foreign BANK! in tests/banking_tests.fth"
+
+test-repl-banking: lint-banking-probes $(TARGET)
 	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-1' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'INFO: bank-store-t-states'; do \
+	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'INFO: bank-store-t-states'; do \
 		: "The REPL echoes piped source, so an unanchored match hits the"; \
 		: "echoed '.\" PASS: ...\"' literal regardless of which runtime"; \
 		: "branch ran (false green). Strip source lines (they begin with"; \
@@ -480,82 +503,9 @@ test-repl-banking: $(TARGET)
 		echo "FAIL: cl-probe-bank-roundtrip (H3 AC8) — kernel crashed (BIOS dispatch corruption from HERE=0)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@# Story 17.5 AC7 — .BANKS probes X/Y/Z/W. Each probe in
-	@# tests/banking_tests.fth runs at INTERPRET level (de-coloned in 23.6 —
-	@# a probe colon body near $8000 halts the emulator) and inlines its setup:
-	@# BANKS-CLEAR + 12 unrolled `$$22 +BANK` (no DO LOOP — the polluted state
-	@# from probe G makes a 12-iteration DO LOOP unreliable). Greps below assert
-	@# on output strings that only .BANKS emits (e.g. `TOTAL          0 196608`);
-	@# source comments and sentinels don't collide.
-	@echo "Running Story 17.5 .BANKS probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | tr -d '\r' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
-	X_BANKED=$$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
-	X_ROW0=$$(echo "$$PROBE_X" | grep -E '^[ ]+0[ ]+22[ ]') && \
-	X_R0U=$$(echo "$$X_ROW0" | awk '{print $$(NF-1)}') && \
-	X_R0F=$$(echo "$$X_ROW0" | awk '{print $$NF}') && \
-	X_TOT=$$(echo "$$PROBE_X" | grep -E '^TOTAL') && \
-	X_TU=$$(echo "$$X_TOT" | awk '{print $$(NF-1)}') && \
-	X_TF=$$(echo "$$X_TOT" | awk '{print $$NF}') && \
-	X_EXP=$$((X_R0F + 180224)) && \
-	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && [ "$$X_BANKED" -eq 11 ] && [ -n "$$X_R0U" ] && [ "$$X_TU" = "$$X_R0U" ] && [ "$$X_TF" = "$$X_EXP" ]; then \
-		echo "PASS: dot-banks-probe-x — header + 11 banked rows + bank-0-inclusive totals invariant (TU=$$X_TU TF=$$X_TF) under $(IZCPM_BANKING)"; \
-	else \
-		echo "FAIL: dot-banks-probe-x — header/rows/totals-invariant mismatch (banked=$$X_BANKED r0u=$$X_R0U r0f=$$X_R0F tu=$$X_TU tf=$$X_TF exp=$$X_EXP)"; \
-		echo "  PROBE_X: $$PROBE_X"; exit 1; \
-	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_Y1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-start---$$/{p=1; next} /---dot-banks-probe-y-mid1---$$/{p=0} p') && \
-	PROBE_Y2=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid1---$$/{p=1; next} /---dot-banks-probe-y-mid2---$$/{p=0} p') && \
-	PROBE_Y3=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid2---$$/{p=1; next} /---dot-banks-probe-y-end---$$/{p=0} p') && \
-	Y1_STAR_LINES=$$(echo "$$PROBE_Y1" | grep -cE '\*') && \
-	Y2_STAR_LINES=$$(echo "$$PROBE_Y2" | grep -cE '\*') && \
-	Y3_STAR_LINES=$$(echo "$$PROBE_Y3" | grep -cE '\*') && \
-	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+22 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
-	   [ "$$Y1_STAR_LINES" = "1" ] && [ "$$Y2_STAR_LINES" = "1" ] && [ "$$Y3_STAR_LINES" = "1" ]; then \
-		echo "PASS: dot-banks-probe-y — marker on row 0 → 1 → 0 tracks BANK! (exactly 1 * per phase) under $(IZCPM_BANKING)"; \
-	else \
-		echo "FAIL: dot-banks-probe-y — marker did not track BANK! correctly (Y1/Y2/Y3 stars: $$Y1_STAR_LINES/$$Y2_STAR_LINES/$$Y3_STAR_LINES; expected 1/1/1)"; \
-		echo "  PROBE_Y1: $$PROBE_Y1"; \
-		echo "  PROBE_Y2: $$PROBE_Y2"; \
-		echo "  PROBE_Y3: $$PROBE_Y3"; \
-		exit 1; \
-	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_Z=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-z-start---$$/{p=1; next} /---dot-banks-probe-z-end---$$/{p=0} p') && \
-	Z_BANKED=$$(echo "$$PROBE_Z" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
-	if [ "$$Z_BANKED" -eq 11 ]; then \
-		echo "PASS: dot-banks-probe-z — exactly 11 empty banked rows read 0/16384; bank 0 exempt (kernel free) under $(IZCPM_BANKING)"; \
-	else \
-		echo "FAIL: dot-banks-probe-z — expected 11 empty banked rows with bank-0 exempt, got $$Z_BANKED"; \
-		echo "  PROBE_Z: $$PROBE_Z"; exit 1; \
-	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_W=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-w-start---$$/{p=1; next} /---dot-banks-probe-w-end---$$/{p=0} p') && \
-	W_ROW0=$$(echo "$$PROBE_W" | grep -E '^[ ]+0[ ]+22[ ]') && \
-	W_R0U=$$(echo "$$W_ROW0" | awk '{print $$(NF-1)}') && \
-	W_R0F=$$(echo "$$W_ROW0" | awk '{print $$NF}') && \
-	W_TOT=$$(echo "$$PROBE_W" | grep -E '^TOTAL') && \
-	W_TU=$$(echo "$$W_TOT" | awk '{print $$(NF-1)}') && \
-	W_TF=$$(echo "$$W_TOT" | awk '{print $$NF}') && \
-	W_EXP=$$((W_R0F + 180224)) && \
-	W_SW=$$(echo "$$PROBE_W" | grep -E '^BANKED-WORDS' | awk '{print $$NF}') && \
-	W_SB=$$(echo "$$PROBE_W" | grep -E '^STUB-BYTES' | awk '{print $$NF}') && \
-	W_SBEXP=$$((W_SW * 4)) && \
-	if [ -n "$$W_TOT" ] && [ "$$W_TU" = "$$W_R0U" ] && [ "$$W_TF" = "$$W_EXP" ] && [ -n "$$W_SW" ] && [ "$$W_SB" = "$$W_SBEXP" ]; then \
-		echo "PASS: dot-banks-probe-w — TOTAL invariant + BANKED-WORDS=$$W_SW / STUB-BYTES=$$W_SB summary rows under $(IZCPM_BANKING)"; \
-	else \
-		echo "FAIL: dot-banks-probe-w — totals/summary mismatch (tu=$$W_TU r0u=$$W_R0U tf=$$W_TF exp=$$W_EXP sw=$$W_SW sb=$$W_SB)"; \
-		echo "  PROBE_W: $$PROBE_W"; exit 1; \
-	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	PROBE_M1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-m1-start---$$/{p=1; next} /---dot-banks-probe-m1-end---$$/{p=0} p') && \
-	if echo "$$PROBE_M1" | grep -qE '16384' && ! echo "$$PROBE_M1" | grep -qE '[ ]4000$$'; then \
-		echo "PASS: dot-banks-probe-m1 — byte columns forced decimal in HEX mode (free reads 16384, not 4000) under $(IZCPM_BANKING)"; \
-	else \
-		echo "FAIL: dot-banks-probe-m1 — byte columns not base-stable (Story-17.5 M1 regression)"; \
-		echo "  PROBE_M1: $$PROBE_M1"; exit 1; \
-	fi
+	@# .BANKS probes X/Y/Z/M1/W moved to make test-repl-banking-isolated-dot-banks
+	@# (Story 23.8 / AI-22-5 — probe Y switches into bank 1, kept out of the main
+	@# suite so kernel growth can't straddle it across $8000).
 	@# Story 17.5.1 AC3 / Story 23.2 restructure — sentinel-bounded probe G
 	@# (+BANK cap check at bank_count == 29). The probe is now driven at
 	@# INTERPRET level (kernel-resident IP <$8000) so it cannot trip the
@@ -1238,6 +1188,90 @@ test-repl-banking-isolated-22-2: $(TARGET)
 	fi
 
 
+
+# Story 23.8 — isolated bank-switching probes lifted out of the main suite
+# (discharges AI-22-5 / AI-23-1). Round-trip probe 7 + .BANKS display probes
+# X/Y/Z/M1/W, all of which switch slot 2 into a non-zero bank. Kept here
+# (fresh emulator, low bank-0 HERE) so kernel growth can never push them across
+# $8000 and trip the portal straddle halt (feedback_banking_probe_straddle_halt).
+# Witnesses are byte-identical to the originals; assertions mirror the main
+# test-repl-banking .BANKS recipe but read the single isolated fixture (so a
+# single emulator run carries every sentinel — no per-probe re-run needed).
+test-repl-banking-isolated-dot-banks: $(TARGET)
+	@echo "Running Story 23.8 isolated bank-switching probes under $(IZCPM_BANKING)..."
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_dot_banks.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q 'PASS: bank-store-round-trip-1'; then \
+		echo "PASS: probe-7 (isolated) — 1 BANK! BANK@ round-trip after +BANK seed"; \
+	else \
+		echo "FAIL: probe-7 (isolated) — bank-store-round-trip-1 witness missing"; \
+		echo "  OUTPUT: $$OUTPUT"; exit 1; \
+	fi && \
+	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
+	X_BANKED=$$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
+	X_ROW0=$$(echo "$$PROBE_X" | grep -E '^[ ]+0[ ]+22[ ]') && \
+	X_R0U=$$(echo "$$X_ROW0" | awk '{print $$(NF-1)}') && \
+	X_R0F=$$(echo "$$X_ROW0" | awk '{print $$NF}') && \
+	X_TOT=$$(echo "$$PROBE_X" | grep -E '^TOTAL') && \
+	X_TU=$$(echo "$$X_TOT" | awk '{print $$(NF-1)}') && \
+	X_TF=$$(echo "$$X_TOT" | awk '{print $$NF}') && \
+	X_EXP=$$((X_R0F + 180224)) && \
+	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && [ "$$X_BANKED" -eq 11 ] && [ -n "$$X_R0U" ] && [ "$$X_TU" = "$$X_R0U" ] && [ "$$X_TF" = "$$X_EXP" ]; then \
+		echo "PASS: dot-banks-probe-x (isolated) — header + 11 banked rows + bank-0-inclusive totals invariant (TU=$$X_TU TF=$$X_TF)"; \
+	else \
+		echo "FAIL: dot-banks-probe-x (isolated) — header/rows/totals-invariant mismatch (banked=$$X_BANKED r0u=$$X_R0U r0f=$$X_R0F tu=$$X_TU tf=$$X_TF exp=$$X_EXP)"; \
+		echo "  PROBE_X: $$PROBE_X"; exit 1; \
+	fi && \
+	PROBE_Y1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-start---$$/{p=1; next} /---dot-banks-probe-y-mid1---$$/{p=0} p') && \
+	PROBE_Y2=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid1---$$/{p=1; next} /---dot-banks-probe-y-mid2---$$/{p=0} p') && \
+	PROBE_Y3=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-y-mid2---$$/{p=1; next} /---dot-banks-probe-y-end---$$/{p=0} p') && \
+	Y1_STAR_LINES=$$(echo "$$PROBE_Y1" | grep -cE '\*') && \
+	Y2_STAR_LINES=$$(echo "$$PROBE_Y2" | grep -cE '\*') && \
+	Y3_STAR_LINES=$$(echo "$$PROBE_Y3" | grep -cE '\*') && \
+	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+22 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
+	   [ "$$Y1_STAR_LINES" = "1" ] && [ "$$Y2_STAR_LINES" = "1" ] && [ "$$Y3_STAR_LINES" = "1" ]; then \
+		echo "PASS: dot-banks-probe-y (isolated) — marker on row 0 → 1 → 0 tracks BANK! (exactly 1 * per phase)"; \
+	else \
+		echo "FAIL: dot-banks-probe-y (isolated) — marker did not track BANK! correctly (Y1/Y2/Y3 stars: $$Y1_STAR_LINES/$$Y2_STAR_LINES/$$Y3_STAR_LINES; expected 1/1/1)"; \
+		echo "  PROBE_Y1: $$PROBE_Y1"; echo "  PROBE_Y2: $$PROBE_Y2"; echo "  PROBE_Y3: $$PROBE_Y3"; exit 1; \
+	fi && \
+	PROBE_Z=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-z-start---$$/{p=1; next} /---dot-banks-probe-z-end---$$/{p=0} p') && \
+	Z_BANKED=$$(echo "$$PROBE_Z" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
+	if [ "$$Z_BANKED" -eq 11 ]; then \
+		echo "PASS: dot-banks-probe-z (isolated) — exactly 11 empty banked rows read 0/16384; bank 0 exempt"; \
+	else \
+		echo "FAIL: dot-banks-probe-z (isolated) — expected 11 empty banked rows with bank-0 exempt, got $$Z_BANKED"; \
+		echo "  PROBE_Z: $$PROBE_Z"; exit 1; \
+	fi && \
+	PROBE_W=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-w-start---$$/{p=1; next} /---dot-banks-probe-w-end---$$/{p=0} p') && \
+	W_ROW0=$$(echo "$$PROBE_W" | grep -E '^[ ]+0[ ]+22[ ]') && \
+	W_R0U=$$(echo "$$W_ROW0" | awk '{print $$(NF-1)}') && \
+	W_R0F=$$(echo "$$W_ROW0" | awk '{print $$NF}') && \
+	W_TOT=$$(echo "$$PROBE_W" | grep -E '^TOTAL') && \
+	W_TU=$$(echo "$$W_TOT" | awk '{print $$(NF-1)}') && \
+	W_TF=$$(echo "$$W_TOT" | awk '{print $$NF}') && \
+	W_EXP=$$((W_R0F + 180224)) && \
+	W_SW=$$(echo "$$PROBE_W" | grep -E '^BANKED-WORDS' | awk '{print $$NF}') && \
+	W_SB=$$(echo "$$PROBE_W" | grep -E '^STUB-BYTES' | awk '{print $$NF}') && \
+	W_SBEXP=$$((W_SW * 4)) && \
+	if [ -n "$$W_TOT" ] && [ "$$W_TU" = "$$W_R0U" ] && [ "$$W_TF" = "$$W_EXP" ] && [ -n "$$W_SW" ] && [ "$$W_SB" = "$$W_SBEXP" ]; then \
+		echo "PASS: dot-banks-probe-w (isolated) — TOTAL invariant + BANKED-WORDS=$$W_SW / STUB-BYTES=$$W_SB summary rows"; \
+	else \
+		echo "FAIL: dot-banks-probe-w (isolated) — totals/summary mismatch (tu=$$W_TU r0u=$$W_R0U tf=$$W_TF exp=$$W_EXP sw=$$W_SW sb=$$W_SB)"; \
+		echo "  PROBE_W: $$PROBE_W"; exit 1; \
+	fi && \
+	PROBE_M1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-m1-start---$$/{p=1; next} /---dot-banks-probe-m1-end---$$/{p=0} p') && \
+	if echo "$$PROBE_M1" | grep -qE '16384' && ! echo "$$PROBE_M1" | grep -qE '[ ]4000$$'; then \
+		echo "PASS: dot-banks-probe-m1 (isolated) — byte columns forced decimal in HEX mode (free reads 16384, not 4000)"; \
+	else \
+		echo "FAIL: dot-banks-probe-m1 (isolated) — byte columns not base-stable (Story-17.5 M1 regression)"; \
+		echo "  PROBE_M1: $$PROBE_M1"; exit 1; \
+	fi && \
+	if echo "$$OUTPUT" | grep -qE '^---dot-banks-suite-end---$$'; then \
+		echo "PASS: dot-banks-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
+	else \
+		echo "FAIL: dot-banks-suite (isolated) — end-sentinel missing (mid-suite halt)"; \
+		echo "  OUTPUT tail: $$(echo "$$OUTPUT" | tail -n 5)"; exit 1; \
+	fi
 
 # Story 22.3 CODE-words-into-fixed-memory redirect probe (PD-P4-15 §9.1
 # closure): (a) a CODE word defined while bank 5 is live lands in fixed memory

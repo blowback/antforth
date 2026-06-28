@@ -1,6 +1,6 @@
 # Story 23.8: In-suite bank-switching probe isolation (close AI-22-5)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -125,26 +125,26 @@ entry updated).
 
 ### Pre-edit baseline
 
-- [ ] `wc -c build/antforth.com` → record (must be byte-identical at close; this
+- [x] `wc -c build/antforth.com` → record (must be byte-identical at close; this
   story is test-only).
-- [ ] Run the full gate green once (`make test-repl test-repl-banking
+- [x] Run the full gate green once (`make test-repl test-repl-banking
   test-straddle-regression test-file-sanity` + the `test-repl-banking-isolated*`
   set) to confirm a clean start and capture current `.BANKS`-probe pass counts.
 
 ### Task 1 — Carve out the isolated dot-banks fixture (AC1)
 
-- [ ] Create `tests/banking_tests_dot_banks.fth` (end with `BYE`; 0x1A-terminate
+- [x] Create `tests/banking_tests_dot_banks.fth` (end with `BYE`; 0x1A-terminate
   only if it will be SLIDE-transferred). Move probes X/Y/Z/M1/W
   (`tests/banking_tests.fth:368-467`) into it, preserving each sentinel pair
   (`---dot-banks-probe-x-start---` … etc.) and assertion so the grep witnesses are
   unchanged.
-- [ ] In a fresh isolated emulator instance, bank-0 `HERE` is low — the probes may
+- [x] In a fresh isolated emulator instance, bank-0 `HERE` is low — the probes may
   even be re-coloned safely there, but keep them as-is to minimise churn; the point
   is isolation, not re-structuring.
 
 ### Task 2 — Wire the make target (AC1)
 
-- [ ] Add `make test-repl-banking-isolated-dot-banks` mirroring the recipe shape of
+- [x] Add `make test-repl-banking-isolated-dot-banks` mirroring the recipe shape of
   `test-repl-banking-isolated-22-2` (`Makefile:~1158`): `sed 's/$$/\r/'
   tests/banking_tests_dot_banks.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET)`
   then grep each `PASS:` witness. Add to `.PHONY` and to the aggregate
@@ -153,29 +153,29 @@ entry updated).
 
 ### Task 3 — Strip the main suite + document (AC2, AC6)
 
-- [ ] Remove the migrated probe blocks from `tests/banking_tests.fth`; leave a
+- [x] Remove the migrated probe blocks from `tests/banking_tests.fth`; leave a
   one-line breadcrumb comment pointing to the new fixture (what + why, no
   provenance bloat — `feedback_source_comment_discipline`).
-- [ ] Add the authoring-rule one-liner to the banking-test header comment.
-- [ ] Audit the remaining file for any other foreign `BANK!` (grep `BANK!`); for
+- [x] Add the authoring-rule one-liner to the banking-test header comment.
+- [x] Audit the remaining file for any other foreign `BANK!` (grep `BANK!`); for
   each surviving occurrence, confirm it is bank-0-only/setup and annotate, or move
   it.
 
 ### Task 4 — Regression lint + negative test (AC3, AC4)
 
-- [ ] Add `make lint-banking-probes`: grep `tests/banking_tests.fth` for a
+- [x] Add `make lint-banking-probes`: grep `tests/banking_tests.fth` for a
   non-zero-bank `BANK!` outside allow-listed commented lines; exit non-zero with a
   clear message if found. Keep it to a handful of lines.
-- [ ] Wire into the default gate sweep + `.PHONY`.
-- [ ] Negative test: plant a `3 BANK!` line, confirm `make lint-banking-probes`
+- [x] Wire into the default gate sweep + `.PHONY`.
+- [x] Negative test: plant a `3 BANK!` line, confirm `make lint-banking-probes`
   fails, revert. Record the observed failure output in Dev Notes (AC4).
 
 ### Task 5 — Close (AC5, AC6)
 
-- [ ] Full gate green; `wc -c` byte-identical (record).
-- [ ] Update memory `antforth-3-1-0-phase-5-scope` follow-up entry: AI-22-5
+- [x] Full gate green; `wc -c` byte-identical (record).
+- [x] Update memory `antforth-3-1-0-phase-5-scope` follow-up entry: AI-22-5
   discharged via Story 23.8 (structural isolation + lint).
-- [ ] No S9 hardware-smoke needed (no binary delta, emulator-only test infra) —
+- [x] No S9 hardware-smoke needed (no binary delta, emulator-only test infra) —
   state this explicitly at close rather than omitting it.
 
 ## Dev Notes
@@ -203,3 +203,87 @@ genuine migration target — handle it the same way (fixture + lint catches it).
 ### Ledger
 
 Binary: 0 B (test-infra). This discharges Epic-22 AI-22-5 and Epic-23 AI-23-1.
+
+## Dev Agent Record
+
+### Implementation Plan
+
+Test-infra only (0 kernel bytes). Migrate every in-suite foreign (`N≥1`) `BANK!`
+probe out of `tests/banking_tests.fth` into an isolated fixture run by its own
+make target, then add a grep lint (prereq of `test-repl-banking`) that fails if a
+foreign `BANK!` is re-introduced without an allow-list marker.
+
+### Completion Notes
+
+- **Recon corrected the draft.** The draft asserted "0 in-suite probes at risk."
+  A `grep -nE '[1-9][0-9]*[[:space:]]+BANK!' tests/banking_tests.fth` at dev time
+  found the draft had only inspected the `.BANKS` display probes — two live
+  foreign-`BANK!` sites remained: **`_probe-7`** (`1 BANK!` round-trip, colon
+  body) and **`.BANKS` probe Y** (`1 BANK!`, interpret-level). So this was part
+  *repair*, part *hardening*, not pure hardening.
+- **AC1 + AC2 — migration.** Created `tests/banking_tests_dot_banks.fth`
+  (`make test-repl-banking-isolated-dot-banks`) holding probe 7 + `.BANKS` probes
+  X/Y/Z/M1/W with byte-identical sentinels/assertions. Removed both blocks from
+  the main suite (breadcrumbs left), removed `bank-store-round-trip-1` from the
+  main recipe's pattern list, and deleted the main-recipe `.BANKS` grep block
+  (moved into the new target). 7 PASS in the fresh emulator (probe-x `TU=199`
+  confirms low bank-0 HERE → layout-immune). Main `test-repl-banking` carries no
+  foreign `BANK!` now; the 4 legitimate stayers are documented + allow-listed:
+  `99 BANK!` (aborts before switch), `5 BANK!`×2 (`_iron-spike-test`, run only in
+  an isolated subprocess), `_p1951a-victim 1 BANK!` (F1 portal-guard, CATCHes
+  -273).
+- **AC3 — lint.** `make lint-banking-probes` (grep-only): matches
+  `[1-9][0-9]*[[:space:]]+BANK!`, structurally skips `\` comment lines and `."`
+  verdict strings, excludes `LINT-ALLOW-BANK`-marked lines. Wired as a prereq of
+  `test-repl-banking` (+ `.PHONY`). PASSes on the cleaned file.
+- **AC4 — negative test.** Appended `3 BANK!` to the main file →
+  `make lint-banking-probes` printed `FAIL: ... 1839:3 BANK!` and exited 2;
+  reverted; re-ran → PASS. Output in Debug Log below.
+- **AC5 — gates + bytes.** `wc -c build/antforth.com` = **29091, byte-identical**
+  pre/post (no `src/` touched). Full sweep green, 0 FAIL lines across: `test-repl`
+  (1005 PASS / 0 FAIL / 2 SKIP — the AC's "975" is a stale baseline figure),
+  `test-repl-banking`, all `test-repl-banking-isolated*` (incl. new dot-banks),
+  `test-repl-banking-23-6/23-7`, `test-straddle-regression`, `test-file-sanity`,
+  `lint-banking-probes`.
+- **AC6 — authoring rule + AI-22-5.** One-line rule added to the
+  `banking_tests.fth` header. Memory `antforth-3-1-0-phase-5-scope` Story-23.8
+  follow-up entry updated: AI-22-5 discharged.
+- **No S9 hardware-smoke required.** This story has zero binary delta and is
+  emulator-only test infrastructure — there is no silicon-affecting change to
+  smoke. (Stated explicitly per the close-out task, not omitted.)
+
+### Debug Log — AC4 negative-test evidence
+
+```
+$ printf '\n3 BANK!\n' >> tests/banking_tests.fth   # planted violation
+$ make lint-banking-probes
+FAIL: lint-banking-probes — foreign (non-zero) BANK! in main in-suite tests/banking_tests.fth.
+  Move it to an isolated fixture (test-repl-banking-isolated-*), or if it ABORTs/CATCHes before any switch add a trailing '\ LINT-ALLOW-BANK:' marker:
+1839:3 BANK!
+make: *** [Makefile:378: lint-banking-probes] Error 1   # exit 2
+$ # reverted planted line
+$ make lint-banking-probes
+PASS: lint-banking-probes — no un-allow-listed foreign BANK! in tests/banking_tests.fth
+```
+
+### File List
+
+- `tests/banking_tests_dot_banks.fth` (NEW) — isolated fixture: probe 7 +
+  `.BANKS` probes X/Y/Z/M1/W.
+- `tests/banking_tests.fth` (MOD) — removed probe 7 + `.BANKS` block (breadcrumbs
+  left); added `\ LINT-ALLOW-BANK:` markers to the 4 stayers; authoring-rule
+  header comment.
+- `Makefile` (MOD) — new `test-repl-banking-isolated-dot-banks` target; new
+  `lint-banking-probes` target (prereq of `test-repl-banking`); both added to
+  `.PHONY`; removed migrated `bank-store-round-trip-1` pattern + `.BANKS` grep
+  block from the main `test-repl-banking` recipe.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MOD) — `23-8` →
+  in-progress → review.
+
+### Change Log
+
+- 2026-06-28 — Story 23.8 implemented: migrated in-suite bank-switching probes
+  (probe 7 + `.BANKS` X/Y/Z/M1/W) to `tests/banking_tests_dot_banks.fth`; added
+  `lint-banking-probes` regression lint; allow-listed 4 legitimate stayers;
+  authoring rule documented. 0 binary bytes (29091 byte-identical). Discharges
+  AI-22-5 / AI-23-1. Status → review.
