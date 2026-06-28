@@ -8,7 +8,7 @@ carry-forward list — for the prioritised Phase-3 stabilisation + standards clo
 Available user RAM is getting tight as AntForth grows, but I don't 
 want to sacrifice any of our core wordset, nor our built in assembler.
 Proposal is to use bank swapping to make more memory available to users - 
-see docs/antforth-banking-design.md .
+see docs/antforth-banking-redesign.md (locked Phase-4 design) — the older docs/antforth-banking-design.md sketch is SUPERSEDED.
 
 # STARTUP.FTH
 
@@ -58,11 +58,14 @@ apparatus for searching it.
 # Z80 IO primitives
 
 IN and OUT. Easy enough to provide as custom code words, but
-it would be nice to have them built in.
+it would be nice to have them built in. — DELIVERED in 3.1.0
+(Story 23.3): `IN`/`OUT` are now built-in runtime port words.
 
 # ANS Forth locals
 
-`{: a b -- c :}` or just `VALUE` and `TO`.
+`{: a b -- c :}` or just `VALUE` and `TO`. — `VALUE`/`TO` DELIVERED
+in 3.1.0 (Story 23.2); full `{: :}` named locals remain a forward
+candidate.
 
 # SEE decompiler
 

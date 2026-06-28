@@ -1,7 +1,7 @@
 ; pictured.asm — Pictured numeric output words
 ; AntForth — A Forth for CP/M on Z80
 ;
-; Epic 10 Story 10.7 — pictured numeric output subsystem:
+; Pictured numeric output subsystem:
 ;   <# HOLD # #S #> SIGN HOLDS  (+HLD user variable, §6.2.1675 HOLDS)
 ;
 ; Buffer resides in UserArea at IY+UserArea.pic_buf (40 bytes). HLD
@@ -13,9 +13,7 @@
 ; assembler.asm:985. The assembler entry (defined later in the build
 ; order, so it is head of the `#` hash bucket) dispatches at run time:
 ; when asm_mode is clear it jumps to w_PIC_HASH_cf below; when set it
-; emits the sigil tag as before. Both dictionary entries coexist;
-; Epic 12 (wordlists) will migrate the asm entry to an ASSEMBLER
-; wordlist, retiring this dispatch hack.
+; emits the sigil tag as before. Both dictionary entries coexist.
 
 ; -----------------------------------------------
 ; HLD ( -- a-addr )
@@ -76,7 +74,7 @@ w_PIC_HASH:
 w_PIC_HASH_cf:
         CALL    check_underflow_2
         LD      (pictured_ip_stash), DE ; stash IP — DE needed as scratch
-        ; Story 13.0.1: under §3.1.4.1 hi-on-TOS, BC = ud-hi and HL (popped)
+        ; Under §3.1.4.1 hi-on-TOS, BC = ud-hi and HL (popped)
         ; = ud-lo. The 40-bit shift register is (A : BC : HL) where HL holds
         ; the LOW 16 bits and BC the HIGH 16 bits — flipped vs pre-flip
         ; (where BC was low). Shift HL first (low), propagate carry into
@@ -139,7 +137,7 @@ w_PIC_GREATER_HASH:
 w_PIC_GREATER_HASH_cf:
         CALL    check_underflow_2
         LD      (pictured_ip_stash), DE ; stash IP; DE free for compute
-        POP     HL                      ; discard xd-lo (BC held xd-hi, about to be overwritten — post-Story-13.0.1 §3.1.4.1)
+        POP     HL                      ; discard xd-lo (BC held xd-hi, about to be overwritten — §3.1.4.1)
         LD      L, (IY+UserArea.hld)
         LD      H, (IY+UserArea.hld+1)  ; HL = c-addr (= HLD)
         PUSH    HL                      ; push c-addr (second on stack)
@@ -245,21 +243,17 @@ hold_common:
 
 ; -----------------------------------------------
 ; do_pic_overflow_error — Internal raise helper
-;   Migrated by Story 11.6 to raise -17 THROW per ANS Forth 1994 §9.3.5.
-;   Never returns. Pre-Story-11.6 this site printed "? Pictured buffer
-;   overflow" + CR/LF via direct BDOS before JP w_ABORT_cf; the unified
-;   `error -17: pictured numeric output string overflow` diagnostic
-;   from Story 11.3's throw_desc_table replaces the pre-print (mirrors
-;   Story 11.4's removal of "? Stack underflow" and Story 11.5's
-;   removal of "? compile only").
+;   Raises -17 THROW per ANS Forth 1994 §9.3.5. Never returns. The unified
+;   `error -17: pictured numeric output string overflow` diagnostic from
+;   the throw_desc_table supplies the message.
 ;
 ;   Callers: hold_common.hc_overflow falls into this site (so HOLD,
 ;   #, SIGN, HOLDS all reach it via hold_common). All callers are
 ;   primary-set DEFCODE bodies — no EXX-restore needed at the raise.
 ; -----------------------------------------------
 do_pic_overflow_error:
-        ; -17 THROW (Story 11.6): pictured numeric output string
-        ; overflow per ANS Forth 1994 §9.3.5.
+        ; -17 THROW: pictured numeric output string overflow
+        ; per ANS Forth 1994 §9.3.5.
         LD      BC, THROW_PIC_OVERFLOW
         JP      w_THROW_cf.kernel_entry
 

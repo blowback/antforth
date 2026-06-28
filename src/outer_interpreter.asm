@@ -8,7 +8,7 @@
 ;   Exit:  BC = IY + offset (address of user variable)
 ; -----------------------------------------------
 push_user_var:
-        ; Story 11.5.2: -3 THROW guard (depth +1). check_overflow
+        ; -3 THROW guard (depth +1). check_overflow
         ; clobbers AF/HL; A holds the offset and must be preserved
         ; across the CALL (it's the input contract). Spill A through
         ; the data stack via PUSH AF / POP AF (transient SP +2,
@@ -54,7 +54,7 @@ w_BASE_cf:
 ;   failed parses leave the previous value intact. Initialised to -1 at
 ;   cold start.
 ; de-facto Forth convention (fig-Forth / F83 / gforth / SwiftForth / pforth)
-; — NOT in ANS Core. Story 13.0 ANS Forth 1994 §3.4.1.3 — dot-marker recogniser
+; — NOT in ANS Core. ANS Forth 1994 §3.4.1.3 — dot-marker recogniser
 ;   exposes the digits-after-dot count for fixed-point reconstruction.
 ; -----------------------------------------------
 w_DPL:
@@ -147,14 +147,14 @@ w_QUERY_cf:
         LD      (IY+UserArea.tib_in), A         ; A = 0
         LD      (IY+UserArea.tib_in+1), A
 
-        ; Story 11.5.3 (option b — defensive): re-assert canonical REPL
-        ; source-spec (tib_addr = tib_buffer, source_id = 0) so that any
+        ; Defensively re-assert canonical REPL source-spec
+        ; (tib_addr = tib_buffer, source_id = 0) so that any
         ; leaked source-frame state from a pre-existing EVALUATE /
         ; INCLUDE source-spec cannot survive into the next REPL line.
-        ; EVALUATE's CATCH wrapper (option c below) closes the
-        ; structural case; this catches future leak paths uncovered by
-        ; option c. source_id = 0 per Forth 2014 §6.2.2218 (terminal
-        ; input). A is already 0 from the tib_in reset above.
+        ; EVALUATE's CATCH wrapper closes the structural case; this
+        ; catches future leak paths uncovered by it. source_id = 0 per
+        ; Forth 2014 §6.2.2218 (terminal input). A is already 0 from
+        ; the tib_in reset above.
         LD      HL, tib_buffer
         LD      (IY+UserArea.tib_addr), L
         LD      (IY+UserArea.tib_addr+1), H
@@ -210,16 +210,32 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_BRANCH_cf
         DW      .interp_loop - $
 .interp_execute:
-        ; Interpret mode: ( xt flag ) — drop flag, execute
+        ; Interpret mode: ( xt flag ) — drop flag, recognise an interactive
+        ; BANK! (peek), execute, then commit the save. Token identity at THIS
+        ; site (xt == BANK!, executed directly by the text interpreter) is the
+        ; only signal distinguishing a typed `n BANK!` from a colon word that
+        ; internally calls BANK! — a compiled BANK! runs nested under its own
+        ; DOCOL frame and never re-enters here, while a BANK! reached via
+        ; EVALUATE/INCLUDE DOES re-enter but is gated out by QMARK-BANK's
+        ; source_id == 0 (keyboard-only) test (docs/antforth-banking-redesign.md
+        ; §5.6; arch Findings F6). QMARK-BANK peeks xt WITHOUT touching either
+        ; stack and sets a one-shot flag; EXECUTE then consumes xt (and BANK!'s
+        ; n arg below it); QSAVE-BANK commits current_bank->saved_bank iff the
+        ; flag survived. The flag (not a stack slot) carries the recognition
+        ; across EXECUTE because the executed word may rearrange BOTH stacks
+        ; (e.g. an interactively-typed >R/R>). If BANK! THROWs, the unwind skips
+        ; QSAVE-BANK so a failed switch is never saved.
         DW      w_DROP_cf               ; ( xt flag -- xt )
-        DW      w_EXECUTE_cf            ; execute the word
+        DW      w_QMARK_BANK_cf         ; ( xt -- xt )   peek: flag := interactive BANK!?
+        DW      w_EXECUTE_cf            ; ( xt -- )      executes the word
+        DW      w_QSAVE_BANK_cf         ; ( -- )         commit if flag set
         DW      w_BRANCH_cf             ; loop back
         DW      .interp_loop - $
 .try_number:
         ; Stack: ( c-addr 0 ) — not found
         DW      w_DROP_cf               ; ( c-addr 0 -- c-addr )
         DW      w_ASM_RECOGNIZE_cf      ; ( c-addr -- value true | c-addr false )
-        ; Story 13.0: success keeps the flag on TOS so .got_value can
+        ; Success keeps the flag on TOS so .got_value can
         ; dispatch on flag=2 (double) vs anything-nonzero (single).
         ; ASM-RECOGNIZE returns 0xFFFF (single) or 0 (fail).
         DW      w_DUP_cf                ; ( ... flag flag )
@@ -229,12 +245,12 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      .got_value - $          ; if true, keep flag, share handling
 .try_pn_drop:
         DW      w_DROP_cf               ; drop the duplicated false
-.try_prefix_num:                         ; Epic 9 — NUMBER-PREFIX?
+.try_prefix_num:                         ; NUMBER-PREFIX?
         ; ( c-addr -- n 0xFFFF | d.lo d.hi 2 | c-addr 0 )
-        ; Story 13.0: 3-shape return: single (flag=0xFFFF), double
-        ; (flag=2), or fail (flag=0). DUP+QBRANCH preserves flag for
-        ; .got_value dispatch. Story 13.0.1: double-shape now d.lo
-        ; below d.hi (high cell on TOS per §3.1.4.1).
+        ; 3-shape return: single (flag=0xFFFF), double (flag=2), or
+        ; fail (flag=0). DUP+QBRANCH preserves flag for .got_value
+        ; dispatch. Double-shape has d.lo below d.hi (high cell on
+        ; TOS per §3.1.4.1).
         DW      w_NUMBER_PREFIX_Q_cf
         DW      w_DUP_cf
         DW      w_QBRANCH_cf
@@ -256,7 +272,7 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      .not_number - $         ; jump to error path (not fall through to .got_value)
 .got_value:
         ; Valid number — flag still on TOS. Single: flag = 0xFFFF (or 1);
-        ; Double: flag = 2 (Story 13.0).
+        ; Double: flag = 2.
         DW      w_STATE_cf              ; ( ... flag -- ... flag state-addr )
         DW      w_FETCH_cf              ; ( ... flag state-addr -- ... flag state )
         DW      w_QBRANCH_cf            ; if STATE=0, drop flag, leave value(s)
@@ -268,9 +284,8 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_QBRANCH_cf
         DW      .compile_single - $     ; flag != 2 → single
         ; flag == 2: emit (DLIT) + high + low. Stack: ( d.lo d.hi flag )
-        ; per ANS Forth 1994 §3.1.4.1 (post-Story-13.0.1 hi-on-TOS).
-        ; The 3 COMMA calls are unchanged from pre-flip — only the cell
-        ; labels swapped; BC walks d.hi then d.lo (was d.lo then d.hi).
+        ; per ANS Forth 1994 §3.1.4.1 (hi-on-TOS). BC walks d.hi then
+        ; d.lo.
         ; Inline data layout: [w_D_LIT_cf addr][d.hi lo,hi][d.lo lo,hi]
         ; — high cell at lower address per §6.1.0350 (matches 2!).
         DW      w_DROP_cf               ; drop flag → ( d.lo d.hi )
@@ -309,7 +324,7 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_LIT_cf, '?'
         DW      w_EMIT_cf               ; question mark
         DW      w_CR_cf                 ; newline
-        ; -13 THROW (Story 11.5): undefined word per ANS Forth 1994 §9.3.5
+        ; -13 THROW: undefined word per ANS Forth 1994 §9.3.5
         ; Forth-thread form: push the THROW code as a literal then call the
         ; user-mode w_THROW_cf entry (NOT w_THROW_cf.kernel_entry, which is
         ; not addressable from a Forth thread).
@@ -318,6 +333,89 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
 .interp_done:
         DW      w_DROP_cf               ; drop the empty c-addr
         DW      EXIT_CODE               ; return to caller (QUIT loop)
+
+; -----------------------------------------------
+; (QMARK-BANK) ( xt -- xt )            [headerless kernel-internal]
+;   Pre-execute peek at the interpret loop's direct-execute path. Sets the
+;   one-shot interp_bank_pending flag iff the token about to run IS an
+;   interactive BANK! — xt == BANK! AND source_id == 0 (typed at the keyboard,
+;   not an INCLUDEd file's BANK! [FID > 0] and not an EVALUATEd BANK! [-1];
+;   F6: neither may pollute saved_bank). source_id == 0 is the exact "from the
+;   keyboard" predicate and subsumes include_top == 0 (you cannot be inside
+;   INCLUDE with source_id == 0). Clears the flag otherwise. STATE is 0 here
+;   (the STATE QBRANCH upstream), so it is not re-tested. xt is left untouched
+;   on the data stack for EXECUTE. See docs/antforth-banking-redesign.md §5.6.
+; -----------------------------------------------
+w_QMARK_BANK_cf:
+        LD      (IY+UserArea.interp_bank_pending), 0   ; default: not an interactive BANK!
+        LD      A, C                                   ; BC = xt (TOS); compare without disturbing it
+        CP      LOW w_BANK_STORE_cf
+        JR      NZ, .qmb_done
+        LD      A, B
+        CP      HIGH w_BANK_STORE_cf
+        JR      NZ, .qmb_done                          ; not BANK! -> leave flag clear
+        LD      A, (IY+UserArea.source_id)
+        OR      (IY+UserArea.source_id+1)
+        JR      NZ, .qmb_done                          ; not keyboard (INCLUDE FID>0 / EVALUATE -1) -> do not save (F6)
+        LD      (IY+UserArea.interp_bank_pending), 1   ; interactive BANK! about to run -> mark pending
+.qmb_done:
+        NEXT
+
+; -----------------------------------------------
+; (QSAVE-BANK) ( -- )                  [headerless kernel-internal]
+;   Post-execute commit. If interp_bank_pending is set (the just-run token was
+;   an interactive BANK! that did NOT throw — a throwing BANK! skips this word
+;   on the unwind), snapshot current_bank -> saved_bank and clear the flag.
+;   Touches neither stack. See docs/antforth-banking-redesign.md §5.6.
+; -----------------------------------------------
+w_QSAVE_BANK_cf:
+        LD      A, (IY+UserArea.interp_bank_pending)
+        OR      A
+        JR      Z, .qsb_done                    ; not a pending interactive BANK! -> nothing to save
+        LD      A, (IY+UserArea.current_bank)
+        LD      (IY+UserArea.saved_bank), A     ; saved_bank.low <- current_bank.low
+        XOR     A
+        LD      (IY+UserArea.saved_bank+1), A   ; saved_bank.high <- 0 (current_bank.high invariant 0)
+        LD      (IY+UserArea.interp_bank_pending), A   ; clear one-shot flag (A == 0 here)
+.qsb_done:
+        NEXT
+
+; -----------------------------------------------
+; (REASSERT-BANK) ( -- )               [headerless kernel-internal]
+;   Run at the head of .quit_loop on every REPL re-entry. If the live bank
+;   drifted from the saved interactive bank (an ABORT/THROW unwind, or a
+;   colon word that switched bank), restore saved_bank as the live bank so
+;   the user is never stranded. The saved_bank == current_bank guard makes
+;   this a permanent no-op on the single-bank iz-cpm build (0 == 0 always),
+;   keeping that path byte-for-byte unchanged. The .throw_uncaught "KNOWN
+;   LIMIT" comment (src/exception.asm) names QUIT as this restorer.
+;   Delegates the activation to the shared switch_live_bank_to_c helper
+;   (src/banking.asm) so the live (HERE,LATEST,wordlist_head) triple stays
+;   coherent after the restore. Preserves the data-stack TOS (BC).
+;   See docs/antforth-banking-redesign.md §5.6.
+; -----------------------------------------------
+w_REASSERT_BANK_cf:
+        LD      A, (IY+UserArea.current_bank)
+        LD      L, (IY+UserArea.saved_bank)     ; L = saved bank (keep BC=TOS intact)
+        CP      L
+        JR      Z, .rab_done                    ; saved == current -> no-op (entire iz-cpm case)
+        ; Bounds guard: -BANK / BANKS-CLEAR shrink bank_count WITHOUT
+        ; reconciling saved_bank, so a stale saved_bank can index past the
+        ; live active_pages[] region. Skip the restore when saved_bank is no
+        ; longer a valid logical index (mirrors BANK!'s n < bank_count
+        ; precondition) — mapping active_pages[saved] there would page a
+        ; vacated/garbage byte into slot 2 and set an out-of-range
+        ; current_bank. The user keeps the post-unwind live bank instead.
+        LD      A, L
+        CP      (IY+UserArea.bank_count)
+        JR      NC, .rab_done                   ; saved_bank >= bank_count -> stale, no-op
+        PUSH    BC                              ; preserve data-stack TOS across the switch
+        LD      C, L
+        LD      B, 0
+        CALL    switch_live_bank_to_c           ; map slot 2 + current_bank/owner + triple swap
+        POP     BC                              ; restore data-stack TOS
+.rab_done:
+        NEXT
 
 ; -----------------------------------------------
 ; QUIT ( -- )
@@ -336,7 +434,7 @@ w_QUIT_cf:
         LD      (IY+UserArea.state), A
         LD      (IY+UserArea.state+1), A
         ; CATCH-TOP = 0 (no enclosing exception frame after ABORT/QUIT recovery —
-        ; CCD-1 chain-link invariant; AC #17 of Story 11.2)
+        ; chain-link invariant)
         LD      (IY+UserArea.catch_top), A
         LD      (IY+UserArea.catch_top+1), A
         ; Enter the QUIT loop thread
@@ -344,6 +442,10 @@ w_QUIT_cf:
         NEXT
 
 .quit_loop:
+        ; Re-assert the saved interactive bank on every REPL re-entry (no-op
+        ; when saved_bank == current_bank — the common case and the entire
+        ; iz-cpm case). Restores the user's bank after an ABORT/THROW unwind.
+        DW      w_REASSERT_BANK_cf
         ; Read line of input, set #TIB and >IN (stack-neutral)
         DW      w_QUERY_cf
         ; Interpret the line
@@ -357,6 +459,12 @@ w_QUIT_cf:
         DW      w_BRANCH_cf
         DW      .quit_loop - $
 .quit_ok:
+        ; Optional "[N]" current-bank prefix (opt-in via PROMPT-SHOW-BANK,
+        ; default OFF → prints nothing → byte-identical to Phase-3). Gives
+        ; visible feedback before compiling into bank N; see the cross-bank
+        ; pointer hazards in docs/banking-pointer-hazards.md (F4 mitigation).
+        ; The leading space of str_ok below is the "] ok" separator.
+        DW      w_BANK_PROMPT_cf        ; "[N]" or nothing
         DW      w_LIT_cf, str_ok        ; ( -- addr )
         DW      w_LIT_cf, STR_OK_LEN    ; ( addr -- addr len )
         DW      w_TYPE_cf               ; print " ok"
@@ -381,16 +489,14 @@ w_QUIT_cf:
 ;   INVARIANT: every call to (SAVE-INPUT) MUST be matched by exactly one
 ;   (RESTORE-INPUT) on the same control path. A direct user-level call
 ;   without a matching restore corrupts the input source on the next
-;   parse. EVALUATE owns the only sanctioned pairing; future Epic-13
-;   INCLUDE will own the second. The (paren) naming per architecture.md:425
-;   warns of internal-helper status — convention only, NOT enforced by
-;   SMUDGE/F_HIDDEN. Treat as private.
+;   parse. EVALUATE owns the only sanctioned pairing; INCLUDE owns the
+;   second. The (paren) naming warns of internal-helper status —
+;   convention only, NOT enforced by SMUDGE/F_HIDDEN. Treat as private.
 ;
-;   THROW-survival (Story 11.5.3): EVALUATE wraps INTERPRET in CATCH so
-;   (RESTORE-INPUT) runs on both the success and the THROW paths. QUERY
-;   also defensively re-asserts tib_addr = tib_buffer and source_id = 0
-;   (Story 11.5.3 option b). Combined defence closes Story 11.6 Review
-;   Follow-up #1 (-58 caught form via EVALUATE harness).
+;   THROW-survival: EVALUATE wraps INTERPRET in CATCH so (RESTORE-INPUT)
+;   runs on both the success and the THROW paths. QUERY also defensively
+;   re-asserts tib_addr = tib_buffer and source_id = 0. Combined defence
+;   closes the -58 caught form via EVALUATE harness.
 ; -----------------------------------------------
 w_PAREN_SAVE_INPUT:
         DEFCODE "(SAVE-INPUT)", 0
@@ -461,7 +567,7 @@ w_PAREN_RESTORE_INPUT_cf:
 
 ; -----------------------------------------------
 ; SAVE-INPUT ( -- xn ... x1 n )                  ANS Forth 1994 §6.2.2182
-;   User-facing CORE-EXT word — Story 13.5.5 / TD-7 closure 2026-05-06.
+;   User-facing CORE-EXT word.
 ;   Pushes a description of the current input source spec for later
 ;   use by RESTORE-INPUT. antforth's pick (a) uniform-quadruple shape:
 ;   five cells total with count = 4 on top, regardless of SOURCE-ID.
@@ -476,19 +582,19 @@ w_PAREN_RESTORE_INPUT_cf:
 ;   (SOURCE-ID > 0) arms work structurally with the cross-REFILL
 ;   impl-defined deviation noted on RESTORE-INPUT.
 ;
-;   Relationship to private `(SAVE-INPUT)` at :395-431: different
+;   Relationship to private `(SAVE-INPUT)`: different
 ;   surfaces. The (paren) helper is EVALUATE's R-stack plumbing
 ;   (install-and-uninstall semantics; reads c-addr / u from the data
 ;   stack and writes them into UserArea, setting source_id = -1 and
 ;   tib_in = 0). The user-facing SAVE-INPUT is snapshot-only: it
 ;   does NOT modify UserArea — it pushes a copy of the current spec
-;   onto the data stack. The two co-exist; this story does NOT
-;   modify the (paren) helper (Story 13.4 v2 PD-11 / AC #14 in force).
+;   onto the data stack. The two co-exist; the (paren) helper is
+;   not modified.
 ; -----------------------------------------------
 w_SAVE_INPUT:
         DEFCODE "SAVE-INPUT", 0
 w_SAVE_INPUT_cf:
-        ; Story 11.5.2: -3 THROW guard. One CALL covers PUSH BC + 4
+        ; -3 THROW guard. One CALL covers PUSH BC + 4
         ; cells (10 bytes); 32-byte margin shrinks to ~22 — same
         ; envelope discipline as w_GET_ORDER_cf (`wordlists.asm`).
         CALL    check_overflow
@@ -510,7 +616,7 @@ w_SAVE_INPUT_cf:
 
 ; -----------------------------------------------
 ; RESTORE-INPUT ( xn ... x1 n -- flag )          ANS Forth 1994 §6.2.2148
-;   User-facing CORE-EXT word — Story 13.5.5 / TD-7 closure 2026-05-06.
+;   User-facing CORE-EXT word.
 ;   Attempt to restore the input source spec to the state described
 ;   by x1..xn. flag is true (-1) if the spec cannot be restored, else
 ;   false (0). Per §6.2.2148: "An ambiguous condition exists if the
@@ -537,14 +643,14 @@ w_SAVE_INPUT_cf:
 ;     content, then RESTORE-INPUT, the SOURCE-ID still matches
 ;     (0 = 0) but the bytes at tib_addr have changed since the
 ;     SAVE-INPUT call. Same shape for INCLUDE-FILE across a record
-;     refill. Within a single EVALUATE call (the binding TD-7 scope)
+;     refill. Within a single EVALUATE call (the binding scope)
 ;     no rotation occurs, so the round-trip is clean.
 ;
-;   Relationship to private `(RESTORE-INPUT)` at :445-460: different
+;   Relationship to private `(RESTORE-INPUT)`: different
 ;   surfaces. The (paren) helper pops the four-cell frame saved by
 ;   `(SAVE-INPUT)` from the R-stack; this user-facing word pops the
 ;   five-cell description from the data stack and validates it
-;   before writing back. (paren) helper is unmodified (PD-11).
+;   before writing back. (paren) helper is unmodified.
 ; -----------------------------------------------
 w_RESTORE_INPUT:
         DEFCODE "RESTORE-INPUT", 0
@@ -597,20 +703,16 @@ w_RESTORE_INPUT_cf:
 ;   active input source with source_id = -1, run INTERPRET, then
 ;   restore the saved source spec.
 ;
-;   THROW-safety (Story 11.5.3): INTERPRET runs inside an internal
-;   CATCH so (RESTORE-INPUT) ALWAYS runs — on the success path AND on
-;   the THROW path. The wrapping pattern is:
+;   THROW-safety: INTERPRET runs inside an internal CATCH so
+;   (RESTORE-INPUT) ALWAYS runs — on the success path AND on the
+;   THROW path. The wrapping pattern is:
 ;       (SAVE-INPUT) ['] INTERPRET CATCH (RESTORE-INPUT) THROW EXIT
 ;   On success, CATCH leaves 0 → THROW is silent (Forth 2014
 ;   §9.6.1.2275: "If any bits of n are non-zero, ...") → EXIT. On a
 ;   THROW from inside INTERPRET, CATCH re-emerges with n on TOS,
 ;   (RESTORE-INPUT) runs (data-stack-neutral), then THROW re-raises n
-;   to the caller's wrapping CATCH. This closes Story 11.6 Review
-;   Follow-up #1 (-58 caught form via EVALUATE harness). Pre-Epic-13:
-;   the source-frame is NOT yet linked into the CCD-1 INCLUDE-TOP
-;   chain (Story 13.4 will absorb this hand-rolled wrapper into the
-;   architectural mechanism); the wrapper here is the tactical fix
-;   that survives until Epic 13 lands.
+;   to the caller's wrapping CATCH. This closes the -58 caught form
+;   via EVALUATE harness.
 ;
 ; ANS Forth 1994 §6.1.1360   EVALUATE   — interpret from string
 ; -----------------------------------------------
@@ -620,7 +722,7 @@ w_EVALUATE_body:
 w_EVALUATE_cf EQU w_EVALUATE_body - 3
         DW      w_PAREN_SAVE_INPUT_cf       ; ( c-addr u -- ) install eval source
         DW      w_LIT_cf, w_INTERPRET_cf    ; ( -- xt-of-INTERPRET )
-        DW      w_CATCH_cf                  ; ( xt -- 0 | n )  Story 11.5.3
+        DW      w_CATCH_cf                  ; ( xt -- 0 | n )
         DW      w_PAREN_RESTORE_INPUT_cf    ; restore source-spec on both paths
         DW      w_THROW_cf                  ; THROW 0 silent; non-zero re-raises
         DW      EXIT_CODE                   ; reached on success path only

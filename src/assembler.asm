@@ -3,7 +3,7 @@
 ;
 ; === Design Overview ===
 ;
-; Unified tag encoding (story 4.3.5 refactor):
+; Unified tag encoding:
 ;
 ;   Every tagged operand has high byte 0xFF. The low byte encodes a
 ;   3-bit class (bits 7-5) and a 5-bit index (bits 4-0):
@@ -22,7 +22,7 @@
 ;
 ; Operand order for multi-operand opcode words is **Zilog convention**,
 ; applied uniformly across every form — register-to-register,
-; register-immediate, indirect-(HL), and every future Story 4.4+
+; register-immediate, indirect-(HL), and every future
 ; extension. Destination comes first on the input stream, source last:
 ;
 ;   B C LD,            assembles  LD B, C          (reg,reg)
@@ -38,25 +38,24 @@
 ; and pop the operands in the matching order. Common footgun: omitting
 ; the `#` marker (`A 0x42 LD,`) silently mis-assembles as a register-
 ; to-register LD where 0x42 is interpreted as a register tag. Under the
-; unified tag encoding (story 4.3.5) this is now caught: bare integers
+; unified tag encoding this is now caught: bare integers
 ; have high byte != 0xFF and trigger a clear error.
 ;
 ; Assembler mode:
 ;   `CODE name` calls build_header with F_SMUDGE, saves recovery info,
 ;   sets HERE to the raw code field (no JP DOCOL — CODE words are native
 ;   machine code, not threaded), and sets asm_mode = 1.
-;   Opcode and register words refuse to run unless asm_mode = 1 (AC9:
+;   Opcode and register words refuse to run unless asm_mode = 1:
 ;   bare register names and opcode words in normal Forth error out
-;   cleanly instead of polluting the session). The per-word gate is a
+;   cleanly instead of polluting the session. The per-word gate is a
 ;   `CALL check_asm_mode` preamble routed through one shared helper so
-;   adding opcodes in 4.3/4.4 keeps the gate centralised; a cheaper
-;   dispatch would require INTERPRET-level changes and is deferred past
-;   Epic 4.
+;   adding opcodes keeps the gate centralised; a cheaper
+;   dispatch would require INTERPRET-level changes and is deferred.
 ;   `END-CODE` clears SMUDGE on the new word and clears asm_mode.
 ;   On any uncaught-THROW path while asm_mode is set, asm_cleanup
 ;   restores HERE, unlinks the half-built hash entry, and clears
 ;   asm_mode — hook is the first call in exception.asm's
-;   .throw_uncaught recovery chain (post-Story-11.7).
+;   .throw_uncaught recovery chain.
 ;
 ; Error format: all assembler errors raise an antforth-extension THROW
 ; code (-258..-271 per src/constants.asm:60-74); the unified diagnostic
@@ -65,8 +64,8 @@
 ;
 ; Reserved single-letter dictionary words (will shadow any user word of
 ; the same name once assembler.asm is loaded):
-;   A B C D E H L      8-bit registers (story 4.1)
-;   Z P M              condition codes (story 4.3 — Z=zero, P=plus, M=minus)
+;   A B C D E H L      8-bit registers
+;   Z P M              condition codes (Z=zero, P=plus, M=minus)
 ; Two-letter condition words NZ NC CS PO PE are also reserved. The
 ; carry-set condition is spelled `CS` (6502-style) — never `C`, which is
 ; the C register — and `CC` is intentionally NOT defined so it remains
@@ -80,11 +79,12 @@ asm_saved_here:    DW 0   ; HERE at CODE entry (entry start, for restore)
 asm_body_start:    DW 0   ; HERE at the start of the CODE word body
                           ; (= code field address; for LABEL "no opcodes" check)
 asm_saved_bucket:  DB 0   ; hash bucket for new word
-asm_saved_head:    DW 0   ; previous bucket head (for unlink)
+asm_saved_head:    DW 0   ; previous bucket head addr (for unlink)
+asm_saved_bank:    DB 0   ; previous bucket head fat bank byte (for unlink)
 asm_saved_wid:     DW 0   ; wid the CODE word's header was inserted into
-                          ; (Story 12.4 — single per-CODE-block wid; all
+                          ; (single per-CODE-block wid; all
                           ; LABELs in the block share this wid; mid-CODE
-                          ; SET-CURRENT is unsupported per AC #7 pick)
+                          ; SET-CURRENT is unsupported)
 asm_smudge_addr:   DW 0   ; count_flags address (for END-CODE)
 asm_tmp:           DB 0   ; 1-byte spill slot shared by LD, / PUSH, /
                           ; POP, / arith-word helpers (never nested)
@@ -95,32 +95,40 @@ asm_resolve_target: DW 0  ; cached target address for asm_resolve_slot's
                           ; fixup-walk loop (loaded once at FIX time and
                           ; reloaded into DE before each apply call)
 asm_jp_op:         DB 0   ; 1-byte spill slot for JP,/CALL, unconditional
-                          ; opcode (kept separate from asm_tmp — Story 4.3
-                          ; retrospective lesson #2: don't share scratch
-                          ; across nesting boundaries)
-asm_throw_code:    DW 0   ; Story 11.5: THROW code carrier for
+                          ; opcode (kept separate from asm_tmp — don't share
+                          ; scratch across nesting boundaries)
+asm_throw_code:    DW 0   ; THROW code carrier for
                           ; asm_print_error_with_name. Set by callers
                           ; (asm_err_unresolved → -268, asm_err_already →
                           ; -269) before JP asm_print_error_with_name; read
                           ; by the post-print epilogue into BC for the
                           ; w_THROW_cf.kernel_entry raise. Single-threaded
                           ; (asm errors are not re-entrant).
+asm_code_home_bank: DB 0xFF ; Story 22.3 CODE→fixed-memory redirect sentinel.
+                          ; $FF = no redirect active (bank-0 CODE / idle).
+                          ; 0..28 = originating bank whose live triple was
+                          ; swapped out to bank 0 for the duration of a
+                          ; CODE..END-CODE built while that bank was live;
+                          ; restored by asm_code_restore_home. Single-threaded
+                          ; (CODE is not re-entrant — asm_mode nesting guard).
 
 ; =====================================================================
-; Per-CODE label and fixup pools (Story 4.2)
+; Per-CODE label and fixup pools
 ; =====================================================================
 ; LABEL declares a per-CODE forward/back-reference target. Each LABEL
 ; allocates one slot in asm_label_pool and builds a normal Forth dict
 ; entry in the side area asm_label_dict (NOT at HERE — HERE is busy
 ; assembling native machine code into the in-progress CODE word body).
 ;
-; Slot record (8 bytes):
+; Slot record (9 bytes):
 ;   +0  resolved flag (0 = unresolved, 1 = resolved)
 ;   +1  target address (2 bytes; valid only when resolved=1)
 ;   +3  hash bucket index (set by LABEL after build_header)
-;   +4  saved bucket head (2 bytes; for unlink at END-CODE/cleanup)
+;   +4  saved bucket head addr (2 bytes; for unlink at END-CODE/cleanup)
 ;   +6  count_flags ptr (2 bytes; points at the dict entry's count_flags
 ;       byte — name length follows in low 5 bits, name bytes follow)
+;   +8  saved bucket head fat bank byte (Story 20.1; restored with the addr
+;       so a window-resident previous head pages the correct bank under FIND)
 ;
 ; Fixup record (4 bytes):
 ;   +0  patch address (2 bytes — the placeholder byte/word in CODE body)
@@ -135,9 +143,9 @@ asm_throw_code:    DW 0   ; Story 11.5: THROW code carrier for
 ; Cleanup (asm_unlink_labels) walks slots in reverse insertion order and
 ; restores each bucket's head from the saved old_head. LIFO undo of the
 ; prepend-to-head dictionary discipline correctly handles bucket-collision
-; cases (worked example in story Dev Notes).
+; cases.
 ASM_LABEL_POOL_SIZE  EQU 16
-ASM_LABEL_REC_SIZE   EQU 8
+ASM_LABEL_REC_SIZE   EQU 9       ; +8 fat bank byte added in Story 20.1
 ASM_FIXUP_POOL_SIZE  EQU 32
 ASM_FIXUP_REC_SIZE   EQU 4
 ; Worst case per label entry: 2 (link) + 1 (count_flags) + 31 (max name,
@@ -193,16 +201,11 @@ asm_label_dict:    DS ASM_LABEL_DICT_SIZE
 ; =====================================================================
 ; Error message strings (printed before label name + " ?" CR LF)
 ;
-; Story 11.5 deleted 9 obsolete strings (str_asm_badop, str_asm_nested,
-; str_asm_noname, str_asm_orphan, str_asm_label_after, str_asm_jr_range,
-; str_asm_too_labels, str_asm_too_fixups, str_asm_equ_in_code) along with
-; their *_LEN EQUs — those error sites now raise -258..-266 THROW and
-; the description text lives in throw_desc_table (src/exception.asm:560).
-; Story 11.6 retired the asm_die residual: check_asm_mode and the
-; +D / bit-op range guards migrated to -270 / -271 THROW, asm_die body
-; deleted, str_asm_notcode / str_asm_range / asm_print_error all
-; deleted. (Story 11.5.6 later split -271 → -271 disp range /
-; -272 bit range; see asm_disp_range_err / asm_bit_range_err below.)
+; Most error sites raise -258..-266 THROW and the description text lives
+; in throw_desc_table (src/exception.asm:560). check_asm_mode and the
+; +D / bit-op range guards raise -270 / -271 / -272 THROW; the range
+; check is split -271 disp range / -272 bit range (see
+; asm_disp_range_err / asm_bit_range_err below).
 ; The remaining strings drive dynamic-print error paths that THROW alone
 ; cannot replace — they print a label name (str_asm_unresolved,
 ; str_asm_already) or a hex value (str_asm_bare_int) before " ?" CR LF
@@ -259,55 +262,55 @@ asm_print_hex8:
         JP      bdos_putchar
 
 asm_bad_operand:
-        ; -258 THROW (Story 11.5): bad operand per antforth extension —
+        ; -258 THROW: bad operand per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_BAD_OPERAND
         JP      w_THROW_cf.kernel_entry
 
 asm_err_nested:
-        ; -259 THROW (Story 11.5): nested CODE per antforth extension —
+        ; -259 THROW: nested CODE per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_NESTED
         JP      w_THROW_cf.kernel_entry
 
 asm_err_noname:
-        ; -260 THROW (Story 11.5): CODE needs name per antforth extension —
+        ; -260 THROW: CODE needs name per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_NONAME
         JP      w_THROW_cf.kernel_entry
 
 asm_err_orphan:
-        ; -261 THROW (Story 11.5): END-CODE without CODE per antforth extension —
+        ; -261 THROW: END-CODE without CODE per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_ORPHAN_LABEL
         JP      w_THROW_cf.kernel_entry
 
 asm_err_label_after:
-        ; -262 THROW (Story 11.5): LABEL must precede opcodes per antforth extension —
+        ; -262 THROW: LABEL must precede opcodes per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_LABEL_AFTER_END
         JP      w_THROW_cf.kernel_entry
 
 asm_err_jr_range:
-        ; -263 THROW (Story 11.5): JR out of range per antforth extension —
+        ; -263 THROW: JR out of range per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_JR_RANGE
         JP      w_THROW_cf.kernel_entry
 
 asm_err_too_labels:
-        ; -264 THROW (Story 11.5): too many labels per antforth extension —
+        ; -264 THROW: too many labels per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_TOO_LABELS
         JP      w_THROW_cf.kernel_entry
 
 asm_err_too_fixups:
-        ; -265 THROW (Story 11.5): too many fixups per antforth extension —
+        ; -265 THROW: too many fixups per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_TOO_FIXUPS
         JP      w_THROW_cf.kernel_entry
 
 asm_err_equ_in_code:
-        ; -266 THROW (Story 11.5): EQU outside CODE only per antforth extension —
+        ; -266 THROW: EQU outside CODE only per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_EQU_IN_CODE
         JP      w_THROW_cf.kernel_entry
@@ -315,7 +318,7 @@ asm_err_equ_in_code:
 asm_err_bare_int:
         ; HL = bare integer value on entry (set by callers).
         ; Print "bare integer 0xNNNN ?" + CRLF (dynamic hex value preserved),
-        ; then raise -267 THROW (Story 11.5).
+        ; then raise -267 THROW.
         PUSH    HL
         LD      HL, str_asm_bare_int
         LD      B, STR_ASM_BARE_INT_LEN
@@ -323,7 +326,7 @@ asm_err_bare_int:
         POP     HL
         CALL    asm_print_hex16
         CALL    asm_print_q_crlf
-        ; -267 THROW (Story 11.5): bare integer per antforth extension —
+        ; -267 THROW: bare integer per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_BARE_INT
         JP      w_THROW_cf.kernel_entry
@@ -372,7 +375,7 @@ asm_print_error_with_name:
 .pen_no_name:
         ; Print " ?" CR LF
         CALL    bdos_print_q_crlf
-        ; -<N> THROW (Story 11.5): asm-error-with-name per antforth extension —
+        ; -<N> THROW: asm-error-with-name per antforth extension —
         ; see docs/throw-codes.md. The specific code is set by the caller in
         ; asm_throw_code (see asm_err_unresolved / asm_err_already).
         LD      BC, (asm_throw_code)
@@ -382,7 +385,7 @@ asm_print_error_with_name:
 ; asm_err_unresolved — print "unresolved label NAME ?" then raise -268 THROW.
 ;   Entry: HL = count_flags ptr of the unresolved label's dict entry.
 ;   Stashes HL into asm_tmp2, the THROW code into asm_throw_code, then
-;   jumps to asm_print_error_with_name (Story 11.5).
+;   jumps to asm_print_error_with_name.
 ; -----------------------------------------------
 asm_err_unresolved:
         LD      (asm_tmp2), HL
@@ -395,7 +398,7 @@ asm_err_unresolved:
 ; -----------------------------------------------
 ; asm_err_already — print "already fixed: NAME ?" then raise -269 THROW.
 ;   Entry: HL = count_flags ptr of the already-fixed label's dict entry.
-;   Same caller pattern as asm_err_unresolved (Story 11.5).
+;   Same caller pattern as asm_err_unresolved.
 ; -----------------------------------------------
 asm_err_already:
         LD      (asm_tmp2), HL
@@ -424,11 +427,14 @@ asm_cleanup:
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
         ; Restore hash bucket head for the in-progress CODE word
-        ; (Story 12.4 — saved wid captured at CODE entry)
+        ; (saved wid captured at CODE entry)
         LD      A, (asm_saved_bucket)
         LD      L, A
         LD      H, 0
-        ADD     HL, HL                          ; bucket * 2
+        ADD     HL, HL                          ; 2*bucket
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC                          ; 3*bucket (fat-bucket stride)
         LD      BC, (asm_saved_wid)
         INC     BC
         INC     BC                              ; BC = saved_wid + WORDLIST_BUCKET0
@@ -437,6 +443,9 @@ asm_cleanup:
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        INC     HL
+        LD      A, (asm_saved_bank)
+        LD      (HL), A                         ; restore fat bank byte too
         ; (LATEST is intentionally not restored — matches the existing
         ; colon-compiler error recovery convention; QUIT carries on and
         ; the next `:` / CODE will overwrite LATEST.)
@@ -445,6 +454,40 @@ asm_cleanup:
         ; Clear asm_mode
         XOR     A
         LD      (asm_mode), A
+        ; Story 22.3: if an uncaught THROW aborted a CODE built while a
+        ; non-zero bank was live, the live triple is still swapped to bank 0
+        ; (with HERE + the bucket head rolled back above). Save that rolled-
+        ; back bank-0 triple to table[0] and reload the originating bank's
+        ; triple so the next `:`/CODE compiles against the user's bank again.
+        ; No-op for bank-0 CODE / no-redirect (sentinel disarmed). Primary-set
+        ; context (uncaught-THROW recovery chain); A/BC/DE/HL free.
+        CALL    asm_code_restore_home
+        RET
+
+; -----------------------------------------------
+; asm_code_restore_home — Story 22.3: undo the CODE→fixed-memory triple
+;   redirect armed in w_CODE_cf. If a redirect is active
+;   (asm_code_home_bank != $FF): re-point triple_owner at the originating
+;   bank, save the live (bank-0) triple to bank-table[0], reload the
+;   originating bank's triple into the live cells, and disarm the sentinel.
+;   No-op when no redirect is active. Clobbers A, BC, DE, HL; IX/IY preserved
+;   (bank_triple_swap's contract). current_bank is deliberately NOT touched —
+;   only the live triple + triple_owner diverge across the CODE window, which
+;   keeps the THROW caught-path frame+9 triple restore coherent
+;   (src/exception.asm). Shared by END-CODE (success), the build_header
+;   no-name path, and asm_cleanup (uncaught-THROW rollback).
+; -----------------------------------------------
+asm_code_restore_home:
+        LD      A, (asm_code_home_bank)
+        INC     A                       ; $FF + 1 = 0 ⟹ sentinel: no redirect
+        RET     Z
+        DEC     A                       ; A = originating bank N (0..28)
+        LD      (IY+UserArea.triple_owner), A   ; live triple keyed back to N
+        LD      C, A                    ; load-source bank = N
+        XOR     A                       ; save-target bank = 0 (live = bank-0 triple)
+        CALL    bank_triple_swap        ; save live→table[0]; load table[N]→live
+        LD      A, 0xFF
+        LD      (asm_code_home_bank), A ; disarm sentinel
         RET
 
 ; -----------------------------------------------
@@ -458,7 +501,7 @@ check_asm_mode:
         LD      A, (asm_mode)
         OR      A
         RET     NZ
-        ; -270 THROW (Story 11.6): not in CODE per antforth extension —
+        ; -270 THROW: not in CODE per antforth extension —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_NOT_IN_CODE
         JP      w_THROW_cf.kernel_entry
@@ -479,7 +522,7 @@ asm_emit_byte:
         RET
 
 ; =====================================================================
-; Label / fixup helpers (Story 4.2)
+; Label / fixup helpers
 ; =====================================================================
 
 ; -----------------------------------------------
@@ -493,8 +536,11 @@ asm_slot_addr:
         LD      H, 0
         ADD     HL, HL              ; *2
         ADD     HL, HL              ; *4
-        ADD     HL, HL              ; *8 (== ASM_LABEL_REC_SIZE)
+        ADD     HL, HL              ; *8
         PUSH    DE
+        LD      E, A
+        LD      D, 0
+        ADD     HL, DE              ; *9 (== ASM_LABEL_REC_SIZE); A still = index
         LD      DE, asm_label_pool
         ADD     HL, DE
         POP     DE
@@ -526,14 +572,14 @@ asm_alloc_label_slot:
         LD      A, (asm_label_count)
         CP      ASM_LABEL_POOL_SIZE
         JR      C, .als_have_room
-        ; Story 11.5 review F2: only caller is LABEL post-EXX; restore
+        ; Only caller is LABEL post-EXX; restore
         ; primary set before kernel-internal THROW raise.
         EXX
         JP      asm_err_too_labels
 .als_have_room:
         PUSH    AF                  ; save new index
         CALL    asm_slot_addr       ; HL = &slot
-        ; Zero 8 bytes
+        ; Zero 9 bytes (full ASM_LABEL_REC_SIZE)
         LD      (HL), 0             ; resolved=0
         INC     HL
         LD      (HL), 0             ; target lo
@@ -549,6 +595,8 @@ asm_alloc_label_slot:
         LD      (HL), 0             ; cf_ptr lo
         INC     HL
         LD      (HL), 0             ; cf_ptr hi
+        INC     HL
+        LD      (HL), 0             ; old_head fat bank byte (+8)
         ; Bump count
         LD      A, (asm_label_count)
         INC     A
@@ -788,7 +836,7 @@ asm_resolve_slot:
 ;   and raise -268 THROW via asm_err_unresolved (which prints
 ;   "unresolved label NAME ?" first).
 ;
-;   Story 11.5 review F1: END-CODE calls this from EXX-active context
+;   END-CODE calls this from EXX-active context
 ;   (END-CODE does EXX before CALL asm_check_unresolved). The downstream
 ;   asm_err_unresolved → asm_print_error_with_name → kernel-internal THROW
 ;   raise contract requires primary-set context. We restore the primary
@@ -814,7 +862,7 @@ asm_check_unresolved:
         INC     HL
         LD      D, (HL)             ; DE = cf_ptr
         EX      DE, HL              ; HL = cf_ptr (in shadow set — END-CODE's EXX active)
-        ; --- Story 11.5 review F1 EXX-restore for kernel-internal THROW ---
+        ; --- EXX-restore for kernel-internal THROW ---
         PUSH    HL                  ; preserve cf_ptr across set-swap
         EXX                         ; restore primary set
         POP     HL                  ; HL = cf_ptr (now in primary set)
@@ -843,22 +891,32 @@ asm_unlink_labels:
         LD      E, (HL)             ; E = old_head lo
         INC     HL
         LD      D, (HL)             ; D = old_head hi
-        ; Compute &<asm_saved_wid>.buckets[bucket] (Story 12.4 — single
+        INC     HL                  ; +6
+        INC     HL                  ; +7
+        INC     HL                  ; +8
+        LD      C, (HL)             ; C = old_head fat bank byte
+        ; Compute &<asm_saved_wid>.buckets[bucket] (single
         ; per-CODE-block wid; all LABELs in the block live in the wordlist
         ; that was current when CODE was entered).
         LD      L, A
         LD      H, 0
-        ADD     HL, HL              ; *2
+        ADD     HL, HL              ; 2*bucket
         PUSH    DE
+        LD      E, A
+        LD      D, 0
+        ADD     HL, DE              ; 3*bucket (fat-bucket stride)
         LD      DE, (asm_saved_wid)
         INC     DE
         INC     DE                  ; DE = saved_wid + WORDLIST_BUCKET0
         ADD     HL, DE
         POP     DE
-        ; Restore bucket head
+        ; Restore the fat bucket head: addr (2 bytes) + saved bank byte, so a
+        ; window-resident previous head pages the correct bank under FIND.
         LD      (HL), E
         INC     HL
         LD      (HL), D
+        INC     HL
+        LD      (HL), C
         POP     AF
         OR      A
         JR      NZ, .ul_loop
@@ -927,7 +985,7 @@ asm_reg_table:
 ; for a case-insensitive match. Fast-fails when asm_mode == 0.
 ; No dictionary header — only called from INTERPRET thread, not user-visible.
 w_ASM_RECOGNIZE_cf:
-        ; Story 11.5.2: -3 THROW guard. ASM-RECOGNIZE grows the data
+        ; -3 THROW guard. ASM-RECOGNIZE grows the data
         ; stack by 1 cell on BOTH success (value + true) and fail
         ; (c-addr + false) paths.
         CALL    check_overflow
@@ -1012,7 +1070,7 @@ w_ASM_RECOGNIZE_cf:
 ; Special assembler words with unique bodies (not handled by recognizer)
 ; =====================================================================
 
-; --- () — absolute memory address marker (Story 5.0.5, Task 4)
+; --- () — absolute memory address marker
 ;     Wraps a bare integer address as an indirect-memory tag. Two cells
 ;     pushed: the address value (under) and the INDIRECT|ABS tag on top.
 ;     Mirrors `#` but for memory addresses instead of immediates. ---
@@ -1031,7 +1089,7 @@ w_ABS_PAREN_cf:
 ;     in name with §6.1 pictured-output `#` (src/pictured.asm); this
 ;     entry is head-of-bucket (defined later in include order) and
 ;     dispatches at run time: asm_mode clear → pictured `#`, set →
-;     immediate-marker sigil. Epic 12 (wordlists) retires this hack. ---
+;     immediate-marker sigil. Wordlists will retire this hack. ---
 w_HASH:
         DEFCODE "#", 0
 w_HASH_cf:
@@ -1208,18 +1266,17 @@ w_PLUS_D_cf:
 ; asm_bit_range_err — Raise -272 THROW (BIT,/RES,/SET, bit number not in
 ;   0..7). Callers: bit-op range guards at :3095/:3132/:3164, primary-set
 ;   DEFCODE bodies — no EXX-restore needed at the raise.
-; Story 11.5.6 split the original generic -271 "range" raise (the
-; asm_disp_range_err routine here was the prior single point) into these
-; two routines per docs/throw-codes.md §c closure note.
+; +D displacement range and bit-number range raise distinct THROW codes
+; (-271 / -272 respectively) via the two routines below.
 ; -----------------------------------------------
 asm_disp_range_err:
-        ; -271 THROW (Story 11.5.6): +D displacement out of range —
+        ; -271 THROW: +D displacement out of range —
         ; see docs/throw-codes.md
         LD      BC, THROW_ASM_DISP_RANGE
         JP      w_THROW_cf.kernel_entry
 
 asm_bit_range_err:
-        ; -272 THROW (Story 11.5.6): BIT,/RES,/SET, bit number not in
+        ; -272 THROW: BIT,/RES,/SET, bit number not in
         ; 0..7 — see docs/throw-codes.md
         LD      BC, THROW_ASM_BIT_RANGE
         JP      w_THROW_cf.kernel_entry
@@ -1247,6 +1304,37 @@ w_CODE_cf:
 
         EXX                                      ; Save TOS/IP/W to shadows
 
+        ; --- Story 22.3: redirect the CODE body into fixed memory (bank 0) ---
+        ; architecture.md PD-P4-15 (§9.1 closure): "No, CODE words must live
+        ; in fixed memory ... reachable directly from fixed memory like the
+        ; existing kernel words." Post-Epic-19/20 the live (HERE, LATEST,
+        ; wordlist_head) triple is swapped to the active bank when a non-zero
+        ; bank is live, so a CODE word would otherwise land in the bank window
+        ; (reachable only from its home bank). Swap the triple to bank 0 for
+        ; the CODE..END-CODE window so build_header (keyed off triple_owner)
+        ; builds the header AND native body in the fixed-memory dictionary.
+        ; current_bank stays on the user's bank — only the triple +
+        ; triple_owner diverge; the restore is symmetric in END-CODE /
+        ; asm_cleanup / the no-name path via asm_code_restore_home, mirroring
+        ; THROW's caught-path frame+9 triple restore (src/exception.asm).
+        ; Mechanism = redirect (force body to fixed memory), a project-lead
+        ; election over the doc-only reading of (b) — Story 22.3, 2026-06-14;
+        ; supersedes the architecture's "0 B / no behavioural change" budget
+        ; line (architecture.md:461, :499). Runs in the post-EXX scratch main
+        ; set: TOS/IP/W are parked in the shadow set, so bank_triple_swap's
+        ; A/BC/DE/HL clobber is harmless and IP(DE) needs no preservation.
+        LD      A, 0xFF
+        LD      (asm_code_home_bank), A          ; default: disarmed (bank-0 CODE)
+        LD      A, (IY+UserArea.current_bank)    ; low byte (bank index ≤ 28)
+        OR      A
+        JR      Z, .code_build_header            ; bank 0: legacy path, no swap
+        LD      (asm_code_home_bank), A          ; arm: stash originating bank N
+        LD      C, 0                             ; load-source = bank 0
+        CALL    bank_triple_swap                 ; A=N save→table[N]; table[0]→live
+        XOR     A
+        LD      (IY+UserArea.triple_owner), A    ; live triple now owned by bank 0
+.code_build_header:
+
         LD      A, F_SMUDGE
         CALL    build_header
         JR      C, .code_no_name
@@ -1258,9 +1346,11 @@ w_CODE_cf:
         LD      (asm_saved_bucket), A
         LD      BC, (bh_old_bucket_head)
         LD      (asm_saved_head), BC
+        LD      A, (bh_old_bucket_bank)
+        LD      (asm_saved_bank), A             ; fat bank byte for error restore
         LD      BC, (bh_count_flags_addr)
         LD      (asm_smudge_addr), BC
-        LD      BC, (bh_wid)                    ; Story 12.4 — wid for error-recovery + LABEL unlink
+        LD      BC, (bh_wid)                    ; wid for error-recovery + LABEL unlink
         LD      (asm_saved_wid), BC
 
         ; HL = code field position (from build_header).
@@ -1280,6 +1370,12 @@ w_CODE_cf:
         NEXT
 
 .code_no_name:
+        ; build_header parsed no name. If the triple was redirected to bank 0
+        ; above (Story 22.3), restore the originating bank's triple before the
+        ; THROW so a failed banked `CODE` (no name) does not strand the live
+        ; triple on bank 0. Runs in the post-EXX scratch main set (clobbers
+        ; A/BC/DE/HL — TOS/IP/W safe in shadows); no-op when not redirected.
+        CALL    asm_code_restore_home
         EXX                                      ; Restore TOS/IP/W from shadows
         JP      asm_err_noname
 
@@ -1326,6 +1422,14 @@ w_END_CODE_cf:
         ; Leave assembler mode
         XOR     A
         LD      (asm_mode), A
+
+        ; Story 22.3: if this CODE word was redirected into fixed memory (a
+        ; non-zero bank was live at CODE), swap the originating bank's triple
+        ; back in. Done AFTER the LATEST restore above so table[0].LATEST is
+        ; saved pointing at the new fixed-memory word (correct per-bank tail);
+        ; current_bank is untouched, so the user remains on their bank. No-op
+        ; for bank-0 CODE (sentinel disarmed). Runs in post-EXX scratch set.
+        CALL    asm_code_restore_home
 
         EXX                                      ; Restore TOS/IP/W from shadows
         NEXT
@@ -1495,7 +1599,7 @@ w_LD_COMMA_cf:
         AND     ASM_CLASS_MASK
         CP      ASM_CLASS_INDIRECT
         JR      Z, .ldc_chk_idx_dst
-        ; Story 5.0.5: check for I/R as destination
+        ; check for I/R as destination
         OR      A                       ; class == REG8 (0x00)?
         JR      NZ, .ldc_normal_reg_dst
         LD      A, L
@@ -1535,7 +1639,7 @@ w_LD_COMMA_cf:
         JR      Z, .ldc_idx_dst
         CP      ASM_IND_IYD
         JR      Z, .ldc_idx_dst
-        ; Story 5.0.5: check for (BC)/(DE)/() as destination
+        ; check for (BC)/(DE)/() as destination
         CP      ASM_IND_BC
         JP      Z, .ldc_ibc_dst
         CP      ASM_IND_DE
@@ -1754,8 +1858,8 @@ w_LD_COMMA_cf:
         NEXT
 
 ; =====================================================================
-; Story 5.0.5 / 6.5 LD, extensions — indirect/register forms
-;   (handler pairs merged with H-parameter technique in 6.5)
+; LD, extensions — indirect/register forms
+;   (handler pairs merged with H-parameter technique)
 ; =====================================================================
 
 ; --- (BC)/(DE) as source: LD A,(BC) / LD A,(DE) ---
@@ -2274,7 +2378,7 @@ w_LABEL_cf:
         OR      A
         SBC     HL, DE
         JR      Z, .lbl_after_ok
-        ; Story 11.5 review F2: restore primary set before kernel-internal
+        ; restore primary set before kernel-internal
         ; THROW raise (asm_err_label_after's `LD BC / JP w_THROW_cf
         ; .kernel_entry` requires primary BC — see src/exception.asm:288-296).
         EXX
@@ -2340,6 +2444,9 @@ w_LABEL_cf:
         LD      (HL), E                 ; +6 cf_ptr lo
         INC     HL
         LD      (HL), D                 ; +7 cf_ptr hi
+        INC     HL
+        LD      A, (bh_old_bucket_bank)
+        LD      (HL), A                 ; +8 old_head fat bank byte
 
         ; Restore LATEST to the CODE word's entry — build_header set
         ; LATEST to the new label entry, but the user expects LATEST to
@@ -2400,8 +2507,7 @@ w_FIX_cf:
         NEXT
 .fix_already:
         ; Already fixed — print "already fixed: NAME" and raise -269
-        ; THROW (Story 11.5; pre-Story-11.5 site printed "?" CR/LF
-        ; before ABORT). HL currently points at slot+0; advance to
+        ; THROW. HL currently points at slot+0; advance to
         ; +6 (cf_ptr).
         LD      DE, 6
         ADD     HL, DE
@@ -2561,8 +2667,8 @@ w_CALL_COMMA_cf:
 ;   Entry: A = unconditional opcode byte (0xC3 = JP, 0xCD = CALL).
 ;   Uses asm_tmp for the unconditional opcode and asm_tmp2 for the
 ;   saved target/patch-addr. asm_emit_byte / asm_slot_addr / asm_add_fixup
-;   all preserve DE; we still spill IP defensively per the Story 4.2
-;   retrospective lesson on JR,/FIX/DW,.
+;   all preserve DE; we still spill IP defensively (matches the
+;   JR,/FIX/DW, convention).
 ; -----------------------------------------------
 asm_jp_call_word:
         LD      (asm_jp_op), A          ; save unconditional opcode
@@ -2953,7 +3059,7 @@ w_DEC_COMMA_cf:
         JP      asm_inc_dec_word
 
 ; =====================================================================
-; CB-prefix rotate/shift words (Task 3)
+; CB-prefix rotate/shift words
 ;   RLC, RRC, RL, RR, SLA, SRA, SRL
 ; =====================================================================
 
@@ -3069,7 +3175,7 @@ w_SRL_COMMA_cf:
         JP      asm_cb_shift_word
 
 ; =====================================================================
-; CB-prefix bit operation words (Task 4)
+; CB-prefix bit operation words
 ;   BIT, SET, RES — bit number from immediate, operand from register/(HL)/indexed
 ; =====================================================================
 
@@ -3216,23 +3322,17 @@ w_SET_COMMA_cf:
         JP      asm_bit_op_word
 
 ; =====================================================================
-; I/O instructions (Task 5)
+; I/O instructions
 ; =====================================================================
 
 w_IN_COMMA:
         DEFCODE "IN,", 0
 w_IN_COMMA_cf:
         CALL    check_asm_mode
-        CALL    asm_check_tagged
-        ; TOS = register tag (destination)
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand     ; must be REG8
-        CALL    asm_get_index
-        CP      8
-        JP      NC, asm_bad_operand
-        LD      (asm_tmp), A            ; save r-field
-        ; Pop NOS = port specifier
-        POP     BC
+        ; Zilog dst-src order: `A (C) IN,` / `A $74 # IN,`. TOS = src port
+        ; specifier ((C) or imm marker, possibly 2 cells); dst register is
+        ; below it. Read the port first so the immediate's value cell is
+        ; popped in place (a fixed TOS<->NOS swap can't — the imm is 2 cells).
         CALL    asm_check_tagged
         CALL    asm_is_indirect_tag
         JR      Z, .in_indirect
@@ -3245,7 +3345,16 @@ w_IN_COMMA_cf:
         CALL    asm_get_index
         CP      ASM_IND_C
         JP      NZ, asm_bad_operand
+        ; Pop NOS = register tag (destination)
+        POP     BC
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand     ; must be REG8
+        CALL    asm_get_index
+        CP      8
+        JP      NC, asm_bad_operand
         ; IN r,(C) = ED 40|(r<<3)
+        LD      (asm_tmp), A            ; save r-field
         LD      A, 0xED
         CALL    asm_emit_byte
         LD      A, (asm_tmp)
@@ -3258,15 +3367,21 @@ w_IN_COMMA_cf:
         NEXT
 
 .in_imm:
-        ; Immediate port — only valid for A (r=7)
-        LD      A, (asm_tmp)
-        CP      7
-        JP      NZ, asm_bad_operand
+        ; Immediate port: TOS was imm marker, pop port value, then register
         POP     BC                      ; BC = port number
+        LD      A, C
+        LD      (asm_tmp), A            ; save port
+        POP     BC                      ; BC = register tag (destination)
+        CALL    asm_check_tagged
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand
+        CALL    asm_get_index
+        CP      7
+        JP      NZ, asm_bad_operand     ; immediate port only valid for A
         ; IN A,(n) = DB nn
         LD      A, 0xDB
         CALL    asm_emit_byte
-        LD      A, C
+        LD      A, (asm_tmp)
         CALL    asm_emit_byte
         POP     BC
         NEXT
@@ -3275,8 +3390,20 @@ w_OUT_COMMA:
         DEFCODE "OUT,", 0
 w_OUT_COMMA_cf:
         CALL    check_asm_mode
+        ; Zilog dst-src order: `(C) A OUT,` / `$74 # A OUT,`. TOS = src
+        ; register; dst port specifier ((C) or imm marker, possibly 2 cells)
+        ; is below it. Read the register first (1 cell), so the port — which
+        ; may be a 2-cell immediate — is popped in its own branch below.
         CALL    asm_check_tagged
-        ; TOS = port specifier ((C) or imm marker)
+        CALL    asm_get_class
+        JP      NZ, asm_bad_operand     ; must be REG8
+        CALL    asm_get_index
+        CP      8
+        JP      NC, asm_bad_operand
+        LD      (asm_tmp), A            ; save r-field
+        ; Pop NOS = port specifier
+        POP     BC
+        CALL    asm_check_tagged
         CALL    asm_is_indirect_tag
         JR      Z, .out_indirect
         CALL    asm_is_imm_tag
@@ -3288,16 +3415,7 @@ w_OUT_COMMA_cf:
         CALL    asm_get_index
         CP      ASM_IND_C
         JP      NZ, asm_bad_operand
-        ; Pop NOS = register tag
-        POP     BC
-        CALL    asm_check_tagged
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand     ; must be REG8
-        CALL    asm_get_index
-        CP      8
-        JP      NC, asm_bad_operand
         ; OUT (C),r = ED 41|(r<<3)
-        LD      (asm_tmp), A            ; save r-field
         LD      A, 0xED
         CALL    asm_emit_byte
         LD      A, (asm_tmp)
@@ -3310,27 +3428,21 @@ w_OUT_COMMA_cf:
         NEXT
 
 .out_imm:
-        ; Immediate port: TOS was imm marker, pop port value, pop register
-        POP     BC                      ; BC = port number
-        LD      A, C
-        LD      (asm_tmp), A            ; save port
-        POP     BC                      ; BC = register tag
-        CALL    asm_check_tagged
-        CALL    asm_get_class
-        JP      NZ, asm_bad_operand
-        CALL    asm_get_index
+        ; Immediate port — only valid for A (r=7)
+        LD      A, (asm_tmp)
         CP      7
-        JP      NZ, asm_bad_operand     ; only A
+        JP      NZ, asm_bad_operand
+        POP     BC                      ; BC = port number
         ; OUT (n),A = D3 nn
         LD      A, 0xD3
         CALL    asm_emit_byte
-        LD      A, (asm_tmp)
+        LD      A, C
         CALL    asm_emit_byte
         POP     BC
         NEXT
 
 ; =====================================================================
-; ED-prefix zero-operand words (Task 6)
+; ED-prefix zero-operand words
 ;   Shared emitter: emit 0xED then second byte.
 ; =====================================================================
 
@@ -3484,7 +3596,7 @@ w_IM2_COMMA_cf:
         JP      asm_emit_ed_op
 
 ; =====================================================================
-; EX, / EXX, (Task 7)
+; EX, / EXX,
 ; =====================================================================
 
 w_EX_COMMA:
@@ -3562,7 +3674,7 @@ w_EXX_COMMA_cf:
         NEXT
 
 ; =====================================================================
-; Single-byte zero-operand words (Story 5.0.5, Task 1)
+; Single-byte zero-operand words
 ;   Shared emitter: check asm_mode, emit one byte, NEXT.
 ; =====================================================================
 
@@ -3650,7 +3762,7 @@ w_RRA_COMMA_cf:
         JP      asm_emit_single
 
 ; =====================================================================
-; ADC, and SBC, (8-bit) — Story 5.0.5, Task 2
+; ADC, and SBC, (8-bit)
 ;   Reuse asm_arith_word with appropriate base opcodes.
 ;   16-bit forms (ADC HL,rr / SBC HL,rr) handled by prologue check.
 ; =====================================================================
@@ -3756,7 +3868,7 @@ w_SBC_COMMA_cf:
         NEXT
 
 ; =====================================================================
-; DJNZ, ( target -- )  Story 5.0.5, Task 5
+; DJNZ, ( target -- )
 ;   Follows JR, pattern but with fixed opcode 0x10, no condition operand.
 ; =====================================================================
 w_DJNZ_COMMA:
@@ -3821,7 +3933,7 @@ w_DJNZ_COMMA_cf:
         NEXT
 
 ; =====================================================================
-; RST, ( vector -- )  Story 5.0.5, Task 6
+; RST, ( vector -- )
 ;   Takes bare integer (not tagged), validates 0/8/10/18/20/28/30/38.
 ; =====================================================================
 w_RST_COMMA:
@@ -3844,7 +3956,7 @@ w_RST_COMMA_cf:
         NEXT
 
 ; =====================================================================
-; RLD, and RRD, — ED-prefix zero-operand (Story 5.0.5, Task 7)
+; RLD, and RRD, — ED-prefix zero-operand
 ; =====================================================================
 w_RLD_COMMA:
         DEFCODE "RLD,", 0

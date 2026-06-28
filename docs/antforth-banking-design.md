@@ -1,6 +1,11 @@
 # AntForth Banking Architecture for MicroBeast
 
-> **⚠️ SUPERSEDED 2026-05-09.** This document is the initial banking sketch (2026-05-07). It was superseded by the `/bmad-party-mode` session of 2026-05-09; the authoritative Phase-4 design is now [`docs/antforth-banking-redesign.md`](antforth-banking-redesign.md). Specifically, the user-facing wordset (`USER-BANK` / `USER-BANK@` / `ENABLE-MAPPING` / `THUNK-TO-USER-BANKn`) is replaced by a 12-word set (`BANK@` / `BANK!` / `BANKS` / `IN-BANK` / `BANK-OF` / `.BANKS` / `+BANK` / `-BANK` / `BANKS-CLEAR` / `SET-BANK` / `BANK-MAPPING-ON` / `BANK-MAPPING-OFF`); the per-target-bank thunk family is replaced by per-word descriptor stubs (the **(γ)** mechanism); the cross-bank EXIT `BIT 7,H` heuristic is replaced by sentinel-tagged returns (broken in this doc — user code at $8000–$BFFF always has bit 7 set on return-address high bytes). **Do not consult this document for current decisions.** Retained for historical traceability of design evolution only.
+> **⚠️ SUPERSEDED 2026-05-09.** This document is the initial banking sketch (2026-05-07). The authoritative Phase-4 design is [`docs/antforth-banking-redesign.md`](antforth-banking-redesign.md) (locked 2026-05-09 in a `/bmad-party-mode` session). **Do not consult this document for current decisions.** Retained for historical traceability of design evolution.
+>
+> Two specific design elements from this sketch are rejected by the redesign:
+>
+> - **(a) The `BIT 7,H` cross-bank-EXIT heuristic** — broken: user code at `$8000`–`$BFFF` always has bit 7 set on every return-address high byte, so the heuristic distinguishes nothing. Replaced by sentinel-tagged 3-cell cross-bank return frames (see redesign-doc §2.2 / §3 / FR-P4-18..21).
+> - **(b) The user-typed `THUNK-TO-USER-BANK*` family** (e.g., `THUNK-TO-USER-BANK5`) — replaced by per-word compiler-emitted descriptor stubs (the **(γ)** mechanism per redesign §2.1 / §3 / FR-P4-13..17). Cross-bank calls are compiler-transparent; users do not type thunk words.
 
 ## Problem Statement
 

@@ -1,4 +1,4 @@
-# generated: 2026-05-08
+# generated: 2026-06-28
 # project: antforth
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-05-08
+generated: 2026-06-28
 project: antforth
 project_key: NOKEY
 tracking_system: file-system
@@ -132,13 +132,6 @@ development_status:
   11-2-exception-frame-infrastructure-and-catch-word: done
   11-3-throw-word-and-uncaught-throw-repl-handler: done
   11-4-internal-error-migration-stack-arithmetic-memory-primitives: done
-  # Story 11.4.1 closed the CATCH/THROW i*x-preservation defect: CATCH
-  # frame +2 slot repurposed from "saved IX" (dead) to "saved BC"
-  # (i*x's TOS-cell value); CATCH captures saved-SP AFTER its POP BC
-  # (= SP_safe); THROW caught path restores via PUSH BC after LD SP, HL.
-  # Story 11.4 ACs #9 / #11 / #12 verdict-table flipped from PARTIAL to
-  # PASS. Forward-pointer chain: 11-4-internal-error-migration → Story
-  # 11.4.1 → re-tested with REPL tests 718..726.
   11-4-1-catch-throw-ix-preservation-bug-fix: done
   11-5-internal-error-migration-dictionary-compiler-control-flow: done
   11-6-internal-error-migration-strings-io-remaining-error-sites: done
@@ -146,29 +139,8 @@ development_status:
   11-8-epic-11-benchmark-survivability-stress-and-regression-gate-ccd-4: done
   epic-11-retrospective: done
 
-  # Epic 12 redrafted 2026-04-27..2026-04-28 by Story 11.5.5; rows below
-  # are post-redraft (original Story 12.6 ASSEMBLER-wordlist deleted; the
-  # current Story 12.6 row is the renumbered close-out gate, formerly
-  # Story 12.7). See _bmad-output/implementation-artifacts/11.5-5-epic-12-redraft.md.
-
   epic-11.5: done
   11.5-1-real-microbeast-hardware-crash-audit: done
-  # Story 11.5.1 verdict 2026-04-27: (c) shared-fault for both
-  # incidents (transcripts bestialitty-20260427-120911.bin +
-  # bestialitty-20260427-155200.bin). .S confirmed deterministic
-  # crash trigger via shadow-register clobber by MicroBeast BDOS
-  # function 2. Defensive-saves story (11.5.1.1) contingent —
-  # not filed until firmware reproducer is inconclusive.
-  # Story 11.5.1.2 dev pass closed 2026-04-27. Hardware run COMPLETE
-  # (4-run transcript bestialitty-20260427-163829.bin); verdict branch
-  # (b): firmware bug CONFIRMED on fns 1/10, registers BC'/DE'/HL'.
-  # PROJECT-LEAD RESOLUTION 2026-04-27: PRIMARY sequencing — escalation
-  # packet sent to Andy (no response yet). MicroBeast commit ced99d1
-  # (2026-04-16, interrupt-handler EXX→PUSH/POP refactor) matches the
-  # observed mechanism — strong signal next firmware revision closes
-  # this firmware-side. Story 11.5.1.1 stays UNSPAWNED on standby;
-  # re-test plan: re-run BDOS_PRO.COM after the next firmware release;
-  # if all-P, drop 11.5.1.1 permanently; if clobber persists, spawn it.
   11.5-1-2-firmware-bdos-register-preservation-reproducer: done
   11.5-2-stack-overflow-throw-3-guard: done
   11.5-3-paren-evaluate-source-frame-fix: done
@@ -188,60 +160,15 @@ development_status:
   epic-12-retrospective: done
 
   epic-13: done
-  # Story 13.0 inserted 2026-05-01 as a back-fill ahead of 13.1: ANS Forth
-  # 1994 §3.4.1.3 dot-anywhere double-cell literal recogniser. Gap caught
-  # post-Epic-12 retro 2026-05-01: Epic 10's "100% ANS Core" claim was
-  # word-counted, not §-counted; §3.4.1.3 (parser-level rule) was missed.
-  # Trailing-dot, leading-dot, embedded-dot all in scope; plays with Epic
-  # 9 prefixes. Compliance-doc one-line correction lands with the story.
   13-0-double-cell-literal-recogniser-ans-3-4-1-3: done
-  # Story 13.0.1 inserted 2026-05-01 as a back-fill ahead of 13.1: ANS Forth
-  # 1994 §3.1.4.1 mandates high-cell on TOS; antforth's E10-D1 committed the
-  # inverse convention and every double-cell word was implemented against it.
-  # Symptom that surfaced the gap: `1024. .S` shows `<2> 0 1024` (low on TOS)
-  # where the standard requires `<2> 1024 0` (high on TOS). Same shape gap as
-  # §3.4.1.3 (Story 13.0): structurally invisible to Epic 10's word-counted
-  # survey. Story 13.1's file-position math (per §11.3.5) sits on top of the
-  # double-cell convention, so 13.0.1 lands and reaches done before 13.1
-  # dev-pass starts.
   13-0-1-flip-double-cell-stack-order-ans-3-1-4-1: done
   13-1-file-io-sanity-fcb-pool-and-bdos-wrapper-layer: done
   13-2-core-file-access-wordset: done
   13-3-file-positioning: done
   13-4-source-input-nesting-include-top-chain-discipline-v2: done
-  # Story 13.5 inserted 2026-05-04 as a latent-defect audit-and-fix ahead of
-  # the original Epic-13 release-gate (now renumbered to 13.6). Surfaced
-  # during Story 13.4 v2's dev-pass: `(close-current-fid)` had to drop
-  # `file_flush` because flushing R/O FCBs after partial-record reads is
-  # destructive — `file_flush` pads DMA[pos..127] with 0x1A and F_WRITEs
-  # the record, corrupting the source file. Story 13.2's user-facing
-  # `CLOSE-FILE` has the same shape on R/O FCBs (documented in
-  # docs/ans-forth-core-compliance.md Story 13.4 caveats). 13.5 owns the
-  # verdict-only reproducer + investigation + structural fix; 13.6 keeps
-  # the original release-gate scope unchanged. Decision: party-mode
-  # session 2026-05-04 post-13.4-v2-review. The 13.4.1 sibling-story
-  # anti-pattern is explicitly NOT being repeated — this is an
-  # epic-scope-discovered latent (Story 13.2 origin), not a 13.4
-  # band-aid.
   13-5-r-o-close-file-destructive-flush-audit-and-fix: done
   13-6-epic-13-fs-stress-bdos-audit-and-antforth-2-0-release-gate-ccd-4: done
   epic-13-retrospective: done
-
-  # Epic 13.5 inserted 2026-05-05 by Epic 13 retrospective. Project lead
-  # direction at retro: all of TD-1..TD-7 land before the v2.0.0 tag, plus
-  # the retro-discovered process foundation PD-1. The original plan had
-  # Story 13.6 close out the phase with TD items as carry-forward; the
-  # retro re-classified TD-5 / TD-6 upward from "accepted-with-rationale:
-  # pre-existing" to tag-blocking correctness defects per
-  # feedback_no_preexisting_discharge.md (Lesson 13-B). Epic 13.5 is the
-  # process-recovery vehicle — zero new feature scope; every story
-  # discharges debt named in the Epic 13 retro's Tag-Blocking Slate. v2.0.0
-  # tag is DEFERRED until Story 13.5.6 close. Story 13.5.0 (PD-1) lands
-  # FIRST — it's the workflow-vs-codified-intent fix that makes the rest
-  # of the slate's S1 standing commitment (no in-pass adversarial review)
-  # structurally enforceable. See planning-artifacts/epics.md §"Epic 13.5"
-  # for full slate spec; epic-13-retro-2026-05-05.md §"Tag-Blocking Slate"
-  # for canonical TD-N → Story-13.5.x mapping.
 
   epic-13.5: done
   13.5-0-pd-1-workflow-and-create-story-ac-alignment: done
@@ -253,16 +180,6 @@ development_status:
   13.5-6-epic-13-5-close-out-gate-and-antforth-2-0-tag: done
   epic-13.5-retrospective: done
 
-  # Phase 3 (debt-cleanup interlude on top of v2.0.0; commit 6599d73, tagged
-  # 2026-05-07). Phase scope per planning-artifacts/epics.md: Epic 14
-  # (process foundation B.1-B.5) lead-in, then Epic 15 (standards close-out:
-  # A.1 audit + A.2 + A.3 + B.6 + B.7 cond + B.8 + B.9). Closes 12 of 12 P1
-  # carry-forward items per docs/PHASE-3-CARRY-FORWARD.md. Cumulative ROM
-  # cap +200 bytes (24,996 -> <= 25,200). Conditional sub-stories 15.1.X
-  # (A.1 back-fill, 0-2 expected) and 15.5.1 (B.7 disposition (b)) are
-  # omitted from this plan and will be inserted when spawned, per the
-  # established 11.5.1.1 / 13.4.1 precedent.
-
   epic-14: done
   14-1-pad-documented-as-canonical-transient-buffer-for-test-authors: done
   14-2-mirrors-prior-arm-halt-signal-lint-in-story-template: done
@@ -271,16 +188,90 @@ development_status:
   14-5-prd-architecture-transcription-drift-sync-target-make-check-doc-sync: done
   epic-14-retrospective: done
 
-  # Epic 15 scope tightened by Epic 14 retro 2026-05-09 (Lesson 14-F: process
-  # ceremony has run past its useful return). 15.2 (caught-form THROW probes)
-  # + 15.3 (base-aware NUMBER?) demoted to direct-commit work items (no story
-  # file, tracked in PHASE-3-CARRY-FORWARD.md). 15.4 (B.6 make check-tools +
-  # B.8 test-numbering hygiene) DROPPED — tooling-on-tooling cargo; both rows
-  # marked "Deferred indefinitely" in PHASE-3-CARRY-FORWARD.md. 15.6 close-out
-  # gate replaced by a checklist in epics.md (no story file). Remaining
-  # story-shaped work: 15.1 audit (simplified to 5 ACs), 15.1.X conditional
-  # back-fills, 15.5 filesystem hardware sprint, 15.5.1 conditional B.7 fork.
   epic-15: done
   15-1-ans-forth-core-compliance-audit-a-1: done
   15-5-filesystem-stress-hardware-sprint-disk-full-directory-full-zero-byte-read-file-b-7-b-9: done
   epic-15-retrospective: done
+
+  epic-16: done
+  16-1-ccp-eviction-hardware-verification-spike-memory-map-page-allocation-survey: done
+  16-2-doc-lock-supersede-obsolete-docs-antforth-banking-design-md: done
+  16-3-banking-capable-emulator-vendor-selection-make-test-repl-banking-integration: done
+  16-4-architecture-stage-open-questions-resolution-9-1-9-3-9-4-9-5-9-6: done
+  epic-16-retrospective: done
+
+  epic-17: done
+  17-1-bank-table-allocator-userarea-cells-bank-mapping-on-bank-mapping-off-ccp-eviction-memory-map-edit: done
+  17-2-bank-fetch-bank-store-banks-read-and-swap-primitives: done
+  17-3-plus-bank-with-probe-on-add-minus-bank-banks-clear-set-bank: done
+  17-4-cl-tail-parser-boot-configuration-banner-update: done
+  17-5-dot-banks-minimal-working-form: done
+  17-5-1-probe-g-plus-bank-cap-false-pass-fix: done
+  17-5-2-probes-1-2-colon-body-refactor-base-residue-root-cause-fix: done
+  17-6-iron-spike-first-hand-built-cross-bank-call-on-real-microbeast-epic-17-close-out-antforth-3-x-1-tag: done
+  epic-17-retrospective: done
+
+  epic-18: in-progress
+  18-1-descriptor-stub-allocator-xt-as-stub-address-contract: done
+  18-2-sentinel-trampoline-cross-bank-return-kernel-exit-distinguishes-intra-bank-from-cross-bank: done
+  18-3-kernel-execute-dispatches-through-stub-initial-compile-comma-stub-emission-wiring-dispatch-budget-verification: done
+  18-4-bank-of-one-byte-read-from-descriptor-stub: done
+  18-5-in-bank-kernel-blessed-catch-safe-epic-18-close-out-antforth-3-x-2-tag: done
+  18-5-1-defwords-ix-preservation-on-caught-throw: done
+  epic-18-retrospective: optional
+
+  epic-19: done
+  19-1-per-bank-here-latest-per-bank-comma-c-comma-compile-comma-full-cell-write-plumbing: done
+  19-2-colon-lands-body-in-current-bank-auto-emits-descriptor-stub-on-semicolon-compiler-transparent-banking: done
+  19-3-create-does-cross-bank-explicit-doer-stub-data-cell-pfa-layout: done
+  19-3-1-hw-only-bank-n-include-defects-from-19-3-hw-uat: done
+  19-4-epic-19-close-out-antforth-3-x-3-tag: done
+  epic-19-retrospective: optional
+
+  epic-19-5: done
+  19-5-0-adr-spike-trampoline-layout-fragility-root-cause-dtc-dispatch-architecture: done
+  19-5-1-portal-aliasing-guards-bank-n-here-cold-init-h5-reproducer-regression-slot: done
+  19-5-2-dispatch-rework-stub-aware-next-plus-non-docol-trampoline-targets: done
+  19-5-3-compiled-body-verification-banked-catch-variant: done
+  19-5-4-hw-investigation-epic-close-out-tag: done
+  epic-19-5-retrospective: done
+
+  epic-20: done
+  20-1-per-wordlist-bank-field-find-save-switch-walk-restore: done
+  20-2-words-traverses-banks-lookup-failure-error-messages-name-source-bank: done
+  20-3-epic-20-close-out-antforth-3-x-4-tag: done
+  epic-20-retrospective: done
+
+  epic-21: done
+  21-1-marker-forget-per-bank-dictionary-tail-descriptor-stub-allocator-tail-reclamation: done
+  21-2-saved-bank-cell-interactive-bank-store-recogniser-quit-re-asserts-saved-bank-abort-abort-quote-pass-through: done
+  21-3-epic-21-close-out-antforth-3-x-5-tag: done
+  epic-21-retrospective: done
+
+  epic-22: done
+  22-1-dot-banks-final-formatting-polish-per-bank-used-free-reflect-real-here-values: done
+  22-2-repl-prompt-indicator-current-bank-visibility-f4-cross-bank-pointer-hazard-user-docs-entry: done
+  22-3-cross-bank-code-words-disposition-implementation-per-story-16-4-9-1-closure: done
+  22-4-phase-4-close-out-three-test-surface-sweep-verdict-table-walk-antforth-3-x-6-final-tag-phase-4-retrospective: done
+  epic-22-retrospective: done
+
+  # Reopened 2026-06-28: retro (held, status done below) spawned two follow-up
+  # stories AI-23-2 → 23.7 (MARKER guard, correctness) and AI-23-1 → 23.8 (probe
+  # isolation, test-infra). 23.1-23.6 shipped in v3.1.0; 23.7/23.8 are post-tag
+  # follow-ups tracked under Epic 23 (do NOT gate the already-shipped v3.1.0 tag).
+  # 23.9 appended 2026-06-28 from a /code-review of the 23.5-23.8 branch: the
+  # 23.6/23.7 window-top guard was correct but INCOMPLETE — five more HERE-growth
+  # paths (`;`/LITERAL/DOES>/S"/."/ABORT") were unguarded. Same post-tag, does NOT
+  # gate v3.1.0.
+  epic-23: done
+  23-1-assembler-in-out-operand-order-fix-zilog-dst-src: done
+  23-2-value-to-ans-core-named-values: done
+  23-3-z80-runtime-in-out-port-words: done
+  23-4-ud-environment-query-gaps: done
+  23-5-epic-23-close-out-ccd-4-regression-gate-v3-1-0-tag: done
+  23-6-banked-dictionary-window-top-overflow-guard: done
+  23-7-banked-marker-window-top-guard: done
+  23-8-in-suite-bank-switching-probe-isolation: done
+  23-9-complete-banked-window-top-guard-coverage: done
+  epic-23-retrospective: done
+

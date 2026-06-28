@@ -306,10 +306,10 @@ LD (nn),HL / LD HL,(nn) use unprefixed 0x22/0x2A forms, also supported.
 
 | Z80 Mnemonic | Opcode | Antforth Syntax | Status |
 |-------------|--------|-----------------|--------|
-| IN r, (C) | ED 0x40\|r<<3 | `(C) A IN,` | Supported |
-| OUT (C), r | ED 0x41\|r<<3 | `A (C) OUT,` | Supported |
-| IN A, (n) | 0xDB nn | `0x42 # A IN,` | Supported |
-| OUT (n), A | 0xD3 nn | `A 0x42 # OUT,` | Supported |
+| IN r, (C) | ED 0x40\|r<<3 | `A (C) IN,` | Supported |
+| OUT (C), r | ED 0x41\|r<<3 | `(C) A OUT,` | Supported |
+| IN A, (n) | 0xDB nn | `A 0x42 # IN,` | Supported |
+| OUT (n), A | 0xD3 nn | `0x42 # A OUT,` | Supported |
 
 ---
 

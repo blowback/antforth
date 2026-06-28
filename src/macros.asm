@@ -7,7 +7,7 @@
 ; match WORDLIST_BUCKETS (src/wordlists.asm). The literal `63` here, the
 ; `& 63` mask in forth_hash below, and `AND 63` in src/hash.asm:30 must all
 ; stay in sync with WORDLIST_BUCKETS — verified at assembly time by the
-; ASSERT in src/wordlists.asm (Story 12.1 AC #5(d)(i)).
+; ASSERT in src/wordlists.asm.
     LUA ALLPASS
         _hash_buckets = {}
         for i = 0, 63 do
@@ -78,8 +78,11 @@
             local flags = sj.calc(sj.get_define("_CURRENT_FLAGS"))
             _current_bucket = forth_hash(name)
             local prev = _hash_buckets[_current_bucket]
-            -- Emit hash_link (2 bytes, little-endian)
+            -- Emit fat hash_link: [addr:2 little-endian][bank:1].
+            -- Kernel entries always chain to fixed-memory predecessors, so
+            -- the bank byte is BANK_FIXED ($FF).
             _pc(string.format("DW 0x%04X", prev))
+            _pc("DB 0xFF")
             -- Emit count_flags byte (flags | name_length)
             _pc(string.format("DB 0x%02X", flags | #name))
         ENDLUA
@@ -112,7 +115,9 @@
             local flags = sj.calc(sj.get_define("_CURRENT_FLAGS"))
             _current_bucket = forth_hash(name)
             local prev = _hash_buckets[_current_bucket]
+            -- Fat hash_link: [addr:2][bank:1]; kernel predecessor → $FF fixed.
             _pc(string.format("DW 0x%04X", prev))
+            _pc("DB 0xFF")
             _pc(string.format("DB 0x%02X", flags | #name))
         ENDLUA
         DB      name?                   ; Name string
@@ -136,6 +141,24 @@
 ;   DW EXIT_CODE_ADDR
     MACRO DEFIMMED name?
         DEFWORD name?, F_IMMEDIATE
+    ENDM
+
+; === GUARD_BANKED_WRITE — banked dictionary window-top overflow guard ===
+; HL = HERE on entry. Advances HL by `width?` bytes to the prospective
+; one-past-end, asks check_banked_headroom whether that crosses the slot-2
+; window top ($C000), and JP's to dict_overflow_throw (-8) on overflow; then
+; restores HL = HERE so the caller's store proceeds unchanged. Strict no-op on
+; bank 0 (check_banked_headroom). Clobbers AF; preserves BC/DE/HL/IX/IY. Shared
+; by the fixed-width store primitives (`,` w=2, `C,` w=1, `COMPILE,` w=2).
+    MACRO GUARD_BANKED_WRITE width?
+        DUP width?
+        INC     HL
+        EDUP
+        CALL    check_banked_headroom
+        JP      C, dict_overflow_throw
+        DUP width?
+        DEC     HL
+        EDUP
     ENDM
 
 ; === BDOS_SAVE — Save registers before BDOS call ===

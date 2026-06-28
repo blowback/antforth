@@ -16,15 +16,22 @@ w_BYE_cf:
 ; MARKER ( "<spaces>name" -- )
 ;   Create a word that, when executed, restores dictionary state
 ;   to what it was just before MARKER ran.
-;   Body layout: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
-;   the wordlist struct's next-link cell is NOT snapshotted (Story 12.1 AC #6: byte-count
-;   stays at 128 for binary-compat with pre-Epic-12 markers).
+;   Body layout: [saved_buckets(192)][snap_count(1)][bank_triples(snap_count*6)][stub_tail(2)]
+;   saved_buckets = FORTH-WORDLIST bucket array only (64 × 3-byte fat heads,
+;   Story 20.1); the wordlist struct's next-link cell is NOT in it.
+;   bank_triples = the live prefix of bank-table[] — snap_count entries of the
+;   per-bank (here, latest, wordlist_head) triple, where snap_count =
+;   max(bank_count, triple_owner+1) (always >= 1; covers every reachable bank
+;   plus the owner reloaded at FORGET; entries >= snap_count are inert under
+;   BANK!'s n < bank_count precondition, so snapshotting them is wasted TPA).
+;   stub_tail = the descriptor-stub allocator next-free pointer. FORGET reverts
+;   both tails.
 ;   Errors: -16 THROW (zero-length name) per ANS Forth 1994 §9.3.5
-;   when the parsed name is empty (Story 11.5).
-;   Story 12.4 limitation (AC #8 pick (a)): MARKER snapshots FORTH-WORDLIST's
+;   when the parsed name is empty.
+;   Limitation: MARKER snapshots FORTH-WORDLIST's
 ;   bucket array regardless of CURRENT-WORDLIST. Definitions placed into
 ;   other wordlists between MARKER-create and MARKER-execute are NOT
-;   rolled back. Broader-wordlist MARKER semantics deferred to a later story.
+;   rolled back.
 ;   When MARKER itself is created with current_wordlist != FORTH-WORDLIST,
 ;   the snapshot's bucket-head fixup is skipped — bh_old_bucket_head is the
 ;   foreign wid's chain head, and writing it into FORTH-WORDLIST's snapshot
@@ -34,6 +41,35 @@ w_MARKER:
         DEFCODE "MARKER", 0
 w_MARKER_cf:
         EXX                                      ; Save TOS/IP/W to shadows
+
+        ; --- Snapshot the PRE-MARKER per-bank tail into bank-table[owner] ---
+        ; Sync the live (here, latest, wordlist_head) triple into
+        ; bank-table[triple_owner] BEFORE build_header runs. build_header
+        ; overwrites UserArea.latest with the MARKER's own entry, so capturing
+        ; the triple first records the PRE-MARKER latest — FORGET then reverts
+        ; LATEST to the word defined just before MARKER (ANS MARKER semantics)
+        ; rather than the now-forgotten MARKER. here/wordlist_head are not
+        ; advanced by build_header, so this captures the pre-MARKER HERE too.
+        ; triple_owner (not current_bank — they diverge mid cross-bank dispatch)
+        ; owns the live copy; the bounded snapshot below folds the entry into the
+        ; marker body. Runs unconditionally: writing the current live triple to
+        ; its own stale-until-reparked table slot is a no-op on the abort path.
+        ; Shares bank_triple_save (src/banking.asm) — the SAVE half of the
+        ; BANK! triple swap (CR 21.3 #3).
+        LD      A, (IY+UserArea.triple_owner)
+        CALL    bank_triple_save                ; live triple -> bank-table[owner]
+
+        ; Raise the build_header window-top reserve to MARKER's full footprint
+        ; (code field + 192-byte saved body + bank-table prefix + stub tail) so
+        ; the single pre-commit guard inside build_header is all-or-nothing: if
+        ; the body would cross $C000 it throws -8 BEFORE the header/LATEST/bucket
+        ; are committed (the body LDIR below runs only after build_header has
+        ; already committed them, so it cannot self-guard). build_header resets the
+        ; cell on EVERY exit — the window-top guard on the found-name path and
+        ; .bh_no_name on the no-name (-16) path — so no cleanup is needed here on
+        ; either the success or the no-name error return (Story 23.7).
+        LD      HL, MARKER_CODE_RESERVE
+        LD      (bh_code_reserve), HL
 
         ; Build dictionary header (flags=0, no SMUDGE)
         XOR     A
@@ -48,22 +84,22 @@ w_MARKER_cf:
         LD      (HL), HIGH DOMARKER
         INC     HL
 
-        ; Emit saved HERE (2 bytes) — bh_entry_start is pre-header HERE
-        LD      DE, (bh_entry_start)
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D
-        INC     HL
+        ; Save body hash start address for fixup later. The body now opens
+        ; directly with saved_buckets: the old saved_here field was emitted but
+        ; never read (DOMARKER takes HERE from the reloaded bank-table[owner]
+        ; triple), so it is dropped (CR 21.3 #2).
+        PUSH    HL                      ; body_hash_start (= cf+3, start of saved_buckets)
 
-        ; Save body hash start address for fixup later
-        PUSH    HL                      ; body_hash_start on stack
-
-        ; Copy 128 bytes from FORTH-WORDLIST bucket array to body
-        ; Need LDIR: HL=src, DE=dst, BC=count
-        ; Currently HL = body dest, need to swap
+        ; Copy 192 bytes from FORTH-WORDLIST fat bucket array to body
+        ; (64 × 3-byte fat heads). Need LDIR: HL=src, DE=dst, BC=count
+        ; Currently HL = body dest, need to swap.
+        ; No inline window-top guard here: build_header's pre-commit check already
+        ; reserved MARKER_CODE_RESERVE (this body + the tail below), so the whole
+        ; footprint is proven to fit before any byte was committed (Story 23.7).
+        ; A guard at this point would throw with a half-built MARKER — do NOT add one.
         EX      DE, HL                  ; DE = body dest
-        LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only — Story 12.1 AC #6)
-        LD      BC, 128
+        LD      HL, forth_wordlist + WORDLIST_BUCKET0   ; HL = source (bucket array only)
+        LD      BC, 192
         LDIR                            ; DE = past end of body
 
         ; Fixup: restore pre-MARKER bucket value in body copy.
@@ -75,7 +111,7 @@ w_MARKER_cf:
         ; already reflects FORTH-WORDLIST's true bucket head (MARKER didn't
         ; touch FORTH-WORDLIST) and bh_old_bucket_head is the FOREIGN wid's
         ; bucket head — applying the fixup would corrupt FORTH-WORDLIST on
-        ; DOMARKER restore (per AC #8 pick (a) snapshot-scope discipline).
+        ; DOMARKER restore (snapshot-scope discipline).
         POP     HL                      ; HL = body_hash_start
         LD      BC, (bh_wid)
         LD      A, C
@@ -88,14 +124,72 @@ w_MARKER_cf:
         LD      C, A
         LD      B, 0
         ADD     HL, BC
-        ADD     HL, BC                  ; HL = body_hash_start + bucket_index * 2
+        ADD     HL, BC
+        ADD     HL, BC                  ; HL = body_hash_start + bucket_index * 3 (fat stride)
         LD      BC, (bh_old_bucket_head)
         LD      (HL), C
         INC     HL
         LD      (HL), B
+        INC     HL
+        LD      A, (bh_old_bucket_bank)
+        LD      (HL), A                 ; restore fat bank byte too
 .marker_skip_fixup:
 
-        ; Update HERE = DE (past end of body, from LDIR)
+        ; --- Append snap_count + live per-bank triples + stub-allocator tail ---
+        ; DE = next free body byte (past saved_buckets). The live (here, latest,
+        ; wordlist_head) triple was already synced into bank-table[triple_owner]
+        ; above (pre-build_header, so the captured latest is the PRE-MARKER one).
+        ; Snapshot only the LIVE prefix of bank-table[]: entry k >= bank_count is
+        ; inert (BANK!'s n < bank_count precondition makes it unreachable), so
+        ; copying it back per FORGET burns ~168 B of TPA + copy time for provably
+        ; constant data (CR 21.3 #5).
+        ;   snap_count = max(bank_count, triple_owner+1)
+        ; bounds the copy: bank_count covers every reachable bank, and the
+        ; owner+1 clause guarantees the owner entry (reloaded by DOMARKER) is
+        ; captured even when bank_count == 0 (fresh boot / nested MARKER) or a
+        ; BANKS-CLEAR left owner > bank_count. snap_count >= 1 always, which also
+        ; rules out the BC==0 -> LDIR-copies-64KB trap. snap_count is stored in
+        ; the body so DOMARKER reverts exactly the entries live at MARKER time.
+        ; INVARIANT (correctness rests on it): triple_owner must stay < snap_count
+        ; between this snapshot and its FORGET, so DOMARKER's final bank_triple_load
+        ; reads a RESTORED owner entry. Holds today because owner only moves via
+        ; BANK!/THROW to indices < bank_count <= snap_count. Epic 22 bank-renumber
+        ; work MUST preserve it (or re-snapshot) — see DOMARKER (CR 21.3 review).
+        ; active_pages[]/bank_count sit OUTSIDE bank-table[], so +BANK / -BANK
+        ; membership changes are not snapshotted; worse, a -BANK between MARKER
+        ; and FORGET renumbers logical banks without renumbering bank-table[], so
+        ; this restore can reassert triples onto the wrong banks — MARKER with
+        ; mid-span -BANK is unsupported until Epic 22.
+        LD      A, (IY+UserArea.bank_count)
+        LD      C, A                            ; C = bank_count
+        LD      A, (IY+UserArea.triple_owner)
+        INC     A                               ; A = triple_owner + 1
+        CP      C
+        JR      NC, .marker_snap_count          ; owner+1 >= bank_count -> snap = owner+1
+        LD      A, C                            ; else snap = bank_count
+.marker_snap_count:
+        LD      (DE), A                         ; snap_count -> body
+        INC     DE
+        ; BC = snap_count * 6 (entry stride). snap_count in [1..29] => *6 in
+        ; [6..174] < 256 (no carry, never 0).
+        ADD     A, A                            ; *2
+        LD      C, A
+        ADD     A, A                            ; *4
+        ADD     A, C                            ; *6
+        LD      C, A
+        LD      B, 0                            ; BC = snap_count * 6
+        LD      HL, BANK_TABLE_BASE             ; $D400 source (live prefix)
+        LDIR                                    ; bank-table[0..snap_count-1] -> body; DE advanced
+
+        ; Append the descriptor-stub allocator tail (2 B) to the body.
+        LD      A, (IY+UserArea.stub_alloc_tail)
+        LD      (DE), A
+        INC     DE
+        LD      A, (IY+UserArea.stub_alloc_tail+1)
+        LD      (DE), A
+        INC     DE
+
+        ; Update HERE = DE (past end of enlarged body, from LDIR + stub tail)
         LD      (IY+UserArea.here), E
         LD      (IY+UserArea.here+1), D
 
@@ -103,10 +197,10 @@ w_MARKER_cf:
         NEXT
 
 .marker_no_name:
-        EXX                                      ; Restore primary set (Story 11.5:
+        EXX                                      ; Restore primary set:
                                                  ; kernel-internal THROW entry contract
-                                                 ; requires primary-set BC; src/exception.asm:288-296)
-        ; -16 THROW (Story 11.5): attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
+                                                 ; requires primary-set BC (see src/exception.asm)
+        ; -16 THROW: attempt to use zero-length string as a name per ANS Forth 1994 §9.3.5
         LD      BC, THROW_ZERO_LEN_NAME
         JP      w_THROW_cf.kernel_entry
 
@@ -162,11 +256,9 @@ w_PAREN_ABORT_QUOTE_cf:
         CALL    bdos_print_str
 
 .paq_do_abort:
-        ; -2 THROW (Story 11.7): ABORT" with truthy flag per
+        ; -2 THROW: ABORT" with truthy flag per
         ; ANS Forth 1994 §9.3.5 / §6.1.0680 / Forth 2014 §9.6.2.0680.
-        ; Pre-Story-11.7 this site jumped to w_ABORT_cf (the legacy
-        ; SP-reset + asm_cleanup + JP w_QUIT_cf chain); post-retarget
-        ; the same recovery happens via the uncaught-THROW handler.
+        ; Recovery happens via the uncaught-THROW handler.
         LD      BC, THROW_ABORT_QUOTE
         JP      w_THROW_cf.kernel_entry
 
@@ -186,6 +278,10 @@ w_ABORT_QUOTE_cf:
         ; First compile the (ABORT") xt
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        ; Banked window-top guard for the fixed framing bytes: (ABORT") xt (2)
+        ; + count byte (1). Per-char body growth is guarded in .aq_copy below.
+        ; No-op on bank 0; -8 BEFORE any byte. Primary set (IP saved to scratch).
+        GUARD_BANKED_WRITE 3
         LD      (HL), LOW w_PAREN_ABORT_QUOTE_cf
         INC     HL
         LD      (HL), HIGH w_PAREN_ABORT_QUOTE_cf
@@ -257,6 +353,13 @@ w_ABORT_QUOTE_cf:
         POP     HL
         CP      '"'
         JR      Z, .aq_done     ; closing quote found
+        ; Banked window-top guard: refuse a char at/past $C000 (no-op on
+        ; bank 0). A holds the char; the guard clobbers AF, so bracket with
+        ; PUSH/POP AF. Overflow JPs to dict_overflow_throw; the orphaned
+        ; PUSH AF is discarded by THROW/ABORT's SP reset.
+        PUSH    AF
+        GUARD_BANKED_WRITE 1
+        POP     AF
         ; Copy character
         LD      (HL), A
         INC     HL
@@ -294,22 +397,18 @@ aq_src:         DW 0
 ; ABORT ( -- )
 ;   Raise -1 THROW per ANS §6.1.0670 / Forth 2014 §9.6.2.0670.
 ;   Uncaught: REPL recovery via the uncaught-THROW handler
-;   (src/exception.asm:.throw_uncaught — post-Story-11.7 this
-;   handler owns the asm_cleanup / SP-reset / JP w_QUIT_cf chain
-;   directly rather than delegating to w_ABORT_cf).
+;   (src/exception.asm:.throw_uncaught — this handler owns the
+;   asm_cleanup / SP-reset / JP w_QUIT_cf chain directly).
 ;   Caught: -1 lands on the data stack as the THROW code; i*x
-;   cells underneath are preserved per the Story 11.4.1 contract.
+;   cells underneath are preserved.
 ;
-;   Story 11.7 capstone: completes Epic 11's E11-D3 word-by-word
-;   internal-error migration. Every prior internal ABORT call
-;   site has been migrated to a direct THROW raise (Stories
-;   11.4-11.6); ABORT itself is now the user-facing entry point
-;   that raises -1 THROW.
+;   ABORT is the user-facing entry point that raises -1 THROW;
+;   all internal ABORT call sites raise THROW directly.
 ; -----------------------------------------------
 w_ABORT:
         DEFCODE "ABORT", 0
 w_ABORT_cf:
-        ; -1 THROW (Story 11.7): ABORT per ANS Forth 1994 §9.3.5 /
+        ; -1 THROW: ABORT per ANS Forth 1994 §9.3.5 /
         ; §6.1.0670 / Forth 2014 §9.6.2.0670.
         LD      BC, THROW_ABORT
         JP      w_THROW_cf.kernel_entry
@@ -411,8 +510,8 @@ w_ENVIRONMENT_QUERY_cf:
         JR      .env_advance
 .env_kind_double:
         ; DE -> 4 bytes: lo_low, lo_high, hi_low, hi_high.
-        ; Story 13.0.1: per ANS Forth 1994 §3.1.4.1 the high cell is on
-        ; TOS (post-flip from pre-13.0.1 low-on-TOS). We want stack
+        ; Per ANS Forth 1994 §3.1.4.1 the high cell is on
+        ; TOS. We want stack
         ; ( lo hi true ) with true as TOS, so push lo first (deepest),
         ; then hi (above lo), then BC = -1 (new TOS = true).
         LD      A, (DE)
@@ -461,10 +560,10 @@ env_table:
         ; ADDRESS-UNIT-BITS -> 8 (Z80 byte-addressable)
         db  17, "ADDRESS-UNIT-BITS", 0
         dw  8
-        ; CORE -> true (post-Story-10.9: 133/133 §6.1 Core words implemented)
+        ; CORE -> true (133/133 §6.1 Core words implemented)
         db  4, "CORE", 2
         dw  $FFFF
-        ; CORE-EXT -> false (§6.2 partial: 13/46 DPANS94 1994 §6.2 + 1 Forth-2014 bonus HOLDS; DPANS94 §15.3.5.2 needs full set; count rationalised by Story 15.1)
+        ; CORE-EXT -> false (§6.2 partial: 13/46 DPANS94 §6.2 + 1 Forth-2014 bonus HOLDS; DPANS94 §15.3.5.2 needs full set)
         db  8, "CORE-EXT", 2
         dw  0
         ; FLOORED -> false (antforth's `/` is symmetric per sdivmod, not floored)
@@ -493,6 +592,24 @@ env_table:
         ; STACK-CELLS -> PS_SIZE/2 = 128
         db  11, "STACK-CELLS", 0
         dw  PS_SIZE/2
+        ; EXCEPTION -> true (CATCH/THROW present)
+        db  9, "EXCEPTION", 2
+        dw  $FFFF
+        ; EXCEPTION-EXT -> true (ABORT/ABORT" present)
+        db  13, "EXCEPTION-EXT", 2
+        dw  $FFFF
+        ; DOUBLE -> false (recognised; set incomplete — D0< D0= D2* D2/ 2CONSTANT 2LITERAL 2VARIABLE missing)
+        db  6, "DOUBLE", 2
+        dw  0
+        ; DOUBLE-EXT -> false (recognised; 2ROT 2VALUE DU< absent)
+        db  10, "DOUBLE-EXT", 2
+        dw  0
+        ; SEARCH-ORDER -> true (all 8 words present)
+        db  12, "SEARCH-ORDER", 2
+        dw  $FFFF
+        ; SEARCH-ORDER-EXT -> false (recognised; ALSO FORTH ORDER PREVIOUS missing, only ONLY present)
+        db  16, "SEARCH-ORDER-EXT", 2
+        dw  0
         ; Terminator (zero-length entry)
         db  0
 
@@ -504,7 +621,7 @@ env_table:
 ;   i.e. sp_base - SP_measured >= 4.
 ;
 ;   On underflow: JP do_underflow_error (raises -4 THROW via
-;     w_THROW_cf.kernel_entry; Story 11.4). Never returns to caller.
+;     w_THROW_cf.kernel_entry). Never returns to caller.
 ;   On success: returns normally
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
@@ -530,7 +647,7 @@ check_underflow:
 ;   Threshold: sp_base - SP_measured >= 6
 ;   (2 for CALL ret addr + 4 for two cells)
 ;
-;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
+;   On underflow: JP do_underflow_error (-4 THROW).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -555,7 +672,7 @@ check_underflow_2:
 ;   Threshold: sp_base - SP_measured >= 8
 ;   (2 for CALL ret addr + 6 for three cells)
 ;
-;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
+;   On underflow: JP do_underflow_error (-4 THROW).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -580,7 +697,7 @@ check_underflow_3:
 ;   Threshold: sp_base - SP_measured >= 10
 ;   (2 for CALL ret addr + 8 for four cells)
 ;
-;   On underflow: JP do_underflow_error (-4 THROW; Story 11.4).
+;   On underflow: JP do_underflow_error (-4 THROW).
 ;   Clobbers: AF, HL
 ;   Preserves: BC (TOS), DE (IP), IX, IY, SP
 ; -----------------------------------------------
@@ -613,9 +730,9 @@ check_underflow_4:
 ;   CALL BDOS_ENTRY → BDOS internals; ~26 bytes deepest per the
 ;   trace below, with conservative slack for variable BDOS impls).
 ;   32 bytes chosen to give 6-byte slack over the measured worst
-;   case. -3 THROW per ANS Forth 1994 §9.3.5 (Story 11.5.2).
+;   case. -3 THROW per ANS Forth 1994 §9.3.5.
 ;
-;   Threshold derivation (see story 11.5.2 Completion Notes Task 3):
+;   Threshold derivation:
 ;     - HL_computed at guard entry = U_caller + 2 (CALL ret addr).
 ;     - On normal return + caller's PUSH BC: used = HL_computed.
 ;     - On overflow path: SP at .throw_uncaught entry = caller_SP - 2;
@@ -650,23 +767,22 @@ check_overflow:
 
 ; -----------------------------------------------
 ; do_underflow_error — Internal subroutine (not a Forth word)
-;   Migrated by Story 11.4 from `JP w_ABORT_cf` (with a "? Stack
-;   underflow" pre-print) to a clean -4 THROW. The diagnostic the
-;   user sees on the uncaught path becomes "error -4: stack
-;   underflow" (description seeded by Story 11.3 into
-;   throw_desc_table at src/exception.asm). On the caught path,
+;   Raises a clean -4 THROW. The diagnostic the
+;   user sees on the uncaught path is "error -4: stack
+;   underflow" (description in throw_desc_table at
+;   src/exception.asm). On the caught path,
 ;   -4 lands on the user's data stack as the THROW code per
 ;   ANS Forth 1994 §9.3.5.
 ;
 ;   Note: CALL check_underflow's return address remains on SP —
 ;   harmless because the THROW-restore (caught) or the inlined
-;   recovery chain at .throw_uncaught (uncaught; post-Story-11.7)
+;   recovery chain at .throw_uncaught (uncaught)
 ;   both wholesale reset SP downstream. SP-may-be-corrupt safety
 ;   is preserved: the new path neither reads nor writes SP-relative
 ;   values until the downstream restore.
 ; -----------------------------------------------
 do_underflow_error:
-        ; -4 THROW (Story 11.4): stack underflow per ANS Forth 1994 §9.3.5
+        ; -4 THROW: stack underflow per ANS Forth 1994 §9.3.5
         LD      BC, THROW_STACK_UNDERFLOW
         JP      w_THROW_cf.kernel_entry
 
@@ -680,7 +796,6 @@ do_underflow_error:
 ;   frame +0; uncaught path: LD SP, (sp_base) at .throw_uncaught
 ;   tail). The CALL check_overflow's return address remains on SP —
 ;   harmless for the same reason underflow's ret-addr is harmless.
-;   Story 11.5.2 closes the Story 11.8 NFR6 documented gap.
 ; -----------------------------------------------
 do_overflow_error:
         ; -3 THROW: stack overflow per ANS Forth 1994 §9.3.5

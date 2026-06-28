@@ -18,7 +18,7 @@ w_COUNT_cf:
 
 ; === FIND ( c-addr -- c-addr 0 | xt 1 | xt -1 ) ===
 ; Search the current search order (slot 0 down) for the counted-string
-; name at c-addr. Story 12.3 — walks UserArea.search_order[0..depth-1],
+; name at c-addr. Walks UserArea.search_order[0..depth-1],
 ; calling the shared helper `search_wid_for_name` once per wid; returns
 ; on the first hit. On full miss returns ( c-addr 0 ) per the existing
 ; ANS contract.
@@ -93,14 +93,13 @@ w_FIND_cf:
 
 ; -----------------------------------------------
 ; search_wid_for_name — Walk a single wordlist's bucket chain for a name match.
-; Story 12.2 — shared by FIND (passing forth_wordlist) and SEARCH-WORDLIST
-; (passing the user-supplied wid). Designed-up-front to also serve Story
-; 12.3's per-wid search-order walk (per `feedback_design_upfront.md`).
+; Shared by FIND (passing forth_wordlist), SEARCH-WORDLIST (passing the
+; user-supplied wid), and the per-wid search-order walk.
 ;
 ; Input:  HL = name address (raw characters, NOT counted)
 ;         B  = name length (passed unchanged; chain compare rejects entries
 ;              whose stored length-mask doesn't match B, so u > 31 yields
-;              a pure miss without crashing — AC #11(b) pick (ii))
+;              a pure miss without crashing)
 ;         DE = wid (wordlist struct base address)
 ; Output: On HIT:  HL = xt (code field address);
 ;                  A  = count_flags byte of matched entry (caller checks F_IMMEDIATE);
@@ -117,26 +116,44 @@ search_wid_for_name:
         LD      (sw_search_name), HL    ; save name addr for chain-compare
         ; hash_name takes HL = name, B = length; returns A = bucket (0-63).
         CALL    hash_name
-        ; Compute &bucket = wid + WORDLIST_BUCKET0 + 2*A.
+        ; Compute &bucket = wid + WORDLIST_BUCKET0 + 3*A (fat-bucket stride).
         LD      L, A
         LD      H, 0
+        LD      C, A
+        LD      B, 0                    ; BC = bucket
         ADD     HL, HL                  ; HL = 2 * bucket
+        ADD     HL, BC                  ; HL = 3 * bucket
         INC     HL
-        INC     HL                      ; HL = WORDLIST_BUCKET0 + 2 * bucket
+        INC     HL                      ; HL = WORDLIST_BUCKET0 + 3 * bucket
         ADD     HL, DE                  ; HL = &wid.buckets[bucket]
-        ; Load chain head pointer.
-        LD      A, (HL)
+        ; Reset per-walk slot-2 switch state, then deref the fat head INLINE:
+        ; HL = first entry addr; page the entry's bank into slot 2 only if it
+        ; is window-resident. Inlined (not CALLed) so the per-entry hot path
+        ; carries no call/return overhead — the everyday fixed-entry walk hits
+        ; no subroutine and does no MMU work.
+        XOR     A
+        LD      (sw_switched), A
+        LD      E, (HL)
         INC     HL
-        LD      H, (HL)
-        LD      L, A                    ; HL = first entry (or 0)
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = bank; DE = entry addr
+        EX      DE, HL                  ; HL = entry addr
+        BIT     7, H
+        JR      Z, .sw_head_fixed       ; addr < $8000 -> fixed, no MMU switch
+        BIT     6, H
+        JR      NZ, .sw_head_fixed      ; addr >= $C000 -> fixed
+        CALL    sw_map_bank             ; window-resident -> page bank in (A=bank; HL preserved)
+.sw_head_fixed:
 
 .sw_chain:
         LD      A, H
         OR      L
         JR      Z, .sw_miss             ; end of chain
-        PUSH    HL                      ; save entry-start
+        PUSH    HL                      ; save entry-start (= &fat hash_link)
         INC     HL
-        INC     HL                      ; HL = &count_flags
+        INC     HL
+        INC     HL                      ; HL = &count_flags (past 3-byte fat link)
         LD      A, (HL)
         LD      (sw_match_cf), A        ; remember count_flags for caller
         BIT     6, A                    ; F_SMUDGE
@@ -161,30 +178,130 @@ search_wid_for_name:
         INC     HL
         INC     DE
         DJNZ    .sw_compare
-        ; Match — HL points past the name = code field address (xt).
+        ; Match — HL points past the name. Runtime-built entries (every
+        ; build_header consumer: `:`, CREATE, CONSTANT, MARKER, CODE,
+        ; LABEL) carry a 2-byte stub-xt cell between name and CFA, flagged
+        ; by F_HAS_STUB_XT_CELL in count_flags. Kernel-assembled
+        ; DEFCODE/DEFWORD/DEFIMMED entries keep the legacy post-name = CFA
+        ; layout (no cell, flag clear). Discriminate on the flag:
+        ;   - flag set: read 2-byte cell at HL → HL = xt. Bank-0 entries'
+        ;     cell holds the CFA address (initial-fill from build_header →
+        ;     FIND returns CFA; the folded EXECUTE's JP (HL) executes it
+        ;     directly); bank-N>0 colon entries' cell holds the
+        ;     descriptor-stub address (overwritten by w_SEMICOLON_cf →
+        ;     FIND returns stub-xt; the stub self-dispatches via RST $28 /
+        ;     stub_dispatch).
+        ;   - flag clear: HL is post-name = CFA directly (legacy layout).
+        LD      A, (sw_match_cf)
+        AND     F_HAS_STUB_XT_CELL
+        JR      Z, .sw_match_legacy
+        ; flag set: extract xt from 2-byte cell
+        LD      A, (HL)                 ; cell.lo
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                    ; HL = cell value = xt
+.sw_match_legacy:
         POP     DE                      ; discard saved entry-start (DE clobbered next)
+        CALL    sw_restore_slot2        ; undo any head/link page-in (preserves HL = xt)
         LD      A, (sw_match_cf)        ; A = count_flags
         OR      A                       ; clear CF (NC = hit)
         RET
 
 .sw_skip:
-        POP     HL                      ; restore entry-start
-        LD      A, (HL)
+        POP     HL                      ; restore entry-start (= &fat hash_link)
+        ; inline fat-link deref (page-in only if window-resident)
+        LD      E, (HL)
         INC     HL
-        LD      H, (HL)
-        LD      L, A                    ; HL = next entry (or 0)
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = bank; DE = next entry addr
+        EX      DE, HL                  ; HL = next entry addr
+        BIT     7, H
+        JR      Z, .sw_skip_fixed
+        BIT     6, H
+        JR      NZ, .sw_skip_fixed
+        CALL    sw_map_bank
+.sw_skip_fixed:
         JR      .sw_chain
 
 .sw_miss:
+        CALL    sw_restore_slot2        ; undo any head/link page-in
         XOR     A                       ; A = 0
         LD      H, A
         LD      L, A                    ; HL = 0
         SCF                             ; CF set = miss
         RET
 
+; The fat-pointer deref (read [addr:2][bank:1] + conditional page-in) is
+; inlined at its two hot-path sites above (.sw_head_fixed / .sw_skip_fixed)
+; so the per-entry walk carries no call/return overhead. Only the rare
+; window-resident case calls the helper below.
+
+; sw_map_bank: A = logical bank -> map active_pages[bank] into slot 2.
+;   On the first call of a walk, saves the caller's slot-2 page so the exit
+;   path can restore it. Preserves DE and HL; clobbers A.
+sw_map_bank:
+        PUSH    HL
+        PUSH    DE
+        PUSH    AF                      ; save bank
+        LD      A, (sw_switched)
+        OR      A
+        JR      NZ, .smb_mapped         ; already switched -> name already copied
+        ; First switch of this walk: save the caller's page, then snapshot
+        ; the search name into fixed scratch BEFORE we unmap slot 2 — the
+        ; name may itself live in the window we are about to page away (it
+        ; was parsed at an in-bank HERE). Lazy: the fast path (no page-in)
+        ; never reaches here, so all-fixed lookups copy nothing.
+        CALL    mbb_get_slot2           ; A = caller's slot-2 page
+        LD      (sw_saved_page), A
+        LD      A, 1
+        LD      (sw_switched), A
+        LD      A, (sw_search_len)      ; clamp to 31 (max stored name length;
+        CP      32                      ; a longer name can never match, so a
+        JR      C, .smb_clamp           ; truncated copy is compare-irrelevant)
+        LD      A, 31
+.smb_clamp:
+        OR      A
+        JR      Z, .smb_repoint         ; zero length — nothing to copy
+        LD      C, A
+        LD      B, 0
+        LD      HL, (sw_search_name)    ; src = original name (still mapped)
+        LD      DE, sw_name_buf         ; dst = fixed scratch
+        LDIR
+.smb_repoint:
+        LD      HL, sw_name_buf
+        LD      (sw_search_name), HL    ; compares now read the fixed copy
+.smb_mapped:
+        POP     AF                      ; A = bank
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC                  ; &active_pages[bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2
+        POP     DE
+        POP     HL
+        RET
+
+; sw_restore_slot2: if this walk paged slot 2, restore the caller's page.
+;   Preserves HL (mbb_set_slot2 push/pops it); clobbers A/F (don't-care).
+sw_restore_slot2:
+        LD      A, (sw_switched)
+        OR      A
+        RET     Z
+        XOR     A
+        LD      (sw_switched), A
+        LD      A, (sw_saved_page)
+        JP      mbb_set_slot2
+
 sw_search_len:  DB      0               ; saved name length
 sw_search_name: DW      0               ; saved name address
 sw_match_cf:    DB      0               ; count_flags of matched entry
+sw_saved_page:  DB      0               ; caller's slot-2 page during a page-in
+sw_switched:    DB      0               ; non-zero iff this walk paged slot 2
+sw_name_buf:    DS      32              ; fixed-memory copy of the search name
+                                        ; (snapshotted on first page-in, so a
+                                        ;  window-resident name survives the swap)
 
 ; FIND scratch — saved across the search-order walk (CODE words don't
 ; reentrantly nest, so a single set is safe).
@@ -192,16 +309,54 @@ find_search_name:   DW      0
 find_search_len:    DB      0
 find_slot_ptr:      DW      0
 
+; words_deref ( HL = &fat-pointer [addr:2][bank:1] ) -> DE = entry addr.
+;   Bank-aware deref for WORDS: bank-N definitions are linked into the global
+;   FORTH-WORDLIST buckets (Story 20.1), so a head/link can point into the
+;   $8000..$BFFF window. Read the fat pointer; if window-resident, page
+;   active_pages[bank] into slot 2 so the subsequent count_flags/name/next-link
+;   reads hit the right bank. The link bytes themselves are read BEFORE the
+;   page-in (the current entry is still mapped). The first switch of the walk
+;   saves the caller's slot-2 page via the shared sw_switched/sw_saved_page;
+;   sw_restore_slot2 puts it back. Clobbers A, BC, HL.
+words_deref:
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = bank; DE = entry addr
+        BIT     7, D
+        RET     Z                       ; addr < $8000 -> fixed, no page-in
+        BIT     6, D
+        RET     NZ                      ; addr >= $C000 -> fixed
+        ; window-resident -> page active_pages[bank] into slot 2
+        PUSH    DE                      ; preserve entry addr across the map
+        PUSH    AF                      ; save bank
+        LD      A, (sw_switched)
+        OR      A
+        JR      NZ, .wd_mapped
+        CALL    mbb_get_slot2           ; first switch: save caller's page
+        LD      (sw_saved_page), A
+        LD      A, 1
+        LD      (sw_switched), A
+.wd_mapped:
+        POP     AF                      ; A = bank
+        LD      HL, ACTIVE_PAGES_BASE
+        LD      C, A
+        LD      B, 0
+        ADD     HL, BC                  ; &active_pages[bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2
+        POP     DE                      ; DE = entry addr
+        RET
+
 ; -----------------------------------------------
 ; WORDS ( -- )
 ;   List all words in the dictionary by traversing all 64 hash buckets
-;   of FORTH-WORDLIST. Story 12.3 AC #10 + Story 12.4 AC #9 picked option
-;   (a) — keep WORDS scoped to FORTH-WORDLIST. ANS does not standardise
-;   WORDS across wordlists. With SET-CURRENT (Story 12.4) live, a user
+;   of FORTH-WORDLIST. WORDS is scoped to FORTH-WORDLIST; ANS does not
+;   standardise WORDS across wordlists. With SET-CURRENT live, a user
 ;   can place definitions into non-FORTH-WORDLIST wordlists; those words
 ;   are NOT visible to WORDS. Workaround: dump the bucket array of the
-;   target wordlist by hand. Revisit if MicroBeast hardware wordlists
-;   land in Phase 3.
+;   target wordlist by hand.
 ; -----------------------------------------------
 w_WORDS:
         DEFCODE "WORDS", 0
@@ -209,16 +364,16 @@ w_WORDS_cf:
         ; Save DE (IP) — we'll use all registers as scratch
         LD      (words_saved_ip), DE
         PUSH    BC              ; save TOS
+        XOR     A
+        LD      (sw_switched), A        ; reset per-walk slot-2 page-in state
 
         LD      HL, forth_wordlist + WORDLIST_BUCKET0
         LD      A, WORDLIST_BUCKETS     ; 64
 .words_bucket:
         LD      (words_bucket_count), A
         LD      (words_bucket_ptr), HL
-        ; Load bucket head
-        LD      E, (HL)
-        INC     HL
-        LD      D, (HL)         ; DE = chain head
+        ; Deref the fat bucket head (page its bank in if window-resident)
+        CALL    words_deref     ; DE = chain head entry addr
 
 .words_chain:
         LD      A, D
@@ -227,7 +382,8 @@ w_WORDS_cf:
 
         ; DE = entry address
         LD      (words_entry), DE
-        ; entry+2 = count_flags
+        ; entry+3 = count_flags (past 3-byte fat hash_link)
+        INC     DE
         INC     DE
         INC     DE
         LD      A, (DE)         ; A = count_flags
@@ -261,21 +417,22 @@ w_WORDS_cf:
         POP     DE
 
 .words_skip:
-        ; Follow hash_link: entry+0,1
+        ; Follow the fat hash_link (read from the still-mapped current entry,
+        ; then page the next entry's bank in if it is window-resident).
         LD      HL, (words_entry)
-        LD      E, (HL)
-        INC     HL
-        LD      D, (HL)         ; DE = next entry
+        CALL    words_deref     ; DE = next entry addr
         JR      .words_chain
 
 .words_next_bucket:
         LD      HL, (words_bucket_ptr)
         INC     HL
-        INC     HL              ; next bucket
+        INC     HL
+        INC     HL              ; next bucket (fat-bucket stride = 3)
         LD      A, (words_bucket_count)
         DEC     A
         JR      NZ, .words_bucket
 
+        CALL    sw_restore_slot2        ; restore the caller's slot-2 page
         ; Print CR/LF
         CALL    bdos_crlf
 
@@ -289,3 +446,201 @@ words_saved_ip:     DW 0
 words_bucket_count: DB 0
 words_bucket_ptr:   DW 0
 words_entry:        DW 0
+
+; -----------------------------------------------
+; scrub_forth_buckets ( A = selector -- )
+;   Unlink / renumber fat-pointer entries in the global FORTH-WORDLIST
+;   bucket chains when a bank is dropped, so no bucket head or hash_link is
+;   left pointing at an entry whose bank has been removed/renumbered. Without
+;   this, a later FIND/WORDS would page a stale/garbage physical bank into
+;   slot 2 and walk a wild pointer. Called by -BANK and BANKS-CLEAR BEFORE
+;   they mutate active_pages[] / bank_count — the walk pages each entry's
+;   bank in via the still-valid active_pages[] using the pre-shift logical
+;   indices stored in the fat pointers.
+;
+;   Selector (A):
+;     $00..$1C  -BANK: remove every entry whose bank byte == A; decrement the
+;               bank byte of every surviving pointer whose bank byte > A (the
+;               active_pages[] tail shifts down by one, renumbering indices).
+;     $FE       BANKS-CLEAR: remove every window-resident entry (bank != $FF).
+;               Survivors are all fixed ($FF), so no renumber is needed.
+;
+;   Only forth_wordlist is scrubbed — the single global wordlist every
+;   `:` / bank-N definition chains into, and the only one WORDS and the
+;   default search order enumerate. Bank-N entries placed in a custom
+;   WORDLIST are out of scope (consistent with WORDS' forth_wordlist-only
+;   reach).
+;
+;   The walk threads a "prevslot" P (the 3-byte fat pointer that points AT
+;   the current entry — either &buckets[b] for the head, or the previous
+;   surviving entry's hash_link) plus PB (the bank P physically lives in,
+;   for paging P itself). REMOVE rewrites P to skip the current entry;
+;   KEEP advances P to the current entry's link and renumbers the incoming
+;   pointer's bank byte when its index shifts.
+;   Clobbers A, BC, DE, HL. Saves+restores the caller's slot-2 page.
+SCRUB_ALL_WINDOW    EQU 0xFE        ; selector: remove every window entry (BANKS-CLEAR)
+
+scrub_forth_buckets:
+        LD      (scrub_mode_k), A
+        CALL    mbb_get_slot2           ; save caller's slot-2 page for restore
+        LD      (scrub_caller_pg), A
+        LD      A, WORDLIST_BUCKETS     ; 64
+        LD      (scrub_bkt_cnt), A
+        LD      HL, forth_wordlist + WORDLIST_BUCKET0
+.sfb_bucket:
+        LD      (scrub_bucket_ptr), HL
+        LD      (scrub_P), HL           ; P = &buckets[b] (fixed)
+        LD      A, BANK_FIXED
+        LD      (scrub_PB), A           ; the bucket head lives in fixed memory
+.sfb_walk:
+        CALL    scrub_read_P            ; (scrub_cur_addr, scrub_cur_bank) <- *P
+        LD      HL, (scrub_cur_addr)
+        LD      A, H
+        OR      L
+        JR      Z, .sfb_next_bucket     ; addr 0 -> end of chain
+        ; Only WINDOW-RESIDENT entries ($8000..$BFFF) are removable/renumberable
+        ; — those are the ones whose body actually lives in a bank. A fixed
+        ; entry (addr < $8000) is never paged by the deref, so its bank byte is
+        ; dead data: keep it untouched regardless of byte value. (Bank-0
+        ; definitions carry bank byte 0 but live in fixed main RAM, so the bank
+        ; byte alone must NOT decide removal.)
+        BIT     7, H
+        JR      Z, .sfb_advance         ; addr < $8000 -> fixed, keep untouched
+        BIT     6, H
+        JR      NZ, .sfb_advance        ; addr >= $C000 -> fixed, keep untouched
+        ; --- window-resident entry: decide its fate by its bank byte ---
+        LD      A, (scrub_mode_k)
+        CP      SCRUB_ALL_WINDOW
+        JR      NZ, .sfb_minus_bank
+        ; BANKS-CLEAR: bank 0 is the HOME/portal — it persists across the
+        ; clear (only banks 1..N are dropped; active_pages[0] is never shifted
+        ; and stays the portal page mapped in slot 2). So keep window entries
+        ; whose bank byte is 0; remove those in banks 1..N.
+        LD      A, (scrub_cur_bank)
+        OR      A
+        JR      Z, .sfb_advance         ; bank 0 (home) -> keep
+        JR      .sfb_remove             ; bank 1..N -> remove
+.sfb_minus_bank:
+        ; -BANK k: compare current bank byte (cb) against k. Bank 0 is not
+        ; special here — the active_pages[] shift is pure index arithmetic:
+        ; cb == k removed (page gone), cb > k renumbered down, cb < k kept.
+        LD      A, (scrub_cur_bank)     ; A = cb
+        LD      HL, scrub_mode_k        ; (HL) = k
+        CP      (HL)
+        JR      Z, .sfb_remove          ; cb == k -> removed bank, unlink
+        JR      C, .sfb_advance         ; cb <  k -> keep unchanged
+        ; cb > k -> keep, but the incoming pointer's index shifts down by one
+        DEC     A                       ; A = cb - 1 (renumbered index)
+        CALL    scrub_write_P_bank      ; rewrite P's bank byte in place
+.sfb_advance:
+        ; keep current: P := &(current.hash_link) = cur_addr; PB := cur_bank
+        LD      HL, (scrub_cur_addr)
+        LD      (scrub_P), HL
+        LD      A, (scrub_cur_bank)
+        LD      (scrub_PB), A
+        JR      .sfb_walk
+.sfb_remove:
+        ; unlink current: *P := next (addr+bank copied through unchanged; any
+        ; renumber of next happens when next is later visited as a kept entry)
+        CALL    scrub_read_cur          ; (scrub_next_addr, scrub_next_bank) <- *cur
+        CALL    scrub_write_P_ptr
+        JR      .sfb_walk               ; P/PB unchanged; reprocess the new head
+.sfb_next_bucket:
+        LD      HL, (scrub_bucket_ptr)
+        LD      BC, WORDLIST_BUCKET_STRIDE
+        ADD     HL, BC                  ; next bucket (+3)
+        LD      A, (scrub_bkt_cnt)
+        DEC     A
+        LD      (scrub_bkt_cnt), A
+        JR      NZ, .sfb_bucket
+        ; restore the caller's slot-2 page and return
+        LD      A, (scrub_caller_pg)
+        JP      mbb_set_slot2
+
+; scrub_map_if ( HL = slot addr, A = slot's location bank ) — if the slot is
+;   window-resident ($8000..$BFFF), page active_pages[bank] into slot 2 so the
+;   3 bytes at HL can be read/written. Preserves HL/DE/BC; clobbers A/F.
+scrub_map_if:
+        BIT     7, H
+        RET     Z                       ; addr < $8000 -> fixed, no page-in
+        BIT     6, H
+        RET     NZ                      ; addr >= $C000 -> fixed
+        PUSH    HL
+        PUSH    DE
+        LD      L, A
+        LD      H, 0
+        LD      DE, ACTIVE_PAGES_BASE
+        ADD     HL, DE                  ; &active_pages[bank]
+        LD      A, (HL)                 ; A = physical page
+        CALL    mbb_set_slot2
+        POP     DE
+        POP     HL
+        RET
+
+; scrub_read_P — read the fat pointer at P (paging P's bank) into cur.
+scrub_read_P:
+        LD      HL, (scrub_P)
+        LD      A, (scrub_PB)
+        CALL    scrub_map_if
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = cur bank; DE = cur addr
+        LD      (scrub_cur_addr), DE
+        LD      (scrub_cur_bank), A
+        RET
+
+; scrub_read_cur — read the current entry's hash_link (offset 0; paging the
+;   current entry's bank) into next.
+scrub_read_cur:
+        LD      HL, (scrub_cur_addr)
+        LD      A, (scrub_cur_bank)
+        CALL    scrub_map_if
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+        INC     HL
+        LD      A, (HL)                 ; A = next bank; DE = next addr
+        LD      (scrub_next_addr), DE
+        LD      (scrub_next_bank), A
+        RET
+
+; scrub_write_P_ptr — write next (addr:2 + bank:1) into *P (paging P's bank).
+scrub_write_P_ptr:
+        LD      HL, (scrub_P)
+        LD      A, (scrub_PB)
+        CALL    scrub_map_if
+        LD      A, (scrub_next_addr)
+        LD      (HL), A
+        INC     HL
+        LD      A, (scrub_next_addr+1)
+        LD      (HL), A
+        INC     HL
+        LD      A, (scrub_next_bank)
+        LD      (HL), A
+        RET
+
+; scrub_write_P_bank ( A = new bank byte ) — rewrite only P's bank byte (P+2),
+;   paging P's bank. Used to renumber a surviving pointer after a -BANK shift.
+scrub_write_P_bank:
+        LD      C, A                    ; C = new bank byte (survives scrub_map_if)
+        LD      HL, (scrub_P)
+        LD      A, (scrub_PB)
+        CALL    scrub_map_if
+        INC     HL
+        INC     HL                      ; HL = P+2 (bank byte)
+        LD      (HL), C
+        RET
+
+; scrub scratch storage
+scrub_mode_k:       DB 0    ; selector: -BANK index k (0..28) or SCRUB_ALL_WINDOW
+scrub_caller_pg:    DB 0    ; caller's slot-2 physical page (restored on exit)
+scrub_bkt_cnt:      DB 0    ; remaining buckets in the 64-bucket sweep
+scrub_bucket_ptr:   DW 0    ; &buckets[b] for the current bucket
+scrub_P:            DW 0    ; prevslot: the fat pointer that points at current
+scrub_PB:           DB 0    ; bank prevslot physically lives in ($FF = fixed)
+scrub_cur_addr:     DW 0    ; current entry address
+scrub_cur_bank:     DB 0    ; current entry's bank byte
+scrub_next_addr:    DW 0    ; current entry's hash_link target address
+scrub_next_bank:    DB 0    ; current entry's hash_link target bank byte

@@ -11,13 +11,60 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 2.0.0
+## Version 3.1.0
 
-The 1.x series releases were a bit bare-bones, but 2.0 adds 
-some genuinely useful capabilities, such as a full Z80 assembler,
-custom wordlists, and CP/M file support.
+The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
+assembler, custom wordlists, and CP/M file support; 3.0.1 brought
+banked-memory support — the user-facing `BANK*` wordset that lets
+antforth address the MicroBeast's full 512 KB of RAM via the MMU
+portal at `$8000-$BFFF`. 3.0.2 completes the 12-word `BANK*` wordset
+with the descriptor-stub mechanism + cross-bank `EXIT` sentinel-
+trampoline + `BANK-OF` (descriptor-stub byte-1 read) + `IN-BANK`
+(kernel-blessed, CATCH-safe save/switch/EXECUTE/restore wrapper).
+3.0.3 ships the verified bank-aware compiler mechanism: per-bank
+`HERE`/`LATEST`/`,`/`COMPILE,`, bank-aware `:` with an automatic
+descriptor-stub emitted on `;`, and bank-aware `CREATE`/`DOES>`.
+(In 3.0.3 banked words still dispatched only via the explicit
+`EXECUTE` path.) 3.0.4 delivers the cross-bank-dispatch stabilization
+interlude (Epic 19.5): a self-dispatching `RST $28` descriptor-stub +
+fixed-memory return thunk, portal-aliasing `BANK!` window guards, and
+caught-`THROW` cross-bank state restore. The behavioural compiler-
+transparent-banking north-star — calling a banked word from a
+compiled definition *by name* — is now delivered on the emulator, and
+the dispatch mechanism is confirmed on real MicroBeast silicon. (In
+3.0.4 one portal-aliasing limit remained: bank-N words were not yet
+`FIND`-able by name from another bank, contained by the `BANK!` guard
+and carried to Epic 20.) 3.0.5 delivers the bank-aware lookup surface
+(Epic 20): `FIND` now traverses every bank invisibly via 24-bit fat
+dictionary pointers — a banked word resolves by name from any bank,
+and the everyday FORTH-wordlist path incurs no MMU switch — while
+`WORDS` produces a single unified flat listing spanning all banks.
+3.0.6 delivers the bank-aware *lifecycle* surface (Epic 21):
+`MARKER`/`FORGET` now snapshot and revert each active bank's
+dictionary tail *and* the descriptor-stub allocator tail (a banked
+word defined after a `FORGET` reuses the reclaimed stub slot rather
+than leaking it); `QUIT` re-asserts the user's last interactive bank
+on an `ABORT`/`THROW` unwind, so a crash never strands you in the
+bank the aborted thread happened to be in; and an `INCLUDE`d file's
+`BANK!` calls no longer pollute that saved-bank cell.
+3.0.7 closes Phase 4 (Epic 22): the bank-aware reflection and UX
+surface. `.BANKS` now reports real per-bank `used`/`free` figures with
+bank-0-inclusive totals; the REPL prompt shows the current bank so a
+cross-bank session never loses track of where new definitions land;
+the cross-bank-pointer hazards are documented for users; and `CODE`
+words are redirected to fixed memory so machine-code definitions stay
+cross-bank-findable. This is the final Phase-4 point release — the
+banked-RAM enablement promise, opened in 3.0.1, delivered in full.
+3.1.0 opens Phase 5 (Epic 23) — the first minor release since the 3.0
+banked-memory line, and a round of ANS conformance and ergonomics work
+that stands apart from banking: `VALUE`/`TO` named values (Core-Ext),
+the `IN`/`OUT` Z80 runtime port words, double-number `UD.` output, six
+honest `ENVIRONMENT?` wordset-presence rows (the wordsets antforth does
+not implement now answer `false` rather than over-claiming), and a fix
+to the assembler's `IN,`/`OUT,` words so they take Zilog
+destination-source operand order like the rest of the instruction set.
 
-V2.0.0 supports the following ANS Forth standard words:
+V3.1.0 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
@@ -55,11 +102,33 @@ And a whopping 81 words in the assembler, which are a mix of opcode mnemonics wi
 pseudo-ops (`DB`, `DW`, `DS`, `EQU`), addressing-mode helpers (`()`, `#`, `+D`), and stack/flow 
 primitives (`PUSH`, `POP`, `JR`, `NEXT,`).
 
+> **Banking note — define `CODE` words from bank 0.** `CODE` words are intended to live in
+> fixed (unbanked) memory, where — like the kernel primitives — they stay callable from every
+> bank. Defining a `CODE` word while another bank is mapped is not a supported configuration yet.
+> In-bank CODE words are a planned future-phase capability: the assembler in a CODE word only
+> ever branches within its own body or calls BIOS / fixed-memory routines (both always mapped),
+> so a future phase can host CODE bodies in banks via the descriptor-stub mechanism, with the
+> single rule "no absolute jump into another bank's body."
+
+## Banking
+
+Each memory bank carries its own dictionary state (`HERE`, `LATEST`,
+wordlist heads), swapped by `BANK!`. That makes addresses bank-relative: a
+pointer captured in one bank is not valid after you switch to another. Before
+you write your first multi-bank application, read
+[Cross-bank pointer hazards](docs/banking-pointer-hazards.md) — it names the
+bank-sensitive pointers, shows the anti-pattern to avoid, and covers the
+cross-bank return-stack overflow gotcha.
+
+Tip: enable the opt-in prompt indicator with `-1 PROMPT-SHOW-BANK` to show the
+current bank as a `[N]` prefix on the `ok` prompt (off by default; suppressed
+in bank 0).
+
 ## Coming up in the next version 
 
-- Banked memory support, and other {Micro,Nano}Beast hardware specific words 
 - Co-operative multi-tasking and event handlers
-- Local variable support 
+- Semaphores for task synchronisation
+- Full ANS `{: :}` local variable support 
 
 ## Bluesky wishlist 
 

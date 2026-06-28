@@ -12,3 +12,8 @@ disk/a/*.BIN
 # drive-routing probe (t8). Same transient-output convention.
 disk/b/*.TXT
 disk/b/*.BIN
+# Story 18.5.1 code-review cleanup — tests/file_access_tests.fth lines
+# 82..89 exercise the FCB-pool-exhaustion path by CREATE-FILE'ing
+# P1.TXT..P8.TXT in the iz-cpm root (= repo root). Each run leaves
+# zero-byte artifacts in the working tree; ignore them at the root.
+/P[1-8].TXT

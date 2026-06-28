@@ -8,6 +8,16 @@
 ; conventions — leaf-level rule, Group A/B entry patterns, "A survives EXX"
 ; staging idiom, shadow BC' as TOS-preservation slot — see:
 ;   docs/register-conventions.md
+;
+; CF-HANDLER DE-CONTRACT: every code-field
+; handler here (DOCOL, DOVAR, DOCON, DODOES — and any future one) is
+; reachable through a cross-bank descriptor stub (src/banking.asm
+; stub_dispatch), which pre-loads DE = xbank_thunk as the return IP
+; before JP (HL) into the handler. A handler MUST either push DE to
+; the R-stack as the return IP (DOCOL, DODOES) or reach NEXT with DE
+; untouched (DOVAR, DOCON, and all DEFCODE bodies). Clobbering DE
+; without pushing it breaks cross-bank return SILENTLY (stale-IP wild
+; fetch) — re-walk this contract when adding a handler.
 
 ; === DOCOL — Enter colon definition ===
 ; Push IP (DE) onto return stack (IX), set IP to body (following JP DOCOL)
@@ -34,6 +44,14 @@ w_EXIT_cf:
         JP      EXIT_CODE
 
 ; === EXIT — Return from colon definition ===
+; Cross-bank returns route through the dispatch-site 2-cell frame +
+; xbank_thunk / xbank_restore (src/banking.asm): a cross-bank DOCOL
+; callee's terminal EXIT pops IP = xbank_thunk (pushed by DOCOL from
+; the DE stub_dispatch pre-loaded), and the standard NEXT below fetches
+; the thunk cell → xbank_restore performs the bank restore. EXIT_CODE
+; itself is a plain pop + NEXT — zero added overhead for the common
+; in-bank case. Hand-built kernel threads' `DW EXIT_CODE` cells are
+; unaffected.
 EXIT_CODE:
         ; Pop IP from return stack
         LD      E, (IX+0)
@@ -47,7 +65,7 @@ EXIT_CODE:
 ; Body = HL+5 (skips 3-byte JP + 2-byte does-addr slot)
 ; ( -- addr )
 DOVAR:
-        ; Story 11.5.2: -3 THROW guard. PUSH HL spills W across the
+        ; -3 THROW guard. PUSH HL spills W across the
         ; check (check_overflow clobbers HL); the +2-byte transient SP
         ; pressure is covered by check_overflow's 32-byte safety margin.
         PUSH    HL              ; spill W (= code field addr)
@@ -65,7 +83,7 @@ DOVAR:
 ; Value = HL+3 (no does-addr slot for constants)
 ; ( -- x )
 DOCON:
-        ; Story 11.5.2: -3 THROW guard (depth +1). PUSH HL spills W.
+        ; -3 THROW guard (depth +1). PUSH HL spills W.
         PUSH    HL              ; spill W (= code field addr)
         CALL    check_overflow
         POP     HL              ; recover W
@@ -77,6 +95,16 @@ DOCON:
         INC     HL
         LD      B, (HL)         ; BC = value at body (new TOS)
         NEXT
+
+; === DOVALUE — Push named-value cell (runtime of VALUE) ===
+; HL points to code field (JP DOVALUE). Runtime is identical to DOCON
+; (push the cell at cf+3); the only reason DOVALUE exists as a DISTINCT
+; address is so TO can recognise a VALUE by its code field and reject a
+; CONSTANT (JP DOCON) / a colon word (JP DOCOL) / a VARIABLE (JP DOVAR).
+; HL (= code field addr) is unchanged by the JP→JP, so DOCON's cf+3 read
+; lands on the value cell.
+DOVALUE:
+        JP      DOCON
 
 ; === DODOES — Enter DOES> definition, push body address ===
 ; HL points to code field (JP DODOES)
@@ -96,7 +124,7 @@ DODOES:
         INC     HL
         LD      D, (HL)         ; DE = does-addr (new IP)
         INC     HL              ; HL = body address (cf+5)
-        ; Story 11.5.2: -3 THROW guard before the data-stack push (depth +1).
+        ; -3 THROW guard before the data-stack push (depth +1).
         ; PUSH HL spills the body addr across the check.
         PUSH    HL              ; spill body addr
         CALL    check_overflow
@@ -109,33 +137,70 @@ DODOES:
 
 ; === DOMARKER — Restore dictionary state from marker body ===
 ; HL points to code field (JP DOMARKER)
-; Body at cf+3: [saved_here(2)][saved_buckets(128)]   ; FORTH-WORDLIST bucket array only —
-; the wordlist struct's next-link cell is NOT snapshotted (Story 12.1 AC #6).
+; Body at cf+3: [saved_buckets(192)][snap_count(1)][bank_triples(snap_count*6)][stub_tail(2)]
+; saved_buckets = FORTH-WORDLIST bucket array only (the wordlist struct's
+; next-link cell is NOT in it). bank_triples = the live prefix of bank-table[]
+; (snap_count entries, snap_count = max(bank_count, owner+1) at MARKER time);
+; stub_tail = the descriptor-stub allocator next-free pointer.
 ; ( -- ) no stack effect
 DOMARKER:
         ; Skip code field to reach body
         INC     HL
         INC     HL
-        INC     HL                      ; HL = &saved_here
+        INC     HL                      ; HL = &saved_buckets (body start; saved_here dropped — CR 21.3 #2)
 
         ; Save DE (IP) and BC (TOS) — LDIR clobbers both DE and BC
         CALL    rpush_de
         CALL    rpush_bc
 
-        ; Read saved HERE from body
-        LD      E, (HL)
+        ; Copy 192 bytes from body to FORTH-WORDLIST fat bucket array
+        LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only)
+        LD      BC, 192
+        LDIR                            ; Restore all 64 × 3-byte fat bucket heads
+                                        ; HL now points past the buckets -> snap_count byte
+
+        ; --- Restore the live prefix of bank-table[] + stub-allocator tail ---
+        ; Read snap_count (the entry count MARKER captured), then revert exactly
+        ; that many (here, latest, wordlist_head) triples — words defined in any
+        ; snapshotted bank since MARKER become unreachable and their stubs are
+        ; reclaimed. snap_count was stored >= 1 (max(bank_count, owner+1) at
+        ; MARKER time), so BC is never 0 (no LDIR-copies-64KB trap) and the owner
+        ; entry reloaded below is always present (CR 21.3 #5).
+        ; This touches only the live prefix of bank-table[] — active_pages[] and
+        ; bank_count are NOT in bank-table[], so FORGET reverts dictionary tails +
+        ; the stub allocator only; +BANK / -BANK membership changes since MARKER
+        ; are NOT rolled back. Worse, a -BANK between MARKER and FORGET renumbers
+        ; logical banks without renumbering bank-table[], so this restore can
+        ; reassert triples onto the wrong banks — MARKER with mid-span -BANK is
+        ; unsupported until Epic 22 (user-doc gotcha).
+        LD      A, (HL)                 ; A = snap_count
+        INC     HL                      ; HL -> first triple byte
+        ADD     A, A                    ; *2
+        LD      C, A
+        ADD     A, A                    ; *4
+        ADD     A, C                    ; *6
+        LD      C, A
+        LD      B, 0                    ; BC = snap_count * 6
+        LD      DE, BANK_TABLE_BASE     ; $D400 destination (live prefix)
+        LDIR                            ; body -> bank-table[0..snap_count-1]; HL -> stub_tail field
+
+        ; Restore the descriptor-stub allocator tail (2 B) — reclaims stubs.
+        LD      A, (HL)
+        LD      (IY+UserArea.stub_alloc_tail), A
         INC     HL
-        LD      D, (HL)
-        INC     HL                      ; DE = saved_here, HL = &saved_hash_data
+        LD      A, (HL)
+        LD      (IY+UserArea.stub_alloc_tail+1), A
+        INC     HL
 
-        ; Restore HERE
-        LD      (IY+UserArea.here), E
-        LD      (IY+UserArea.here+1), D
-
-        ; Copy 128 bytes from body to FORTH-WORDLIST bucket array
-        LD      DE, forth_wordlist + WORDLIST_BUCKET0   ; DE = destination (bucket array only — Story 12.1 AC #6)
-        LD      BC, 128
-        LDIR                            ; Restore all 64 hash bucket heads
+        ; Reload the live triple for the current owner from the reverted table,
+        ; so the live allocation pointers reflect the rolled-back tail. This is
+        ; the authoritative HERE/LATEST/wordlist_head restore. For the marker's
+        ; own owner, bank-table[owner] now holds the pre-MARKER triple; when the
+        ; current bank differs it is reverted to its snapshot. Shares
+        ; bank_triple_load (src/banking.asm) — the LOAD half of the BANK! triple
+        ; swap (CR 21.3 #3).
+        LD      A, (IY+UserArea.triple_owner)
+        CALL    bank_triple_load        ; bank-table[owner] -> live triple
 
         ; Restore BC (TOS) and DE (IP)
         LD      B, (IX+1)
@@ -197,7 +262,7 @@ rpop_hl:                        ; Pop HL from return stack
 w_LIT:
         DEFCODE "LIT", 0
 w_LIT_cf:
-        ; Story 11.5.2: -3 THROW guard (depth +1). HL on entry is W
+        ; -3 THROW guard (depth +1). HL on entry is W
         ; (= code field addr) but LIT does not use it — it uses DE
         ; (= IP). check_overflow clobbers AF/HL, both unused, so no
         ; spill is needed.
@@ -253,12 +318,23 @@ w_QBRANCH_cf:
 
 ; -----------------------------------------------
 ; EXECUTE ( xt -- )
-;   Execute the word whose execution token is on the stack
+;   Execute the word whose execution token is on the stack.
+;
+;   EXECUTE is a plain 4-byte JP (HL). Descriptor stubs are
+;   self-dispatching — stub byte 0 = $EF (RST $28) vectors through
+;   STUB_DISPATCH_VECTOR to stub_dispatch (src/banking.asm), so every
+;   JP (HL) site (NEXT, EXECUTE, CATCH's xt-execute, the outer
+;   interpreter) dispatches uniformly with no discrimination here:
+;     - legacy CFA xt (CFA-as-xt contract, bank-0 `:`) → JP (HL)
+;       executes the code field directly;
+;     - stub xt → JP (HL) lands on the RST $28 at stub byte 0 and the
+;       stub self-dispatches (intra- or cross-bank).
+;   EXX-hygiene: trivially leaf — main-set only, no EXX, no THROW raise.
 ; -----------------------------------------------
 w_EXECUTE:
         DEFCODE "EXECUTE", 0
 w_EXECUTE_cf:
         LD      H, B
-        LD      L, C            ; HL = xt (code field address)
-        POP     BC              ; Pop new TOS
-        JP      (HL)            ; Jump to code field
+        LD      L, C                ; HL = xt
+        POP     BC                  ; new TOS
+        JP      (HL)                ; legacy CFA executes directly; stub self-dispatches via RST $28

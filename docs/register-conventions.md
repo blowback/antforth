@@ -383,6 +383,54 @@ The description table is seeded with the standard codes Epic 11 issues (`-1`, `-
 
 This section will be extended by Stories 11.3–11.7 as new fields, semantics, or interactions land. The 8-byte layout itself was locked at Story 11.2; the slot semantics at `+0` (saved-SP captured AFTER `POP BC`) and `+2` (saved-BC = i*x's TOS-cell value) were revised by Story 11.4.1 (a deliberate revision to E11-D1, not a drift). Further changes require the same level of deliberation.
 
+### Story 18.5.1: i*x deeper-cell preservation scope
+
+Stories 11.2–11.4.1 left a gap relative to ANS Forth 1994 §9.6.1.0875: only i*x's TOS-cell was preserved across the caught-THROW boundary (via the saved-BC slot at frame +2). Cells `[SP_safe + 0 .. SP_safe + 2·(K−2)]` for i*x depth K — i*x's second-from-top through deepest — were exposed to xt's read AND write traffic during the CATCH window, with no framework-side restoration on the THROW caught path. Any xt whose first stack write landed at-or-above `[SP_safe]` (canonical example: `SWAP`'s `POP HL / PUSH BC` exchange) corrupted i*x's second-from-top cell; the secondary leak via `w_THROW_cf.kernel_entry`'s `PUSH HL / POP IX` idiom at `src/exception.asm:351..352` further exposed the outer CATCH frame_base into `[SP_safe + 0]` when xt's SP-delta at THROW entry was +2.
+
+Story 18.5.1 closes the gap structurally (option (b) — framework patch). The 8-byte frame layout (E11-D1) is **unchanged**; instead, `w_CATCH_cf` pushes a variable-size **stash zone** on the IX rstack immediately below the 8-byte frame at CATCH entry:
+
+```
+Higher address ─┬──────────────────────────────────┐
+        +6, +7  │ previous CATCH-TOP (chain link)  │
+        +4, +5  │ catching-IP (caller's IP)        │
+        +2, +3  │ saved BC (i*x's TOS-cell)        │
+        +0, +1  │ saved SP (post-POP-BC SP_safe)   │ ← CATCH-TOP points here
+        -2, -1  │ depth_bytes word                 │
+        -2-(2(K-1))..-3 │ i*x stash zone (K−1 deeper cells, copied
+                          from data stack [SP_safe..sp_base-1] via
+                          LDIR at CATCH push, restored via LDIR at
+                          THROW caught-path before LD SP, HL)       │
+Lower address  ─┴──────────────────────────────────┘
+                 ← IX points here after CATCH push (= stash_low)
+```
+
+The contract is now:
+
+- **Preserved across caught THROW** (post-Story-18.5.1):
+  - **DEPTH** (ANS §9.3.5 "same depth" — count of cells, BC + SP-stack).
+  - **i*x's TOS-cell** (via Story-11.4.1 saved-BC at frame +2, restored via `PUSH BC` after `LD SP, HL`).
+  - **i*x's deeper cells** (via Story-18.5.1 stash zone, restored via `LDIR` from `[stash_low..stash_low + depth_bytes − 1]` to `[SP_safe..sp_base−1]` before the existing `LD SP, HL / PUSH BC`).
+- **NOT preserved (intentionally)** — these are the cells the framework was never required to preserve and remain governed by xt's own discipline:
+  - SP-locations BELOW `SP_safe` (i.e., `[SP_safe - 2]` and lower) — these are xt's CALL/PUSH territory during the CATCH window. The Story-11.4.1 `PUSH BC` after `LD SP, HL` overwrites `[SP_safe - 2]` with the saved-BC value (= i*x's TOS-cell), so even if xt's CALLs left return-address bytes there, the slot is repopulated. Cells BELOW `[SP_safe - 2]` are not restored.
+  - System-stack state beyond `SP_safe` (orphan CALL ret-addrs from xt's nested call chain) — discarded by the existing `LD SP, HL` reset.
+
+**Layout invariants enforced by `w_CATCH_cf`**:
+
+- `CATCH-TOP` continues to point at frame +0 (= saved-SP slot) post-Story-18.5.1 — backwards-compatible with the contract documented at line 295 above. THROW's `PUSH HL / POP IX` from CATCH-TOP still places IX at frame_base.
+- The depth_word at `(IX-2)` post-CATCH is **unconditionally written** (even when `depth_bytes = 0`) so `catch_resume_cf` and `w_THROW_cf.kernel_entry` can read it via `LD A, (IX-2)` without guarding on depth.
+- `catch_resume_cf` re-anchors IX to frame_base via CATCH-TOP at entry (since xt's terminal NEXT leaves IX at the stash_low value where CATCH-push left it, not at frame_base).
+- THROW caught-path uses kernel scratch cells (`throw_stash_hl`, `throw_stash_bc`, `throw_stash_de` parallel to the existing `throw_saved_n`) to spill HL/BC/DE across the LDIR restore — using the system stack for catching-IP would land it at `[SP_throw - 2]`, which can fall inside `[SP_safe..sp_base-1]` (the LDIR write range) when xt consumed cells before THROW.
+
+**Binary delta**: +106 B kernel cumulative (Story 18.5.1 itemisation at `_bmad-output/implementation-artifacts/18-5-1-defwords-ix-preservation-on-caught-throw.md` §"Q1 disposition" estimated +86 B; +20 B overshoot ≈ +23% over estimate, accepted-with-rationale per AC#4 due to register-juggle expansion for the LDIR LD/EX sequences and the third scratch cell (`throw_stash_de`) added during dev-pass to fix the `PUSH DE`-overlapping-LDIR-write bug).
+
+**Cycles delta**: documented in the same story file. Uncaught CATCH overhead: ~+25 cycles (depth=0 short-circuit) vs the original ~15-cycle NFR-P4-1 envelope — accepted-with-rationale (load-bearing cost for the i*x preservation guarantee).
+
+**Empirical witnesses**:
+- Probe-18.5.1-A (`tests/banking_tests.fth` post-Story-18.5 probe block): `100 200 ' SWAP-ABORT CATCH` yields `<3> 100 200 -1` — i*x's second-from-top `100` preserved across SWAP's `[SP_safe + 0]` overwrite + the THROW caught-path restoration.
+- Probe-18.5.1-B (same file): `1 ' ABORT ' IN-BANK CATCH` yields `<3> 1 17262 -1` — i*x's second-from-top `1` preserved across IN-BANK's body-cell-3 SWAP and the outer-THROW's PUSH HL / POP IX scratch traffic.
+
+**Reference**: `_bmad-output/implementation-artifacts/18-5-1-defwords-ix-preservation-on-caught-throw.md` for the dev-pass root-cause analysis, option itemisation, and implementation log.
+
 ---
 
 ## References

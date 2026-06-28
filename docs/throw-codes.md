@@ -55,6 +55,8 @@ the architecture-mandated reservation. The block extends through `-272`
 post-Story-11.5.6 (Story 11.5 allocated `-258..-269`; Story 11.6 added
 `-270` / `-271` for the asm_die residual; Story 11.5.6 split the
 generic `-271 range` into `-271 disp range` / `-272 bit range`).
+Story 19.5.1 continued the series at `-273` with the first
+non-assembler extension (`THROW_BANK_FROM_BANKED`, banking).
 
 **Naming pattern (architecture.md:471-479):** `THROW_<UPPER_SNAKE_NAME>`
 matching the human-readable name from the standard table (or, for
@@ -77,7 +79,7 @@ back to the per-file inventory in §d.
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |
 | -7  | do-loops nested too deeply during execution | no | — |
-| -8  | dictionary overflow | no | — |
+| -8  | dictionary overflow | done — Story 23.6/23.7/23.9 | `banking.asm` (`check_banked_headroom` + `dict_overflow_throw`; banked window-top guard wired at `build_header` and `,`/`C,`/`ALLOT`/`COMPILE,`; Story 23.7 folds `MARKER`'s full body footprint into the `build_header` pre-commit guard via `bh_code_reserve`/`MARKER_CODE_RESERVE` — `system.asm` `w_MARKER_cf`; Story 23.9 extends coverage to the remaining HERE-growth paths `;`/`LITERAL`/`DOES>` — `compiler.asm` — and the inline-string compilers `S"`/`."`/`ABORT"` — `strings.asm` `compile_string`, `system.asm` `w_ABORT_QUOTE_cf`) |
 | -9  | invalid memory address | no | — |
 | -10 | division by zero | done — Story 11.4 | `arithmetic.asm:126` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm:569` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
 | -11 | result out of range | no | — |
@@ -101,7 +103,7 @@ back to the per-file inventory in §d.
 | -29 | compiler nesting | no | — |
 | -30 | obsolescent feature | no | — |
 | -31 | >BODY used on non-CREATEd definition | no | — |
-| -32 | invalid name argument (e.g., TO xxx) | no | — |
+| -32 | invalid name argument (e.g., TO xxx) | **done — Story 23.2** | `THROW_INVALID_NAME_ARG EQU -32` (`constants.asm`, cites ANS Forth 1994 §9.3.5) — raised by `TO`'s `to_verify` (`compiler.asm`) when the parsed name resolves to a non-`VALUE` (a `CONSTANT`, a `:`-defined word, `VARIABLE`, …); message row added to `throw_desc_table` (`exception.asm`). `TO` on an undefined name reuses the `'` path's -13 instead |
 | -33 | block read exception | no | — |
 | -34 | block write exception | no | — |
 | -35 | invalid block number | no | — |
@@ -208,9 +210,12 @@ is stronger than the "fresh code is cleaner" counter-argument.
 
 All extensions allocated by Epic 11 sit in a contiguous block
 `-258..-272` for grep-ability (Epic 11.5 / Story 11.5.6 added one
-code by splitting -271). Every extension comes from the assembler
+code by splitting -271). Every Epic-11 extension comes from the assembler
 (`src/assembler.asm`) — the kernel's ABORT sites otherwise resolve to ANS
-codes. `-256` is unallocated (reserved gap). `-257` is reserved by
+codes. Story 19.5.1 (Phase 4) continued the contiguous series past the
+assembler block with the first non-assembler extension: `-273
+THROW_BANK_FROM_BANKED`, the `BANK!` portal-window guard (ADR 19.5
+DR-1 fix F1). `-256` is unallocated (reserved gap). `-257` is reserved by
 `architecture.md:478,606` for `THROW_ASM_LOAD_FAIL` (Epic 13 lazy-load
 assembler) and is declared upfront in `src/constants.asm` even though no
 Epic 11 site references it.
@@ -251,6 +256,7 @@ discipline.
 | -270 | THROW_ASM_NOT_IN_CODE       | inline-assembler word used outside `CODE` block       | `assembler.asm:472` (`check_asm_mode` direct raise)                      | **done — 11.6** |
 | -271 | THROW_ASM_DISP_RANGE        | `+D` 8-bit displacement out of range                  | `assembler.asm:1204` (`asm_disp_range_err` direct raise)                 | **done — 11.5.6** |
 | -272 | THROW_ASM_BIT_RANGE         | `BIT,`/`RES,`/`SET,` bit number not in 0..7           | `assembler.asm:1210` (`asm_bit_range_err` direct raise)                  | **done — 11.5.6** |
+| -273 | THROW_BANK_FROM_BANKED      | bank switch from banked code — foreign-bank `BANK!` with caller IP in `$8000..$BFFF` (portal-window aliasing guard; fires BEFORE any MMU/state mutation) | `banking.asm` (`w_BANK_STORE_cf` direct raise)              | **done — 19.5.1** |
 
 **Note on -271 / -272 split (Story 11.5.6 closure).** The original
 Story 11.6 allocation collapsed two structurally-different conditions

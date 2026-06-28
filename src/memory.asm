@@ -119,7 +119,17 @@ w_PLUS_STORE_cf:
 
 ; -----------------------------------------------
 ; HERE ( -- addr )
-;   Push current dictionary pointer
+;   Push current dictionary pointer.
+;
+;   Per-bank HERE: the read path through (IY+UserArea.here) is
+;   per-bank-correct by construction. BANK! (src/banking.asm) atomically
+;   LDIR-swaps the (HERE, LATEST, wordlist_head) triple between
+;   bank-table[old/new] and the live UserArea cells; the active cell is
+;   the read-cache, the swap is the consistency mechanism.
+;
+;   Cross-bank pointer hazard: if the user holds HERE from bank A then
+;   BANK!s to B and writes there, the write lands in bank B's dictionary
+;   — undefined behaviour, no runtime guard.
 ; -----------------------------------------------
 w_HERE:
         DEFCODE "HERE", 0
@@ -130,18 +140,38 @@ w_HERE_cf:
         NEXT
 
 ; -----------------------------------------------
+; LATEST ( -- a-addr )           antforth extension
+;   Push the address of the LATEST cell in UserArea. Read via
+;   `LATEST @` (returns the dictionary entry pointer of the most-
+;   recently-defined word in the current bank); write via `LATEST !`
+;   (interactive dictionary surgery — uncommon but standard Forth
+;   tradition).
+;
+;   Per-bank LATEST: the cell at (user_area + UserArea.latest) is
+;   per-bank-correct by construction via BANK!'s LDIR triple-swap
+;   (src/banking.asm).
+;
+;   Variable-style ( -- a-addr ) matches the gforth/SwiftForth/pforth
+;   idiom and the existing antforth STATE / >IN convention.
+; -----------------------------------------------
+w_LATEST:
+        DEFCODE "LATEST", 0
+w_LATEST_cf:
+        PUSH    BC                                    ; save old TOS
+        LD      BC, user_area + UserArea.latest       ; BC = &LATEST cell
+        NEXT
+
+; -----------------------------------------------
 ; PAD ( -- c-addr )           ANS Forth 1994 §6.2.2000
 ;   Push the address of a transient region that survives parsing
 ;   of any one space-delimited name (§3.3.3.6). antforth places PAD
-;   at HERE+PAD_OFFSET (PAD_OFFSET = 84, src/constants.asm:44); WORD
-;   stages its counted-string output at HERE+0..HERE+31 (count byte
-;   at HERE+0, ≤31 chars at HERE+1..HERE+u per F_LENMASK; see
-;   src/strings.asm:145 storing count, :85 INC HL before chars), which
-;   leaves HERE+32..HERE+84+ untouched, so PAD survives a single WORD
-;   parse by construction.
-;   Story 13.5.4 / TD-6 closure (Epic 13.5 Tag-Blocking Slate, retro
-;   2026-05-05): adds PAD-the-word so /PAD ENVIRONMENT? ( 84 -1 )
-;   has the surface its compliance claim presupposes per §3.2.6.
+;   at HERE+PAD_OFFSET (PAD_OFFSET = 84, src/constants.asm); WORD stages
+;   its counted-string output at HERE+0..HERE+31 (count byte at HERE+0,
+;   ≤31 chars at HERE+1..HERE+u per F_LENMASK; see src/strings.asm),
+;   which leaves HERE+32..HERE+84+ untouched, so PAD survives a single
+;   WORD parse by construction.
+;   PAD is also exposed as a word so /PAD ENVIRONMENT? ( 84 -1 ) has the
+;   surface its compliance claim presupposes per §3.2.6.
 ; -----------------------------------------------
 w_PAD:
         DEFCODE "PAD", 0
@@ -157,28 +187,56 @@ w_PAD_cf:
 
 ; -----------------------------------------------
 ; ALLOT ( n -- )
-;   Advance HERE by n bytes
+;   Advance HERE by n bytes.
+;
+;   Per-bank ALLOT: read/write of (IY+UserArea.here) is per-bank via
+;   BANK!'s LDIR triple-swap (src/banking.asm).
 ; -----------------------------------------------
 w_ALLOT:
         DEFCODE "ALLOT", 0
 w_ALLOT_cf:                             ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = current HERE
-        ADD     HL, BC                     ; HL = HERE + n
+        ADD     HL, BC                     ; HL = HERE + n  (prospective one-past-end)
+        JR      C, .allot_carry            ; 16-bit wrap (huge +n) OR normal -n release
+.allot_store:
+        CALL    check_banked_headroom      ; Story 23.6: -8 if HERE+n straddles $C000 on a bank
+        JP      C, dict_overflow_throw     ; (no-op on bank 0; HL preserved across the call)
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
         POP     BC              ; New TOS (n consumed)
         NEXT
+.allot_carry:
+        ; ADD HL,BC carried out of 16 bits. For a NEGATIVE n (sign bit set) this
+        ; is a normal space-release — HL already holds the correct lower HERE
+        ; (< $C000) so just store it. For a NON-NEGATIVE n the request wrapped
+        ; past $FFFF and cannot fit a 16 KB window, so raise -8 — except on bank 0
+        ; (fixed memory, no window) where the guard stays a strict no-op and the
+        ; pre-guard wrapped-HERE behaviour is preserved.
+        BIT     7, B                       ; B = n high byte → bit 7 = sign
+        JR      NZ, .allot_store           ; n < 0: legitimate release, no overflow
+        LD      A, (IY+UserArea.triple_owner)
+        OR      A
+        JR      Z, .allot_store            ; bank 0: no window, keep wrapped HERE
+        JP      dict_overflow_throw        ; banked +n wrapped past $FFFF → -8
 
 ; -----------------------------------------------
 ; , (COMMA) ( x -- )
-;   Compile cell at HERE, advance HERE by 2
+;   Compile cell at HERE, advance HERE by 2.
+;
+;   Per-bank `,`: writes through (IY+UserArea.here) into the current
+;   bank's `here` via BANK!'s LDIR triple-swap (src/banking.asm).
+;   Cross-bank `,` is NOT exposed — user MUST `BANK!` to target bank
+;   before writing (explicit ergonomic decision). Cross-bank pointer
+;   hazard: holding HERE from bank A then `BANK!`ing to B and writing
+;   lands in B's dictionary — undefined; no runtime guard.
 ; -----------------------------------------------
 w_COMMA:
         DEFCODE ",", 0
 w_COMMA_cf:                             ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = HERE
+        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if the cell straddles $C000 on a bank
         LD      (HL), C
         INC     HL
         LD      (HL), B         ; Store cell (little-endian)
@@ -190,13 +248,21 @@ w_COMMA_cf:                             ; No underflow check — low-risk dictio
 
 ; -----------------------------------------------
 ; C, ( char -- )
-;   Compile byte at HERE, advance HERE by 1
+;   Compile byte at HERE, advance HERE by 1.
+;
+;   Per-bank `C,`: same per-bank-via-swap discipline as `,` above
+;   (src/banking.asm).
+;
+;   Cross-bank pointer hazard: holding HERE from bank A then `BANK!`ing
+;   to B and writing lands in B's dictionary — undefined; no runtime
+;   guard. Same caveat as `,`.
 ; -----------------------------------------------
 w_C_COMMA:
         DEFCODE "C,", 0
 w_C_COMMA_cf:                           ; No underflow check — low-risk dictionary op
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        GUARD_BANKED_WRITE 1               ; Story 23.6: -8 if the byte straddles $C000 on a bank
         LD      (HL), C         ; Store byte
         INC     HL              ; HERE + 1
         LD      (IY+UserArea.here), L
