@@ -240,6 +240,24 @@ w_U_DOT_R_cf    EQU     w_U_DOT_R_body - 3
         DW      EXIT_CODE
 
 ; -----------------------------------------------
+; UD. ( ud -- )   Display unsigned double ud in free-field format, trailing space.
+; The D. thread with the sign machinery removed: no DABS (the value is already
+; unsigned — DABS would negate any ud whose high cell >= $8000), no SIGN. Just
+; <# #S #> over the unsigned cell-pair. Non-ANS (common-practice extension).
+; Underflow of an under-deep stack is trapped by #'s own check_underflow.
+; -----------------------------------------------
+w_U_D_DOT:
+        DEFWORD "UD.", 0
+w_U_D_DOT_body:
+w_U_D_DOT_cf    EQU     w_U_D_DOT_body - 3
+        DW      w_PIC_LESS_HASH_cf      ; <#     ( ud )
+        DW      w_PIC_HASH_S_cf         ; #S     ( 0 0 )   — all digits, unsigned
+        DW      w_PIC_GREATER_HASH_cf   ; #>     ( c-addr u )
+        DW      w_TYPE_cf               ; TYPE
+        DW      w_SPACE_cf              ; SPACE
+        DW      EXIT_CODE
+
+; -----------------------------------------------
 ; .S ( -- )
 ;   Display stack contents non-destructively
 ;   Format: <depth> item1 item2 ... itemN

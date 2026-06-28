@@ -2,10 +2,26 @@
 
 (It's not for features or big ticket items, but for gaps).
 
- - `UD.` - display unsigned double precision int 
- - "EXCEPTION" and "EXCEPTION-EXT" environment queries
- - "DOUBLE" and "DOUBLE-EXT" environment queries
- - "SEARCH-ORDER" and "SEARCH-ORDER-EXT" environment queries
+ - `UD.` - display unsigned double precision int — RESOLVED 2026-06-28, Story 23.4
+ - "EXCEPTION" and "EXCEPTION-EXT" environment queries — RESOLVED 2026-06-28, Story 23.4
+ - "DOUBLE" and "DOUBLE-EXT" environment queries — RESOLVED 2026-06-28, Story 23.4
+ - "SEARCH-ORDER" and "SEARCH-ORDER-EXT" environment queries — RESOLVED 2026-06-28, Story 23.4
+
+## 2025-xx-xx (RESOLVED 2026-06-28, Story 23.4)
+
+`UD.` now prints an unsigned double in the current `BASE` with a trailing space
+and no sign (`4294967295. UD.` → `4294967295`, vs `D.` → `-1`). It is the `D.`
+thread with the sign machinery (`DABS`/`SIGN`) removed; non-ANS (common-practice
+extension, documented in `docs/ans-forth-core-compliance.md` — the epic's
+§8.6.1.1230 citation is `DNEGATE`'s number, not `UD.`).
+
+Six new `ENVIRONMENT?` wordset-presence rows were added, answering honestly:
+`EXCEPTION` / `EXCEPTION-EXT` / `SEARCH-ORDER` → `( true true )` (fully present);
+`DOUBLE` / `DOUBLE-EXT` / `SEARCH-ORDER-EXT` → `( false true )` —
+recognised-but-not-fully-implemented (consistent with the existing `CORE-EXT`
+precedent), pending full implementation of those wordsets (`D0< D0= D2* D2/
+2CONSTANT 2LITERAL 2VARIABLE`; `2ROT 2VALUE DU<`; `ALSO FORTH ORDER PREVIOUS`)
+in a future story/epic — out of 23.4 scope.
 
 ## 2025-05-20 (RESOLVED 2026-06-28, Story 23.1)
 

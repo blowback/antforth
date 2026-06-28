@@ -24,7 +24,7 @@
 
 | § | Rule | Verdict | Source | Closure | Notes |
 |---|------|---------|--------|---------|-------|
-| §3.2.6 | A standard system shall provide ENVIRONMENT? to query environmental conditions; standard query keys (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`) supported | Implemented | src/system.asm:277 (env_table) | Story 10.9 | F7 dual-row (paired with §6.1.1345 ENVIRONMENT? word row); 14-entry static table; case-sensitive lookup; supports single, double, and flag value kinds. `/PAD` query backed by real `PAD` word per §6.2.2000 since Story 13.5.4. |
+| §3.2.6 | A standard system shall provide ENVIRONMENT? to query environmental conditions; standard query keys (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`, `EXCEPTION`, `EXCEPTION-EXT`, `DOUBLE`, `DOUBLE-EXT`, `SEARCH-ORDER`, `SEARCH-ORDER-EXT`) supported | Implemented | src/system.asm:277 (env_table) | Story 10.9, 23.4 | F7 dual-row (paired with §6.1.1345 ENVIRONMENT? word row); 20-entry static table; case-sensitive lookup; supports single, double, and flag value kinds. `/PAD` query backed by real `PAD` word per §6.2.2000 since Story 13.5.4. The six wordset-presence queries (Story 23.4) answer honestly: `EXCEPTION`/`EXCEPTION-EXT`/`SEARCH-ORDER` → `( true true )` (fully present); `DOUBLE`/`DOUBLE-EXT`/`SEARCH-ORDER-EXT` → `( false true )` (recognised but not fully implemented — consistent with the `CORE-EXT` precedent). |
 
 ## §3.3.3 — Transient regions (taxonomy rule)
 
@@ -332,7 +332,7 @@ grouping.
 | §6.1.0550 | `>BODY ( xt -- a-addr )` | Implemented | src/compiler.asm:11 | v2.0 baseline | xt+5 (skips JP + does-addr). |
 | §6.1.0680 | `ABORT" ( "ccc" x -- )` | Implemented | src/system.asm:139 | Story 11.7 | F_IMMEDIATE; retargeted as `-2 THROW` wrapper post-Epic-11. Runtime `(ABORT")` at `src/system.asm:89`. |
 | §6.1.1360 | `EVALUATE ( i*x c-addr u -- j*x )` | Implemented | src/outer_interpreter.asm:366 | Story 10.9 | DEFWORD `(SAVE-INPUT) INTERPRET (RESTORE-INPUT)`; saves four USER source-spec cells (tib_addr, tib_len, tib_in, source_id) on R-stack across INTERPRET; source_id = -1 during EVALUATE per Forth 2014 §6.2.2218. Distinct from user-facing `SAVE-INPUT` (§6.2.2182) / `RESTORE-INPUT` (§6.2.2148) which are data-stack words added by Story 13.5.5. |
-| §6.1.1345 | `ENVIRONMENT? ( c-addr u -- false \| i*x true )` | Implemented | src/system.asm:277 | Story 10.9 | DEFCODE walking a 14-entry static `env_table` of DPANS94 §3.2.6 standard query keys (case-sensitive); supports single, double, and flag value kinds. |
+| §6.1.1345 | `ENVIRONMENT? ( c-addr u -- false \| i*x true )` | Implemented | src/system.asm:277 | Story 10.9, 23.4 | DEFCODE walking a 20-entry static `env_table` of DPANS94 §3.2.6 standard query keys (case-sensitive); supports single, double, and flag value kinds. |
 
 ---
 
@@ -374,7 +374,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | Word | Story | Complexity | Notes |
 |------|-------|-----------|-------|
 | `EVALUATE` | 10.9 ✓ | Moderate | DPANS94 §6.1.1360. Save/restore input source via 4-cell R-stack frame across INTERPRET. |
-| `ENVIRONMENT?` | 10.9 ✓ | Low | DPANS94 §6.1.1345. 14-entry static query table per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`). Story 13.5.4 (TD-6 closure 2026-05-06): the `/PAD` query (returning `( 84 -1 )`) is now backed by a real `PAD` word at `memory.asm` per §6.2.2000 — see Core Extension Bonus Coverage table and Story 13.5.4 caveats below. |
+| `ENVIRONMENT?` | 10.9 ✓ | Low | DPANS94 §6.1.1345. 20-entry static query table per §3.2.6 (`/COUNTED-STRING`, `/HOLD`, `/PAD`, `ADDRESS-UNIT-BITS`, `CORE`, `CORE-EXT`, `FLOORED`, `MAX-CHAR`, `MAX-D`, `MAX-N`, `MAX-U`, `MAX-UD`, `RETURN-STACK-CELLS`, `STACK-CELLS`, `EXCEPTION`, `EXCEPTION-EXT`, `DOUBLE`, `DOUBLE-EXT`, `SEARCH-ORDER`, `SEARCH-ORDER-EXT`). Story 13.5.4 (TD-6 closure 2026-05-06): the `/PAD` query (returning `( 84 -1 )`) is now backed by a real `PAD` word at `memory.asm` per §6.2.2000 — see Core Extension Bonus Coverage table and Story 13.5.4 caveats below. Story 23.4 added the six wordset-presence rows; three answer `( true true )` (`EXCEPTION`/`EXCEPTION-EXT`/`SEARCH-ORDER`), three answer `( false true )` (`DOUBLE`/`DOUBLE-EXT`/`SEARCH-ORDER-EXT`: recognised but not fully implemented, consistent with the `CORE-EXT` precedent). |
 
 ### (c) Partially Implemented — 0 words (empty after Story 10.3)
 
@@ -879,6 +879,7 @@ antforth also defines words that are useful but outside the Core word sets:
 | `IN-BANK` | `banking.asm:952` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-4 — save current bank, switch, EXECUTE xt, restore caller's bank; CATCH-safe via DEFWORD-with-internal-CATCH discipline so saved bank is restored on the THROW unwind path; kernel-blessed, NOT user library) |
 | `IN` | `io.asm:199` | Non-standard (antforth extension — Story 23.3; `( port -- byte )` raw Z80 port read via `IN A,(C)` with `BC = port` (B = A8..A15); result zero-extended to a cell (high byte provably 0). Distinct from the assembler's `IN,`. Underflow → -4) |
 | `OUT` | `io.asm:213` | Non-standard (antforth extension — Story 23.3; `( x port -- )` raw Z80 port write via `OUT (C),A` with `BC = port`; datum below address like `!`, both cells consumed. Distinct from the assembler's `OUT,`. Underflow → -4) |
+| `UD.` | `formatting.asm:249` | Non-standard (Double-Number common-practice extension — Story 23.4; `( ud -- )` print an unsigned double in current BASE with a trailing space, no sign. The `D.` thread minus `DABS`/`SIGN`. NOT a DPANS94 word — the epic's §8.6.1.1230 citation is `DNEGATE`'s number, not `UD.`) |
 
 ---
 
@@ -902,7 +903,7 @@ antforth also defines words that are useful but outside the Core word sets:
 
 2. **Pictured numeric output — CLOSED by Story 10.7:** `<# # #S #> HOLD SIGN` (6 §6.1) plus `HOLDS` (§6.2 bonus) landed in `src/pictured.asm` backed by a 40-byte `pic_buf` in `UserArea` and the `HLD` USER variable. Story 10.8 rewrote `.` / `U.` / `.R` on this foundation and added `D.` / `U.R` / `D.R` (§6.2/§8.6 bonus) — the §6.1 display path preserved byte-for-byte.
 
-3. **System single-word gaps — CLOSED by Story 10.9:** `EVALUATE` and `ENVIRONMENT?`. EVALUATE saves the four-cell input source spec (`tib_addr`, `tib_len`, `tib_in`, `source_id`) on the R-stack across an `INTERPRET` call. ENVIRONMENT? walks a 14-entry static §3.2.6 query-key table.
+3. **System single-word gaps — CLOSED by Story 10.9:** `EVALUATE` and `ENVIRONMENT?`. EVALUATE saves the four-cell input source spec (`tib_addr`, `tib_len`, `tib_in`, `source_id`) on the R-stack across an `INTERPRET` call. ENVIRONMENT? walks a 20-entry static §3.2.6 query-key table (Story 23.4 added six wordset-presence rows).
 
 ### §6.1 vs §8.6 — important Epic-10 scope distinction
 

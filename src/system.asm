@@ -565,6 +565,24 @@ env_table:
         ; STACK-CELLS -> PS_SIZE/2 = 128
         db  11, "STACK-CELLS", 0
         dw  PS_SIZE/2
+        ; EXCEPTION -> true (CATCH/THROW present)
+        db  9, "EXCEPTION", 2
+        dw  $FFFF
+        ; EXCEPTION-EXT -> true (ABORT/ABORT" present)
+        db  13, "EXCEPTION-EXT", 2
+        dw  $FFFF
+        ; DOUBLE -> false (recognised; set incomplete — D0< D0= D2* D2/ 2CONSTANT 2LITERAL 2VARIABLE missing)
+        db  6, "DOUBLE", 2
+        dw  0
+        ; DOUBLE-EXT -> false (recognised; 2ROT 2VALUE DU< absent)
+        db  10, "DOUBLE-EXT", 2
+        dw  0
+        ; SEARCH-ORDER -> true (all 8 words present)
+        db  12, "SEARCH-ORDER", 2
+        dw  $FFFF
+        ; SEARCH-ORDER-EXT -> false (recognised; ALSO FORTH ORDER PREVIOUS missing, only ONLY present)
+        db  16, "SEARCH-ORDER-EXT", 2
+        dw  0
         ; Terminator (zero-length entry)
         db  0
 

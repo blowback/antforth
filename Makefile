@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -152,6 +152,15 @@ VALUE_TO_PROBE = tests/value_to_tests.fth
 # the echoed PASS/FAIL literals nor the echoed error phrase can false-green.
 IN_OUT_PROBE = tests/in_out_tests.fth
 
+# --- UD. + ENVIRONMENT? wordset-presence probe (Story 23.4) ---
+# Self-printing PASS/FAIL probe: UD. prints an unsigned double with no sign-flip
+# (4294967295. UD. -> 4294967295, vs D. -> -1) in DECIMAL and HEX; six new
+# ENVIRONMENT? rows answer honestly (EXCEPTION/EXCEPTION-EXT/SEARCH-ORDER true,
+# DOUBLE/DOUBLE-EXT/SEARCH-ORDER-EXT recognised-but-false), plus CORE/CORE-EXT/
+# NOPE regression. Verdicts are COLUMN-0-ANCHORED (^PASS: / ^FAIL: / ^udA= ...):
+# runtime output lands at column 0 while echoed source (." , : ) does not.
+UD_ENV_PROBE = tests/ud_env_tests.fth
+
 test-repl-value-to: $(TARGET)
 	@echo "Running VALUE/TO named-value probe under $(IZCPM)..."
 	@OUTPUT=$$({ sed 's/$$/\r/' $(VALUE_TO_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
@@ -207,6 +216,35 @@ test-repl-in-out: $(TARGET)
 		echo "FAIL: REPL in/out probe — expected two column-0 'error -4: stack underflow' lines"; \
 		FAILED=1; \
 	fi; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+
+test-repl-ud-env: $(TARGET)
+	@echo "Running UD. + ENVIRONMENT? probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(UD_ENV_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	FAILED=0; \
+	if echo "$$OUTPUT" | grep -qE '^FAIL: env-'; then \
+		echo "FAIL: REPL ud/env probe — a runtime '^FAIL: env-*' verdict was printed"; \
+		FAILED=1; \
+	fi; \
+	for pat in 'env-excep' 'env-excep-x' 'env-srch' 'env-dbl' 'env-dbl-x' 'env-srch-x' 'env-core' 'env-core-x' 'env-miss'; do \
+		if echo "$$OUTPUT" | grep -qE "^PASS: $$pat$$"; then \
+			echo "PASS: REPL ud/env probe — $$pat"; \
+		else \
+			echo "FAIL: REPL ud/env probe — expected '^PASS: $$pat' at column 0 in output"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	for line in 'udA=0 ' 'udB=4294967295 ' 'udC=100000 ' 'udD=-1 ' 'udE=1234ABCD '; do \
+		if echo "$$OUTPUT" | grep -qE "^$$line"; then \
+			echo "PASS: REPL ud/env probe — $$line"; \
+		else \
+			echo "FAIL: REPL ud/env probe — expected column-0 line '$$line'"; \
+			FAILED=1; \
+		fi; \
+	done; \
 	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
@@ -1460,7 +1498,7 @@ test: $(SRCS) | $(BUILDDIR)
 # Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
 # prerequisites so a bare `make test-repl` exercises them — they are otherwise
 # green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out $(TARGET)
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \
