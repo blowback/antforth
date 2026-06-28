@@ -33,6 +33,11 @@ IZCPM_DISKS = --disk-a disk/a --disk-b disk/b
 SRCDIR   = src
 BUILDDIR = build
 DISKDIR  = disk
+# Order-only directory sentinel. Build rules depend on this stamp (not on the
+# `build` directory itself) so the directory's make-target name does not collide
+# with a phony `build` alias — a `build:` target depending on $(TARGET) would
+# otherwise be circular ($(TARGET) order-only-depends on the build dir).
+BUILDDIR_STAMP = $(BUILDDIR)/.dirstamp
 
 TARGET   = $(BUILDDIR)/antforth.com
 TESTKEY  = $(BUILDDIR)/test_key.com
@@ -49,11 +54,17 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
 asm: $(TARGET)
+
+# `build` alias for $(TARGET). Without this, `make build` matched the build/
+# directory and silently did nothing ("up to date"), so a `wc -c build/antforth.com`
+# after it could read a stale artifact — a hazard for the B.3 / Lesson 13.5-F
+# binary-handoff discipline. Now `make build` actually (re)builds.
+build: $(TARGET)
 
 # --- Firmware BDOS register-preservation reproducer (Story 11.5.1.2) ---
 # Independent of antforth — does not depend on src/*.asm.
@@ -62,7 +73,7 @@ BDOS_PROBE_COM = $(BUILDDIR)/bdos_probe.com
 
 firmware-repro: $(BDOS_PROBE_COM)
 
-$(BDOS_PROBE_COM): $(BDOS_PROBE_SRC) | $(BUILDDIR)
+$(BDOS_PROBE_COM): $(BDOS_PROBE_SRC) | $(BUILDDIR_STAMP)
 	cd tools/bdos_probe && $(ASM) $(ASMFLAGS) bdos_probe.asm --raw=../../$(BDOS_PROBE_COM)
 
 firmware-repro-test: $(BDOS_PROBE_COM)
@@ -78,7 +89,7 @@ MMU_PROBE_COM = $(BUILDDIR)/mmuprobe.com
 
 mmu-probe: $(MMU_PROBE_COM)
 
-$(MMU_PROBE_COM): $(MMU_PROBE_SRC) | $(BUILDDIR)
+$(MMU_PROBE_COM): $(MMU_PROBE_SRC) | $(BUILDDIR_STAMP)
 	cd tools/mmu_probe && $(ASM) $(ASMFLAGS) mmu_probe.asm --raw=../../$(MMU_PROBE_COM)
 
 mmu-probe-emu: $(MMU_PROBE_COM)
@@ -91,7 +102,7 @@ MBB_PROBE_COM = $(BUILDDIR)/mbbprobe.com
 
 mbb-probe: $(MBB_PROBE_COM)
 
-$(MBB_PROBE_COM): $(MBB_PROBE_SRC) | $(BUILDDIR)
+$(MBB_PROBE_COM): $(MBB_PROBE_SRC) | $(BUILDDIR_STAMP)
 	cd tools/mbb_probe && $(ASM) $(ASMFLAGS) mbb_probe.asm --raw=../../$(MBB_PROBE_COM)
 
 mbb-probe-emu: $(MBB_PROBE_COM)
@@ -300,6 +311,16 @@ test-repl-banking-23-9: $(TARGET)
 		FAILED=1; \
 	else \
 		echo "PASS: coverage-H — the same near-top \`;\` is a strict no-op on bank 0 (runtime witness H-DONE=7)"; \
+	fi; \
+	SPAN_I=$$(echo "$$OUTPUT" | awk '/---I-start---/{p=1;next} /---I-end---/{p=0} p') && \
+	if echo "$$SPAN_I" | grep -q 'dictionary overflow'; then \
+		echo "FAIL: coverage-I — exact-\$$C000 boundary write wrongly raised -8 (guard off-by-one, over-rejecting the legal one-past-end)"; \
+		FAILED=1; \
+	elif ! echo "$$SPAN_I" | grep -q 'I-OK=-1'; then \
+		echo "FAIL: coverage-I — missing runtime witness I-OK=-1 (HERE != \$$C000 after the accepted boundary close)"; \
+		FAILED=1; \
+	else \
+		echo "PASS: coverage-I — a write whose one-past-end is exactly \$$C000 is accepted (AC3; runtime witness I-OK=-1)"; \
 	fi; \
 	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
@@ -1644,15 +1665,16 @@ test-straddle-regression:
 	else \
 		echo "FAIL: straddle-guard-config — expected m1 + e273 + survived without m2, got:$$ROW_GUARD"; exit 1; fi
 
-$(TARGET): $(SRCS) | $(BUILDDIR)
+$(TARGET): $(SRCS) | $(BUILDDIR_STAMP)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) antforth.asm --raw=../$(TARGET)
 
-$(BUILDDIR):
+$(BUILDDIR_STAMP):
 	mkdir -p $(BUILDDIR)
+	touch $@
 
 test_key: $(TESTKEY)
 
-$(TESTKEY): $(SRCS) | $(BUILDDIR)
+$(TESTKEY): $(SRCS) | $(BUILDDIR_STAMP)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) test_key.asm --raw=../$(TESTKEY)
 
 disk: $(TARGET) $(TESTKEY)
@@ -1661,7 +1683,7 @@ disk: $(TARGET) $(TESTKEY)
 	cpmcp -f ibm-3740 $(DISKIMG) $(TARGET) 0:antforth.com
 	cpmcp -f ibm-3740 $(DISKIMG) $(TESTKEY) 0:test_key.com
 
-test: $(SRCS) | $(BUILDDIR)
+test: $(SRCS) | $(BUILDDIR_STAMP)
 	@echo "Running regression tests..."
 	@cd $(SRCDIR) && $(ASM) $(ASMFLAGS) -DTEST_MODE antforth.asm --raw=../$(BUILDDIR)/antforth_test.com
 	@# EXPECTED output by test group (note: \r\n = literal CR LF):
@@ -10749,7 +10771,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 # a separate binary $(FILESANITY) that has the (FILE-IO-SANITY) word
 # present and a regular REPL — usable both under iz-cpm CI here and on
 # real MicroBeast hardware (AC #17).
-$(FILESANITY): $(SRCS) | $(BUILDDIR)
+$(FILESANITY): $(SRCS) | $(BUILDDIR_STAMP)
 	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) -DFILE_SANITY antforth.asm --raw=../$(FILESANITY)
 
 # `make test-file-sanity` — runs the harness end-to-end under iz-cpm

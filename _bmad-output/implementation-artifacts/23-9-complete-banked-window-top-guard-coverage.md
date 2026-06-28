@@ -266,15 +266,27 @@ first char at HERE+3 (contiguous, no gap); the alignment pad can never land ≥`
 overflow path is discarded by THROW's SP reset (`LD SP,(sp_base)` on the uncaught path
 `src/exception.asm:569`, SP-from-frame on the caught path). No HIGH/MEDIUM defects.
 
-LOW findings (recorded, not blocking; deferred unless picked up later):
-- **L1 (test-hardening):** AC3 exact-`$C000`-accept is not *directly* probed for the
-  five new paths — accept case G is far below `$C000`, H is bank-0. Relies on the
-  shared 23.6 brink test (cases E/F). Optional: add a new-path exact-boundary accept.
-- **L2 (process):** `make build` is a silent no-op (no `build:` target; matches the
-  `build/` dir), so the Pre-edit-baseline `wc -c` recipe can read a stale artifact —
-  hit live during review. Optional: add `.PHONY: build` aliasing `$(TARGET)`.
-- **L3 (informational):** per-char `CALL check_banked_headroom` runs even on bank 0
-  (early `RET Z`). Negligible at compile time; accepted as-is.
+LOW findings — disposition (picked up 2026-06-28):
+- **L1 (test-hardening) — FIXED.** Added probe **case I** to
+  `tests/banking_tests_23_9.fth` + a Makefile assertion: a `;` whose one-past-end is
+  *exactly* `$C000` is accepted (HERE ends at `$C000`, no `-8`; runtime witness
+  `I-OK=-1`). Gives AC3 a direct new-path witness and guards against a future
+  guard off-by-one (`>=` vs `>`) over-rejecting the legal boundary. Probe now 9/9.
+- **L2 (process) — FIXED.** `make build` was a silent no-op: `BUILDDIR = build`, so
+  `make build` matched the `build/` directory and did nothing, letting a follow-up
+  `wc -c` read a stale artifact (hit live during review). The naive `build: $(TARGET)`
+  alias is *circular* (the dir is an order-only prereq of `$(TARGET)`), so the fix
+  routes directory creation through an order-only sentinel `$(BUILDDIR_STAMP) =
+  $(BUILDDIR)/.dirstamp` (7 prereqs swapped); `build` is then a clean phony alias.
+  Verified: `make build` recompiles on source change, no circular warning, all build
+  paths (`make`/`all`/`asm`/`clean`/`firmware-repro`) green.
+- **L3 (informational) — WON'T-FIX (accepted).** Per-char `CALL check_banked_headroom`
+  runs even on bank 0 (early `RET Z`). Skipping it on bank 0 needs a duplicated
+  unguarded copy loop (~+30-40 B across the two string sites) to save a few
+  `CALL`/`RET` cycles at *compile time* — trading binary size (budgeted, tracked) for
+  unmeasured compile speed. Wrong trade for a size-constrained kernel; left as-is.
+
+These three are test/Makefile-only (0 kernel bytes; binary stays 29,179 B).
 
 ### File List
 

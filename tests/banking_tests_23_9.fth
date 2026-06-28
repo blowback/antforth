@@ -14,7 +14,10 @@
 \ Each now raises a clean uncaught -8 ("dictionary overflow") when it would
 \ place a byte at/past the slot-2 window top ($C000). G proves the guard does
 \ NOT over-reject a banked definition that fits; H proves it stays a strict
-\ no-op on bank 0 (fixed memory).
+\ no-op on bank 0 (fixed memory). I proves the exact boundary: a fixed-width
+\ write whose one-past-end is exactly $C000 is ACCEPTED (AC3 — 23.6 strictly->
+\ semantics), a NEW-path direct witness rather than leaning on 23.6's own
+\ `,`/`C,` boundary cases.
 \
 \ HARNESS NOTES (mirror banking_tests_23_7.fth — do NOT "simplify" to CATCH):
 \  * UNCAUGHT-throw form: the -8 is reported by the QUIT loop ("error -8:
@@ -103,6 +106,18 @@ _RS  0 BANK!  $C000 HERE - 300 - ALLOT
 : WH [ $C000 HERE - 1 - ALLOT ] ;
 ." H-DONE=" 3 4 + . CR
 ." ---H-end---" CR
+
+\ --- I (EXACT boundary accept, `;`): with HERE driven to $BFFE the closing
+\ `;` writes EXIT (2 B) at $BFFE..$BFFF — one-past-end is exactly $C000, which
+\ is the legal one-past-end ceiling (check_banked_headroom throws iff > $C000).
+\ So the close is ACCEPTED and HERE ends exactly at $C000. Runtime witness
+\ I-OK=-1 = (HERE = $C000); NO -8 in the span. Closes the AC3 gap for a NEW
+\ fixed-width path directly (not via 23.6's `,`/`C,` boundary cases).
+." ---I-start---" CR
+_RS  1 BANK!  $C000 HERE - 300 - ALLOT
+: WI [ $C000 HERE - 2 - ALLOT ] ;
+." I-OK=" HERE $C000 = . CR
+." ---I-end---" CR
 
 _RS 0 BANK!
 \ Computed liveness witness: `===42` only ever appears at runtime (`6 7 *`);
