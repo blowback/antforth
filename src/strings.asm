@@ -583,6 +583,11 @@ compile_string:
         ; Compile (S") xt at HERE
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        ; Banked window-top guard for the fixed framing bytes: (S") xt (2) +
+        ; count byte (1). Per-char body growth is guarded in the copy loop
+        ; below. No-op on bank 0; -8 BEFORE any byte if a bank is near $C000.
+        ; Primary set here (S"/." save IP to scratch, no EXX).
+        GUARD_BANKED_WRITE 3
         LD      (HL), LOW w_PAREN_S_QUOTE_cf
         INC     HL
         LD      (HL), HIGH w_PAREN_S_QUOTE_cf
@@ -657,6 +662,14 @@ compile_string:
         POP     HL
         CP      '"'
         JR      Z, .cs_done     ; closing quote found
+        ; Banked window-top guard: refuse a char that would land at/past
+        ; $C000 (no-op on bank 0). A holds the char and the guard clobbers
+        ; AF, so bracket it with PUSH/POP AF; the overflow JP to
+        ; dict_overflow_throw leaves the orphaned PUSH AF for THROW/ABORT's
+        ; SP reset to discard.
+        PUSH    AF
+        GUARD_BANKED_WRITE 1
+        POP     AF
         ; Copy character
         LD      (HL), A
         INC     HL
@@ -836,6 +849,7 @@ w_DOT_QUOTE_cf:
         ; Compile TYPE xt after the string
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        GUARD_BANKED_WRITE 2               ; -8 if the trailing TYPE xt crosses $C000 on a bank
         LD      (HL), LOW w_TYPE_cf
         INC     HL
         LD      (HL), HIGH w_TYPE_cf

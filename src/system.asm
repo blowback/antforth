@@ -278,6 +278,10 @@ w_ABORT_QUOTE_cf:
         ; First compile the (ABORT") xt
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        ; Banked window-top guard for the fixed framing bytes: (ABORT") xt (2)
+        ; + count byte (1). Per-char body growth is guarded in .aq_copy below.
+        ; No-op on bank 0; -8 BEFORE any byte. Primary set (IP saved to scratch).
+        GUARD_BANKED_WRITE 3
         LD      (HL), LOW w_PAREN_ABORT_QUOTE_cf
         INC     HL
         LD      (HL), HIGH w_PAREN_ABORT_QUOTE_cf
@@ -349,6 +353,13 @@ w_ABORT_QUOTE_cf:
         POP     HL
         CP      '"'
         JR      Z, .aq_done     ; closing quote found
+        ; Banked window-top guard: refuse a char at/past $C000 (no-op on
+        ; bank 0). A holds the char; the guard clobbers AF, so bracket with
+        ; PUSH/POP AF. Overflow JPs to dict_overflow_throw; the orphaned
+        ; PUSH AF is discarded by THROW/ABORT's SP reset.
+        PUSH    AF
+        GUARD_BANKED_WRITE 1
+        POP     AF
         ; Copy character
         LD      (HL), A
         INC     HL

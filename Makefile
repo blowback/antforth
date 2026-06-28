@@ -49,7 +49,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -162,6 +162,7 @@ IN_OUT_PROBE = tests/in_out_tests.fth
 UD_ENV_PROBE = tests/ud_env_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
 BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
+BANKING_23_9_PROBE = tests/banking_tests_23_9.fth
 
 # Story 23.6 — banked dictionary window-top overflow guard regression probe.
 # Drives a bank's HERE to the $C000 brink under iz-cpm-banking and asserts an
@@ -175,8 +176,8 @@ test-repl-banking-23-6: $(TARGET)
 	@echo "Running Story 23.6 banked dictionary-overflow probe under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_6_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	FAILED=0; \
-	if ! echo "$$OUTPUT" | grep -q '===23-6-PROBE-ALIVE==='; then \
-		echo "FAIL: dict-overflow probe — interpreter did not survive to the ALIVE witness"; \
+	if ! echo "$$OUTPUT" | grep -q '===23-6-PROBE-ALIVE===42'; then \
+		echo "FAIL: dict-overflow probe — interpreter did not EXECUTE to the ALIVE witness (computed ===42 absent; echo-only sentinel does not count)"; \
 		FAILED=1; \
 	fi; \
 	for c in A B C D G; do \
@@ -247,6 +248,59 @@ test-repl-banking-23-7: $(TARGET)
 			echo "PASS: marker-overflow-$$c — accepted, MARKER built with one-past-end <= \$$C000 (runtime witness $$c-OK=-1)"; \
 		fi; \
 	done; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+
+# Story 23.9 (provisional) — complete banked window-top guard coverage. Covers
+# the five paths 23.6/23.7 left writing to HERE through their own hand-rolled
+# stores: `;` (EXIT), LITERAL, DOES>, S", ." and ABORT". Each must now raise an
+# uncaught -8 ("dictionary overflow") when it would cross $C000 in a bank
+# (cases A-F); G proves a banked def that fits is NOT over-rejected; H proves a
+# strict bank-0 no-op. Per-case verdict is awk-extracted from each
+# ---X-start---..---X-end--- span. The ALIVE gate and the accept witnesses match
+# RUNTIME-COMPUTED tokens (`===42` from `6 7 *`, `G-OK=-1`/`H-DONE=7`), never
+# bare sentinels: iz-cpm echoes piped stdin, so an echo-only gate would pass on
+# echo alone (the echo-only-gate trap). Single-feature target like
+# test-repl-banking-23-7; NOT folded into plain `test-repl`.
+test-repl-banking-23-9: $(TARGET)
+	@echo "Running Story 23.9 banked window-top guard COVERAGE probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_9_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	FAILED=0; \
+	if ! echo "$$OUTPUT" | grep -q '===23-9-PROBE-ALIVE===42'; then \
+		echo "FAIL: coverage probe — interpreter did not EXECUTE to the ALIVE witness (computed ===42 absent; echo-only sentinel does not count)"; \
+		FAILED=1; \
+	fi; \
+	for c in A B C D E F; do \
+		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
+		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
+			echo "PASS: coverage-$$c — banked over-\$$C000 growth raised -8 (dictionary overflow)"; \
+		else \
+			echo "FAIL: coverage-$$c — expected an uncaught -8 between ---$$c-start--- and ---$$c-end---"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	SPAN_G=$$(echo "$$OUTPUT" | awk '/---G-start---/{p=1;next} /---G-end---/{p=0} p') && \
+	if echo "$$SPAN_G" | grep -q 'dictionary overflow'; then \
+		echo "FAIL: coverage-G — a banked definition that fits wrongly raised -8 (guard over-rejecting)"; \
+		FAILED=1; \
+	elif ! echo "$$SPAN_G" | grep -q 'G-OK=-1'; then \
+		echo "FAIL: coverage-G — missing runtime witness G-OK=-1 (accepted definition never completed)"; \
+		FAILED=1; \
+	else \
+		echo "PASS: coverage-G — a banked definition that fits is accepted (runtime witness G-OK=-1)"; \
+	fi; \
+	SPAN_H=$$(echo "$$OUTPUT" | awk '/---H-start---/{p=1;next} /---H-end---/{p=0} p') && \
+	if echo "$$SPAN_H" | grep -q 'dictionary overflow'; then \
+		echo "FAIL: coverage-H — bank-0 guard wrongly raised -8 (must be a strict no-op)"; \
+		FAILED=1; \
+	elif ! echo "$$SPAN_H" | grep -q 'H-DONE=7'; then \
+		echo "FAIL: coverage-H — missing runtime witness H-DONE=7 (bank-0 case never executed)"; \
+		FAILED=1; \
+	else \
+		echo "PASS: coverage-H — the same near-top \`;\` is a strict no-op on bank 0 (runtime witness H-DONE=7)"; \
+	fi; \
 	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
@@ -371,14 +425,23 @@ test-repl-asm: $(TARGET)
 # fixtures (test-repl-banking-isolated-*). The handful of legitimate `N BANK!`
 # stayers — negative/guard probes that ABORT/CATCH before any switch, and the
 # iron-spike body invoked only in a subprocess — carry a trailing
-# `\ LINT-ALLOW-BANK:` marker. Comment lines (`\ ...`) and verdict strings
-# (`." ..."`) are skipped structurally; everything else must be allow-listed or
-# moved. Grep, not a framework (feedback_ceremony_diminishing_returns).
+# `\ LINT-ALLOW-BANK:` marker. Matching: strip `." ..."` string bodies first
+# (so a BANK! inside verdict text, or code after a string on the same line,
+# is handled — a leading-`."` line-skip used to both miss the latter and could
+# be defeated by `." x" 5 BANK!`); then flag ANY `BANK!` that is not `0 BANK!`,
+# a `\ ...` comment, or allow-listed. Flagging "not 0" rather than "a decimal
+# literal" is deliberate: it also catches a foreign hex (`$A BANK!`), a
+# VALUE/CONSTANT/VARIABLE index (`MYBANK BANK!`), and an arithmetic index
+# (`2 1 + BANK!`) — all of which the old `[1-9][0-9]*`-anchored grep silently
+# let through. Grep is line-based: `5 BANK! 0 BANK!` on ONE line would still be
+# excluded by the 0-rule — keep one BANK! per line. Grep, not a framework
+# (feedback_ceremony_diminishing_returns).
 lint-banking-probes:
-	@viol=$$(grep -nE '[1-9][0-9]*[[:space:]]+BANK!' tests/banking_tests.fth \
+	@viol=$$(sed 's/\."[^"]*"//g' tests/banking_tests.fth \
+		| grep -nE 'BANK!' \
 		| grep -vE '^[0-9]+:[[:space:]]*\\' \
-		| grep -vE '^[0-9]+:[[:space:]]*\."' \
-		| grep -vE 'LINT-ALLOW-BANK' || true); \
+		| grep -vE 'LINT-ALLOW-BANK' \
+		| grep -vE '(:|[[:space:]])0[[:space:]]+BANK!' || true); \
 	if [ -n "$$viol" ]; then \
 		echo "FAIL: lint-banking-probes — foreign (non-zero) BANK! in main in-suite tests/banking_tests.fth."; \
 		echo "  Move it to an isolated fixture (test-repl-banking-isolated-*), or if it ABORTs/CATCHes before any switch add a trailing '\\ LINT-ALLOW-BANK:' marker:"; \

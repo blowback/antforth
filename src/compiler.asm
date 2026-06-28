@@ -731,6 +731,7 @@ w_SEMICOLON_cf:
         ; --- 3.1: Compile EXIT_CODE into the definition ---
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
+        GUARD_BANKED_WRITE 2               ; -8 if a banked colon's EXIT crosses $C000
         LD      (HL), LOW EXIT_CODE
         INC     HL
         LD      (HL), HIGH EXIT_CODE
@@ -834,6 +835,7 @@ w_LITERAL_cf:
         ; Compile LIT xt at HERE
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
+        GUARD_BANKED_WRITE 4               ; -8 if LIT xt + value cell crosses $C000 on a bank
         LD      (HL), LOW w_LIT_cf
         INC     HL
         LD      (HL), HIGH w_LIT_cf
@@ -1263,6 +1265,7 @@ w_DOES_cf:
         ; Compile (DOES>) into current definition
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
+        GUARD_BANKED_WRITE 2               ; -8 if (DOES>) xt crosses $C000 on a bank
         LD      (HL), LOW w_PAREN_DOES_cf
         INC     HL
         LD      (HL), HIGH w_PAREN_DOES_cf

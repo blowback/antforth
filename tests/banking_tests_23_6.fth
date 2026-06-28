@@ -91,5 +91,9 @@ $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
 $7000 ALLOT
 ." ---G-end---" CR
 
-\ Final witness: a live interpreter after all seven cases.
-." ===23-6-PROBE-ALIVE===" CR
+\ Final witness: a live interpreter after all seven cases. The trailing `6 7 *`
+\ is computed AT RUNTIME so the gate token `===42` only ever appears in genuine
+\ output — the echoed source line carries `===" 6 7 * . CR` but never the
+\ contiguous `===42`. A silently-wedged interpreter would still echo this line
+\ but cannot fake the product (matches banking_tests_23_7.fth's ALIVE gate).
+." ===23-6-PROBE-ALIVE===" 6 7 * . CR

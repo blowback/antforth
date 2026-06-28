@@ -1,12 +1,16 @@
 \ ============================================================================
 \ Story 23.7 — banked MARKER window-top overflow guard regression probe.
 \ ============================================================================
-\ MARKER is the one banked-dictionary-growth path Story 23.6 left unguarded: it
-\ emits a fixed ~372-byte body (saved bucket array + bank-table prefix + stub
-\ tail) AFTER build_header commits the header. Story 23.7 folds MARKER's full
-\ footprint into build_header's single pre-commit guard via bh_code_reserve, so
-\ a banked MARKER that would cross $C000 raises a clean -8 ("dictionary
-\ overflow") BEFORE anything is committed (all-or-nothing).
+\ MARKER is the banked-dictionary-growth path that needs special handling
+\ beyond Story 23.6's per-write guards: it emits a fixed ~372-byte body (saved
+\ bucket array + bank-table prefix + stub tail) AFTER build_header commits the
+\ header, so a per-byte guard could not unwind a partial body. Story 23.7 folds
+\ MARKER's full footprint into build_header's single pre-commit guard via
+\ bh_code_reserve, so a banked MARKER that would cross $C000 raises a clean -8
+\ ("dictionary overflow") BEFORE anything is committed (all-or-nothing).
+\ (NB: 23.6/23.7 did NOT cover every growth path — `;`, LITERAL, DOES>, S",
+\ ." and ABORT" were also writing to HERE unguarded; those are closed by the
+\ Story 23.9 coverage probe, tests/banking_tests_23_9.fth.)
 \
 \ Asserts: (A) a banked MARKER one byte over the boundary throws -8;
 \ (B) the exact acceptance boundary (guard prospective == $C000) succeeds;
