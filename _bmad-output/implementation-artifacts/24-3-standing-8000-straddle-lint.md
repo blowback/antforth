@@ -1,6 +1,29 @@
 # Story 24.3: Standing $8000-straddle guard (test-infra interlude)
 
-Status: ready-for-dev
+Status: done
+
+> **As-built correction (2026-06-29).** Implementation falsified two of the three
+> originally-specced ACs. The dictionary does **not** live below `$8000` — it
+> grows *through* the slot-2 window (kernel_end `0x73E7`; in-suite HERE reaches
+> `0xB1D8`; ceiling `$D400`). So:
+> - **AC3 (HERE-headroom) — DROPPED.** There is no "approaching `$8000`" line to
+>   assert; HERE is *supposed* to be above the window base.
+> - **AC1 (static colon-body bank-op lint) — DROPPED.** The straddle discriminator
+>   is each probe's *runtime compile address*, which a source grep cannot see. A
+>   token lint would false-flag the entire safe colon-wrapped probe corpus
+>   (`_probe-6/8/a/b…`), which works because those sit low in memory.
+> - **AC2 (fail-loud timeout) — SHIPPED, and is the standing guard.** Every
+>   migrated REPL-probe emulator run is wrapped in `timeout $(PROBE_TIMEOUT)` (30 s)
+>   with exit-124 detection, turning any straddle wedge into a bounded loud FAIL
+>   instead of an infinite CI hang. Catches *every* straddle hang regardless of
+>   position or token — a stronger guard than the static lint would have been.
+> The existing foreign-`BANK!` `lint-banking-probes` is retained unchanged.
+> Decision: project lead chose "timeout is the guard — close it" (2026-06-29).
+> Original (superseded) AC text retained below for the record.
+
+---
+
+Status (original): ready-for-dev
 
 > Post-close test-infra interlude under Epic 24 (mirrors the 23.7/23.8 pattern:
 > epic stays `done`, follow-ups land under it). Gates **Epic 25**, not the Epic-24
