@@ -8,6 +8,13 @@
 w_BYE:
         DEFCODE "BYE", 0
 w_BYE_cf:
+        ; Release the 64 Hz tick slot before exit. COLD auto-installs tick_isr
+        ; into the single user-interrupt vector; leaving it pointing into the
+        ; freed TPA would let the firmware CALL into whatever the next program
+        ; loads there. (Ctrl-C / BDOS warm-boot bypasses BYE and is outside our
+        ; control — it relies on the BIOS clearing the slot at warm-boot.)
+        LD      HL, 0                   ; 0 = disable the user-interrupt slot
+        CALL    MBB_SET_USR_INT
         LD      C, P_TERMCPM
         JP      BDOS_ENTRY
         ; No NEXT — BYE never returns

@@ -56,6 +56,10 @@ SLOT2_WINDOW_BASE EQU 0x8000
 ; which preserve the inner-interpreter registers (BC=TOS, DE=IP, HL).
 MBB_GET_PAGE    EQU     0xFDDC          ; C = logical page 0-2 -> A = physical (0xFF err)
 MBB_SET_PAGE    EQU     0xFDDF          ; A = logical page 0-2, E = physical page
+; User-interrupt install vector: HL = ISR address (0 disables). Fires the
+; routine 64 Hz — NOT the "60th of a second" the firmware header wrongly claims
+; (see src/timer.asm). The slot holds a single user routine at a time.
+MBB_SET_USR_INT EQU     0xFDC7          ; HL = ISR addr (0 = disable); 64 Hz
 
 ; === BDOS Function Numbers ===
 P_TERMCPM       EQU     0               ; BDOS function 0: terminate program

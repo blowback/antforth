@@ -880,6 +880,9 @@ antforth also defines words that are useful but outside the Core word sets:
 | `IN` | `io.asm:199` | Non-standard (antforth extension — Story 23.3; `( port -- byte )` raw Z80 port read via `IN A,(C)` with `BC = port` (B = A8..A15); result zero-extended to a cell (high byte provably 0). Distinct from the assembler's `IN,`. Underflow → -4) |
 | `OUT` | `io.asm:213` | Non-standard (antforth extension — Story 23.3; `( x port -- )` raw Z80 port write via `OUT (C),A` with `BC = port`; datum below address like `!`, both cells consumed. Distinct from the assembler's `OUT,`. Underflow → -4) |
 | `UD.` | `formatting.asm:249` | Non-standard (Double-Number common-practice extension — Story 23.4; `( ud -- )` print an unsigned double in current BASE with a trailing space, no sign. The `D.` thread minus `DABS`/`SIGN`. NOT a DPANS94 word — the epic's §8.6.1.1230 citation is `DNEGATE`'s number, not `UD.`) |
+| `TICKS` | `timer.asm` | Non-standard (antforth extension — Story 24.1; `( -- d )` read the 64 Hz monotonic system tick counter as a double, high cell on TOS per §3.1.4.1. 32-bit counter maintained by a fixed-memory ISR installed at COLD via `MBB_SET_USR_INT`; the 4-byte read is lockless (read high→low→re-read high, retry on mismatch) so it never disturbs the caller's interrupt state. NOT a DPANS94 word) |
+| `TIMER-ON` | `timer.asm` | Non-standard (antforth extension — Story 24.1; `( -- )` install the kernel 64 Hz tick ISR into the single MicroBeast user-interrupt slot (`MBB_SET_USR_INT`, HL = ISR addr). COLD auto-installs it; `TIMER-ON` restores it after `TIMER-OFF`) |
+| `TIMER-OFF` | `timer.asm` | Non-standard (antforth extension — Story 24.1; `( -- )` release the user-interrupt slot (`MBB_SET_USR_INT` with address 0) so a program can install its own ISR; the tick counter stops advancing until `TIMER-ON`) |
 
 ---
 

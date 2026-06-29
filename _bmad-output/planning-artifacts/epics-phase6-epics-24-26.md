@@ -353,6 +353,19 @@ So that a runaway task is recoverable rather than requiring a reset.
 **And** documentation describes the cooperative starvation model and the break path
 **And** probes demonstrate the break path for a yielding loop and the documented stall for a non-yielding loop; S9 confirms the keyboard break on hardware; binary delta recorded
 
+> **Follow-up folded in from Story 24.1 (timer foundation), 2026-06-29:** the
+> MicroBeast BIOS PRESERVES the user-interrupt slot across warm-boot, and
+> antforth reads the REPL line via BDOS fn 10 (`C_READSTR`), so **Ctrl-C
+> warm-boots straight to CCP, bypassing `BYE`** and leaving the COLD-installed
+> 64 Hz tick ISR live in the freed TPA (a real crash hazard if a larger program
+> loads afterwards). `BYE` already releases the slot (`MBB_SET_USR_INT` HL=0,
+> src/system.asm); the Ctrl-C path cannot be cleaned from Forth without taking
+> over console input. When this story switches input to BDOS fn 6 / BIOS CONIN
+> for the break key, **also route the Ctrl-C/break-to-CCP exit through the same
+> slot-release as `BYE`** (or make BYE the only CCP-exit). Acceptance: after a
+> keyboard-break exit, loading a different program does not crash from a stale
+> tick ISR. (Accepted+documented in 24.1 per operator; not a 24.1 blocker.)
+
 ### Story 25.8: Headline demo — background traffic light + live REPL
 
 As a tutorial reader,

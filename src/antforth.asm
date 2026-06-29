@@ -258,6 +258,18 @@ cold_start:
         ;     cl_tail_parse below for the full source comment.
         CALL    cl_tail_parse
 
+        ; 8j. Phase-6 timer foundation — zero the 32-bit tick_count and install
+        ;     the kernel 64 Hz ISR via MBB_SET_USR_INT so TICKS is live on every
+        ;     boot (FR16). Straight asm — no Forth stack marshalling at COLD.
+        ;     Registers are scratch here (DE is loaded with the entry thread just
+        ;     before NEXT below), and MBB_SET_USR_INT preserves IX/IY (the
+        ;     TRAFFIC.FTH precedent), so no save/restore is needed.
+        LD      HL, 0
+        LD      (tick_count), HL
+        LD      (tick_count+2), HL
+        LD      HL, tick_isr
+        CALL    MBB_SET_USR_INT
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 
@@ -722,6 +734,7 @@ str_empty_q_len  EQU 6
         INCLUDE "system.asm"
         INCLUDE "exception.asm"
         INCLUDE "banking.asm"
+        INCLUDE "timer.asm"
         INCLUDE "file_access.asm"
 
 ; === Forth bootstrap definitions (depend on everything above) ===

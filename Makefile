@@ -54,7 +54,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -163,6 +163,14 @@ VALUE_TO_PROBE = tests/value_to_tests.fth
 # the echoed PASS/FAIL literals nor the echoed error phrase can false-green.
 IN_OUT_PROBE = tests/in_out_tests.fth
 
+# --- 64 Hz tick interrupt + monotonic TICKS probe (Story 24.1) ---
+# Self-printing PASS/FAIL probe. iz-cpm-banking does NOT model the 0xFDC7 user
+# interrupt, so this asserts STRUCTURE only (TICKS is a clean double, high word
+# zero at boot, monotonic non-decreasing, TIMER-OFF/TIMER-ON do not wedge the
+# interpreter); the wall-clock rate (~64/s) and the low->high carry rollover are
+# S9 hardware-smoke. Verdicts COLUMN-0-ANCHORED (^PASS: / ^FAIL:).
+TIMER_PROBE = tests/timer_tests.fth
+
 # --- UD. + ENVIRONMENT? wordset-presence probe (Story 23.4) ---
 # Self-printing PASS/FAIL probe: UD. prints an unsigned double with no sign-flip
 # (4294967295. UD. -> 4294967295, vs D. -> -1) in DECIMAL and HEX; six new
@@ -207,6 +215,30 @@ test-repl-banking-23-6: $(TARGET)
 			FAILED=1; \
 		else \
 			echo "PASS: dict-overflow-$$c — accepted without -8 (boundary/bank-0 no-op)"; \
+		fi; \
+	done; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
+		exit 1; \
+	fi
+
+# Story 24.1 — 64 Hz tick interrupt + monotonic TICKS structural probe.
+# Asserts the five column-0 verdicts the emulator can prove (advancement/rate/
+# carry are HW-smoke; see TIMER_PROBE comment). Mirrors test-repl-in-out.
+test-repl-timer: $(TARGET)
+	@echo "Running 64 Hz TICKS / TIMER-ON / TIMER-OFF probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(TIMER_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	FAILED=0; \
+	if echo "$$OUTPUT" | grep -aqE '^FAIL:'; then \
+		echo "FAIL: REPL timer probe — a runtime '^FAIL:' verdict was printed"; \
+		FAILED=1; \
+	fi; \
+	for pat in 'PASS: timer-words-resolve' 'PASS: ticks-clean-double' 'PASS: ticks-high-zero' 'PASS: ticks-monotonic' 'PASS: timer-onoff-alive'; do \
+		if echo "$$OUTPUT" | grep -aqE "^$$pat"; then \
+			echo "PASS: REPL timer probe — $$pat"; \
+		else \
+			echo "FAIL: REPL timer probe — expected '$$pat' at column 0 in output"; \
+			FAILED=1; \
 		fi; \
 	done; \
 	if [ $$FAILED -ne 0 ]; then \

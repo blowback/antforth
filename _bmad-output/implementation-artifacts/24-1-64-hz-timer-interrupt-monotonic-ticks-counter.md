@@ -1,6 +1,6 @@
 # Story 24.1: 64 Hz timer interrupt + monotonic TICKS counter
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -123,28 +123,30 @@ depends on.
 
 ### Pre-edit baseline (capture at dev-pass start, before any source edits)
 
-- [ ] Capture current binary size: `wc -c build/antforth.com` → record in Dev
+- [x] Capture current binary size: `wc -c build/antforth.com` → record in Dev
       Notes. Do NOT inherit a prior story's number — re-`wc -c` from the actual
       current build artifact (B.3 / Lesson 13.5-F). The last committed Phase-5
       figure was ~28859 B (Story 23.3 close), but Epic 23.6–23.9 follow-ups
-      landed after — re-measure.
-- [ ] Capture current `make test-repl` baseline pass count and
-      `test-repl-banking` count — both green pre-edit.
+      landed after — re-measure. **Measured: 29179 B.**
+- [x] Capture current `make test-repl` baseline pass count and
+      `test-repl-banking` count — both green pre-edit. **test-repl 1005 PASS /
+      0 FAIL; test-repl-banking 57 PASS / 0 FAIL.**
 
 ### Story tasks
 
-- [ ] Task 1 — Add the BIOS constant + new `src/timer.asm` module (AC: 1)
-  - [ ] Add `MBB_SET_USR_INT EQU 0xFDC7` to `src/constants.asm` beside
+- [x] Task 1 — Add the BIOS constant + new `src/timer.asm` module (AC: 1)
+  - [x] Add `MBB_SET_USR_INT EQU 0xFDC7` to `src/constants.asm` beside
         `MBB_GET_PAGE`/`MBB_SET_PAGE` (:57-58), with a why-note (HL=routine,
         0=disable, 64 Hz not 60).
-  - [ ] Create `src/timer.asm`; add `INCLUDE "timer.asm"` to `src/antforth.asm`
+  - [x] Create `src/timer.asm`; add `INCLUDE "timer.asm"` to `src/antforth.asm`
         AFTER `banking.asm` (:724) — the wordlist re-scan at :778 picks up the
         new DEFCODE entries automatically (no hash-table edit needed).
-  - [ ] Define global counter cells: `tick_count: DW 0` (low) then `DW 0`
+        **Confirmed `TICKS`/`TIMER-ON`/`TIMER-OFF` appear in `WORDS`.**
+  - [x] Define global counter cells: `tick_count: DW 0` (low) then `DW 0`
         (high) — fixed memory, low-cell-first (finding (5)/(6)).
 
-- [ ] Task 2 — Author the 64 Hz ISR (AC: 1, 2)
-  - [ ] `tick_isr:` — assumes firmware-EXX context (HL shadow free, A free).
+- [x] Task 2 — Author the 64 Hz ISR (AC: 1, 2)
+  - [x] `tick_isr:` — assumes firmware-EXX context (HL shadow free, A free).
         Body (finding (3)):
         ```
         tick_isr:
@@ -159,63 +161,83 @@ depends on.
             LD   (tick_count+2),HL
             RET
         ```
-  - [ ] Comment the `RET`-not-`NEXT` contract and the "INC sets no flags" carry
+  - [x] Comment the `RET`-not-`NEXT` contract and the "INC sets no flags" carry
         test (the dev trap). No provenance comment (CCD-3 / source-comment rule).
 
-- [ ] Task 3 — `TICKS ( -- d )` reader (AC: 3)
-  - [ ] `DEFCODE "TICKS", 0`; body: `DI`; read low cell → push; read high cell
-        → BC (new TOS); `EI`; `NEXT`. Use the `2@` push shape (src/double.asm:
-        31-48): `PUSH` low cell, then `BC` = high cell. Guard the 4-byte read
-        with DI/EI (finding (4)). `; antforth extension — 64 Hz system tick,
-        double (high on TOS)`.
-  - [ ] (No `check_underflow` — TICKS only pushes.)
+- [x] Task 3 — `TICKS ( -- d )` reader (AC: 3)
+  - [x] `DEFCODE "TICKS", 0`; body: `DI`; read low cell → push; read high cell
+        → BC (new TOS); `EI`; `NEXT`. Guard the 4-byte read with DI/EI
+        (finding (4)). `; antforth extension — 64 Hz system tick, double (high
+        on TOS)`. **DEVIATION FROM FINDING (6): the `2@` push shape is WRONG for
+        `TICKS`.** `2@ ( a -- d )` consumes its address (in BC=TOS), so it
+        reuses BC; `TICKS ( -- d )` consumes nothing and PRODUCES two cells, so
+        it must FIRST `PUSH BC` to displace the current TOS (the `LIT` / `( -- x
+        )`-producer convention, `inner_interpreter.asm:270`). Without the
+        `PUSH BC`, `TICKS DEPTH .` printed `1` not `2` and the prior TOS was
+        clobbered. Fixed; `123 TICKS DROP DROP .` now correctly prints `123`.
+  - [x] (No `check_underflow` — TICKS only pushes. No `check_overflow` either,
+        matching the `2@`/double-producer precedent and the story spec.)
 
-- [ ] Task 4 — `TIMER-ON` / `TIMER-OFF` install/remove + COLD auto-install (AC: 4)
-  - [ ] `TIMER-ON ( -- )`: `PUSH DE` (save IP); `LD HL, tick_isr`; invoke
-        `MBB_SET_USR_INT` per its calling convention (HL=routine); `POP DE`;
-        `NEXT`. `TIMER-OFF ( -- )`: same but `LD HL,0` (disable).
-  - [ ] In COLD (`src/antforth.asm` cold_start), after the UserArea/bank init
-        block: zero `tick_count` (4 bytes) and install `tick_isr` via
-        `MBB_SET_USR_INT` (straight asm — no Forth stack marshalling at COLD).
-        Confirm the firmware accepts the install at boot (HW-smoke).
-  - [ ] `; antforth extension` why-notes on both words (CCD-3).
+- [x] Task 4 — `TIMER-ON` / `TIMER-OFF` install/remove + COLD auto-install (AC: 4)
+  - [x] `TIMER-ON ( -- )`: save IP + TOS; `LD HL, tick_isr`; invoke
+        `MBB_SET_USR_INT`; restore; `NEXT`. `TIMER-OFF ( -- )`: same but
+        `LD HL,0` (disable). **Note: `( -- )` words must also `PUSH BC`/`POP BC`
+        (TOS), not just `PUSH DE` (IP) as TRAFFIC's `(SET-USR-INT)` did —
+        TRAFFIC's word CONSUMED its addr arg in BC, so it didn't preserve it;
+        ours take no arg, so BC=TOS must survive the MBB clobber.**
+  - [x] In COLD (`src/antforth.asm` cold_start, step 8j after `cl_tail_parse`):
+        zero `tick_count` (4 bytes) and install `tick_isr` via `MBB_SET_USR_INT`
+        (straight asm — no Forth stack marshalling at COLD). Firmware-accepts-at-
+        boot is part of the deferred S9 HW-smoke.
+  - [x] `; antforth extension` why-notes on both words (CCD-3).
 
-- [ ] Task 5 — REPL-piped probe + Makefile target (AC: 5)
-  - [ ] Create `tests/timer_tests.fth` (self-printing PASS/FAIL). Cover:
-    - [ ] **Monotonic** — capture `TICKS` (2DUP to keep), busy-wait a short
-          loop, capture `TICKS` again, assert `new old D<` is false AND they
-          differ (advanced) → `PASS: ticks-monotonic`.
-    - [ ] **32-bit carry (deterministic, NOT 17 min of waiting)** — see Dev
-          Notes "Carry-probe technique": the probe seeds `tick_count` near a
-          low-word boundary via a tiny helper CODE/word path OR asserts the
-          carry logic by reading across a forced rollover. If no seed hook is
-          exposed, assert the structural invariant (high word non-decreasing)
-          and DEFER the true rollover assertion to the S9 HW-smoke (documented).
-    - [ ] **TICKS is a clean double** — `TICKS DROP DROP` leaves depth unchanged
-          net (pushes exactly 2 cells).
-  - [ ] Add `make test-repl-timer` mirroring `test-repl-in-out`
-        (Makefile:212-215 model): `TIMER_PROBE = tests/timer_tests.fth`, add to
-        `.PHONY`, run under `$(IZCPM) $(IZCPM_DISKS)`. Column-0-anchored verdict.
+- [x] Task 5 — REPL-piped probe + Makefile target (AC: 5)
+  - [x] Create `tests/timer_tests.fth` (self-printing PASS/FAIL). Cover:
+    - [x] **Monotonic** — `TICKS _spin TICKS 2SWAP D< 0=` asserts non-decreasing
+          (a backwards clock is always wrong). **DEVIATION: the "AND they differ
+          (advanced)" half is NOT asserted — verified at dev-pass that
+          iz-cpm-banking does NOT fire the 0xFDC7 interrupt, so the counter does
+          not advance under emulation (two readings across a busy-wait both read
+          `0 0`). Advancement is S9 HW-smoke (NFR-P6-14 split).**
+    - [x] **32-bit carry** — per Dev Notes option 2 (default): NO kernel seed
+          hook added (would be test-only kernel surface). Structural invariant
+          asserted in-emulator (`ticks-high-zero`: high word readable + 0 at
+          boot); the true low→high rollover is deferred to S9 HW-smoke.
+    - [x] **TICKS is a clean double** — `DEPTH >R TICKS 2DROP DEPTH R> =`
+          (`ticks-clean-double`): pushes exactly 2 cells.
+  - [x] Add `make test-repl-timer` mirroring `test-repl-in-out`:
+        `TIMER_PROBE = tests/timer_tests.fth`, added to `.PHONY`, run under
+        `$(IZCPM) $(IZCPM_DISKS)`. Column-0-anchored verdict (5 PASS / 0 FAIL).
 
-- [ ] Task 6 — Docs + CCD-3 (AC: 8)
-  - [ ] `docs/ans-forth-core-compliance.md`: add `TICKS`, `TIMER-ON`,
-        `TIMER-OFF` as antforth-extension rows (non-ANS, NOT §-numbered).
-  - [ ] Update `docs/phase4-memory-map.md` ONLY if the timer cells warrant a
-        fixed-memory note (optional). Create/seed `docs/phase6-multitasker.md`
-        is a LATER story (25.x) — not required here, but a stub TICKS note is OK.
-  - [ ] Confirm `; antforth extension` flags present at all three words.
+- [x] Task 6 — Docs + CCD-3 (AC: 8)
+  - [x] `docs/ans-forth-core-compliance.md`: added `TICKS`, `TIMER-ON`,
+        `TIMER-OFF` as antforth-extension rows in the "Non-standard words" table
+        (non-ANS, NOT §-numbered).
+  - [x] `docs/phase4-memory-map.md` / `docs/phase6-multitasker.md` — judged not
+        warranted for this story (the timer cells are self-documented inline in
+        `src/timer.asm`; the multitasker doc is a 25.x deliverable). Optional per
+        spec; skipped.
+  - [x] Confirm `; antforth extension` flags present at all three words.
 
-- [ ] Task 7 — Regression + close (AC: 6, 7, 8)
-  - [ ] `make test-repl` (baseline/0) · `test-repl-asm` · `test-repl-value-to` ·
-        `test-repl-in-out` · `test-repl-banking` · `test-straddle-regression` ·
-        new `test-repl-timer` · `make check-doc-sync` 0-drift. All green.
-  - [ ] Final `wc -c`; record delta vs baseline, itemised (Dev Notes byte budget).
-  - [ ] S9 hardware-smoke (binary-delta story) — verify on real CP/M 2.2 /
-        MicroBeast: COLD auto-install works; `TICKS` advances ≈64/s on a
-        stopwatch; `TIMER-OFF` halts the counter, `TIMER-ON` resumes it; the
-        true low→high rollover (if not assertable in-emulator). Post the recipe
-        in the closing chat message (`feedback_post_hw_smoke_steps_at_review`,
-        STRONG).
+- [x] Task 7 — Regression + close (AC: 6, 7, 8)
+  - [x] `make test-repl` (1005/0, unchanged from baseline) · `test-repl-asm`
+        (5/0) · `test-repl-value-to` (0 FAIL) · `test-repl-in-out` (0 FAIL) ·
+        `test-repl-banking` (0 FAIL) · `test-straddle-regression` (3/3) · new
+        `test-repl-timer` (5/0). All green. **`make check-doc-sync`: the 1
+        reported drift (`architecture.md:313` cites "Story 23.6"; epics header
+        is `### Story 23.6 — …`, not the `### Story 23.6:` colon form the checker
+        greps) is PRE-EXISTING and unrelated — confirmed by stashing all of this
+        story's edits and re-running (identical 1 drift + 15 advisories). This
+        story adds ZERO new drift; the Phase-5 planning-artifact citation fix is
+        out of scope for a Phase-6 timer story.**
+  - [x] Final `wc -c` = 29302 B; delta **+123 B** vs 29179 baseline. Itemised in
+        Dev Agent Record (within the story's ~95–115 B estimate, +8 B over from
+        the extra `PUSH BC`/`POP BC` pairs the finding-(6) correction required).
+  - [ ] S9 hardware-smoke (binary-delta story) — **DEFERRED to operator** on real
+        CP/M 2.2 / MicroBeast: COLD auto-install works; `TICKS` advances ≈64/s on
+        a stopwatch; `TIMER-OFF` halts the counter, `TIMER-ON` resumes it; the
+        true low→high rollover. Recipe posted in the closing chat message
+        (`feedback_post_hw_smoke_steps_at_review`, STRONG).
 
 ## Dev Notes
 
@@ -406,12 +428,109 @@ required before done; post the recipe in the closing chat message
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8 (dev-story workflow)
 
 ### Debug Log References
 
+- TICKS double-shape bug caught empirically at dev-pass: `TICKS DEPTH .` → `1`
+  (expected `2`). Root cause: story finding (6) modeled TICKS on `2@`, but `2@`
+  consumes its address (BC=TOS) while TICKS produces and consumes nothing, so it
+  must `PUSH BC` first (the `LIT`/`( -- x )`-producer convention). Fix verified:
+  `TICKS DEPTH .` → `2`; `123 TICKS DROP DROP .` → `123` (prior TOS preserved).
+- Emulator interrupt-fidelity determined at dev-pass (per Dev Notes "Banking /
+  hardware gotchas"): `TICKS D. SPIN SPIN SPIN TICKS D.` printed `0 0` — iz-cpm-
+  banking does not fire the 0xFDC7 user interrupt. Probe re-scoped to structure;
+  advancement/rate/carry → S9 HW-smoke (NFR-P6-14 split). Not a defect.
+
 ### Completion Notes List
+
+- **AC1** ✓ — `tick_isr` is a fixed-memory CODE routine ending in `RET`, touching
+  only HL + A/flags (firmware-EXX context). `MBB_SET_USR_INT EQU 0xFDC7` added to
+  `src/constants.asm`.
+- **AC2** ✓ — 32-bit `tick_count` (two `DW` cells, low then high) in `src/timer.asm`
+  fixed memory; ISR carries low→high with the explicit `LD A,H / OR L / RET NZ`
+  zero-test (INC rr sets no flags). COLD (step 8j) zero-inits it. Advancement is
+  HW-smoke (emulator does not fire the interrupt).
+- **AC3** ✓ — `TICKS ( -- d )` returns the counter high-on-TOS, DI/EI torn-read
+  guard. Corrected from the spec's `2@` shape to a `PUSH BC`-first producer (see
+  Debug Log). `ticks-clean-double` + `ticks-high-zero` probes green.
+- **AC4** ✓ — `TIMER-ON`/`TIMER-OFF` install/remove over `MBB_SET_USR_INT`,
+  saving BC(TOS)+DE(IP) across the BIOS call; COLD auto-installs `tick_isr`.
+  `timer-onoff-alive` probe green (interpreter survives both calls).
+- **AC5** ✓ (emulator scope) — `make test-repl-timer`: 5 column-0 PASS / 0 FAIL
+  (`timer-words-resolve`, `ticks-clean-double`, `ticks-high-zero`,
+  `ticks-monotonic`, `timer-onoff-alive`). Deterministic carry deferred to HW per
+  Dev Notes option 2 (no test-only kernel seed hook added).
+- **AC6** — wall-clock rate is S9 HW-smoke (DEFERRED to operator; recipe in
+  closing message).
+- **AC7** ✓ — `make test-repl` 1005/0, unchanged from pre-edit baseline; the
+  single check-doc-sync drift is pre-existing + unrelated (Story 23.6 citation in
+  architecture.md; proven by stash-and-rerun). Zero new drift from this story.
+- **AC8** ✓ — all three words flagged `; antforth extension` with why-notes;
+  compliance-doc extension rows added.
+- **Byte budget**: +123 B vs 29179 B baseline → 29302 B. Itemised: `tick_count`
+  4 B data; `tick_isr` 18 B; `TICKS` body 13 B (incl. the +2 B `PUSH BC`/EI vs
+  the spec's 11 B estimate — the finding-(6) correction); `TIMER-ON`/`TIMER-OFF`
+  ~13 B each (incl. `PUSH BC`/`POP BC`); 3 DEFCODE headers (TICKS 9 + TIMER-ON 12
+  + TIMER-OFF 13) = 34 B; COLD additions ~13 B. Within the ~95–115 B estimate
+  envelope; the ~+8 B overshoot is the TOS-preservation the spec's `2@`-analogy
+  estimate omitted.
 
 ### File List
 
+- `src/constants.asm` — added `MBB_SET_USR_INT EQU 0xFDC7` (modified)
+- `src/timer.asm` — NEW: `tick_count`, `tick_isr`, `TICKS`, `TIMER-ON`, `TIMER-OFF`
+- `src/antforth.asm` — `INCLUDE "timer.asm"` after banking.asm; COLD step 8j
+  (zero tick_count + install ISR) (modified)
+- `src/system.asm` — `BYE` releases the user-interrupt slot (`MBB_SET_USR_INT`
+  HL=0) before terminating, so it doesn't leave a dangling ISR pointing into the
+  freed TPA (HW-smoke follow-up from operator) (modified)
+- `tests/timer_tests.fth` — NEW: self-asserting structural probe (5 verdicts)
+- `Makefile` — `TIMER_PROBE` var, `test-repl-timer` target, `.PHONY` entry (modified)
+- `docs/ans-forth-core-compliance.md` — TICKS/TIMER-ON/TIMER-OFF extension rows (modified)
+
 ### Change Log
+
+- 2026-06-29 — Story 24.1 implemented: 64 Hz tick ISR + 32-bit monotonic
+  `tick_count` + `TICKS ( -- d )` reader + `TIMER-ON`/`TIMER-OFF` install pair,
+  auto-installed at COLD over `MBB_SET_USR_INT`. New `src/timer.asm` module.
+  Corrected the TICKS double-push shape (PUSH BC producer, not the `2@` reuse
+  shape) after empirical depth check. Emulator asserts structure (5/0);
+  advancement/rate/carry deferred to S9 HW-smoke. +123 B (29179→29302). Status →
+  review.
+- 2026-06-29 — HW-smoke follow-up (operator): TICKS confirmed advancing ≈64/s on
+  real MicroBeast. Operator asked whether `BYE`/Ctrl-C release the user-interrupt
+  slot. Added an explicit `MBB_SET_USR_INT` HL=0 release in `src/system.asm`
+  `BYE` before `P_TERMCPM` (+6 B, 29302→29308; test-repl 1005/0 + timer 5/0
+  unchanged). **FINDING (operator-confirmed): the MicroBeast BIOS PRESERVES the
+  user-interrupt slot across warm-boot by design (it does NOT clear it). So the
+  dangling-ISR hazard is REAL and the `BYE` release is a genuine fix, not just
+  defensive.** The earlier VIBE-in-between test did not crash due to layout luck
+  (tick_isr sits high in the ~29 KB image; the small VIBE editor loaded low and
+  never overwrote that address, so the stale ISR stayed intact); a larger program
+  loaded post-exit would CALL into its own bytes 64×/sec → crash. **RESIDUAL
+  HAZARD (Ctrl-C):** antforth reads the REPL line via BDOS fn 10 (C_READSTR);
+  Ctrl-C in fn 10 warm-boots to CCP bypassing `BYE`, leaving the slot live —
+  cannot be cleaned from Forth without taking over console input (BDOS fn 6 /
+  BIOS CONIN; ties into Phase-6 keyboard-break, Story 25.7). **Disposition
+  (operator, 2026-06-29): ACCEPT + document; follow-up filed against Story 25.7**
+  (epics-phase6-epics-24-26.md — when 25.7 takes over console input for the break
+  key, route the Ctrl-C/break-to-CCP exit through the same slot-release as BYE).
+  Not a 24.1 blocker; BYE (the normal exit) is clean.
+- 2026-06-29 — Code-review (/code-review high) + operator review: reworked `TICKS`
+  to a LOCKLESS double-read (read high→low→re-read high, retry if the two highs
+  differ) — removed the original `DI`/`EI`. Rationale: a `DI` would have to
+  restore the caller's prior interrupt state (a Phase-6 DELAY may `DI` first), and
+  the `LD A,I` probe for that state hits the well-known Z80 erratum (an interrupt
+  taken during `LD A,I` clears P/V even when interrupts were enabled → could
+  wrongly leave them off and wedge the tick); the lockless read disturbs no
+  interrupt state and is simpler. Operator flagged the erratum. Also fixed a
+  self-contradictory `tick_count` layout comment (it claimed the high 16 bits sit
+  at the lower address; low cell is at the lower address). +10 B (29308→29318);
+  timer probe 5/0 unchanged.
+- 2026-06-29 — S9 hardware-smoke COMPLETE on real MicroBeast (operator): live ISR
+  ✓, wall-clock ~64/s RATE ✓, and the low→high CARRY ✓ — a soak past 65536 ticks
+  read `0x0001_8DF4` (high cell = 1, clean monotonic double, no torn read across
+  the rollover), confirming the ISR `OR L` wrap trap fires and the lockless
+  `TICKS` read stays coherent. All acceptance criteria + HW-smoke satisfied.
+  Status → done.
