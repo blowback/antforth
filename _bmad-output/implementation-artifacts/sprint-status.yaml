@@ -286,6 +286,10 @@ development_status:
   epic-24: done
   24-1-64-hz-timer-interrupt-monotonic-ticks-counter: done
   24-2-seconds-delay-and-ms-single-threaded-form: done
+  # Post-close test-infra interludes (retro AI-24-1 / AI-24-2; mirror 23.7/23.8).
+  # Zero kernel bytes; gate Epic 25's probe-heavy work, not the Epic-24 retro.
+  24-3-standing-8000-straddle-lint: ready-for-dev
+  24-4-shared-verdict-assert-helper: ready-for-dev
   epic-24-retrospective: done
 
   epic-25: backlog
