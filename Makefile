@@ -127,6 +127,14 @@ check-doc-sync:
 # first-light bank-register round-trip surface check.
 BANKING_PROBES = _bmad-output/implementation-artifacts/16.3-probe.fth tests/banking_tests.fth
 
+# Story 24.3 — fail-loud guard for the $8000 slot-2 straddle halt. A colon body
+# whose compiled cells cross $8000 wedges the IP (the F1-unguardable class —
+# feedback_banking_probe_straddle_halt); under emulation that is an INFINITE hang,
+# not a FAIL, so CI silently stalls instead of erroring. Wrapping every REPL-probe
+# emulator run in `timeout` turns any such wedge (straddle or otherwise) into a
+# loud, bounded FAIL. 30 s is far above any healthy probe run (each is ~1-3 s).
+PROBE_TIMEOUT ?= 30
+
 # --- Inline-assembler IN,/OUT, operand-order probe (Story 23.1) ---
 # Asserts the emitted opcode bytes for all four IN,/OUT, Zilog dst-src forms
 # (IN A,(C) / IN A,(n) / OUT (C),A / OUT (n),A) plus one bad-operand round.
@@ -230,24 +238,12 @@ test-repl-banking-23-6: $(TARGET)
 # test-repl-in-out.
 test-repl-timer: $(TARGET)
 	@echo "Running 64 Hz TICKS / TIMER-ON / TIMER-OFF / DELAY / MS probe under $(IZCPM)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(TIMER_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	FAILED=0; \
-	if echo "$$OUTPUT" | grep -aqE '^FAIL:'; then \
-		echo "FAIL: REPL timer probe — a runtime '^FAIL:' verdict was printed"; \
-		FAILED=1; \
-	fi; \
-	for pat in 'PASS: timer-words-resolve' 'PASS: ticks-clean-double' 'PASS: ticks-high-zero' 'PASS: ticks-monotonic' 'PASS: timer-onoff-alive' 'PASS: delay-ms-resolve' 'PASS: delay-zero-clean' 'PASS: ms-zero-clean' 'PASS: delay-ms-alive'; do \
-		if echo "$$OUTPUT" | grep -aqE "^$$pat"; then \
-			echo "PASS: REPL timer probe — $$pat"; \
-		else \
-			echo "FAIL: REPL timer probe — expected '$$pat' at column 0 in output"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
+	@OUTPUT=$$({ sed 's/$$/\r/' $(TIMER_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL timer probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL timer probe" --fail-line '^FAIL:' \
+		'PASS: timer-words-resolve' 'PASS: ticks-clean-double' 'PASS: ticks-high-zero' \
+		'PASS: ticks-monotonic' 'PASS: timer-onoff-alive' 'PASS: delay-ms-resolve' \
+		'PASS: delay-zero-clean' 'PASS: ms-zero-clean' 'PASS: delay-ms-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
@@ -364,115 +360,38 @@ test-repl-banking-23-9: $(TARGET)
 
 test-repl-value-to: $(TARGET)
 	@echo "Running VALUE/TO named-value probe under $(IZCPM)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(VALUE_TO_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	FAILED=0; \
-	if echo "$$OUTPUT" | grep -qE '^FAIL: value-'; then \
-		echo "FAIL: REPL value/to probe — a runtime '^FAIL: value-*' verdict was printed"; \
-		FAILED=1; \
-	fi; \
-	for pat in 'PASS: value-interpret-get' 'PASS: value-interpret-set' 'PASS: value-compile-bump' 'PASS: value-banked-read' 'PASS: value-banked-write'; do \
-		if echo "$$OUTPUT" | grep -qE "^$$pat"; then \
-			echo "PASS: REPL value/to probe — $$pat"; \
-		else \
-			echo "FAIL: REPL value/to probe — expected '$$pat' at column 0 in output"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if [ $$(echo "$$OUTPUT" | grep -c 'error -32: invalid name argument') -ge 2 ]; then \
-		echo "PASS: REPL value/to probe — TO on CONSTANT and on : word both throw -32"; \
-	else \
-		echo "FAIL: REPL value/to probe — expected two 'error -32: invalid name argument' lines"; \
-		FAILED=1; \
-	fi; \
-	if echo "$$OUTPUT" | grep -q 'error -13: undefined word'; then \
-		echo "PASS: REPL value/to probe — TO on undefined name throws -13"; \
-	else \
-		echo "FAIL: REPL value/to probe — expected 'error -13: undefined word' in output"; \
-		FAILED=1; \
-	fi; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
+	@OUTPUT=$$({ sed 's/$$/\r/' $(VALUE_TO_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL value/to probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL value/to probe" --fail-line '^FAIL: value-' \
+		'PASS: value-interpret-get' 'PASS: value-interpret-set' 'PASS: value-compile-bump' \
+		'PASS: value-banked-read' 'PASS: value-banked-write' \
+		--count 2 'error -32: invalid name argument' 'TO on CONSTANT and on : word both throw -32' \
+		--present 'error -13: undefined word' 'TO on undefined name throws -13'
 
 test-repl-in-out: $(TARGET)
 	@echo "Running Z80 runtime IN/OUT port-word probe under $(IZCPM)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(IN_OUT_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	FAILED=0; \
-	if echo "$$OUTPUT" | grep -qE '^FAIL: io-'; then \
-		echo "FAIL: REPL in/out probe — a runtime '^FAIL: io-*' verdict was printed"; \
-		FAILED=1; \
-	fi; \
-	for pat in 'PASS: io-distinct-words' 'PASS: io-in-zero-extend' 'PASS: io-out-no-throw'; do \
-		if echo "$$OUTPUT" | grep -qE "^$$pat"; then \
-			echo "PASS: REPL in/out probe — $$pat"; \
-		else \
-			echo "FAIL: REPL in/out probe — expected '$$pat' at column 0 in output"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if [ $$(echo "$$OUTPUT" | grep -c '^error -4: stack underflow') -ge 2 ]; then \
-		echo "PASS: REPL in/out probe — IN and OUT underflow both throw -4"; \
-	else \
-		echo "FAIL: REPL in/out probe — expected two column-0 'error -4: stack underflow' lines"; \
-		FAILED=1; \
-	fi; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
+	@OUTPUT=$$({ sed 's/$$/\r/' $(IN_OUT_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL in/out probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL in/out probe" --fail-line '^FAIL: io-' \
+		'PASS: io-distinct-words' 'PASS: io-in-zero-extend' 'PASS: io-out-no-throw' \
+		--count 2 '^error -4: stack underflow' 'IN and OUT underflow both throw -4'
 
 test-repl-ud-env: $(TARGET)
 	@echo "Running UD. + ENVIRONMENT? probe under $(IZCPM)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(UD_ENV_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
-	FAILED=0; \
-	if echo "$$OUTPUT" | grep -qE '^FAIL: env-'; then \
-		echo "FAIL: REPL ud/env probe — a runtime '^FAIL: env-*' verdict was printed"; \
-		FAILED=1; \
-	fi; \
-	for pat in 'env-excep' 'env-excep-x' 'env-srch' 'env-dbl' 'env-dbl-x' 'env-srch-x' 'env-core' 'env-core-x' 'env-miss'; do \
-		if echo "$$OUTPUT" | grep -qE "^PASS: $$pat$$"; then \
-			echo "PASS: REPL ud/env probe — $$pat"; \
-		else \
-			echo "FAIL: REPL ud/env probe — expected '^PASS: $$pat' at column 0 in output"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	for line in 'udA=0 ' 'udB=4294967295 ' 'udC=100000 ' 'udD=-1 ' 'udE=1234ABCD '; do \
-		if echo "$$OUTPUT" | grep -qE "^$$line"; then \
-			echo "PASS: REPL ud/env probe — $$line"; \
-		else \
-			echo "FAIL: REPL ud/env probe — expected column-0 line '$$line'"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
+	@OUTPUT=$$({ sed 's/$$/\r/' $(UD_ENV_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL ud/env probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL ud/env probe" --fail-line '^FAIL: env-' \
+		'PASS: env-excep$$' 'PASS: env-excep-x$$' 'PASS: env-srch$$' 'PASS: env-dbl$$' 'PASS: env-dbl-x$$' \
+		'PASS: env-srch-x$$' 'PASS: env-core$$' 'PASS: env-core-x$$' 'PASS: env-miss$$' \
+		'udA=0 ' 'udB=4294967295 ' 'udC=100000 ' 'udD=-1 ' 'udE=1234ABCD '
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(ASM_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	FAILED=0; \
-	for pat in 'PASS: asm-in-indirect' 'PASS: asm-in-imm' 'PASS: asm-out-indirect' 'PASS: asm-out-imm'; do \
-		if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q "$$pat"; then \
-			echo "PASS: REPL asm probe — $$pat"; \
-		else \
-			echo "FAIL: REPL asm probe — expected '$$pat' in output"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if echo "$$OUTPUT" | grep -q 'error -258: bad operand'; then \
-		echo "PASS: REPL asm probe — bad operand 'B \$$74 # IN,' throws -258"; \
-	else \
-		echo "FAIL: REPL asm probe — expected 'error -258: bad operand' in output"; \
-		FAILED=1; \
-	fi; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
+	@OUTPUT=$$({ sed 's/$$/\r/' $(ASM_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL asm probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL asm probe" --mode strip-source \
+		'PASS: asm-in-indirect' 'PASS: asm-in-imm' 'PASS: asm-out-indirect' 'PASS: asm-out-imm' \
+		--present 'error -258: bad operand' "bad operand 'B \$$74 # IN,' throws -258"
 
 # Story 23.8 (AI-22-5) — durability lint: the main in-suite tests/banking_tests.fth
 # must carry no foreign (non-zero-bank) `N BANK!`. A switch here lets kernel growth
@@ -508,25 +427,14 @@ lint-banking-probes:
 
 test-repl-banking: lint-banking-probes $(TARGET)
 	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	FAILED=0; \
-	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'mbl-count: 2' 'mbl-data: 35' 'INFO: bank-store-t-states'; do \
-		: "The REPL echoes piped source, so an unanchored match hits the"; \
-		: "echoed '.\" PASS: ...\"' literal regardless of which runtime"; \
-		: "branch ran (false green). Strip source lines (they begin with"; \
-		: "optional ws + '.\"') then match; this keeps runtime verdicts"; \
-		: "whether at col 0 or mid-line (e.g. after a caught-abort 'bank?')."; \
-		if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q "$$pat"; then \
-			echo "PASS: REPL banking test — $$pat under $(IZCPM_BANKING)"; \
-		else \
-			echo "FAIL: REPL banking test — expected '$$pat' in output"; \
-			FAILED=1; \
-		fi; \
-	done; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
-		exit 1; \
-	fi
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL banking test — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL banking test" --mode strip-source \
+		'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' \
+		'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' \
+		'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' \
+		'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'mbl-count: 2' 'mbl-data: 35' \
+		'INFO: bank-store-t-states'
 	@# Story 17.4 AC7 — per-CL-tail-variant probes (Q7=b: one recipe, per-
 	@# variant invocation loop). Each variant boots iz-cpm-banking with a
 	@# different CL tail, pipes `BANKS .` + BYE to stdin, and asserts the
