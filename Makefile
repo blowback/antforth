@@ -54,7 +54,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -244,6 +244,26 @@ test-repl-timer: $(TARGET)
 		'PASS: timer-words-resolve' 'PASS: ticks-clean-double' 'PASS: ticks-high-zero' \
 		'PASS: ticks-monotonic' 'PASS: timer-onoff-alive' 'PASS: delay-ms-resolve' \
 		'PASS: delay-zero-clean' 'PASS: ms-zero-clean' 'PASS: delay-ms-alive'
+
+# --- Story 25.1 PAUSE + circular ring + TASK/ACTIVATE multitasker probe ---
+# Two tasks alternate via EXPLICIT PAUSE. Asserts the words resolve, a solo PAUSE
+# on a length-1 ring is a clean no-op (AC1/FR9), the round-robin builds the fixed
+# TAPE witness (deterministic order, NFR-P6-8), the completion epilogue parks a
+# finished task ASLEEP so it leaves the rotation (AC4), and nothing corrupts the
+# stacks/dictionary. STRUCTURE only — wall-clock/interrupt behaviour is S9
+# hardware-smoke. The probe drives no foreign BANK!, so it is straddle-safe; the
+# emulator pipe is wrapped in the Story 24.3 fail-loud timeout (a PAUSE ring wedge
+# is then a loud FAIL, not a CI hang) and verdicts go through the Story 24.4
+# helper (column-0 ^PASS: anchoring). Single-feature target; NOT folded into plain
+# `test-repl`.
+MULTITASKER_PROBE = tests/multitasker_tests.fth
+test-repl-multitasker: $(TARGET)
+	@echo "Running Story 25.1 PAUSE / TASK / ACTIVATE multitasker probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker probe — timed out after $(PROBE_TIMEOUT)s (possible PAUSE ring wedge or \$$8000 straddle hang)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker probe" --fail-line '^FAIL:' \
+		'PASS: mt-words-resolve' 'PASS: mt-solo-pause' 'PASS: mt-roundrobin' \
+		'PASS: mt-task-asleep' 'PASS: mt-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;

@@ -270,6 +270,19 @@ cold_start:
         LD      HL, tick_isr
         CALL    MBB_SET_USR_INT
 
+        ; 8k. Phase-6 multitasker — wire the static operator task-0 TCB into a
+        ;     length-1 ring and make it the running task: status = AWAKE, link =
+        ;     self, current_tcb = operator_tcb. The saved-register slots fill on the
+        ;     operator's first PAUSE (it is the running task at boot). A length-1
+        ;     ring means PAUSE walks link once back to self and resumes unchanged —
+        ;     byte-identical single-task behaviour until a 2nd TASK links in
+        ;     (FR9 / AC1). Straight asm (registers scratch here, like 8j).
+        LD      HL, operator_tcb
+        LD      (current_tcb), HL
+        LD      (operator_tcb + TCB_LINK), HL  ; link = self
+        LD      A, TASK_AWAKE
+        LD      (operator_tcb + TCB_STATUS), A
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 
@@ -735,6 +748,7 @@ str_empty_q_len  EQU 6
         INCLUDE "exception.asm"
         INCLUDE "banking.asm"
         INCLUDE "timer.asm"
+        INCLUDE "multitasker.asm"
         INCLUDE "file_access.asm"
 
 ; === Forth bootstrap definitions (depend on everything above) ===

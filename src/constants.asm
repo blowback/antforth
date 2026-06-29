@@ -94,6 +94,39 @@ RS_SIZE         EQU     256             ; Return stack: 128 cells (256 bytes)
 ; the byte at top-of-TPA (the BDOS entry / warm-boot vector).
 SP_GUARD        EQU     8
 
+; === Phase-6 Multitasker — TCB field offsets & status enum ===
+; A Task Control Block (TCB) is a fixed-memory record (always below $8000). TASK
+; carves one per background task from the bank-0 dictionary; the operator (task
+; 0) is a static header-only record (operator_tcb, src/multitasker.asm). PAUSE
+; saves the running task's {SP,IX,DE,BC} plus the per-task UserArea subset
+; {catch_top,current_bank,base} into its TCB and restores the next AWAKE task's.
+; Fields are addressed by these named offsets, never by magic number. The
+; doc-STRUCT in src/structures.asm mirrors this table and ASSERTs each offset
+; against these EQUs, so the two representations cannot drift.
+TCB_LINK        EQU 0           ; next TCB in the circular ring (2)
+TCB_STATUS      EQU 2           ; TASK_AWAKE / TASK_ASLEEP / TASK_SUSPENDED (1)
+TCB_SP          EQU 3           ; saved data-stack pointer (2)
+TCB_IX          EQU 5           ; saved return-stack pointer (2)
+TCB_DE          EQU 7           ; saved IP / resume-thread address (2)
+TCB_BC          EQU 9           ; saved TOS (2)
+TCB_CATCH       EQU 11          ; per-task CATCH-TOP (2)
+TCB_BANK        EQU 13          ; per-task current_bank (2; re-paged in 25.5)
+TCB_BASE        EQU 15          ; per-task BASE (2)
+TCB_SPBASE      EQU 17          ; per-task data-stack base (2). PAUSE swaps the global sp_base
+                                ; cell to this so check_overflow/check_underflow/DEPTH measure
+                                ; against the RUNNING task's private ps_area, not the operator's.
+                                ; (rp_base stays global — only operator-run QUIT uses it.)
+TCB_THREAD      EQU 19          ; resume thread [xt | epilogue_cf] (4)
+TCB_HDR_SIZE    EQU 23          ; header size (link .. t_thread end)
+TCB_PS          EQU TCB_HDR_SIZE        ; private parameter-stack area (PS_SIZE)
+TCB_RS          EQU TCB_PS + PS_SIZE    ; private return-stack area (RS_SIZE)
+TCB_SIZE        EQU TCB_RS + RS_SIZE    ; full dictionary-allocated task footprint
+; Status enum. SUSPENDED is reserved now (used by Story 25.6) so the PAUSE walk's
+; "skip non-AWAKE" test is final from the start.
+TASK_ASLEEP     EQU 0
+TASK_AWAKE      EQU 1
+TASK_SUSPENDED  EQU 2
+
 ; === Dictionary ===
 ; HASH_BUCKETS retired — single source of truth is now WORDLIST_BUCKETS
 ; in src/wordlists.asm.

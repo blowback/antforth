@@ -32,6 +32,21 @@ END-CODE
 \ write-only, so the readback is open bus. Slot-2 mapping is now read via
 \ MBB-GET-2 (MBB_GET_PAGE; defined in 16.3-probe.fth, loaded first).
 
+\ === +BANK cap-probe helpers — DEFINED EARLY (fixed memory, below $8000) ===
+\ These are the compiled helpers the Probe-G +BANK cap test (further down)
+\ executes. They are defined HERE, at the top of the suite where HERE is still
+\ well below the $8000 slot-2 window, so their dictionary headers live in fixed
+\ memory and stay findable under any bank mapping. Defined late (next to the
+\ probe) they straddle $8000 once cumulative kernel growth lifts HERE to the
+\ boundary, and the post-seed lookup then fails as the foreign-bank window hides
+\ a header above $8000 (feedback_banking_probe_straddle_halt — surfaced when the
+\ Phase-6 multitasker grew the kernel ~470 B in Story 25.1). The orchestration +
+\ verdict still run interpret-level at the probe site (Story 23.2).
+: _do-29-+bank ( -- )
+  29 0 DO $22 +BANK LOOP
+;
+: _do-one-more-+bank ( -- ) $22 +BANK ;
+
 \ === Probe 1: BANK-MAPPING-ON idempotence + stack effect ===
 \ Stack-effect verification — repeated BANK-MAPPING-ON has stack effect
 \ `( -- )` and the word body completes cleanly. Idempotent: mapping is
@@ -320,10 +335,9 @@ BANKS-CLEAR
 \ entries and the seed loop would trip the cap mid-iteration) and the
 \ TAIL one (handoff guard for any probes added after probe G — leaves
 \ bank_count = 0 for the next probe's known state). Do not move either.
-: _do-29-+bank ( -- )
-  29 0 DO $22 +BANK LOOP
-;
-: _do-one-more-+bank ( -- ) $22 +BANK ;
+\ _do-29-+bank / _do-one-more-+bank are defined EARLY (top of this file, fixed
+\ memory) so their headers stay below $8000 and findable under any bank mapping
+\ — see the note there. The orchestration + verdict below stay interpret-level.
 \ Story 23.2 restructure: the +BANK cap probe is now DRIVEN AT INTERPRET
 \ LEVEL, so the running IP stays kernel-resident (<$8000). The prior single
 \ `: _probe-plus-bank-cap ... ;` colon body straddled the $8000 slot-2 window

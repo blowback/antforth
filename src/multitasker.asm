@@ -1,0 +1,297 @@
+; multitasker.asm — Phase-6 cooperative scheduler: PAUSE, TASK, ACTIVATE
+; AntForth — A Forth for CP/M on Z80
+;
+; The scheduler spine (Epic 25 step 1, single-bank). Tasks are a circular ring of
+; TCBs linked by `link`; the running task is `current_tcb`. PAUSE switches between
+; them — but ONLY at a NEXT boundary (the cooperative invariant), because PAUSE is
+; a CODE word reached through threading: it must never run mid-primitive where
+; BC/IP could be phantom. TASK carves a TCB from the bank-0 dictionary; ACTIVATE
+; arms it with a word to run and makes it AWAKE.
+;
+; Register contract (docs/register-conventions.md Hard Rule #1): BC=TOS, DE=IP,
+; IX=return stack, IY=UserArea (never reassigned), SP=data stack. PAUSE saves and
+; restores exactly these four registers plus the per-task UserArea subset
+; {catch_top, current_bank, base} — see src/structures.asm TCB doc for why those
+; three and only those three are per-task.
+;
+; No banking re-page in this story: the per-task current_bank cell is saved and
+; restored, but the conditional MBB_SET_PAGE on a bank change is deferred to Story
+; 25.5 (single-bank here).
+
+; === Fixed-memory scheduler state (always below $8000) ===
+; Lives in the always-mapped kernel image like timer.asm's tick_count, so PAUSE
+; can read the ring whichever bank is later mapped into the slot-2 window. The
+; ASSERT at the module's end fails the build if kernel growth ever pushes this
+; state across $8000.
+current_tcb:    DW      0               ; base of the running task's TCB; COLD sets = operator_tcb
+sched_save:     DS      8               ; register bridge for PAUSE: [sp][ix][de][bc], TCB field order
+sched_tcb:      DW      0               ; ACTIVATE scratch: stashed TCB base while building the header
+sched_ip:       DW      0               ; TASK/ACTIVATE scratch: preserves the caller's IP (DE) across the
+                                        ; body, which freely uses DE as a pointer. PAUSE is exempt —
+                                        ; swapping DE through the TCB is its job. Operator-only, no reentry.
+operator_tcb:   DS      TCB_HDR_SIZE    ; static task-0 record — header only (reuses the system data/
+                                        ; return stacks, so no private ps/rs carve). COLD wires status,
+                                        ; link and current_tcb; the saved-register slots fill on the
+                                        ; operator's first PAUSE.
+
+; === TCB field-walk macros — single source for the repeated copy shapes ===
+; HL walks the TCB header field-by-field; these collapse the three shapes that
+; otherwise repeat verbatim. Pure source DRY — each expands to the same bytes it
+; replaces, so a field-list change is edited once, not in mirror copies.
+;
+; STORE_TCB_PTR: write the absolute address (sched_tcb + off?) as a little-endian
+; pointer at (HL), then advance HL one cell. ACTIVATE seeds saved_sp/saved_ix/
+; saved_de/t_sp_base this way (each is a TCB-base-relative address).
+    MACRO STORE_TCB_PTR off?
+        LD      DE, (sched_tcb)
+        PUSH    HL
+        LD      HL, off?
+        ADD     HL, DE          ; DE = sched_tcb + off?
+        EX      DE, HL
+        POP     HL
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+    ENDM
+; SAVE_UA_CELL / RESTORE_UA_CELL: copy one 2-byte UserArea subset cell between
+; (IY+ua?) and the TCB field at (HL), advancing HL one cell. PAUSE walks
+; {catch_top, current_bank, base} with these (t_sp_base is the absolute sp_base
+; cell, handled inline since it is not IY-relative).
+    MACRO SAVE_UA_CELL ua?
+        LD      A, (IY+ua?)
+        LD      (HL), A
+        INC     HL
+        LD      A, (IY+ua?+1)
+        LD      (HL), A
+        INC     HL
+    ENDM
+    MACRO RESTORE_UA_CELL ua?
+        LD      A, (HL)
+        LD      (IY+ua?), A
+        INC     HL
+        LD      A, (HL)
+        LD      (IY+ua?+1), A
+        INC     HL
+    ENDM
+
+; === PAUSE ( -- ) — cooperative yield to the next AWAKE task ===
+; Saves the outgoing task's registers + subset, walks the ring to the next AWAKE
+; task, restores it, and NEXTs. A length-1 ring (operator only) walks link once
+; back to self and resumes unchanged — byte-identical single-task behaviour
+; (FR9 / AC1). antforth extension — cooperative task switch at a NEXT boundary.
+w_PAUSE:
+        DEFCODE "PAUSE", 0
+w_PAUSE_cf:
+        ; (1) Snapshot the outgoing task's live registers to fixed scratch in TCB
+        ;     field order. The ED-prefixed LD (nn),rr stores reach SP/IX/DE/BC into
+        ;     fixed memory with no register juggling; current_tcb is dynamic, so a
+        ;     separate LDIR copies the snapshot into its saved-register block.
+        LD      (sched_save + 0), SP    ; saved_sp
+        LD      (sched_save + 2), IX    ; saved_ix
+        LD      (sched_save + 4), DE    ; saved_de (IP)
+        LD      (sched_save + 6), BC    ; saved_bc (TOS)
+        LD      HL, (current_tcb)
+        LD      DE, TCB_SP
+        ADD     HL, DE                  ; HL -> outgoing.saved_sp
+        EX      DE, HL                  ; DE -> outgoing.saved_sp
+        LD      HL, sched_save
+        LD      BC, 8
+        LDIR                            ; scratch -> outgoing TCB saved_sp..saved_bc
+        ; (2) Save the per-task UserArea subset {catch_top,current_bank,base} into
+        ;     the outgoing TCB, copied THROUGH IY (IY is never reassigned). The TCB
+        ;     subset cells are contiguous (TCB_CATCH..TCB_BASE) so HL walks them;
+        ;     the UserArea sources are not contiguous, hence field-by-field.
+        LD      HL, (current_tcb)
+        LD      DE, TCB_CATCH
+        ADD     HL, DE                  ; HL -> outgoing.t_catch_top
+        SAVE_UA_CELL UserArea.catch_top         ; -> t_current_bank
+        SAVE_UA_CELL UserArea.current_bank      ; -> t_base
+        SAVE_UA_CELL UserArea.base              ; -> t_sp_base (contiguous after t_base)
+        LD      A, (sp_base)            ; capture the running task's data-stack base
+        LD      (HL), A
+        INC     HL
+        LD      A, (sp_base+1)
+        LD      (HL), A
+        ; (3) Walk link to the next TASK_AWAKE TCB (skip ASLEEP/SUSPENDED). The
+        ;     operator is always AWAKE in this story, so the walk always
+        ;     terminates; a length-1 ring returns to self.
+        LD      HL, (current_tcb)
+.pause_walk:
+        LD      A, (HL)                 ; link lo
+        INC     HL
+        LD      H, (HL)                 ; link hi
+        LD      L, A                    ; HL = next TCB base
+        INC     HL
+        INC     HL                      ; -> status (+2)
+        LD      A, (HL)
+        DEC     HL
+        DEC     HL                      ; HL -> next TCB base
+        CP      TASK_AWAKE
+        JR      NZ, .pause_walk
+        LD      (current_tcb), HL       ; the selected next running task
+        ; (4) Restore the next task's UserArea subset. NO MBB_SET_PAGE re-page in
+        ;     this story — current_bank is copied as a cell only; the conditional
+        ;     page call on a bank change is Story 25.5 (single-bank here).
+        LD      DE, TCB_CATCH
+        ADD     HL, DE                  ; HL -> next.t_catch_top
+        RESTORE_UA_CELL UserArea.catch_top      ; -> t_current_bank
+        RESTORE_UA_CELL UserArea.current_bank   ; -> t_base
+        RESTORE_UA_CELL UserArea.base           ; -> t_sp_base
+        LD      A, (HL)                 ; install the next task's data-stack base
+        LD      (sp_base), A            ; so the depth guards / DEPTH track its private ps_area
+        INC     HL
+        LD      A, (HL)
+        LD      (sp_base+1), A
+        ; (5) Restore {SP,IX,DE,BC} from the next TCB via the scratch bridge, then
+        ;     NEXT. The switch lands ONLY here, at a NEXT boundary.
+        LD      HL, (current_tcb)
+        LD      DE, TCB_SP
+        ADD     HL, DE                  ; HL -> next.saved_sp
+        LD      DE, sched_save
+        LD      BC, 8
+        LDIR                            ; next TCB saved_sp..saved_bc -> scratch
+        LD      SP, (sched_save + 0)
+        LD      IX, (sched_save + 2)
+        LD      DE, (sched_save + 4)    ; DE = IP
+        LD      BC, (sched_save + 6)    ; BC = TOS
+        NEXT
+
+; === task_exit — completion epilogue (the resume thread's 2nd cell) ===
+; Reached when a finite task word's terminal EXIT chases past its xt into the
+; t_thread[1] cell (= this address): NEXT does JP (HL) into here. Marks the
+; running task ASLEEP and re-enters PAUSE, so the task leaves the rotation cleanly
+; instead of running off its xt into garbage (FR4 / AC4). Shared by all tasks.
+task_exit:
+        LD      HL, (current_tcb)
+        INC     HL
+        INC     HL                      ; HL -> status (+2)
+        LD      (HL), TASK_ASLEEP
+        JP      w_PAUSE_cf
+
+; === TASK ( -- task ) — carve a TCB from the bank-0 dictionary ===
+; Allocates a TCB + its 256+256 B private stacks at HERE and returns the TCB base
+; as the handle ACTIVATE consumes. THROWs -8 (dictionary overflow) if the carve
+; would reach/cross $8000: a TCB in the slot-2 window would vanish under a foreign
+; bank mapping (Story 24.3 memory-map note), fatal for a record PAUSE reads on
+; every switch — so TCBs must stay below $8000. The fresh task is ASLEEP and
+; spliced into the ring right after the running task; ACTIVATE makes it runnable.
+; antforth extension — create a cooperative task control block.
+w_TASK:
+        DEFCODE "TASK", 0
+w_TASK_cf:
+        LD      (sched_ip), DE          ; preserve caller IP — the body uses DE as a pointer
+        PUSH    BC                      ; save old TOS; the handle becomes the new TOS
+        CALL    check_overflow          ; room for the produced cell (clobbers AF,HL)
+        LD      L, (IY+UserArea.here)
+        LD      H, (IY+UserArea.here+1) ; HL = HERE = prospective TCB base
+        LD      E, L
+        LD      D, H                    ; DE = TCB base (kept across the size add)
+        LD      BC, TCB_SIZE
+        ADD     HL, BC                  ; HL = new HERE (one past the TCB)
+        LD      A, H
+        CP      HIGH SLOT2_WINDOW_BASE  ; CY iff H < $80, i.e. new HERE below the window
+        JR      C, .task_room
+        ; reach-or-cross $8000: a TCB ending at/above the window is unreachable
+        ; under a foreign mapping. (A carve ending exactly at $8000 is rejected
+        ; too — conservative; the slack below $8000 is ~3 KB so this costs nothing
+        ; real.) The earlier PUSH BC residue is wiped by THROW's wholesale SP reset.
+        JP      dict_overflow_throw     ; raises -8 via w_THROW_cf.kernel_entry
+.task_room:
+        LD      (IY+UserArea.here), L
+        LD      (IY+UserArea.here+1), H ; commit HERE past the carve
+        EX      DE, HL                  ; HL = TCB base (DE = spent new HERE)
+        INC     HL
+        INC     HL                      ; -> status (+2)
+        LD      (HL), TASK_ASLEEP       ; not runnable until ACTIVATE
+        DEC     HL
+        DEC     HL                      ; HL -> TCB base (= its link field)
+        ; Ring splice (insert after current_tcb — deterministic round-robin order,
+        ; NFR-P6-8): new.link = current.link ; current.link = new.
+        LD      DE, (current_tcb)       ; DE -> current.link
+        LD      A, (DE)
+        LD      (HL), A                 ; new.link.lo = current.link.lo
+        INC     DE
+        INC     HL
+        LD      A, (DE)
+        LD      (HL), A                 ; new.link.hi = current.link.hi
+        DEC     HL                      ; HL -> new TCB base
+        DEC     DE                      ; DE -> current.link.lo
+        LD      A, L
+        LD      (DE), A
+        INC     DE
+        LD      A, H
+        LD      (DE), A                 ; current.link = new TCB base
+        LD      B, H
+        LD      C, L                    ; BC = TCB base = new TOS (the handle)
+        LD      DE, (sched_ip)          ; restore caller IP
+        NEXT
+
+; === ACTIVATE ( xt task -- ) — arm a task and make it AWAKE ===
+; Builds the task's resume thread [xt | task_exit] inside its TCB, seeds the saved
+; registers (SP/IX at the tops of its private stacks, IP at the resume thread,
+; TOS=0) and the subset (catch_top=0, current_bank/base inherited from the
+; operator), and sets status AWAKE. On the next PAUSE the scheduler restores this
+; task and NEXT enters `xt`; the word's terminal EXIT chases into task_exit.
+; antforth extension — start a word running in a task.
+w_ACTIVATE:
+        DEFCODE "ACTIVATE", 0
+w_ACTIVATE_cf:
+        LD      (sched_ip), DE          ; preserve caller IP — the body uses DE as a pointer
+        LD      H, B
+        LD      L, C                    ; HL = task (TCB base, the TOS)
+        LD      (sched_tcb), HL         ; stash base for the offset recomputations below
+        POP     DE                      ; DE = xt (NOS)
+        ; --- resume thread t_thread = [xt | task_exit] (written first, while DE=xt) ---
+        LD      BC, TCB_THREAD
+        ADD     HL, BC                  ; HL -> t_thread
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                 ; t_thread[0..1] = xt
+        INC     HL
+        LD      DE, task_exit
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D                 ; t_thread[2..3] = epilogue cf
+        ; --- header fields, walked contiguously from status (+2) ---
+        LD      HL, (sched_tcb)
+        INC     HL
+        INC     HL                      ; HL -> status (+2)
+        LD      (HL), TASK_AWAKE
+        INC     HL                      ; -> saved_sp (+3) = top of ps_area
+        STORE_TCB_PTR TCB_PS + PS_SIZE  ; saved_sp = ps top
+        INC     HL                      ; -> saved_ix (+5) = top of rs_area
+        STORE_TCB_PTR TCB_RS + RS_SIZE  ; saved_ix = rs top
+        INC     HL                      ; -> saved_de (+7) = &t_thread (resume IP)
+        STORE_TCB_PTR TCB_THREAD        ; saved_de = &t_thread
+        INC     HL                      ; -> saved_bc (+9) = 0 (clean TOS at entry)
+        LD      (HL), 0
+        INC     HL
+        LD      (HL), 0
+        INC     HL                      ; -> t_catch_top (+11) = 0 (own empty frame chain)
+        LD      (HL), 0
+        INC     HL
+        LD      (HL), 0
+        INC     HL                      ; -> t_current_bank (+13) = operator's current bank
+        LD      A, (IY+UserArea.current_bank)
+        LD      (HL), A
+        INC     HL
+        LD      A, (IY+UserArea.current_bank+1)
+        LD      (HL), A
+        INC     HL                      ; -> t_base (+15) = operator's BASE
+        LD      A, (IY+UserArea.base)
+        LD      (HL), A
+        INC     HL
+        LD      A, (IY+UserArea.base+1)
+        LD      (HL), A
+        INC     HL                      ; -> t_sp_base (+17) = top of the task's ps_area
+        STORE_TCB_PTR TCB_PS + PS_SIZE  ; t_sp_base = ps top (= initial empty-stack base)
+        POP     BC                      ; new TOS = the cell left below xt on the data stack
+        LD      DE, (sched_ip)          ; restore caller IP
+        NEXT
+
+; Cross-bank invariant (mirrors timer.asm): the whole scheduler — code, ring
+; state, and the operator's static TCB — MUST live in always-mapped fixed memory
+; below $8000, or PAUSE would lose the ring under a foreign bank mapping. The
+; straddle-regression gate only catches colon-body IP crossings, not data/code
+; placement, so guard it at build time here.
+        ASSERT $ <= SLOT2_WINDOW_BASE
