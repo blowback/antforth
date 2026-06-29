@@ -1,6 +1,6 @@
 # Story 24.4: Shared Makefile verdict-assert helper (test-infra interlude)
 
-Status: ready-for-dev
+Status: done
 
 > Post-close test-infra interlude under Epic 24 (mirrors 23.7/23.8). Gates
 > **Epic 25** (probe-heavy). **Zero kernel bytes** — Makefile/tests/tools only.
