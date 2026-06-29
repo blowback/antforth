@@ -278,13 +278,13 @@ development_status:
   # === Phase 6 — Concurrency & On-Device Applications (added 2026-06-29) ===
   # Source: epics-phase6-epics-24-26.md (PRD prd-phase6-concurrency.md +
   # architecture.md AD-P6-1..9). Build/dependency order 24 → 25 → 26.
-  # All backlog: no story files created yet (create-story not yet run).
+  # Story 24.1 contexted 2026-06-29 (create-story) → ready-for-dev.
   # Sprint-planning carry-forwards to settle at story creation:
   #   F4 — TCB fixed-RAM budget guard/measurement (lands in Story 25.1's $8000 guard)
   #   F5 — per-epic binary-size envelope (≈2.4× prior-phase pattern) — agree before Epic 25
   #   25.1-split — SM may split scheduler-core vs TASK/ACTIVATE user words at create-story
-  epic-24: backlog
-  24-1-64-hz-timer-interrupt-monotonic-ticks-counter: backlog
+  epic-24: in-progress
+  24-1-64-hz-timer-interrupt-monotonic-ticks-counter: ready-for-dev
   24-2-seconds-delay-and-ms-single-threaded-form: backlog
   epic-24-retrospective: optional
 
