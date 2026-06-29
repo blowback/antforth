@@ -285,7 +285,7 @@ development_status:
   #   25.1-split — SM may split scheduler-core vs TASK/ACTIVATE user words at create-story
   epic-24: in-progress
   24-1-64-hz-timer-interrupt-monotonic-ticks-counter: done
-  24-2-seconds-delay-and-ms-single-threaded-form: backlog
+  24-2-seconds-delay-and-ms-single-threaded-form: done
   epic-24-retrospective: optional
 
   epic-25: backlog

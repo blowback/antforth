@@ -1,4 +1,5 @@
 \ timer_tests.fth — Story 24.1: 64 Hz tick interrupt + monotonic TICKS counter.
+\ Story 24.2: DELAY ( u -- ) / MS ( u -- ) wait words riding the same counter.
 \ Self-printing PASS:/FAIL: probe. Harness verdict-greps are COLUMN-0-ANCHORED
 \ (^PASS: / ^FAIL:): runtime verdicts land at column 0 (after the REPL's input-
 \ echo newline), while echoed colon-body source holding the same literals is
@@ -12,6 +13,15 @@
 \ and TIMER-OFF/TIMER-ON install/remove without wedging the interpreter. The
 \ wall-clock RATE (~64/s) and the true low->high CARRY (a 65 536-tick / ~17 min
 \ rollover) are asserted at S9 hardware-smoke, NOT here.
+\
+\ Same split for 24.2 DELAY/MS: only the DEGENERATE 0 DELAY / 0 MS (target ==
+\ current TICKS → exits on the first loop pass) can run here — any NONZERO wait
+\ would busy-wait FOREVER under emulation (target never reached because TICKS is
+\ frozen), hanging the whole gate. So this probe asserts only that DELAY/MS
+\ resolve, that 0 DELAY / 0 MS return and conserve DEPTH, and that the
+\ interpreter is alive after. The TIMED behaviour (60 DELAY ≈ 60 s, 1000 MS ≈
+\ 1 s, 10 MS a perceptible ≥1-tick wait, MS round-up granularity) is S9
+\ hardware-smoke, NOT here.
 \
 \ Runs under iz-cpm-banking via `make test-repl-timer`.
 
@@ -52,3 +62,25 @@ _t-mono
 TIMER-OFF TIMER-ON
 : _t-onoff ( -- ) 6 7 * 42 = IF ." PASS: timer-onoff-alive" ELSE ." FAIL: timer-onoff-alive" THEN CR ;
 _t-onoff
+
+\ === Story 24.2: DELAY / MS — STRUCTURE ONLY (see header; nonzero waits hang) ===
+
+\ --- Word-existence pre-flight: both must resolve (' parses input → interpret
+\ level, not a colon body; a miss throws -13 before the verdict) ---
+' DELAY DROP  ' MS DROP  ." PASS: delay-ms-resolve" CR
+
+\ --- 0 DELAY returns and is stack-clean (target == TICKS → first-pass exit) ---
+: _t-delay0 ( -- )
+  DEPTH >R  0 DELAY  DEPTH R> = IF ." PASS: delay-zero-clean" ELSE ." FAIL: delay-zero-clean" THEN CR
+;
+_t-delay0
+
+\ --- 0 MS returns and is stack-clean ---
+: _t-ms0 ( -- )
+  DEPTH >R  0 MS  DEPTH R> = IF ." PASS: ms-zero-clean" ELSE ." FAIL: ms-zero-clean" THEN CR
+;
+_t-ms0
+
+\ --- Interpreter alive after both waits (runtime-computed token, not a sentinel) ---
+: _t-delay-ms-alive ( -- ) 6 7 * 42 = IF ." PASS: delay-ms-alive" ELSE ." FAIL: delay-ms-alive" THEN CR ;
+_t-delay-ms-alive

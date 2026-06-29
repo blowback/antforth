@@ -223,17 +223,20 @@ test-repl-banking-23-6: $(TARGET)
 	fi
 
 # Story 24.1 — 64 Hz tick interrupt + monotonic TICKS structural probe.
-# Asserts the five column-0 verdicts the emulator can prove (advancement/rate/
-# carry are HW-smoke; see TIMER_PROBE comment). Mirrors test-repl-in-out.
+# Story 24.2 — DELAY/MS structure verdicts (resolve, 0-degenerate stack-clean,
+# interpreter-alive). Asserts the nine column-0 verdicts the emulator can prove;
+# wall-clock timing + MS round-up granularity are HW-smoke (see TIMER_PROBE
+# comment — a nonzero wait would busy-wait forever under emulation). Mirrors
+# test-repl-in-out.
 test-repl-timer: $(TARGET)
-	@echo "Running 64 Hz TICKS / TIMER-ON / TIMER-OFF probe under $(IZCPM)..."
+	@echo "Running 64 Hz TICKS / TIMER-ON / TIMER-OFF / DELAY / MS probe under $(IZCPM)..."
 	@OUTPUT=$$({ sed 's/$$/\r/' $(TIMER_PROBE); printf 'BYE\r\n'; } | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	FAILED=0; \
 	if echo "$$OUTPUT" | grep -aqE '^FAIL:'; then \
 		echo "FAIL: REPL timer probe — a runtime '^FAIL:' verdict was printed"; \
 		FAILED=1; \
 	fi; \
-	for pat in 'PASS: timer-words-resolve' 'PASS: ticks-clean-double' 'PASS: ticks-high-zero' 'PASS: ticks-monotonic' 'PASS: timer-onoff-alive'; do \
+	for pat in 'PASS: timer-words-resolve' 'PASS: ticks-clean-double' 'PASS: ticks-high-zero' 'PASS: ticks-monotonic' 'PASS: timer-onoff-alive' 'PASS: delay-ms-resolve' 'PASS: delay-zero-clean' 'PASS: ms-zero-clean' 'PASS: delay-ms-alive'; do \
 		if echo "$$OUTPUT" | grep -aqE "^$$pat"; then \
 			echo "PASS: REPL timer probe — $$pat"; \
 		else \
@@ -507,7 +510,7 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@echo "Running banking-capable emulator probes under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	FAILED=0; \
-	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'PASS: minus-bank-ldir-shift-count' 'PASS: minus-bank-ldir-shift-data' 'INFO: bank-store-t-states'; do \
+	for pat in 'PASS: banking-emu-probe' 'PASS: banking-mapping-on-idempotent' 'PASS: banking-mapping-on-port-74' 'PASS: bank-at-zero' 'PASS: banks-zero' 'PASS: bank-store-abort-bank-q' 'PASS: bank-store-swap-path' 'PASS: bank-store-round-trip-0' 'PASS: plus-bank-known-good' 'PASS: plus-bank-rom-rejection' 'PASS: minus-bank-present-absent' 'PASS: banks-clear-zero' 'mbl-count: 2' 'mbl-data: 35' 'INFO: bank-store-t-states'; do \
 		: "The REPL echoes piped source, so an unanchored match hits the"; \
 		: "echoed '.\" PASS: ...\"' literal regardless of which runtime"; \
 		: "branch ran (false green). Strip source lines (they begin with"; \
