@@ -283,10 +283,10 @@ development_status:
   #   F4 — TCB fixed-RAM budget guard/measurement (lands in Story 25.1's $8000 guard)
   #   F5 — per-epic binary-size envelope (≈2.4× prior-phase pattern) — agree before Epic 25
   #   25.1-split — SM may split scheduler-core vs TASK/ACTIVATE user words at create-story
-  epic-24: in-progress
+  epic-24: done
   24-1-64-hz-timer-interrupt-monotonic-ticks-counter: done
   24-2-seconds-delay-and-ms-single-threaded-form: done
-  epic-24-retrospective: optional
+  epic-24-retrospective: done
 
   epic-25: backlog
   25-1-pause-circular-ring-task-activate-single-bank-fixed-memory: backlog
