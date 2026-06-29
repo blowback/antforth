@@ -1,4 +1,4 @@
-# generated: 2026-06-28
+# generated: 2026-06-29
 # project: antforth
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-06-28
+generated: 2026-06-29
 project: antforth
 project_key: NOKEY
 tracking_system: file-system
@@ -274,4 +274,34 @@ development_status:
   23-8-in-suite-bank-switching-probe-isolation: done
   23-9-complete-banked-window-top-guard-coverage: done
   epic-23-retrospective: done
+
+  # === Phase 6 — Concurrency & On-Device Applications (added 2026-06-29) ===
+  # Source: epics-phase6-epics-24-26.md (PRD prd-phase6-concurrency.md +
+  # architecture.md AD-P6-1..9). Build/dependency order 24 → 25 → 26.
+  # All backlog: no story files created yet (create-story not yet run).
+  # Sprint-planning carry-forwards to settle at story creation:
+  #   F4 — TCB fixed-RAM budget guard/measurement (lands in Story 25.1's $8000 guard)
+  #   F5 — per-epic binary-size envelope (≈2.4× prior-phase pattern) — agree before Epic 25
+  #   25.1-split — SM may split scheduler-core vs TASK/ACTIVATE user words at create-story
+  epic-24: backlog
+  24-1-64-hz-timer-interrupt-monotonic-ticks-counter: backlog
+  24-2-seconds-delay-and-ms-single-threaded-form: backlog
+  epic-24-retrospective: optional
+
+  epic-25: backlog
+  25-1-pause-circular-ring-task-activate-single-bank-fixed-memory: backlog
+  25-2-key-hooked-repl-multitasking-input-only-yield: backlog
+  25-3-yielding-per-task-delay: backlog
+  25-4-task-suspend-resume-wake-sleep-tasks-introspection: backlog
+  25-5-per-bank-task-switching: backlog
+  25-6-background-task-exception-isolation: backlog
+  25-7-keyboard-break-documented-starvation: backlog
+  25-8-headline-demo-background-traffic-light-live-repl: backlog
+  epic-25-retrospective: optional
+
+  epic-26: backlog
+  26-1-counting-semaphore-signal-wait: backlog
+  26-2-mutex-binary-semaphore: backlog
+  26-3-one-slot-mailbox: backlog
+  epic-26-retrospective: optional
 
