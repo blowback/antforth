@@ -295,7 +295,7 @@ development_status:
   epic-25: in-progress
   25-1-pause-circular-ring-task-activate-single-bank-fixed-memory: done
   25-2-key-hooked-repl-multitasking-input-only-yield: done
-  25-3-yielding-per-task-delay: backlog
+  25-3-yielding-per-task-delay: done
   25-4-task-suspend-resume-wake-sleep-tasks-introspection: backlog
   25-5-per-bank-task-switching: backlog
   25-6-background-task-exception-isolation: backlog

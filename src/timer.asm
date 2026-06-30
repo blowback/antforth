@@ -118,23 +118,26 @@ w_TIMER_OFF_cf:
         POP     BC                      ; restore TOS
         NEXT
 
-; === (DELAY) ( target.d -- ) — busy-wait until TICKS reaches the target double ===
+; === (DELAY) ( target.d -- ) — yield-and-wait until TICKS reaches the target ===
 ; Internal helper (parenthesized name = kernel-internal convention, cf. (DLIT)).
-; Factored into ONE site so the Phase-6 yielding rewrite can drop a single PAUSE
-; cell in front of the TICKS read without disturbing the target-on-stack math in
-; DELAY/MS — that single seam is the whole reason this loop is not inlined.
-; >>> Story-25.3 yielding form: insert `DW w_PAUSE_cf` immediately before the
-;     `DW w_TICKS_cf` below; nothing else here changes. <<<
-; The target double is held on the caller's data stack as the loop carry — there
-; is no shared mutable countdown cell, so concurrent per-task delays never
-; interfere. D< is signed, which is correct here: a 32-bit 64 Hz counter does not
-; reach the sign bit (0x8000_0000) until ~388 days of continuous uptime, far
-; beyond any realistic DELAY target — no DU< is needed.
+; Cooperative wait: PAUSE is the FIRST cell of the loop, so a delaying task yields
+; to the rest of the ring on every pass instead of spinning the CPU — the REPL and
+; peer tasks keep running while this task waits (FR14). PAUSE-first means an
+; already-satisfied target (e.g. 0 DELAY) still yields once before it exits; on a
+; length-1 ring that is a walk-to-self no-op, so single-task DELAY/MS is unchanged.
+; The target double rides the CALLER's own data stack as the loop carry — there is
+; no shared mutable countdown cell, so concurrent per-task delays never interfere
+; (FR15); PAUSE saves/restores SP per task, so the target survives the switch.
+; Factored into ONE site so DELAY and MS share this single yield seam.
+; D< is signed, which is correct here: a 32-bit 64 Hz counter does not reach the
+; sign bit (0x8000_0000) until ~388 days of continuous uptime, far beyond any
+; realistic DELAY target — no DU< is needed.
 w_PAREN_DELAY:
         DEFWORD "(DELAY)", 0
 w_PAREN_DELAY_body:
 w_PAREN_DELAY_cf EQU w_PAREN_DELAY_body - 3
 .pd_begin:
+        DW      w_PAUSE_cf              ; cooperative yield to the ring each pass (FR14)
         DW      w_TICKS_cf              ; ( target  now )
         DW      w_TWO_OVER_cf           ; ( target  now  target )
         DW      w_D_LESS_cf             ; ( target  flag=now<target )  signed D<

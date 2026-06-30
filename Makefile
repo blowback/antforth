@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -285,6 +285,29 @@ test-repl-multitasker-key: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-key probe" --fail-line '^FAIL:' \
 		'PASS: key-words-resolve' 'PASS: key-line-reader-live' 'PASS: key-bg-advances' \
 		'PASS: key-emit-clean' 'PASS: key-alive'
+
+# --- Story 25.3 yielding per-task DELAY / MS probe ---
+# (DELAY) gains one PAUSE cell so DELAY/MS yield each loop pass instead of spinning.
+# Asserts the yield STRUCTURE the emulator can prove: the words resolve, 0 DELAY /
+# 0 MS return stack-clean (degenerate first-pass exit through the yielding loop), a
+# background counter advances across an operator 0 DELAY (FR14 — proves (DELAY)
+# holds a live PAUSE), and a task parked in a nonzero DELAY (forever-pending under
+# emulation, TICKS frozen) does NOT stop the operator or the free-running counter
+# (FR14/FR15 — it yields every pass). Wall-clock accuracy (60 DELAY ~ 60 s) and
+# "two DELAYs both complete on time" / "4 DELAY does not freeze the prompt" are
+# HARDWARE S9 (the emulator cannot advance TICKS — see the probe header). Emulator
+# pipe wrapped in the Story 24.3 fail-loud timeout (a non-yielding/monopolizing
+# DELAY never reaches BYE -> loud FAIL, not a CI hang); verdicts go through the
+# Story 24.4 column-0 helper. Single-feature target; NOT folded into plain
+# `test-repl`.
+MULTITASKER_DELAY_PROBE = tests/multitasker_delay_tests.fth
+test-repl-multitasker-delay: $(TARGET)
+	@echo "Running Story 25.3 yielding DELAY / MS probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_DELAY_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-delay probe — timed out after $(PROBE_TIMEOUT)s (non-yielding DELAY monopolized the ring / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-delay probe" --fail-line '^FAIL:' \
+		'PASS: delay-words-resolve' 'PASS: delay-zero-clean' 'PASS: ms-zero-clean' \
+		'PASS: delay-yields' 'PASS: delay-no-monopoly' 'PASS: delay-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
