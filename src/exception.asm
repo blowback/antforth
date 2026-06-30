@@ -556,19 +556,48 @@ w_THROW_cf:
         CALL    print_throw_description
         ; --- Trailing CR/LF ---
         CALL    bdos_crlf
+        ; --- Whose THROW is this? An uncaught THROW from a background task must
+        ;     NOT reset the interpreter in place: QUIT rebuilds the return stack
+        ;     from the global rp_base and re-enters the REPL while current_tcb
+        ;     still points at the faulting task, so the next yielding QUERY→PAUSE
+        ;     snapshots operator state into the task's TCB — scheduler desync.
+        ;     Instead SUSPEND the faulting task (out of the rotation; .TASKS shows
+        ;     it, WAKE of it is a documented no-op — redefine + re-ACTIVATE to
+        ;     recover) and hand control back to the operator's own parked
+        ;     continuation. Only the operator path runs the INCLUDE-chain / asm
+        ;     cleanups below — those are operator-interpreter state a background
+        ;     task never owns. ---
+        LD      HL, (current_tcb)
+        LD      A, L
+        CP      LOW operator_tcb
+        JR      NZ, .throw_uncaught_task
+        LD      A, H
+        CP      HIGH operator_tcb
+        JR      NZ, .throw_uncaught_task
+        ; --- Operator threw: in-place REPL recovery, inlined HERE rather than
+        ;     `JP w_ABORT_cf`: ABORT is itself -1 THROW, so jumping to it would
+        ;     loop (user-ABORT → -1 THROW → uncaught → ABORT → ...).
+        ;     w_QUIT_cf's IX/STATE/CATCH-TOP reset closes the recovery. ---
         ; --- Walk the INCLUDE-TOP chain to completion. Closes every FID
         ;     from in-progress INCLUDEs and restores the input-spec back to
         ;     the outermost (typically keyboard) — no orphaned FIDs after
         ;     THROW. ---
         CALL    throw_chain_walk_uncaught
-        ; --- State reset + REPL recovery, inlined HERE rather than `JP
-        ;     w_ABORT_cf`: ABORT is itself -1 THROW, so jumping to it would
-        ;     loop (user-ABORT → -1 THROW → uncaught → ABORT → ...).
-        ;     w_QUIT_cf's IX/STATE/CATCH-TOP reset closes the recovery. ---
         CALL    asm_cleanup             ; If asm_mode set, restore HERE/bucket
         LD      HL, (sp_base)
         LD      SP, HL                  ; Reset parameter stack
         JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE + CATCH-TOP)
+
+.throw_uncaught_task:
+        ; HL = current_tcb (the faulting background task). Mark it SUSPENDED so
+        ; PAUSE's walk skips it, then resume the operator's saved continuation via
+        ; the scheduler's restore tail (full {SP,IX,IP,TOS,bank,base,catch} swap).
+        LD      DE, TCB_STATUS
+        ADD     HL, DE
+        LD      (HL), TASK_SUSPENDED
+        LD      HL, operator_tcb
+        LD      (current_tcb), HL       ; running task := operator
+        JP      sched_resume_current    ; restore operator context, NEXT
 
 ; -----------------------------------------------
 ; print_signed_dec_bc — Print BC as signed decimal via BDOS.

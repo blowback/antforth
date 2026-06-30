@@ -129,6 +129,12 @@ w_PAUSE_cf:
         CP      TASK_AWAKE
         JR      NZ, .pause_walk
         LD      (current_tcb), HL       ; the selected next running task
+; Reusable resume tail. Entry contract: current_tcb already points at the task to
+; run and HL = that same TCB base. Restores its full context {UA-subset, sp_base,
+; SP, IX, DE=IP, BC=TOS} and NEXTs into it — the ONLY landing point of a switch.
+; The uncaught-THROW handler (exception.asm) jumps here to hand control back to the
+; operator after suspending a faulting background task.
+sched_resume_current:
         ; (4) Restore the next task's UserArea subset. NO MBB_SET_PAGE re-page in
         ;     this story — current_bank is copied as a cell only; the conditional
         ;     page call on a bank change is Story 25.5 (single-bank here).

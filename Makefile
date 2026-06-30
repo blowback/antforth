@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -333,6 +333,26 @@ test-repl-multitasker-tasks: $(TARGET)
 		--present '^   1   AWAKE' 'tasks-bg-awake-row' --present '^   1   ASLEEP' 'tasks-bg-parked-row' \
 		'PASS: tasks-words-resolve' 'PASS: tasks-dot-clean' 'PASS: tasks-index-to-handle' \
 		'PASS: tasks-sleep-skips' 'PASS: tasks-wake-resumes' 'PASS: tasks-alive'
+
+# --- Epic 25 regression — uncaught THROW inside an ACTIVATEd task ---
+# Before the fix the uncaught-THROW handler re-entered QUIT (return stack rebuilt
+# from the global rp_base) while current_tcb still pointed at the faulting task,
+# desyncing the scheduler on the next QUERY->PAUSE. The fix SUSPENDs the task and
+# resumes the operator's parked continuation. Asserts the operator survives stack-
+# clean (RUNTIME 42 token — never in the echoed source), .TASKS renders the task
+# SUSPENDED (^   1   SUSPENDED row witness — the state string is absent from the
+# probe source, so its presence proves .TASKS executed), and the normal CATCH
+# path is unregressed. Fail-loud timeout (a desync would wedge before BYE).
+# Single-feature target like the other 25.x probes.
+MULTITASKER_THROW_PROBE = tests/multitasker_throw_tests.fth
+test-repl-multitasker-throw: $(TARGET)
+	@echo "Running Epic 25 task-uncaught-THROW recovery probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_THROW_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-throw probe — timed out after $(PROBE_TIMEOUT)s (task uncaught THROW desynced the scheduler / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-throw probe" --fail-line '^FAIL:' \
+		--present '^   1   SUSPENDED' 'throw-task-suspended-row' \
+		'PASS: throw-words-resolve' 'PASS: throw-operator-survives' \
+		'PASS: throw-operator-catch' 'PASS: throw-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
