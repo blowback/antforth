@@ -90,6 +90,7 @@ Forth Dimensions Volume IX onwards.
 System timer ISR, GPIO, 24x14 segment LED matrix, beeper, UART,
 I2C, memory banking control, Real-Time Clock anything else board-specific. 
 System timer has strong fit with the multitasker via timer-driven `PAUSE`.
+A PRNG and a word to access it
 
 # Bigger input buffer
 
