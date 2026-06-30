@@ -289,6 +289,172 @@ w_ACTIVATE_cf:
         LD      DE, (sched_ip)          ; restore caller IP
         NEXT
 
+; === SLEEP ( task -- ) — park a task; the ring walk skips it until WAKE ===
+; The operator-callable form of the task_exit epilogue's status write: it stores
+; TASK_ASLEEP at (task+TCB_STATUS), so PAUSE's "skip non-AWAKE" walk steps over the
+; task on every switch and it makes no further progress. `task` is the TCB base the
+; matching TASK returned (the handle, TOS in BC). No new scheduler logic — only the
+; status byte changes; PAUSE already honours it.
+; Deadlock note: if the operator parks the last other AWAKE task and then its own
+; thread also has no work, PAUSE finds no AWAKE TCB and loops forever (hard hang,
+; reset-required) — the same cooperative-failure class as a non-yielding task. The
+; operator's own handle is the static operator_tcb (never a TASK return), so SLEEP
+; only reaches background tasks the operator explicitly created. Documented, not
+; guarded (cooperative model).
+; antforth extension — suspend a cooperative task.
+w_SLEEP:
+        DEFCODE "SLEEP", 0
+w_SLEEP_cf:
+        LD      H, B
+        LD      L, C                    ; HL = task (TCB base, the TOS)
+        INC     HL
+        INC     HL                      ; -> status (+2 = TCB_STATUS)
+        LD      (HL), TASK_ASLEEP
+        POP     BC                      ; new TOS — DE=IP untouched throughout
+        NEXT
+
+; === WAKE ( task -- ) — resume an ASLEEP task into the rotation ===
+; The inverse of SLEEP: stores TASK_AWAKE at (task+TCB_STATUS) so PAUSE's walk
+; selects the task again, resuming it from its saved IP. WAKE of a task SUSPENDED by
+; an uncaught throw (Story 25.6) revives a mid-unwind resume point — the correct
+; recovery there is redefine + re-ACTIVATE, not WAKE; 25.4's WAKE is the cooperative
+; ASLEEP->AWAKE resume only.
+; antforth extension — resume a cooperative task.
+w_WAKE:
+        DEFCODE "WAKE", 0
+w_WAKE_cf:
+        LD      H, B
+        LD      L, C                    ; HL = task (TCB base, the TOS)
+        INC     HL
+        INC     HL                      ; -> status (+2 = TCB_STATUS)
+        LD      (HL), TASK_AWAKE
+        POP     BC                      ; new TOS — DE=IP untouched throughout
+        NEXT
+
+; === .TASKS ( -- ) — list the ring: each task's index + state ===
+; A read-only ring walk anchored at operator_tcb (the static task-0 record), so the
+; operator is deterministically task 0 and the anchor is a stable terminator. For
+; each TCB it prints "   N M STATE": N = decimal index (print_bank_col_4), M = '*'
+; for the current task else ' ' (mirrors .BANKS' current-bank marker), STATE one of
+; AWAKE/ASLEEP/SUSPENDED. Mutates nothing — saves the caller's TOS+IP like .BANKS
+; and runs straight-line asm with free use of BC/DE/HL. SUSPENDED is rendered but
+; not produced until Story 25.6, so 25.6's recovery path needs no .TASKS edit.
+; antforth extension — task-set introspection (the .S/.BANKS convention).
+w_DOT_TASKS:
+        DEFCODE ".TASKS", 0
+w_DOT_TASKS_cf:
+        PUSH    BC                      ; save caller TOS
+        CALL    rpush_de                ; save caller IP (DE=IP restored before NEXT)
+        LD      HL, operator_tcb        ; HL = TCB walk pointer; operator is task 0
+        LD      BC, 0                   ; C = task index (B unused)
+.dt_row:
+        PUSH    BC                      ; save index across the row's BDOS calls
+        PUSH    HL                      ; save TCB base (the walk pointer)
+        ; 1. index column — A = index, right-aligned 4-char decimal
+        LD      A, C
+        CALL    print_bank_col_4        ; clobbers A/BC/DE/HL
+        LD      E, ' '
+        CALL    bdos_putchar
+        ; 2. current-task marker: '*' if this TCB == (current_tcb), else ' '
+        POP     HL
+        PUSH    HL                      ; HL = TCB base
+        LD      DE, (current_tcb)
+        LD      A, L
+        CP      E
+        JR      NZ, .dt_nostar
+        LD      A, H
+        CP      D
+        JR      NZ, .dt_nostar
+        LD      E, '*'
+        JR      .dt_mark
+.dt_nostar:
+        LD      E, ' '
+.dt_mark:
+        CALL    bdos_putchar
+        LD      E, ' '
+        CALL    bdos_putchar
+        ; 3. state string from the status byte (+2)
+        POP     HL
+        PUSH    HL                      ; HL = TCB base
+        INC     HL
+        INC     HL                      ; -> status
+        LD      A, (HL)
+        CP      TASK_AWAKE
+        JR      Z, .dt_awake
+        CP      TASK_SUSPENDED
+        JR      Z, .dt_susp
+        LD      HL, str_task_aslp       ; default: ASLEEP (status 0 or unknown)
+        LD      B, str_task_aslp_len
+        JR      .dt_pstate
+.dt_awake:
+        LD      HL, str_task_awake
+        LD      B, str_task_awake_len
+        JR      .dt_pstate
+.dt_susp:
+        LD      HL, str_task_susp
+        LD      B, str_task_susp_len
+.dt_pstate:
+        CALL    bdos_print_str
+        CALL    bdos_crlf
+        ; 4. advance: follow this TCB's link to the next; loop until back at task 0
+        POP     HL                      ; HL = TCB base (= its link field)
+        LD      A, (HL)
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                    ; HL = next TCB base
+        POP     BC                      ; recover index
+        INC     C                       ; next index
+        LD      A, L
+        CP      LOW operator_tcb
+        JR      NZ, .dt_row
+        LD      A, H
+        CP      HIGH operator_tcb
+        JR      NZ, .dt_row
+        ; ring closed (back at operator_tcb) — restore caller IP + TOS, resume
+        CALL    rpop_de
+        POP     BC
+        NEXT
+
+; State strings for .TASKS' status->name map (length-prefixed by EQU, the
+; str_*/_len convention of banking.asm's .BANKS table). SUSPENDED is rendered now
+; though no task produces it until Story 25.6.
+str_task_awake:         DB "AWAKE"
+str_task_awake_len      EQU 5
+str_task_aslp:          DB "ASLEEP"
+str_task_aslp_len       EQU 6
+str_task_susp:          DB "SUSPENDED"
+str_task_susp_len       EQU 9
+
+; === >TASK ( n -- task ) — handle for the task at ring index n (as .TASKS shows) ===
+; Walks the ring n links from operator_tcb (task 0) and returns that TCB base — the
+; same handle TASK first produced — so `1 >TASK SLEEP` parks the task .TASKS lists as
+; row 1 without having stashed its handle in a CONSTANT. n is the decimal index from
+; .TASKS. The ring is circular, so an n past the last task simply wraps (always a
+; live TCB, never garbage). n=0 is the operator (returned for symmetry, but SLEEPing
+; it courts the documented no-AWAKE deadlock). Body uses only A/BC/HL — DE=IP is
+; untouched (25.1 gotcha #1), so no save/restore. Indices assumed < 256 (capacity
+; caps tasks well under that); the high byte of n is ignored.
+; antforth extension — index->handle for the .TASKS introspection surface.
+w_TO_TASK:
+        DEFCODE ">TASK", 0
+w_TO_TASK_cf:
+        CALL    check_underflow         ; needs 1 cell (n); preserves BC/DE/IX/IY/SP
+        LD      HL, operator_tcb        ; HL = task 0 base
+.tf_loop:
+        LD      A, C
+        OR      A
+        JR      Z, .tf_done             ; counter exhausted -> HL = wanted TCB base
+        DEC     C                       ; one fewer link to chase
+        LD      A, (HL)                 ; link lo (TCB_LINK = 0)
+        INC     HL
+        LD      H, (HL)                 ; link hi
+        LD      L, A                    ; HL = next TCB base
+        JR      .tf_loop
+.tf_done:
+        LD      B, H
+        LD      C, L                    ; BC = TCB base = new TOS
+        NEXT
+
 ; Cross-bank invariant (mirrors timer.asm): the whole scheduler — code, ring
 ; state, and the operator's static TCB — MUST live in always-mapped fixed memory
 ; below $8000, or PAUSE would lose the ring under a foreign bank mapping. The

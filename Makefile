@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -308,6 +308,31 @@ test-repl-multitasker-delay: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-delay probe" --fail-line '^FAIL:' \
 		'PASS: delay-words-resolve' 'PASS: delay-zero-clean' 'PASS: ms-zero-clean' \
 		'PASS: delay-yields' 'PASS: delay-no-monopoly' 'PASS: delay-alive'
+
+# --- Story 25.4 SLEEP / WAKE + .TASKS introspection probe ---
+# SLEEP/WAKE flip a task's status byte; PAUSE's existing walk skips any non-AWAKE
+# TCB, so a parked task makes no progress until woken. .TASKS reads the ring
+# (anchored at operator_tcb = task 0) and prints one "index marker STATE" row per
+# task. Asserts the words resolve, .TASKS is stack-clean, and the DISCRIMINATING
+# behaviour: a parked background counter does NOT advance across operator PAUSEs
+# (the walk skipped it) and a woken one does (the 25.1 TAPE pattern). The two
+# --present row checks require the RUNTIME state-string rows .TASKS rendered — the
+# task-1 awake row (Journey-1: operator + background both awake, AC3) and the
+# task-1 parked row after a SLEEP (AC1) — which cannot appear in the echoed source
+# (the words there are SLEEP/WAKE, not the parked-state name), so they prove
+# .TASKS executed (the 23.2 false-green defence). Emulator pipe wrapped in the
+# Story 24.3 fail-loud timeout (a SLEEP-induced ring wedge -> loud FAIL, not a CI
+# hang); verdicts go through the Story 24.4 column-0 helper. Single-feature
+# target; NOT folded into plain `test-repl`.
+MULTITASKER_TASKS_PROBE = tests/multitasker_tasks_tests.fth
+test-repl-multitasker-tasks: $(TARGET)
+	@echo "Running Story 25.4 SLEEP / WAKE / .TASKS probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_TASKS_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-tasks probe — timed out after $(PROBE_TIMEOUT)s (SLEEP wedged the ring / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-tasks probe" --fail-line '^FAIL:' \
+		--present '^   1   AWAKE' 'tasks-bg-awake-row' --present '^   1   ASLEEP' 'tasks-bg-parked-row' \
+		'PASS: tasks-words-resolve' 'PASS: tasks-dot-clean' 'PASS: tasks-index-to-handle' \
+		'PASS: tasks-sleep-skips' 'PASS: tasks-wake-resumes' 'PASS: tasks-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;

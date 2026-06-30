@@ -361,6 +361,20 @@ w_EDIT_cf:
 ;   then returns the character count. Minimal editing this story (CR/LF + BS +
 ;   echo via fn-1); full fn-10 parity deferred (Q4).
 ;       : (LINE)  0  BEGIN KEY (EDIT) UNTIL  >R 2DROP R> ;
+;
+;   KNOWN LIMITATION — interactive editing vs. a chatty background task.
+;   The per-task line state (c-addr/max/pos) rides the data stack, so PAUSE
+;   keeps it private and the BUFFER is always correct (a background task runs
+;   on its own stack and can only touch the shared CONSOLE, never this buffer).
+;   But EMIT does not yield, so a background task that prints between keystrokes
+;   (KEY PAUSEs in the gaps) moves the terminal cursor out from under the
+;   editor. (EDIT)'s backspace erase (SPACE BS) then rubs out whatever glyph the
+;   cursor now sits on — a background character, not the operator's — so the
+;   VISIBLE line diverges from the buffer and the operator can no longer edit by
+;   eye. This is display desync, not corruption; it is the cooperative
+;   EMIT-no-yield model meeting interactive line editing. Mitigation is to not
+;   run output-heavy tasks while typing a definition (SLEEP them first); real
+;   console-output coordination is future work, not handled here.
 ; -----------------------------------------------
 w_PAREN_LINE_cf:
         JP      DOCOL
