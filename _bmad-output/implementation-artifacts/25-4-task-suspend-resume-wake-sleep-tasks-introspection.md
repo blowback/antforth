@@ -1,6 +1,6 @@
 # Story 25.4: Task suspend/resume (WAKE/SLEEP) + .TASKS introspection
 
-Status: review
+Status: done
 
 > **Epic 25 bring-up step 4 — make the task set *manageable and observable*.**
 > Story 25.1 landed the scheduler spine (`PAUSE`/ring/TCB/`TASK`/`ACTIVATE`);
