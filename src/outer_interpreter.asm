@@ -112,59 +112,54 @@ w_BL_cf:
         NEXT
 
 ; -----------------------------------------------
-; QUERY ( -- )
-;   Read a line from the console into TIB, set #TIB and >IN
-;   Does NOT touch the parameter stack (stack-neutral housekeeping)
-;   Used by QUIT loop to avoid phantom TOS values
+; (QUERY-FINISH) ( count -- )          [headerless kernel-internal]
+;   QUERY's housekeeping tail. After the yielding line reader (LINE) has read a
+;   line into tib_buffer and produced its char count, commit the REPL source
+;   spec: #TIB = count, >IN = 0, and defensively re-assert the canonical
+;   keyboard source (tib_addr = tib_buffer, source_id = 0) so a leaked
+;   EVALUATE / INCLUDE source frame cannot survive into the next REPL line
+;   (source_id = 0 per Forth 2014 §6.2.2218). Consumes count, leaving the data
+;   stack as it found it below (QUERY stays stack-neutral). Preserves DE(IP).
 ; -----------------------------------------------
-w_QUERY:
-        DEFCODE "QUERY", 0
-w_QUERY_cf:
-        ; Save DE (IP) and BC (TOS) to return stack
-        CALL    rpush_de
-        CALL    rpush_bc
-
-        ; Set max_len in BDOS input buffer header
-        LD      A, TIB_SIZE
-        LD      (bdos_input_buf), A
-
-        ; Call BDOS function 10: read console buffer
-        LD      DE, bdos_input_buf
-        LD      C, C_READSTR
-        CALL    BDOS_ENTRY
-
-        ; BDOS 10 echoes CR — emit LF ourselves
-        LD      E, 0x0A
-        CALL    bdos_putchar
-
-        ; Set #TIB = actual chars read
-        LD      A, (bdos_input_len)
-        LD      (IY+UserArea.tib_len), A
+w_PAREN_QUERY_FINISH_cf:
+        ; #TIB = count (low byte; count <= TIB_SIZE so high byte is 0)
+        LD      (IY+UserArea.tib_len), C
         XOR     A
         LD      (IY+UserArea.tib_len+1), A
-
-        ; Reset >IN = 0
-        LD      (IY+UserArea.tib_in), A         ; A = 0
+        ; >IN = 0
+        LD      (IY+UserArea.tib_in), A
         LD      (IY+UserArea.tib_in+1), A
-
-        ; Defensively re-assert canonical REPL source-spec
-        ; (tib_addr = tib_buffer, source_id = 0) so that any
-        ; leaked source-frame state from a pre-existing EVALUATE /
-        ; INCLUDE source-spec cannot survive into the next REPL line.
-        ; EVALUATE's CATCH wrapper closes the structural case; this
-        ; catches future leak paths uncovered by it. source_id = 0 per
-        ; Forth 2014 §6.2.2218 (terminal input). A is already 0 from
-        ; the tib_in reset above.
+        ; canonical source-spec re-assert
         LD      HL, tib_buffer
         LD      (IY+UserArea.tib_addr), L
         LD      (IY+UserArea.tib_addr+1), H
-        LD      (IY+UserArea.source_id), A      ; A still 0 from above
+        LD      (IY+UserArea.source_id), A      ; A = 0
         LD      (IY+UserArea.source_id+1), A
-
-        ; Restore BC (TOS) and DE (IP) from return stack
-        CALL    rpop_bc
-        CALL    rpop_de
+        POP     BC              ; drop count, restore prior TOS (stack-neutral)
         NEXT
+
+; -----------------------------------------------
+; QUERY ( -- )
+;   Read a line from the console into TIB, set #TIB and >IN.
+;   Does NOT touch the parameter stack (stack-neutral housekeeping) — used by
+;   the QUIT loop to avoid phantom TOS values.
+;   Story 25.2: the line is now read char-by-char through the YIELDING line
+;   reader (LINE) (over the yielding KEY), so the operator task PAUSEs between
+;   keystrokes and a background task keeps running while the operator sits at
+;   the prompt (FR10 / "task 0 yields in KEY", AD-P6-6). QUERY is a DEFWORD
+;   thread so it can host the threaded (LINE); the old atomic BDOS fn-10 read
+;   (no yield seam) is gone. (QUERY-FINISH) does the #TIB/>IN/source-spec tail.
+;       : QUERY  tib_buffer TIB_SIZE (LINE) (QUERY-FINISH) ;
+; -----------------------------------------------
+w_QUERY:
+        DEFWORD "QUERY", 0
+w_QUERY_body:
+w_QUERY_cf  EQU  w_QUERY_body - 3
+        DW      w_LIT_cf, tib_buffer    ; ( -- c-addr )
+        DW      w_LIT_cf, TIB_SIZE      ; ( c-addr -- c-addr max )
+        DW      w_PAREN_LINE_cf         ; ( c-addr max -- count )   yields per char
+        DW      w_PAREN_QUERY_FINISH_cf ; ( count -- )              commit #TIB/>IN/spec
+        DW      EXIT_CODE
 
 ; -----------------------------------------------
 ; INTERPRET ( -- )

@@ -40,7 +40,6 @@ DISKDIR  = disk
 BUILDDIR_STAMP = $(BUILDDIR)/.dirstamp
 
 TARGET   = $(BUILDDIR)/antforth.com
-TESTKEY  = $(BUILDDIR)/test_key.com
 DISKIMG  = $(BUILDDIR)/antforth.img
 # Story 13.1 — file-sanity harness binary built with -DFILE_SANITY.
 # The (FILE-IO-SANITY) word is wrapped in `IFDEF FILE_SANITY` so the
@@ -54,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity test_key clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -264,6 +263,28 @@ test-repl-multitasker: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker probe" --fail-line '^FAIL:' \
 		'PASS: mt-words-resolve' 'PASS: mt-solo-pause' 'PASS: mt-roundrobin' \
 		'PASS: mt-task-asleep' 'PASS: mt-alive'
+
+# --- Story 25.2 KEY-hooked REPL input-only yield probe ---
+# Asserts the yielding input words resolve, the new char-by-char QUERY line
+# reader is live (every probe line is read through it; computed token 42 proves
+# genuine execution, not echo), a background counter advances when the
+# foreground yields (the KEY-as-thread restructure did not break the scheduler),
+# and EMIT does not yield (clean contiguous foreground output with a task
+# active, AC2/F2). The live-prompt "advances WHILE you type" responsiveness is
+# the HARDWARE S9 assertion — a non-interactive pipe always has input ready, so
+# the operator never WAITS in KEY (see the probe header). Emulator pipe wrapped
+# in the Story 24.3 fail-loud timeout (KEY busy-waits forever if BYE is never
+# reached, by design — a wedge is then a loud FAIL, not a CI hang); verdicts go
+# through the Story 24.4 column-0 helper. Single-feature target; NOT folded into
+# plain `test-repl`.
+MULTITASKER_KEY_PROBE = tests/multitasker_key_tests.fth
+test-repl-multitasker-key: $(TARGET)
+	@echo "Running Story 25.2 KEY-hooked REPL input-yield probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_KEY_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-key probe — timed out after $(PROBE_TIMEOUT)s (KEY never reached BYE / PAUSE ring wedge)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-key probe" --fail-line '^FAIL:' \
+		'PASS: key-words-resolve' 'PASS: key-line-reader-live' 'PASS: key-bg-advances' \
+		'PASS: key-emit-clean' 'PASS: key-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
@@ -616,7 +637,12 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# all FAILing because iron-spike's hang truncated each subprocess's
 	@# OUTPUT mid-stream. P193IRON.FTH's sentinels are -19.3- variants per
 	@# the file; the recipe asserts on those.
-	@OUTPUT=$$(sed 's/$$/\r/' disk/a/P193IRON.FTH | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@# Append BYE + bound with timeout: P193IRON.FTH ends with a 0x1A EOF marker
+	@# and no BYE, so it used to rely on the old fn-10 EOF-crash to terminate; the
+	@# Story 25.2 yielding reader waits at EOF instead, so feed a real BYE (the
+	@# leading CRLF separates it from the 0x1A) and keep a fail-loud timeout net
+	@# (Story 24.3). The success literal is emitted before BYE either way.
+	@OUTPUT=$$({ sed 's/$$/\r/' disk/a/P193IRON.FTH; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-19.3-start---$$/{p=1; next} /---iron-spike-19.3-end---$$/{p=0} p') && \
 	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-19.3-end---$$'; then \
 		echo "PASS: iron-spike — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM_BANKING) (isolated subprocess via disk/a/P193IRON.FTH)"; \
@@ -1088,7 +1114,10 @@ test-repl-banking-isolated-19-4: $(TARGET)
 # fixture header in tests/banking_tests_19_5_1.fth.
 test-repl-banking-isolated-19-5-1: $(TARGET)
 	@echo "Running Story 19.5.1 isolated F2 first-visit probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_5_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@# Append BYE + timeout: the probe file has no BYE and relied on the old fn-10
+	@# EOF-crash; the Story 25.2 yielding reader waits at EOF, so feed a real BYE
+	@# (BYE is a fixed-memory word, findable from any bank) and keep a timeout net.
+	@OUTPUT=$$({ sed 's/$$/\r/' tests/banking_tests_19_5_1.fth; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	PROBE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-19.5.1-c-start---";re="---probe-19.5.1-c-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 	if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE '^---probe-19.5.1-c-end---$$'; then \
 		echo "PASS: probe-19.5.1-c (isolated) — bank-1 first-visit HERE = \$$8000 (F2 COLD-init, behavioural) under $(IZCPM_BANKING)"; \
@@ -1181,7 +1210,10 @@ test-repl-banking-isolated-20-2: $(TARGET)
 
 test-repl-banking-isolated-22-1: $(TARGET)
 	@echo "Running Story 22.1 isolated .BANKS define-then-check probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@# Append BYE + timeout: the probe file has no BYE and relied on the old fn-10
+	@# EOF-crash; the Story 25.2 yielding reader waits at EOF, so feed a real BYE
+	@# (the leading CRLF separates it from the file's 0x1A) and keep a timeout net.
+	@OUTPUT=$$({ sed 's/$$/\r/' tests/banking_tests_22_1.fth; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
 	BEFORE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.1-before---";re="---probe-22.1-mid---"} $$0==rs{q=1;next} $$0==re{q=0} q' | grep -E '^[ ]+5[ ]+' | awk '{print $$(NF-1)}') && \
 	AFT=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.1-mid---";re="---probe-22.1-after---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	AFTER=$$(echo "$$AFT" | grep -E '^[ ]+5[ ]+' | awk '{print $$(NF-1)}') && \
@@ -1635,16 +1667,10 @@ $(BUILDDIR_STAMP):
 	mkdir -p $(BUILDDIR)
 	touch $@
 
-test_key: $(TESTKEY)
-
-$(TESTKEY): $(SRCS) | $(BUILDDIR_STAMP)
-	cd $(SRCDIR) && $(ASM) $(ASMFLAGS) test_key.asm --raw=../$(TESTKEY)
-
-disk: $(TARGET) $(TESTKEY)
+disk: $(TARGET)
 	@echo "Building CP/M disk image..."
 	mkfs.cpm -f ibm-3740 $(DISKIMG)
 	cpmcp -f ibm-3740 $(DISKIMG) $(TARGET) 0:antforth.com
-	cpmcp -f ibm-3740 $(DISKIMG) $(TESTKEY) 0:test_key.com
 
 test: $(SRCS) | $(BUILDDIR_STAMP)
 	@echo "Running regression tests..."
@@ -7256,7 +7282,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# Story 10.9 review follow-ups documenting the silent-garbage baseline) are
 	@# repurposed here to assert the post-migration uncaught-recovery diagnostic.
 	@OUTPUT=$$(printf '1 1 0 */\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -10: division by zero.*0  ok'; then \
 		echo "PASS: REPL test 651 — '1 1 0 */' raises -10 THROW (Story 11.4 UM/MOD guard); REPL recovers, post-recovery DEPTH=0"; \
 	else \
 		echo "FAIL: REPL test 651 — expected 'error -10: division by zero' + post-recovery '0  ok' for '1 1 0 */'"; \
@@ -7264,7 +7290,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '1 1 0 */MOD\r\nDEPTH .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -10: division by zero.*0  ok'; then \
 		echo "PASS: REPL test 652 — '1 1 0 */MOD' raises -10 THROW (Story 11.4 UM/MOD guard); REPL recovers, post-recovery DEPTH=0"; \
 	else \
 		echo "FAIL: REPL test 652 — expected 'error -10: division by zero' + post-recovery '0  ok' for '1 1 0 */MOD'"; \
@@ -7397,7 +7423,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ": NOOP ;" "HEX ' NOOP CATCH DROP BASE @ DECIMAL ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\. 16  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE '\. 16  ok'; then \
 		echo "PASS: REPL test 668 — BASE preserved across CATCH normal return (AC #15a)"; \
 	else \
 		echo "FAIL: REPL test 668 — expected '. 16  ok' (sole result) for BASE-integrity test"; \
@@ -7429,7 +7455,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'CATCH\r\nCATCH-TOP @ .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.* ok.*CATCH-TOP @ \. 0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.* ok.*CATCH-TOP @ \. 0  ok'; then \
 		echo "PASS: REPL test 672 — empty-stack 'CATCH' aborts and CATCH-TOP is reset to 0 on recovery (AC #3 / AC #17 / AC #18)"; \
 	else \
 		echo "FAIL: REPL test 672 — expected 'error -4: stack underflow' + recovery + 'CATCH-TOP @ . 0  ok' (CCD-1 chain reset)"; \
@@ -7453,7 +7479,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '0 0 THROW .\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '0 0 THROW \. 0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE '0 0 THROW \. 0  ok'; then \
 		echo "PASS: REPL test 675 — Story 11.3: THROW 0 with BC=0 from below is a no-op (AC #3)"; \
 	else \
 		echo "FAIL: REPL test 675 — expected '0  ok' for '0 0 THROW .'"; \
@@ -7533,7 +7559,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf '42 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error 42  '; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error 42  '; then \
 		echo "PASS: REPL test 685 — Story 11.3: uncaught THROW with user code prints 'error <N>' (no description) (AC #4, AC #5)"; \
 	else \
 		echo "FAIL: REPL test 685 — expected 'error 42' (no ': <desc>') for uncaught user THROW"; \
@@ -7541,7 +7567,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-13 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word'; then \
 		echo "PASS: REPL test 686 — Story 11.3: uncaught THROW with std code -13 prints diagnostic + description (AC #4, AC #5)"; \
 	else \
 		echo "FAIL: REPL test 686 — expected 'error -13: undefined word' for uncaught -13 THROW"; \
@@ -7549,7 +7575,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-1 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -1: ABORT'; then \
 		echo "PASS: REPL test 687 — Story 11.3: uncaught -1 THROW prints 'error -1: ABORT' (Story 11.7 retargeted ABORT itself to -1 THROW) (AC #5)"; \
 	else \
 		echo "FAIL: REPL test 687 — expected 'error -1: ABORT' for uncaught -1 THROW"; \
@@ -7557,7 +7583,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ": HELLO 99 ;" "-13 THROW" "HELLO ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 688 — Story 11.3: dictionary intact across uncaught THROW + REPL recovery (AC #4)"; \
 	else \
 		echo "FAIL: REPL test 688 — expected diagnostic followed by '99  ok' (HELLO survives recovery)"; \
@@ -7565,7 +7591,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "HEX -1 THROW" "BASE @ DECIMAL ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT.*16  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -1: ABORT.*16  ok'; then \
 		echo "PASS: REPL test 689 — Story 11.3: BASE preserved across uncaught THROW; diagnostic prints in decimal (AC #4, AC #13)"; \
 	else \
 		echo "FAIL: REPL test 689 — expected 'error -1: ABORT' (decimal) then '16  ok' (BASE still HEX)"; \
@@ -7573,7 +7599,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n" "CODE BAD" "-13 THROW" "CODE GOOD" "NEXT, END-CODE" "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.* ok.* ok.* ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.* ok.* ok.* ok'; then \
 		echo "PASS: REPL test 690 — Story 11.3: asm_mode cleaned by uncaught THROW; subsequent CODE..END-CODE compiles (AC #4)"; \
 	else \
 		echo "FAIL: REPL test 690 — expected diagnostic + 3 'ok' (CODE BAD, recovery, CODE GOOD, END-CODE)"; \
@@ -7581,7 +7607,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "-13 THROW" "CATCH-TOP @ ." "BYE" | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*CATCH-TOP @ \. 0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*CATCH-TOP @ \. 0  ok'; then \
 		echo "PASS: REPL test 691 — Story 11.3: CATCH-TOP zeroed by QUIT after uncaught THROW (CCD-1 chain reset)"; \
 	else \
 		echo "FAIL: REPL test 691 — expected diagnostic followed by 'CATCH-TOP @ . 0  ok'"; \
@@ -7597,7 +7623,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf -- '-32768 THROW\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -32768  '; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -32768  '; then \
 		echo "PASS: REPL test 693 — Story 11.3 (review F2): uncaught -32768 prints 'error -32768' via unsigned-aware print (no description suffix — code is not in throw_desc_table)"; \
 	else \
 		echo "FAIL: REPL test 693 — expected 'error -32768  ' (no ': <desc>') for uncaught most-negative THROW"; \
@@ -7786,7 +7812,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DROP' '42 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*42  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*42  ok'; then \
 		echo "PASS: REPL test 716 — Story 11.4: uncaught DROP underflow prints diagnostic + REPL recovers cleanly (AC #9, AC #20)"; \
 	else \
 		echo "FAIL: REPL test 716 — expected 'error -4: stack underflow' + recovery + '42  ok'"; \
@@ -7794,7 +7820,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '1 0 /' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -10: division by zero.*99  ok'; then \
 		echo "PASS: REPL test 717 — Story 11.4: uncaught '1 0 /' divisor-zero prints diagnostic + REPL recovers cleanly (AC #9, AC #20)"; \
 	else \
 		echo "FAIL: REPL test 717 — expected 'error -10: division by zero' + recovery + '99  ok'"; \
@@ -7938,7 +7964,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" "' UNDEFINED" '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 735 — Story 11.5: uncaught ' UNDEFINED prints error -13 + REPL recovers cleanly (TICK at REPL; AC #19)"; \
 	else \
 		echo "FAIL: REPL test 735 — expected 'error -13: undefined word' + recovery + '99  ok'"; \
@@ -7946,7 +7972,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'UNDEFINED' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 736 — Story 11.5: uncaught UNDEFINED token at top level prints error -13 + REPL recovers (INTERPRET; AC #19)"; \
 	else \
 		echo "FAIL: REPL test 736 — expected 'error -13: undefined word' + recovery + '99  ok'"; \
@@ -7954,7 +7980,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ';' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
 		echo "PASS: REPL test 737 — Story 11.5: uncaught ; outside compile mode prints error -14 + REPL recovers (AC #19)"; \
 	else \
 		echo "FAIL: REPL test 737 — expected 'error -14: interpreting a compile-only word' + recovery + '99  ok'"; \
@@ -7962,7 +7988,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'DOES>' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
 		echo "PASS: REPL test 738 — Story 11.5: uncaught DOES> outside compile mode prints error -14 + REPL recovers (AC #19)"; \
 	else \
 		echo "FAIL: REPL test 738 — expected 'error -14:' + recovery + '99  ok'"; \
@@ -7970,7 +7996,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" ': ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 739 — Story 11.5: uncaught ':' (no name) prints error -16 + REPL recovers (AC #19)"; \
 	else \
 		echo "FAIL: REPL test 739 — expected 'error -16: attempt to use zero-length string as a name' + recovery + '99  ok'"; \
@@ -7978,7 +8004,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CREATE ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 740 — Story 11.5: uncaught CREATE (no name) prints error -16 + REPL recovers (AC #19)"; \
 	else \
 		echo "FAIL: REPL test 740 — expected 'error -16:' + recovery + '99  ok'"; \
@@ -7986,7 +8012,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '5 CONSTANT ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 741 — Story 11.5: uncaught 5 CONSTANT (no name) prints error -16 + REPL recovers (AC #19; CONSTANT POP-BC consumes value before THROW)"; \
 	else \
 		echo "FAIL: REPL test 741 — expected 'error -16:' + recovery + '99  ok' (CONSTANT no-name with value-on-stack)"; \
@@ -7994,7 +8020,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'MARKER ' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -16: attempt to use zero-length string as a name.*99  ok'; then \
 		echo "PASS: REPL test 742 — Story 11.5: uncaught MARKER (no name) prints error -16 + REPL recovers (AC #19)"; \
 	else \
 		echo "FAIL: REPL test 742 — expected 'error -16:' + recovery + '99  ok' (MARKER no-name)"; \
@@ -8002,7 +8028,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" 'CODE' 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -260: CODE needs name.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -260: CODE needs name.*99  ok'; then \
 		echo "PASS: REPL test 743 — Story 11.5: uncaught CODE (no name) prints error -260 + REPL recovers (asm error via inline raise; AC #19)"; \
 	else \
 		echo "FAIL: REPL test 743 — expected 'error -260: CODE needs name' + recovery + '99  ok'"; \
@@ -8010,7 +8036,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'END-CODE' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -261: END-CODE without CODE.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -261: END-CODE without CODE.*99  ok'; then \
 		echo "PASS: REPL test 744 — Story 11.5: uncaught standalone END-CODE prints error -261 + REPL recovers (asm error via inline raise; AC #19)"; \
 	else \
 		echo "FAIL: REPL test 744 — expected 'error -261: END-CODE without CODE' + recovery + '99  ok'"; \
@@ -8070,7 +8096,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# DO/LOOP are compile-only — wrap in a colon body to fire from
 	@# execute time.
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n%s\r\n" ': T17X 0 0 <# 41 0 DO 88 HOLD LOOP #> 2DROP ;' 'T17X' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -17: pictured numeric output string overflow.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -17: pictured numeric output string overflow.*99  ok'; then \
 		echo "PASS: REPL test 750 — Story 11.6: uncaught -17 pictured overflow prints error + REPL recovers"; \
 	else \
 		echo "FAIL: REPL test 750 — expected 'error -17: pictured numeric output string overflow' + recovery + '99  ok'"; \
@@ -8079,7 +8105,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 4.3: uncaught -58 `(` missing `)` + REPL recovery.
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" '( unterminated' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -58: unexpected end of input.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -58: unexpected end of input.*99  ok'; then \
 		echo "PASS: REPL test 751 — Story 11.6: uncaught open-paren missing close-paren prints error -58 + REPL recovers"; \
 	else \
 		echo "FAIL: REPL test 751 — expected 'error -58: unexpected end of input' + recovery + '99  ok'"; \
@@ -8088,7 +8114,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 4.3: uncaught -270 (NOP, outside CODE) + REPL recovery.
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'NOP,' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -270: not in CODE.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -270: not in CODE.*99  ok'; then \
 		echo "PASS: REPL test 752 — Story 11.6: uncaught NOP, outside CODE prints error -270 + REPL recovers"; \
 	else \
 		echo "FAIL: REPL test 752 — expected 'error -270: not in CODE' + recovery + '99  ok'"; \
@@ -8099,7 +8125,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# + REPL recovery. Triggers asm_bit_range_err via .bop_reg8's range
 	@# check. (Was -271 pre-Story-11.5.6; split into -272 bit range.)
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRG272 8 # B BIT, END-CODE' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -272: bit range.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -272: bit range.*99  ok'; then \
 		echo "PASS: REPL test 753 — Story 11.5.6: uncaught BIT 8 prints error -272: bit range + REPL recovers"; \
 	else \
 		echo "FAIL: REPL test 753 — expected 'error -272: bit range' + recovery + '99  ok'"; \
@@ -8196,7 +8222,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# Story 11.3 test 687 covered raw -1 THROW; this covers the ABORT
 	@# word as the user-facing entry point.
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'ABORT' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -1: ABORT.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -1: ABORT.*99  ok'; then \
 		echo "PASS: REPL test 762 — Story 11.7: uncaught ABORT prints error -1: ABORT + REPL recovers (AC #17)"; \
 	else \
 		echo "FAIL: REPL test 762 — expected 'error -1: ABORT' + recovery + '99  ok'"; \
@@ -8207,7 +8233,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# prints the inline message before raising -2 THROW; the uncaught
 	@# handler prints `error -2: ABORT"` then runs the recovery chain.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': TUA1 1 ABORT" boom" ;' 'TUA1' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
 		echo "PASS: REPL test 763 — Story 11.7: uncaught ABORT\" prints message + error -2 + REPL recovers (AC #17)"; \
 	else \
 		echo "FAIL: REPL test 763 — expected 'boom...error -2: ABORT\"...99  ok'"; \
@@ -8221,7 +8247,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# it does NOT appear in the post-recovery WORDS output (one occurrence
 	@# total). If asm_cleanup failed, WORDS lists it (two occurrences).
 	@OUTPUT=$$(printf "%s\r\n%s\r\n%s\r\n" 'CODE TRYX117 UNDEFOPX117 END-CODE' 'WORDS' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13.*ok' && \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13.*ok' && \
 	   [ "$$(echo "$$OUTPUT" | grep -c 'TRYX117')" = "1" ]; then \
 		echo "PASS: REPL test 764 — Story 11.7: asm_cleanup integrity — in-CODE -13 + recovery; TRYX117 unlinked (AC #18a, capstone)"; \
 	else \
@@ -8247,7 +8273,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# and added test 779 below as the NFR6 (b) corollary closure.
 	@# Section 10.1: stack-underflow stress recovery (NFR6 (a)).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*99  ok'; then \
 		echo "PASS: REPL test 766 — Story 11.8: stack underflow uncaught + REPL recovery (NFR6 a)"; \
 	else \
 		echo "FAIL: REPL test 766 — expected 'error -4: stack underflow' + recovery + '99  ok'"; \
@@ -8256,7 +8282,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 10.1: division-by-zero stress recovery (NFR6 (c)).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' '1 0 /' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -10: division by zero.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -10: division by zero.*99  ok'; then \
 		echo "PASS: REPL test 767 — Story 11.8: division by zero uncaught + REPL recovery (NFR6 c)"; \
 	else \
 		echo "FAIL: REPL test 767 — expected 'error -10: division by zero' + recovery + '99  ok'"; \
@@ -8265,7 +8291,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 10.1: undefined-word stress recovery (NFR6 (d)).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'THIS-DOES-NOT-EXIST' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*99  ok'; then \
 		echo "PASS: REPL test 768 — Story 11.8: undefined word uncaught + REPL recovery (NFR6 d)"; \
 	else \
 		echo "FAIL: REPL test 768 — expected 'error -13: undefined word' + recovery + '99  ok'"; \
@@ -8277,7 +8303,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# not -22 as the story spec drafted; the story's spec said "verify exact code at
 	@# write time" — adjusted regex to -14.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ';' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -14: interpreting a compile-only word.*99  ok'; then \
 		echo "PASS: REPL test 769 — Story 11.8: orphan-; compile-state mismatch uncaught + REPL recovery (NFR6 e)"; \
 	else \
 		echo "FAIL: REPL test 769 — expected 'error -14: interpreting a compile-only word' + recovery + '99  ok'"; \
@@ -8288,7 +8314,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# as the closure-suite "every category in one place" entry; same scenario, fresh
 	@# numbering so a future maintainer can grep test 770 for "Epic 11 closure suite".
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T118F 1 ABORT" boom" ;' 'T118F' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'boom.*error -2: ABORT".*99  ok'; then \
 		echo "PASS: REPL test 770 — Story 11.8: ABORT\" truthy uncaught + REPL recovery (NFR6 f)"; \
 	else \
 		echo "FAIL: REPL test 770 — expected 'boom...error -2: ABORT\"...99  ok'"; \
@@ -8299,7 +8325,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# remain consistent. Eight invariants — each gets one Makefile test.
 	@# Section 10.2: invariant (i) input buffer reset — post-error line parses cleanly.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' '1 2 + .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*3  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*3  ok'; then \
 		echo "PASS: REPL test 771 — Story 11.8: invariant (i) input buffer reset post-error (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 771 — expected 'error -4...3  ok' for input-buffer reset"; \
@@ -8310,7 +8336,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# H1 is a VARIABLE holding pre-: HERE; after the mid-: error, asm_cleanup unlinks
 	@# the partial NEW and rolls HERE back. H1 @ HERE = . prints "-1  ok" (true).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'VARIABLE H1' 'HERE H1 !' ': NEW THIS-DOES-NOT-EXIST ;' 'H1 @ HERE = .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*-1  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*-1  ok'; then \
 		echo "PASS: REPL test 772 — Story 11.8: invariant (ii) HERE rolled back after mid-: error (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 772 — expected 'error -13...-1  ok' for HERE rollback"; \
@@ -8319,7 +8345,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 10.2: invariant (iii) parameter-stack DEPTH = 0 after recovery.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'DEPTH .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
 		echo "PASS: REPL test 773 — Story 11.8: invariant (iii) parameter-stack DEPTH = 0 post-recovery (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 773 — expected 'error -4...0  ok' for DEPTH=0 invariant"; \
@@ -8329,7 +8355,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# Section 10.2: invariant (iv) return stack reset — define + call colon post-error.
 	@# A fresh : TT 1 ; TT . runs cleanly only if w_QUIT_cf re-init reset IX rstack.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' ': TT 1 ; TT .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*1  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*1  ok'; then \
 		echo "PASS: REPL test 774 — Story 11.8: invariant (iv) return stack reset post-recovery (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 774 — expected 'error -4...1  ok' for return-stack reset"; \
@@ -8338,7 +8364,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 10.2: invariant (v) CATCH-TOP @ . returns 0 after recovery.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'DROP' 'CATCH-TOP @ .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*0  ok'; then \
 		echo "PASS: REPL test 775 — Story 11.8: invariant (v) CATCH-TOP = 0 post-recovery (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 775 — expected 'error -4...0  ok' for CATCH-TOP=0 invariant"; \
@@ -8356,7 +8382,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# render to the string "10" in their respective bases — a HEX/DECIMAL
 	@# coincidence false-PASS; Story 11.8 review M2.)
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'HEX FE THIS-DOES-NOT-EXIST' 'BASE @ DECIMAL .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*16  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*16  ok'; then \
 		echo "PASS: REPL test 776 — Story 11.8: invariant (vi) BASE preserved across error (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 776 — expected 'error -13...16  ok' for BASE-preserved invariant"; \
@@ -8367,7 +8393,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# MARKER MK1 + : T 99 ; + DROP (errors) + MK1 (rolls back T) + T → "T ?" + -13.
 	@# Confirms (a) MARKER survived recovery and (b) post-MK1 dictionary is at the marked state.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'MARKER MK1' ': T 99 ;' 'DROP' 'MK1' 'T' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -4: stack underflow.*T \?.*error -13: undefined word'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -4: stack underflow.*T \?.*error -13: undefined word'; then \
 		echo "PASS: REPL test 777 — Story 11.8: invariant (vii) MARKER-saved state recoverable (NFR7)"; \
 	else \
 		echo "FAIL: REPL test 777 — expected '-4 stack underflow' then MK1 rolls back T then 'T ? error -13'"; \
@@ -8376,7 +8402,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 10.2: invariant (viii) user dictionary preserved (FR22).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': USER-WORD 42 ;' 'THIS-DOES-NOT-EXIST' 'USER-WORD .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -13: undefined word.*42  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -13: undefined word.*42  ok'; then \
 		echo "PASS: REPL test 778 — Story 11.8: invariant (viii) user dictionary preserved across error (FR22)"; \
 	else \
 		echo "FAIL: REPL test 778 — expected 'error -13...42  ok' for user-dictionary preservation"; \
@@ -8396,7 +8422,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# loop never enters BDOS until the THROW path's diagnostic emission, by
 	@# which time SP has been reset wholesale.
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' ': T779 BEGIN 1 0 UNTIL ;' 'T779' '99 .' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE 'error -3: stack overflow.*99  ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE 'error -3: stack overflow.*99  ok'; then \
 		echo "PASS: REPL test 779 — Story 11.5.2: stack overflow uncaught + REPL recovery (NFR6 b — gap closed)"; \
 	else \
 		echo "FAIL: REPL test 779 — expected 'error -3: stack overflow' + recovery + '99  ok'"; \
@@ -8443,7 +8469,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	fi
 	@# Section 11.0: depth-invariant after caught -58 (the AC #1 / AC #4 reproducer in test form).
 	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T58 S" ( unterminated " EVALUATE ;' "' T58 CATCH . CR DEPTH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | tr '\r\n' '  ' | grep -qE '\-58\s+0\s+ok'; then \
+	if echo "$$OUTPUT" | tr -d '\r' | tr '\n' ' ' | grep -qE '\-58\s+0\s+ok'; then \
 		echo "PASS: REPL test 784 — Story 11.5.3: depth-invariant after caught -58 (AC #1 / AC #4 reproducer)"; \
 	else \
 		echo "FAIL: REPL test 784 — expected '-58' then '0  ok' (depth=0) after caught -58"; \
@@ -8882,7 +8908,11 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 		exit 1; \
 	fi
 	@# T-SC3b (test 828) — adding WL2 to the search order makes SC3BAR findable.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'WL2 1 SET-ORDER   SC3BAR .   -1 SET-ORDER' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@# Keep FORTH-WORDLIST in the order (WL2 on top) so the final BYE stays
+	@# reachable: dropping FORTH (WL2 1 SET-ORDER) makes SET-ORDER/BYE unfindable,
+	@# and the yielding line reader (Story 25.2) waits at EOF instead of the old
+	@# fn-10 crash-exit. WL2 in the order still proves T-SC3b (SC3BAR found = 33).
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' 'WORDLIST CONSTANT WL2   WL2 SET-CURRENT   : SC3BAR 33 ;   FORTH-WORDLIST SET-CURRENT' 'WL2 FORTH-WORDLIST 2 SET-ORDER   SC3BAR .   -1 SET-ORDER' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '33 '; then \
 		echo "PASS: REPL test 828 — Story 12.4: WL2 in search order makes SC3BAR findable (T-SC3b)"; \
 	else \
@@ -9060,7 +9090,11 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# T-CCD4-DEPTH16 (test 844) — SET-ORDER ceiling = 16 (E12-D2). Wraps the
 	@# DO/LOOP body in a colon defn so DO is permitted, then drops the 16
 	@# wids GET-ORDER pushed and resets via ONLY.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n' ': T844 16 0 DO FORTH-WORDLIST LOOP 16 SET-ORDER GET-ORDER DUP 16 = . 0 DO DROP LOOP ONLY ;' 'T844' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true; echo BYE) && \
+	@# Feed BYE as a real input line (was a bogus `; echo BYE` shell-append, never
+	@# sent to iz-cpm): the yielding reader (Story 25.2) waits at EOF rather than
+	@# the old fn-10 crash-exit, so the probe must reach BYE itself. ONLY leaves
+	@# the minimum order with FORTH, so BYE stays findable.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T844 16 0 DO FORTH-WORDLIST LOOP 16 SET-ORDER GET-ORDER DUP 16 = . 0 DO DROP LOOP ONLY ;' 'T844' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-1  ok'; then \
 		echo "PASS: REPL test 844 — Story 12.6: SET-ORDER depth=16 ceiling round-trip (T-CCD4-DEPTH16)"; \
 	else \
@@ -9127,7 +9161,11 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(
 	@# of empty wordlists, returns ( c-addr 0 ) → NIP keeps 0 → '.' prints
 	@# 0. Counted string "NOPE850" built at HERE; colon-defn body
 	@# pre-resolves all tokens before SET-ORDER reconfigures the order.
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n' 'HERE  7 C,  78 C, 79 C, 80 C, 69 C, 56 C, 53 C, 48 C,  CONSTANT NAMEBUF' 'WORDLIST CONSTANT WL850A  WORDLIST CONSTANT WL850B  WORDLIST CONSTANT WL850C  WORDLIST CONSTANT WL850D' ': T850 WL850A WL850B WL850C WL850D 4 SET-ORDER  NAMEBUF FIND SWAP DROP .  ONLY ;' 'T850' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true; echo BYE) && \
+	@# Feed BYE as a real input line (was a bogus `; echo BYE` shell-append, never
+	@# sent to iz-cpm): the yielding reader (Story 25.2) waits at EOF rather than
+	@# the old fn-10 crash-exit. T850 ends with ONLY (min order keeps FORTH), so
+	@# BYE stays findable.
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' 'HERE  7 C,  78 C, 79 C, 80 C, 69 C, 56 C, 53 C, 48 C,  CONSTANT NAMEBUF' 'WORDLIST CONSTANT WL850A  WORDLIST CONSTANT WL850B  WORDLIST CONSTANT WL850C  WORDLIST CONSTANT WL850D' ': T850 WL850A WL850B WL850C WL850D 4 SET-ORDER  NAMEBUF FIND SWAP DROP .  ONLY ;' 'T850' 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q '0  ok'; then \
 		echo "PASS: REPL test 850 — Story 12.6 review: multi-vocab miss-fallthrough via FIND on 4 empty slots (T-CCD4-MULTI-MISS)"; \
 	else \
