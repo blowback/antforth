@@ -140,12 +140,26 @@ lock, no masking — and it would be a *bug* to add a `PAUSE` inside that window
 
 ### Starvation vs. the reset-required stall
 
-If nobody ever `SIGNAL`s a semaphore, a task blocked in `WAIT` never progresses —
-but because `WAIT` yields every pass, **the rest of the ring stays alive**: the
-REPL still echoes, peer tasks still run. That is the cooperative-friendly failure,
-and it's the opposite of the Story 25.7 non-yielding stall (a task in a tight loop
-with *no* `PAUSE`), which wedges the whole scheduler and is only recoverable by
-reset. A starving `WAIT`er you can observe and redefine; a non-yielding loop you
-cannot. The `make test-repl-semaphore` probe asserts exactly this: a task parked
-forever in `WAIT` on a never-signalled semaphore, while a peer counter keeps
-advancing and the probe still runs to completion.
+If nobody ever `SIGNAL`s a semaphore, a **background** task blocked in `WAIT`
+never progresses — but because `WAIT` yields every pass, **the rest of the ring
+stays alive**: the REPL still echoes, peer tasks still run. That is the
+cooperative-friendly failure, and it's the opposite of the Story 25.7 non-yielding
+stall (a task in a tight loop with *no* `PAUSE`), which wedges the whole scheduler
+and is only recoverable by reset. A starving *background* `WAIT`er you can observe
+and redefine; a non-yielding loop you cannot. The `make test-repl-semaphore` probe
+asserts exactly this: a **background** task parked forever in `WAIT` on a
+never-signalled semaphore, while a peer counter keeps advancing and the probe still
+runs to completion.
+
+> **⚠️ Footgun — never `WAIT` in the operator on a count that won't be `SIGNAL`ed.**
+> The "ring stays alive" guarantee holds only for *background* tasks. The operator
+> **is** the REPL — the task that reads the keyboard. If you run `sem WAIT` directly
+> at the prompt (operator context) and the count is zero, the operator parks itself
+> in the spin loop and there is nothing left to echo your keystrokes: the console
+> goes dead. Worse, it is **unrecoverable without a reset** — `Ctrl-\` is read only
+> inside the line editor, which the parked operator never re-enters, and even a set
+> break is operator-exempt by design (an operator yield hands off, it never breaks
+> itself). So an operator-context `WAIT` on a dead semaphore is *also* a hard,
+> reset-required stall — the same class as the 25.7 non-yielding loop, not the
+> friendly one above. Do blocking `WAIT`s in a background `TASK`; keep the operator
+> free to service the console (and, if needed, redefine the producer).
