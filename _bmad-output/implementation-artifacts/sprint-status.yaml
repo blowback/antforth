@@ -299,7 +299,7 @@ development_status:
   25-4-task-suspend-resume-wake-sleep-tasks-introspection: done
   25-5-per-bank-task-switching: done
   25-6-background-task-exception-isolation: done
-  25-7-keyboard-break-documented-starvation: ready-for-dev
+  25-7-keyboard-break-documented-starvation: done
   25-8-headline-demo-background-traffic-light-live-repl: backlog
   epic-25-retrospective: optional
 

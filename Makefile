@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-bank test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -355,6 +355,30 @@ test-repl-multitasker-throw: $(TARGET)
 		'PASS: throw-words-resolve' 'PASS: throw-operator-survives' \
 		'PASS: throw-operator-catch' 'PASS: throw-catch-isolated' \
 		'PASS: throw-reactivate-recovers' 'PASS: throw-alive'
+
+# Story 25.7 — keyboard break (in-band Ctrl-\) + documented non-yielding stall.
+# Injects the REAL 0x1C break byte end-to-end: awk replaces each `@@BREAK@@`
+# marker line with a lone 0x1C, sed then appends the CR, so the operator's (EDIT)
+# reads the actual break byte and sets break_pending — the SAME consume->THROW-28
+# path silicon runs (no software stand-in). Asserts the break path (a yielding
+# runaway task is broken: `task 1: error -28`, SUSPENDED row, operator survives,
+# redefine + re-ACTIVATE recovers) AND the documented stall (a set flag is not
+# consumed absent a yielding background task at a PAUSE — the bounded proxy for
+# the honest never-yielding reset-required stall). SUSPENDED/`error -28` are
+# absent from the probe source, so their presence proves genuine execution.
+# Fail-loud timeout (a wedged ring / bad consume -> loud FAIL, not a CI hang).
+# Single-feature target like the other 25.x probes.
+MULTITASKER_BREAK_PROBE = tests/multitasker_break_tests.fth
+test-repl-multitasker-break: $(TARGET)
+	@echo "Running Story 25.7 keyboard-break + documented-stall probe under $(IZCPM)..."
+	@OUTPUT=$$({ awk '/@@BREAK@@/{print "\034"; next} {print}' $(MULTITASKER_BREAK_PROBE) | sed 's/$$/\r/'; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-break probe — timed out after $(PROBE_TIMEOUT)s (keyboard break wedged the ring / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-break probe" --fail-line '^FAIL:' \
+		--present '^   1   SUSPENDED' 'break-task-suspended-row' \
+		--present 'task 1: error -28' 'break-task-labeled-notice' \
+		'PASS: break-words-resolve' 'PASS: break-yielding-task' \
+		'PASS: break-recovers' 'PASS: break-nonyield-stalls' \
+		'PASS: break-no-ambush' 'PASS: break-alive'
 
 # Story 25.5 — conditional MBB_SET_PAGE re-page in PAUSE's resume tail. Drives a
 # real cross-bank task switch at INTERPRET level (caller IP < $8000, dodging the

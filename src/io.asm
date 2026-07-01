@@ -135,6 +135,11 @@ w_SPACES_cf:
 ; wait loop. KEY? is the poll primitive the yielders call, NOT itself a
 ; yielder (a status query must return immediately). Output primitives
 ; (EMIT, TYPE, ...) never yield (F2).
+;
+; Keyboard break (Story 25.7): (EDIT) recognises Ctrl-\ (0x1C) in-band and sets
+; break_pending (multitasker.asm); PAUSE is the single break-CONSUME point, so
+; every input primitive that yields via PAUSE (KEY, and thus (LINE)/ACCEPT/QUERY,
+; plus (DELAY)) inherits keyboard break automatically — no per-primitive wiring.
 ; ===============================================================
 
 ; -----------------------------------------------
@@ -247,6 +252,8 @@ w_EDIT_cf:
         JR      Z, .edit_bs
         CP      0x03            ; ^C (ETX)?
         JR      Z, .edit_etx
+        CP      0x1C            ; Ctrl-\ (FS) — keyboard break?
+        JR      Z, .edit_break
         ; --- printable: store into the caller's buffer, mirroring BDOS fn-10's
         ;     "stop at max, leave the rest in the stream" semantics (iz-cpm
         ;     read_string: `if size >= max_size break`). This is NOT a
@@ -351,6 +358,19 @@ w_EDIT_cf:
         LD      A, 0x03         ; reload char for the printable path (LD keeps Z)
         JR      NZ, .edit_printable     ; pos != 0 -> store ^C as a normal char
         JP      w_BYE_cf        ; pos == 0 -> terminate to CP/M (never returns)
+.edit_break:
+        ; Ctrl-\ (0x1C): keyboard-break request (Story 25.7). Set break_pending
+        ; (multitasker.asm); PAUSE consumes it at the next yield seam and raises
+        ; THROW -28 in the running BACKGROUND task — never the operator, which is
+        ; the task that reads this byte. Don't store it into the line buffer and
+        ; don't echo (like .edit_etx, a special char is not a buffer byte); return
+        ; done=false so the line keeps reading — the break fires at the next yield,
+        ; not by terminating the line. Stack still holds ( c-addr max pos )
+        ; untouched; done := 0. DE=IP and HL are not disturbed.
+        LD      A, 0xFF
+        LD      (break_pending), A
+        LD      BC, 0                   ; done = false -> (LINE) keeps reading
+        NEXT
 
 ; -----------------------------------------------
 ; (LINE) ( c-addr max -- count )       [headerless kernel-internal thread]

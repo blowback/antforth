@@ -198,6 +198,7 @@ THROW_COMPILE_ONLY      EQU -14  ; ANS Forth 1994 §9.3.5
 THROW_ZERO_LEN_NAME     EQU -16  ; ANS Forth 1994 §9.3.5
 THROW_PIC_OVERFLOW      EQU -17  ; ANS Forth 1994 §9.3.5
 THROW_CONTROL_MISMATCH  EQU -22  ; ANS Forth 1994 §9.3.5
+THROW_USER_INTERRUPT    EQU -28  ; ANS Forth 1994 §9.3.5 (keyboard break; Ctrl-\ consumed at the PAUSE yield seam, Story 25.7)
 THROW_INVALID_NAME_ARG  EQU -32  ; ANS Forth 1994 §9.3.5 (invalid name argument, e.g. TO xxx)
 THROW_SEARCH_ORDER_OVERFLOW EQU -49  ; ANS Forth 1994 §9.3.5 (search-order overflow; SET-ORDER bounds check)
 THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5

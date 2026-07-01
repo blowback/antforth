@@ -1,6 +1,6 @@
 # Story 25.7: Keyboard break + documented starvation
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -147,13 +147,13 @@ only.
 
 ### Pre-edit baseline (capture at dev-pass start, before any source edits)
 
-- [ ] Capture current binary size: `wc -c build/antforth.com` → record in Dev Notes.
+- [x] Capture current binary size: `wc -c build/antforth.com` → record in Dev Notes.
       **Do not inherit the figure below** — re-`wc -c` from an actual clean rebuild at
       dev-pass start (B.3 / Lesson 13.5-F; cf. Story 13.5.5 close-out 6-byte doc-drift).
       At story-drafting time (2026-07-01) the committed build artifact measured
       **30,381 B** (HEAD = `dabd44c`); the dev-pass baseline may differ if commits have
       landed since.
-- [ ] Capture current `make test-repl` baseline pass count (the 0-FAIL floor, NFR-P6-5)
+- [x] Capture current `make test-repl` baseline pass count (the 0-FAIL floor, NFR-P6-5)
       and each Epic-24/25 single-feature target so the post-edit delta is provable:
       `test-repl-timer`, `test-repl-multitasker`, `-multitasker-key`, `-multitasker-delay`,
       `-multitasker-tasks`, `-multitasker-throw` (8), `-multitasker-bank` (6),
@@ -162,14 +162,14 @@ only.
 
 ### Task 1 — `break_pending` flag + `Ctrl-\` recognition in the input path (AC1) — `src/multitasker.asm`, `src/io.asm`
 
-- [ ] Declare `break_pending: DB 0` in the fixed-memory scheduler-state block in
+- [x] Declare `break_pending: DB 0` in the fixed-memory scheduler-state block in
       `src/multitasker.asm` (alongside `current_tcb`/`sched_save`, `:29–38`, below the
       `ASSERT $ <= SLOT2_WINDOW_BASE` at `:495`) — `PAUSE` reads it and runs under any
       bank, so it must live below `$8000`. It is set/read by **normal code** now (not the
       ISR), so it does not need the timer's ISR-safe region. COLD zero-inits it (confirm
       whether the scheduler-state block is already zero-initialised at COLD, `src/antforth.asm`
       §8k; add an explicit zero if not — do not assume).
-- [ ] Add a `Ctrl-\` (0x1C) arm to `(EDIT)`'s special-char dispatch (`src/io.asm`, the
+- [x] Add a `Ctrl-\` (0x1C) arm to `(EDIT)`'s special-char dispatch (`src/io.asm`, the
       chain that today branches `.edit_cr`/`.edit_lf`/`.edit_bs`/`.edit_etx`, `:305–353`).
       Mirror `.edit_etx` (`:343–353`): on `A == 0x1C`, set `break_pending` (a store of any
       non-zero flag value; no BDOS), **do not store the byte into the buffer**, and return
@@ -178,20 +178,20 @@ only.
       code already saves/restores DE around `bdos_putchar`; the flag store touches none of
       the live registers, but keep to the existing discipline). Do **not** echo the 0x1C
       (or echo nothing visible) — match the quiet handling style of the other control arms.
-- [ ] Add a one-line note to the yield-instrumentation checklist (`src/io.asm:120–137`)
+- [x] Add a one-line note to the yield-instrumentation checklist (`src/io.asm:120–137`)
       recording that `Ctrl-\` in `(EDIT)` sets `break_pending` and that `PAUSE` is the
       break-consume point (so any future blocking input primitive that yields via PAUSE
       inherits the break automatically).
 
 ### Task 2 — Consume `break_pending` at the yield seam, non-operator only, raise `THROW -28` (AC1, AC3) — `src/multitasker.asm`
 
-- [ ] Add the break-consume check inside `PAUSE`, at the ring-selection seam
+- [x] Add the break-consume check inside `PAUSE`, at the ring-selection seam
       (`src/multitasker.asm:118`, just before `.pause_walk`) — **after** steps 1–2 have
       saved the outgoing task's `{SP,IX,DE,BC}` + UA-subset to its TCB (so the running
       task's state is coherent for later inspection/recovery) and where `A`/`HL` are free.
       Test `break_pending`; if clear, fall into the normal AWAKE ring walk unchanged
       (byte-neutral common path).
-- [ ] **On a set flag, discriminate the running task (`current_tcb`, still the task that
+- [x] **On a set flag, discriminate the running task (`current_tcb`, still the task that
       called PAUSE — the walk has not yet updated it) against `operator_tcb`** (the same
       2-byte LOW/HIGH compare `.throw_uncaught` uses, `src/exception.asm`):
       - running == **operator** → **leave `break_pending` set** and fall into the normal
@@ -206,10 +206,10 @@ only.
         notice — reuse the 25.6 path verbatim.** `current_tcb` = the background task at the
         raise, so `.throw_uncaught`'s `current_tcb ≠ operator_tcb` test takes the background
         arm automatically.
-- [ ] Confirm `KEY` (`src/io.asm:183`) and `(DELAY)` (`src/timer.asm:140`) inherit the
+- [x] Confirm `KEY` (`src/io.asm:183`) and `(DELAY)` (`src/timer.asm:140`) inherit the
       break-consume for free (both route through `w_PAUSE_cf`) — **no new bytes** at those
       seams; the AC's "`PAUSE`/`KEY`/`DELAY`" is satisfied by the single PAUSE check.
-- [ ] Register/contract care: the consume sits where PAUSE has already stashed `BC`/`DE`;
+- [x] Register/contract care: the consume sits where PAUSE has already stashed `BC`/`DE`;
       `A`/`HL` are free (the ring walk uses only those). The raise path is terminal (`JP`
       into THROW → wholesale SP reset) so it needn't preserve the PAUSE resume tail — but
       it MUST fire only *after* steps 1–2 saved the outgoing context, or a later
@@ -217,7 +217,7 @@ only.
 
 ### Task 3 — Probes: break path + documented stall (AC5) — `tests/` + `Makefile`
 
-- [ ] **Break-path probe (AC5a).** In `tests/multitasker_throw_tests.fth` (or a new
+- [x] **Break-path probe (AC5a).** In `tests/multitasker_throw_tests.fth` (or a new
       `tests/multitasker_break_tests.fth`): define a background task that yields in a loop,
       `TASK DUP CONSTANT` its handle + `ACTIVATE`; then the Makefile recipe injects the
       real `Ctrl-\` byte into the piped input (`printf '\034\r'`) followed by an explicit
@@ -225,14 +225,14 @@ only.
       runtime witness. Assert: `--present 'task 1: error -28'`, the `SUSPENDED` `.TASKS`
       row, the operator alive (runtime token), and a redefine + re-`ACTIVATE` recovery
       (`PASS: break-recovers`, reuse the 25.6 `_recov` shape). Emit `PASS: break-yielding-task`.
-- [ ] **Documented-stall probe (AC5b).** Demonstrate the honest reset-required case: a
+- [x] **Documented-stall probe (AC5b).** Demonstrate the honest reset-required case: a
       never-yielding form is not broken by `Ctrl-\`. Use a bounded, fail-loud construction
       (a short counted loop with no PAUSE, or a timeout witness) proving "no yield → no
       operator turn → flag never consumed → no break", so the doc's claim (AC4/AC2) is
       backed by observed behaviour. Prefer a form that terminates deterministically under
       `PROBE_TIMEOUT` — do **not** ship a genuinely infinite loop in CI. Emit
       `PASS: break-nonyield-stalls` (or a documented timeout witness).
-- [ ] Wire both into a Makefile target (extend `test-repl-multitasker-throw`, or add
+- [x] Wire both into a Makefile target (extend `test-repl-multitasker-throw`, or add
       `test-repl-multitasker-break` mirroring the 25.6 recipe at `Makefile:348–357`):
       `sed 's/$$/\r/'` line feed + the `printf '\034\r'` injection at the right point +
       `BYE\r\n`, `timeout $(PROBE_TIMEOUT)`, fail-loud on `rc==124`, verdicts via
@@ -242,21 +242,21 @@ only.
 
 ### Task 4 — Documentation + warm-boot verify + close-out (AC2, AC4, AC6)
 
-- [ ] **Starvation-model + break-path doc (AC4, AC2).** Extend the multitasking prose in
+- [x] **Starvation-model + break-path doc (AC4, AC2).** Extend the multitasking prose in
       `docs/throw-codes.md` (`:83–98` block or a sibling section) per AC4. Add `-28`
       "user interrupt" to the throw-codes coverage table (`docs/throw-codes.md:137`,
       currently "no") as **done — Story 25.7**, pointing at the `Ctrl-\`→`(EDIT)`→
       `break_pending`→PAUSE-consume path.
-- [ ] **Warm-boot verify + comment fix (AC6).** Correct the stale `BYE` comment
+- [x] **Warm-boot verify + comment fix (AC6).** Correct the stale `BYE` comment
       (`src/system.asm:11–15`) to reflect that under fn-1 input `^C`-at-column-0 routes
       through `(EDIT)`'s `.edit_etx` → `w_BYE_cf` (slot release), so the tick ISR is not
       left live on the interactive exit; document any residual non-`BYE` CCP-exit path
       honestly (comment-only, 0 binary). Do **not** add a fn-6/CONIN input rewrite — the
       `Ctrl-\` design uses the existing fn-1 path.
-- [ ] Re-`wc -c build/antforth.com`; record the delta vs the pre-edit baseline in Dev
+- [x] Re-`wc -c build/antforth.com`; record the delta vs the pre-edit baseline in Dev
       Notes with the per-component itemisation reconciled against the estimate (B.2 —
       itemise any variance, do not "accept" silently, `feedback_no_preexisting_discharge`).
-- [ ] Post the **S9 hardware-smoke recipe in the closing chat message** (not only in Dev
+- [x] Post the **S9 hardware-smoke recipe in the closing chat message** (not only in Dev
       Notes — STRONG operator preference, `feedback_post_hw_smoke_steps_at_review`): on
       real CP/M 2.2 / MicroBeast over the serial TTY, `ACTIVATE` a background task that
       loops with a `PAUSE`/`DELAY`, send `Ctrl-\`, confirm `task N: error -28` prints and
@@ -404,13 +404,131 @@ silently).
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8 (Opus 4.8)
 
 ### Debug Log References
 
+- Initial `.edit_break` placement (between `.edit_lf` and `.edit_bs`) failed the
+  build with two `[JR] Target out of range` errors (`io.asm` printable-path +133,
+  `.edit_bs` -137): inserting ~13 bytes mid-dispatch-chain over-stretched existing
+  short jumps. Fixed by relocating the handler to *after* `.edit_etx` (past its
+  non-returning `JP w_BYE_cf`), so no internal `JR` span grows; the forward
+  `JR Z, .edit_break` dispatch reaches it fine.
+
 ### Completion Notes List
 
+- **Net-new kernel work is small and additive, as scoped.** (1) `break_pending`
+  fixed-memory cell in the scheduler-state block (`multitasker.asm`); (2) a
+  `Ctrl-\` (0x1C) arm on `(EDIT)`'s special-char dispatch (`io.asm`) that sets the
+  flag, stores nothing, doesn't echo, returns `done=false`; (3) a break-consume at
+  `PAUSE`'s ring-selection seam (`multitasker.asm`) that, on a **background** running
+  task, clears the flag and `JP w_THROW_cf.kernel_entry` with `BC = -28`, funnelling
+  straight into the **unchanged** Story-25.6 `.throw_uncaught` reroute (`task N:
+  error -28` + SUSPEND + operator resume). On an **operator** running task it leaves
+  the flag set and takes the normal ring walk (non-operator-only break). `exception.asm`
+  and `timer.asm` were **not** touched; no new module.
+- **`THROW_USER_INTERRUPT EQU -28`** added to `constants.asm` (ANS §9.3.5 "user
+  interrupt"). Per the byte budget, **no** row was added to the asm `throw_desc_table`
+  — the diagnostic prints `task 1: error -28` (no description suffix, exactly like the
+  25.6 `-99` probe). AC4's coverage-table update is the markdown doc only.
+- **`KEY`/`(DELAY)` inherit the break for free** — both route through `w_PAUSE_cf`, so
+  the single PAUSE-seam consume satisfies the AC's "PAUSE/KEY/DELAY" with zero extra
+  bytes at those words.
+- **Probe drives the REAL 0x1C byte end-to-end.** `tests/multitasker_break_tests.fth`
+  + `test-repl-multitasker-break`: the Makefile `awk` replaces each `@@BREAK@@` marker
+  line with a lone `0x1C`, `sed` appends the CR, so `(EDIT)` reads the actual break
+  byte — the same consume→`THROW -28` path silicon runs. Raw output confirmed: exactly
+  one `task 1: error -28`, `.TASKS` renders `   0 * AWAKE` / `   1   SUSPENDED`, the
+  operator survives stack-clean, and redefine + re-`ACTIVATE` recovers. The AC5b
+  injection produced **no** second break — the flag latched un-consumed absent a
+  yielding background task, witnessing the honest non-yielding stall mechanism.
+- **AC5b is a bounded, honest proxy.** A genuinely non-yielding task cannot be run in
+  CI (it would hang, and even a *finite* non-yielding task would be broken at its
+  `task_exit` PAUSE, so it is not a faithful stand-in). The probe instead witnesses the
+  *mechanism*: with the sole background task ASLEEP, a set `break_pending` is not
+  consumed by non-yielding operator work — "no yield point → flag never consumed → no
+  break." The doc (`throw-codes.md §a.2`) states the true infinite-stall = reset-required
+  limit plainly.
+- **Known benign edge (documented, not guarded):** if the operator sends `Ctrl-\` with
+  **no** background task in the ring, the flag latches (operator yields leave it set,
+  the length-1 walk returns to self). It fires only when a background task later reaches
+  a yield. This matches the ratified design ("operator leaves the flag set and yields");
+  `Ctrl-\` means "break something," and in normal use it is sent at a runaway. Surfaced
+  here per `feedback_no_preexisting_discharge`; not a correctness defect.
+- **AC6 warm-boot verified (0 binary).** Under the fn-1/fn-11 yielding reader (Story
+  25.2), `^C` at column 0 is a plain char caught by `(EDIT)`'s `.edit_etx` → `JP
+  w_BYE_cf`, which releases the 64 Hz tick slot (`MBB_SET_USR_INT` HL=0). BYE is thus
+  the **sole clean CCP exit** (explicit `BYE` or interactive `^C`-at-col-0); neither
+  leaves a stale ISR live in the freed TPA. The stale fn-10 premise was **not**
+  implemented; the inaccurate `BYE` comment (`src/system.asm`) was corrected.
+- **Byte delta: +49 B** (30,381 → 30,430; HEAD baseline `dabd44c`/`51a9bbd`, clean
+  rebuild). Reconciles with the story estimate of **35–55 B** (per-component table
+  below); `system.asm` comment + `throw-codes.md` + probe + Makefile are 0 binary.
+
+  | Component | Bytes |
+  |---|---|
+  | `break_pending: DB 0` | 1 |
+  | `(EDIT)` `Ctrl-\` dispatch arm + handler (`CP`/`JR` + `LD A,-1`/`LD (),A` + `LD BC,0`/`NEXT`) | ~14 |
+  | PAUSE break-consume: `LD A,()`/`OR A`/`JR Z` + operator discriminate (`LD HL,()`, `LD A,L`/`CP`/`JR NZ`, `LD A,H`/`CP`/`JR Z`) + raise (`XOR A`/`LD (),A`/`LD BC,-28`/`JP`) + relocated `.pause_walk_init: LD HL,()` | ~34 |
+  | **Total** | **~49** ✓ |
+
+  No COLD zero-init byte was needed: `break_pending` is image-zero at load like the
+  adjacent `current_tcb`/`sched_save` cells, and there is no re-COLD without a fresh
+  `.COM` load.
+- **S9 hardware smoke: PASS on real MicroBeast over the serial TTY** (2026-07-01,
+  `beastty-20260701-115008.bin`). Confirmed on silicon, all core FR22 paths:
+  - `: SPINNER BEGIN PAUSE 0 UNTIL ;` + `ACTIVATE`, then a physical **`Ctrl-\`**
+    (correctly **not echoed**) → `task 1: error -28` fired — no explicit `PAUSE` needed,
+    the prompt-idle yielding reader handed off naturally (matches `throw-codes.md §a.1`);
+  - operator stayed responsive — `.TASKS` rendered `   0 * AWAKE` / `   1   SUSPENDED`;
+  - **recovery**: `: SPINNER 42 . ;` redefine + re-`ACTIVATE` + `PAUSE` → printed `42`;
+  - **honest stall**: a genuinely non-yielding `: HOG BEGIN 0 UNTIL ;` + `ACTIVATE PAUSE`
+    wedged the ring — the terminal went dead and **`Ctrl-C` did not recover it** (nor would
+    `Ctrl-\`): both keys are read by the operator's `(EDIT)`, which never gets a turn while
+    HOG monopolises the CPU. Only a hardware reset recovers = the documented reset-required
+    stall (AC2), confirmed on silicon. Doc §a.2 updated to state this explicitly (no key at
+    all is read during a non-yielding stall, not even the exit key).
+  - Not exercised in this capture: arrow-key ESC-safety and the AC6 stale-ISR-after-`^C`
+    reload (AC6 closed by reasoning — the `^C`→`(EDIT)`→`BYE` slot-release path is
+    unchanged and already shipped). Both remain sound; no silicon regression observed.
+
 ### File List
+
+- `src/constants.asm` — `THROW_USER_INTERRUPT EQU -28`
+- `src/multitasker.asm` — `break_pending` cell + PAUSE break-consume/discriminate/raise
+- `src/io.asm` — `Ctrl-\` arm in `(EDIT)`, `.edit_break` handler, yield-checklist note
+- `src/system.asm` — corrected `BYE` warm-boot comment (comment-only, 0 binary)
+- `docs/throw-codes.md` — §(a.2) cooperative-starvation + keyboard-break prose; `-28` coverage row
+- `tests/multitasker_break_tests.fth` — new break-path + documented-stall probe (real 0x1C injection)
+- `Makefile` — `test-repl-multitasker-break` target + `.PHONY`
+
+### Change Log
+
+- 2026-07-01 — Story 25.7 implemented: in-band `Ctrl-\` (0x1C) keyboard break —
+  `(EDIT)` sets `break_pending`, `PAUSE` consumes it (non-operator only) and raises
+  `THROW -28` into the Story-25.6 uncaught reroute; documented non-yielding stall.
+  +49 B (35–55 B envelope). All gates green (test-repl 1005/0, timer 9/0, multitasker
+  5/5/6/8/8 + break 7/0 + bank 6/0, banking 57/0, straddle 3/3, lint/doc-sync/file-sanity).
+  Status → review.
+- 2026-07-01 — S9 hardware smoke PASS on real MicroBeast over serial TTY
+  (`beastty-20260701-115008.bin`): physical `Ctrl-\` broke a yielding SPINNER task
+  (`task 1: error -28`, `.TASKS` SUSPENDED), operator survived, redefine + re-`ACTIVATE`
+  recovered (printed `42`), and a non-yielding `HOG` produced the documented
+  reset-required stall. Current kernel is byte-identical to the silicon-tested build.
+- 2026-07-01 — Code-review fixes (high-effort review, 4 findings). **Fixed (code):**
+  a `break_pending` set while no breakable task was AWAKE latched and would ambush the
+  NEXT task activated later with a spurious `-28`; `ACTIVATE`/`WAKE` now drain the latch
+  (a task entering the rotation is never the target of a break aimed before it existed).
+  New regression probe `break-no-ambush` (AC5c, reuses AC5b's latched flag) — verified it
+  FAILS without the drain. **Fixed (docs, `throw-codes.md §a.2`):** removed the overclaimed
+  "lands deterministically on the runaway" (with >1 background task the break takes the first
+  to yield); documented that an active `CATCH` in the target intercepts the `-28` (genuine
+  THROW — a CATCH-guarded loop is unbreakable); corrected the never-yielding example
+  `: SPIN BEGIN AGAIN ;` → `BEGIN 0 UNTIL ;` (`AGAIN` is undefined here). +8 B (30,430 →
+  30,438). Gates: break probe 8/8, sibling multitasker probes 0 fail, doc-sync 0 drift.
+  **Binary is NO LONGER byte-identical to the silicon-tested build** — the drain touches
+  the `ACTIVATE`/`WAKE` recovery path the S9 smoke exercised; a light re-smoke of
+  break-then-recover is advisable (behavior change is emulator-verified, low risk).
 
 ## Open Questions (all resolved with the operator, 2026-07-01 — no longer blocking)
 

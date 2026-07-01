@@ -32,6 +32,13 @@ sched_tcb:      DW      0               ; ACTIVATE scratch: stashed TCB base whi
 sched_ip:       DW      0               ; TASK/ACTIVATE scratch: preserves the caller's IP (DE) across the
                                         ; body, which freely uses DE as a pointer. PAUSE is exempt —
                                         ; swapping DE through the TCB is its job. Operator-only, no reentry.
+break_pending:  DB      0               ; keyboard-break latch (Story 25.7). Set by (EDIT) when it reads
+                                        ; Ctrl-\ (0x1C) on the console; consumed at PAUSE's ring-selection
+                                        ; seam to break the running background task (THROW -28). Set/read by
+                                        ; normal code, not the ISR, so it needs no ISR-safe region — but it
+                                        ; still lives below $8000 in fixed memory because PAUSE reads it under
+                                        ; whatever bank is mapped into slot 2. Image-zero at load (like the
+                                        ; cells above); COLD adds no explicit clear.
 operator_tcb:   DS      TCB_HDR_SIZE    ; static task-0 record — header only (reuses the system data/
                                         ; return stacks, so no private ps/rs carve). COLD wires status,
                                         ; link and current_tcb; the saved-register slots fill on the
@@ -115,9 +122,42 @@ w_PAUSE_cf:
         INC     HL
         LD      A, (sp_base+1)
         LD      (HL), A
+        ; Break consume (Story 25.7). A set break_pending means (EDIT) read a
+        ; Ctrl-\ on the console. Break the running task — but ONLY a non-operator:
+        ; the operator is the task that READ the byte, so breaking "whoever runs"
+        ; would reset the operator to its prompt instead of the runaway. On an
+        ; operator yield leave the flag set and hand off (the misbehaving
+        ; background task consumes it on its own next yield); on a background
+        ; yield clear it and raise THROW -28, which funnels through exception.asm's
+        ; uncaught-THROW reroute (task N: error -28 + SUSPEND + operator resume,
+        ; Story 25.6 — do NOT re-implement that here). If no breakable task is
+        ; AWAKE the flag latches on the operator arm; ACTIVATE/WAKE drain it so a
+        ; task later joining the rotation never inherits a break aimed at nothing.
+        ; (A background task with an active CATCH intercepts the -28 itself — the
+        ; break is a genuine THROW; see docs/throw-codes.md §(a.2).) Placed AFTER steps 1–2 so
+        ; the outgoing task's state is saved (a later inspect/recover reads
+        ; coherent state) and current_tcb still = the running task (the walk below
+        ; has not advanced it); A/HL are free here. Common path (flag clear) is
+        ; three bytes of straight-line test — byte-neutral.
+        LD      A, (break_pending)
+        OR      A
+        JR      Z, .pause_walk_init             ; no break pending — common path
+        LD      HL, (current_tcb)               ; still the running task
+        LD      A, L
+        CP      LOW operator_tcb
+        JR      NZ, .pause_do_break
+        LD      A, H
+        CP      HIGH operator_tcb
+        JR      Z, .pause_walk_init             ; operator yield — leave flag, hand off
+.pause_do_break:
+        XOR     A
+        LD      (break_pending), A              ; clear before raising
+        LD      BC, THROW_USER_INTERRUPT        ; -28; current_tcb = this background task,
+        JP      w_THROW_cf.kernel_entry         ;   so .throw_uncaught takes the background arm
         ; (3) Walk link to the next TASK_AWAKE TCB (skip ASLEEP/SUSPENDED). The
         ;     operator is always AWAKE in this story, so the walk always
         ;     terminates; a length-1 ring returns to self.
+.pause_walk_init:
         LD      HL, (current_tcb)
 .pause_walk:
         LD      A, (HL)                 ; link lo
@@ -268,6 +308,14 @@ w_ACTIVATE:
         DEFCODE "ACTIVATE", 0
 w_ACTIVATE_cf:
         LD      (sched_ip), DE          ; preserve caller IP — the body uses DE as a pointer
+        ; Drain any stale keyboard-break latch (Story 25.7). A Ctrl-\ pressed while
+        ; no breakable task was AWAKE leaves break_pending set on the operator arm
+        ; (it is consumed only by a non-operator PAUSE); without this clear a task
+        ; entering the rotation would eat a spurious THROW -28 on its first yield —
+        ; a break aimed at nothing before this task existed. The break only ever
+        ; targets a task that was already running when Ctrl-\ was read.
+        XOR     A
+        LD      (break_pending), A
         LD      H, B
         LD      L, C                    ; HL = task (TCB base, the TOS)
         LD      (sched_tcb), HL         ; stash base for the offset recomputations below
@@ -354,6 +402,10 @@ w_SLEEP_cf:
 w_WAKE:
         DEFCODE "WAKE", 0
 w_WAKE_cf:
+        XOR     A
+        LD      (break_pending), A      ; drain a stale break latch (see ACTIVATE) —
+                                        ; a task rejoining the rotation is not the
+                                        ; break's target (Story 25.7)
         LD      H, B
         LD      L, C                    ; HL = task (TCB base, the TOS)
         INC     HL
