@@ -80,6 +80,15 @@ and `>TASK` consumes (the operator is task 0, so the first background task is
 `task 1`). `<n>` is the signed THROW code, printed in decimal regardless of
 `BASE`; `<desc>` is the description-table lookup (§b/§c), omitted on a miss.
 
+**When does a background fault appear?** No explicit `PAUSE` is needed. The
+REPL's line reader yields (`KEY` is `BEGIN KEY? 0= WHILE PAUSE REPEAT (KEY)`,
+`src/io.asm`), so while the operator sits idle at the ` ok` prompt the
+scheduler is already ticking. An `ACTIVATE`d task therefore runs — and, if it
+throws uncaught, prints its `task N: error …` line — on the next prompt-idle
+poll, i.e. right after the `ACTIVATE` returns, before the operator types
+anything. Explicit `PAUSE` is only for forcing a switch at a *deterministic*
+point (as the batch-input test probes do, where the reader does not idle-spin).
+
 **Recovering a suspended task:** a fault-suspended task is *not* revived by
 `WAKE` — `WAKE` re-arms it from its stale pre-fault registers (a mid-unwind
 resume point). The sanctioned recovery is **redefine + re-`ACTIVATE`**: define
