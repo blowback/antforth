@@ -305,7 +305,7 @@ development_status:
 
   epic-26: in-progress
   26-1-counting-semaphore-signal-wait: done
-  26-2-mutex-binary-semaphore: backlog
+  26-2-mutex-binary-semaphore: done
   26-3-one-slot-mailbox: backlog
   epic-26-retrospective: optional
 

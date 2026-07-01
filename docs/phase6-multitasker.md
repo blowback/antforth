@@ -163,3 +163,72 @@ runs to completion.
 > reset-required stall — the same class as the 25.7 non-yielding loop, not the
 > friendly one above. Do blocking `WAIT`s in a background `TASK`; keep the operator
 > free to service the console (and, if needed, redefine the producer).
+
+## Coordination — the mutex (`MUTEX` / `LOCK` / `UNLOCK`)
+
+Where a counting semaphore counts *units available*, a **mutex** answers a simpler
+question: is the shared resource free, or is someone using it? It is a binary
+semaphore — a single cell that holds `1` (unlocked) or `0` (locked) — and it is
+built directly on the Story 26.1 primitives.
+
+- `MUTEX name` — create a mutex `name`, initialised **unlocked** (count `1`). It is
+  literally `1 SEMAPHORE`: an ordinary `@`/`!`-addressable cell (like a `VARIABLE`),
+  so `name @` reads `1` when free, `0` when held.
+- `mtx LOCK` — acquire. This *is* `WAIT` re-exposed under the mutex vocabulary: if the
+  mutex is free it takes it (count `1 → 0`) and returns; if it is held it **yields with
+  `PAUSE` on every pass** until the holder releases, then takes it.
+- `mtx UNLOCK` — release. It **stores `1`** — it does *not* increment.
+
+### Why `UNLOCK` stores 1 instead of incrementing (binary clamp)
+
+This is the one deliberate difference from the counting semaphore's `SIGNAL`. `SIGNAL`
+increments without bound because a counting semaphore's whole purpose is to count
+units. A mutex must be **binary**: exactly one holder at a time. If `UNLOCK` were
+`SIGNAL`, a double release — a real bug class, releasing a mutex you already released
+or that a peer released — would push the count to `2` and let *two* tasks `LOCK`
+simultaneously, silently defeating exclusion. Storing `1` makes a double `UNLOCK`
+idempotent (the count stays `1`, never `2`) and the invariant "count ∈ {0, 1}"
+structural. So `MUTEX m ... m UNLOCK m UNLOCK` leaves `m @` at `1`, not `2`.
+
+The documented critical-section pattern — guard the resource inside a background `TASK`:
+
+```forth
+CREATE SHARED  2 CELLS ALLOT
+MUTEX GATE                     \ starts unlocked (1)
+
+: WRITER ( -- )               \ a background task
+   BEGIN
+     GATE LOCK                \ blocks (yielding) until the gate is free
+     42 SHARED !  PAUSE  42 SHARED CELL+ !   \ two-step write; safe under the lock
+     GATE UNLOCK
+   0 UNTIL ;                   \ AGAIN is undefined in antforth; forever = BEGIN..0 UNTIL
+
+' WRITER TASK ACTIVATE
+```
+
+Any other task (or the operator) that reads `SHARED` **only while holding `GATE`**
+never observes it half-written: the two-step write and every read are serialised by
+the mutex, even though the writer yields (`PAUSE`) between its two stores.
+
+### Non-atomic by design — inherited from `WAIT`
+
+`LOCK` *is* `WAIT`, so it inherits the same proof: the multitasker is cooperative, a
+context switch happens *only* at a `PAUSE`, and the 64 Hz tick ISR touches only
+`TICKS`, never a mutex cell. `LOCK`'s only `PAUSE` is at the **top** of its loop,
+before the count check; between "count > 0" and the decrement there is no `PAUSE`, so
+no other task can slip in and take the same mutex. `UNLOCK` is a straight-line store
+with no `PAUSE`, so release is atomic w.r.t. the ring too. Two tasks both blocked in
+`LOCK` cannot both acquire a single `UNLOCK`: after `UNLOCK` sets the count to `1`,
+whichever the round-robin runs next decrements it to `0`; the other sees `0` and loops.
+No lost wakeup, no double-acquire — and it would be a *bug* to add a `PAUSE` inside the
+check-decrement window.
+
+> **⚠️ Footgun — never `LOCK` in the operator on a mutex no background task will
+> `UNLOCK`.** This carries over verbatim from the `WAIT` warning above. The operator
+> **is** the REPL — the task that reads the keyboard — and is break-exempt by design.
+> If you run `mtx LOCK` directly at the prompt on a mutex that is held and no background
+> task will ever `UNLOCK` it, the operator parks in the spin loop with nothing left to
+> echo your keystrokes: the console goes dead and it is **unrecoverable without a
+> reset** — even a set `Ctrl-\` break cannot recover it (an operator yield hands off, it
+> never breaks itself). Do all blocking `LOCK`s in a background `TASK`; keep the operator
+> free to service the console.

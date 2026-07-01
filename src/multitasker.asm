@@ -613,6 +613,61 @@ w_WAIT_cf EQU w_WAIT_body - 3
         DW      w_STORE_cf              ; ( )   atomic w.r.t. the ring (no PAUSE above)
         DW      EXIT_CODE
 
+; =====================================================================
+; === Coordination section — the mutex (binary semaphore, Story 26.2) ===
+; =====================================================================
+; A mutex is a counting semaphore fixed at count 1: the cell holds 1 (unlocked)
+; or 0 (locked). MUTEX/LOCK/UNLOCK are thin DEFWORD re-exposures of the 26.1
+; primitives — no scheduler, PAUSE, or TCB state is touched, so the PAUSE
+; register-contract (DE=IP preserved by every leaf) holds by construction.
+
+; === MUTEX ( "<spaces>name" -- ) — create an unlocked binary-semaphore cell ===
+; `1 SEMAPHORE`: push 1, then let SEMAPHORE's CREATE parse `name` from the live
+; input stream and comma the 1. `name` afterwards pushes a cell holding 1
+; (unlocked), @/!-addressable like a VARIABLE. Reuses SEMAPHORE's parse-then-
+; comma mechanics verbatim — no new parse machinery.
+; antforth extension — mutex constructor (Story 26.2, FR18).
+w_MUTEX:
+        DEFWORD "MUTEX", 0
+w_MUTEX_body:
+w_MUTEX_cf EQU w_MUTEX_body - 3
+        DW      w_LIT_cf                ; ( )
+        DW      1                       ; ( 1 )   fixed count 1 (unlocked)
+        DW      w_SEMAPHORE_cf          ; ( )     parse name, lay cell = 1
+        DW      EXIT_CODE
+
+; === LOCK ( mtx -- ) — acquire, blocking (yield-first) ===
+; Binary-semaphore acquire is identical to counting-semaphore acquire (block
+; until count>0, then decrement), so LOCK is WAIT re-exposed under the mutex
+; vocabulary: PAUSE-first spin, non-atomic-but-safe take, ring stays alive.
+; Operator-context wedge caveat carries over from WAIT (see WAIT above and
+; docs/phase6-multitasker.md): a blocking LOCK run AT THE REPL PROMPT on a mutex
+; no background task will UNLOCK hard-wedges the machine — do blocking LOCKs in
+; background TASKs.
+; antforth extension — mutex acquire, blocking (Story 26.2, FR18).
+w_LOCK:
+        DEFWORD "LOCK", 0
+w_LOCK_body:
+w_LOCK_cf EQU w_LOCK_body - 3
+        DW      w_WAIT_cf               ; ( mtx )  block-then-take, verbatim WAIT
+        DW      EXIT_CODE
+
+; === UNLOCK ( mtx -- ) — release, binary clamp (stores 1, NOT increment) ===
+; `1 SWAP !`: stores 1, does NOT increment — a binary semaphore, so double-UNLOCK
+; is idempotent (count stays 1) and cannot admit two holders; contrast SIGNAL,
+; which is unbounded. Straight-line store, no PAUSE — release is atomic w.r.t.
+; the ring, same discipline as SIGNAL.
+; antforth extension — mutex release, binary clamp (Story 26.2, FR18).
+w_UNLOCK:
+        DEFWORD "UNLOCK", 0
+w_UNLOCK_body:
+w_UNLOCK_cf EQU w_UNLOCK_body - 3
+        DW      w_LIT_cf                ; ( mtx )
+        DW      1                       ; ( mtx 1 )
+        DW      w_SWAP_cf               ; ( 1 mtx )
+        DW      w_STORE_cf              ; ( )   set to 1 (unlocked), never 2
+        DW      EXIT_CODE
+
 ; Cross-bank invariant (mirrors timer.asm): the whole scheduler — code, ring
 ; state, and the operator's static TCB — MUST live in always-mapped fixed memory
 ; below $8000, or PAUSE would lose the ring under a foreign bank mapping. The
