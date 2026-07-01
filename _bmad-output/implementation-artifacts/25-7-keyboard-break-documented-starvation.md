@@ -529,6 +529,16 @@ claude-opus-4-8 (Opus 4.8)
   **Binary is NO LONGER byte-identical to the silicon-tested build** — the drain touches
   the `ACTIVATE`/`WAKE` recovery path the S9 smoke exercised; a light re-smoke of
   break-then-recover is advisable (behavior change is emulator-verified, low risk).
+- 2026-07-01 — S9 re-smoke PASS on real MicroBeast of the fixed build
+  (`beastty-20260701-135403.bin`, boot reports 23,578 B free = the 30,438 B kernel).
+  Test A: `Ctrl-\` broke a yielding SPINNER (`task 1: error -28`, `.TASKS` SUSPENDED),
+  operator survived (`DEPTH`=0, `6 7 *`=42), redefine + re-`ACTIVATE` recovered (`R`=99).
+  Test B (the fix): `Ctrl-\` with ST asleep latched silently (no `-28`), then a fresh
+  `SETTLE` armed via `ACTIVATE` ran its first `PAUSE` clean and set `R2`=77 — no ambush,
+  confirming the latch-drain on silicon. Test C: `HOG` (`BEGIN 0 UNTIL`) wedged the ring
+  (reset-required, as documented). Incidental confirmation of doc finding #4: `: HOG BEGIN
+  AGAIN ;` raised `error -13 undefined word` (`AGAIN` is not defined). Fixed build now
+  silicon-blessed; supersedes the "re-smoke advisable" note above.
 
 ## Open Questions (all resolved with the operator, 2026-07-01 — no longer blocking)
 
