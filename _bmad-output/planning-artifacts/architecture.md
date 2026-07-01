@@ -407,8 +407,27 @@ The ISR sets a flag only; it never reschedules or switches tasks (preserving the
 cooperative model + the register contract — the ISR fires mid-primitive where
 registers are phantom, so it must touch only fixed-memory cells + RET).
 
-**Affects:** Epic 25; `src/io.asm`, `src/inner_interpreter.asm`, `src/timer.asm`
-(ISR break poll).
+**Erratum — the *setter* is in-band, not the ISR (Story 25.7, operator-ratified
+2026-07-01).** The operator drives antforth over a **serial TTY**, so an ISR
+keyboard-port scan is inapplicable — there is no local keypress to scan; a break
+must arrive as an in-band byte on the serial line. The break-key detection is
+therefore moved from the ISR to the **console input path**: the break key is
+**`Ctrl-\` (0x1C)** — a single byte, not an escape-sequence prefix (unlike ESC,
+which leads cursor-key sequences such as `ESC [ D`, so it cannot false-trigger on
+arrow keys) — recognised in `(EDIT)` beside the existing `^C` handler, which sets
+`break_pending`. The `break_pending` flag + consume-at-next-yield + `THROW -28`
+half of this decision is **unchanged**; only the setter moves (ISR poll →
+`(EDIT)` recognition), and `src/timer.asm`'s ISR is left untouched. Consume rule:
+only a **non-operator** task is broken — the operator (which reads the byte)
+leaves the flag set and yields, so the runaway background task consumes it and is
+the one broken (deterministic). A never-yielding loop still stalls (reset-required),
+now because it never gives the operator a turn to read the byte. See
+`_bmad-output/implementation-artifacts/25-7-keyboard-break-documented-starvation.md`.
+
+**Affects:** Epic 25; `src/io.asm` (`(EDIT)` `Ctrl-\` recognition), `src/multitasker.asm`
+(`break_pending` cell + `PAUSE` consume/raise). *(Superseded: the original decision
+named `src/timer.asm` (ISR break poll) and `src/inner_interpreter.asm`; the in-band
+erratum leaves both untouched.)*
 
 ### AD-P6-7 — Module boundaries & build integration
 
