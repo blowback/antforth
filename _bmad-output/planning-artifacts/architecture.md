@@ -419,15 +419,36 @@ arrow keys) — recognised in `(EDIT)` beside the existing `^C` handler, which s
 half of this decision is **unchanged**; only the setter moves (ISR poll →
 `(EDIT)` recognition), and `src/timer.asm`'s ISR is left untouched. Consume rule:
 only a **non-operator** task is broken — the operator (which reads the byte)
-leaves the flag set and yields, so the runaway background task consumes it and is
-the one broken (deterministic). A never-yielding loop still stalls (reset-required),
+leaves the flag set and yields, so a runaway background task consumes it and is
+broken (never the operator's prompt). A never-yielding loop still stalls (reset-required),
 now because it never gives the operator a turn to read the byte. See
 `_bmad-output/implementation-artifacts/25-7-keyboard-break-documented-starvation.md`.
 
+**Erratum 2 — code-review corrections (Story 25.7 review, 2026-07-01).** The
+review found `break_pending` is a single *ownerless global* latch, which qualifies
+the "deterministic" wording above in three ways (two are inherent to the
+mechanism, documented in `docs/throw-codes.md §(a.2)`; one was a real bug, fixed):
+- **Not deterministic across multiple background tasks.** The `-28` lands on the
+  **first** background task to reach `PAUSE` after the operator hands off, not
+  necessarily "the" runaway. With a single busy task that *is* it; with several
+  live tasks, targeting is first-to-yield, not by-culprit.
+- **An active `CATCH` in the target intercepts the break.** The break is a genuine
+  `THROW -28`, so a background task with a live `CATCH` frame at the yield point
+  catches it and keeps running — a `CATCH`-guarded loop is unbreakable from the
+  keyboard (redefine + reset is the fallback).
+- **BUG FIXED — stale-latch ambush.** A `Ctrl-\` pressed with no breakable task
+  AWAKE latches the flag indefinitely (the operator arm leaves it set, nothing
+  consumes it); the original design let the *next* task `ACTIVATE`d later — even an
+  unrelated one — eat a spurious `-28` on its first yield. Fix: **`ACTIVATE` and
+  `WAKE` now drain `break_pending`** (a task entering the AWAKE rotation is never
+  the target of a break aimed before it existed). Regression probe `break-no-ambush`;
+  re-smoked PASS on silicon (`beastty-20260701-135403.bin`). +8 B over the initial
+  25.7 build (kernel 30,438 B).
+
 **Affects:** Epic 25; `src/io.asm` (`(EDIT)` `Ctrl-\` recognition), `src/multitasker.asm`
-(`break_pending` cell + `PAUSE` consume/raise). *(Superseded: the original decision
-named `src/timer.asm` (ISR break poll) and `src/inner_interpreter.asm`; the in-band
-erratum leaves both untouched.)*
+(`break_pending` cell + `PAUSE` consume/raise + `ACTIVATE`/`WAKE` latch-drain per Erratum 2).
+*(Superseded: the original decision named `src/timer.asm` (ISR break poll) and
+`src/inner_interpreter.asm`; the in-band erratum leaves both untouched.)*
 
 ### AD-P6-7 — Module boundaries & build integration
 
