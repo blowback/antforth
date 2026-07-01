@@ -301,7 +301,7 @@ development_status:
   25-6-background-task-exception-isolation: done
   25-7-keyboard-break-documented-starvation: done
   25-8-headline-demo-background-traffic-light-live-repl: review
-  epic-25-retrospective: optional
+  epic-25-retrospective: done
 
   epic-26: backlog
   26-1-counting-semaphore-signal-wait: backlog

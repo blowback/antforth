@@ -136,8 +136,8 @@ The NFRs that actively *shape* the architecture (not just gate it):
 - **Per-task vs. global state split** — the IY/UserArea decision touches every
   task switch, the dictionary, and banking; spans Epics 24/25/26.
 - **`PAUSE`-instrumentation of every blocking primitive** — `KEY`/`KEY?`/
-  `EMIT`/`ACCEPT` (and `DELAY`) must all yield; broad surface, shallow depth;
-  one un-instrumented busy word starves all tasks.
+  `ACCEPT` (and `DELAY`) must all yield (`EMIT` does NOT — AD-P6-6); broad
+  surface, shallow depth; one un-instrumented busy input word starves all tasks.
 - **Exception isolation** — re-routing `.throw_uncaught` interacts with the
   scheduler, per-task CATCH-TOP, and the banking triple restore.
 - **Banking on every switch** — per-task bank save/restore + MBB_SET_PAGE
@@ -577,10 +577,11 @@ under the $8000 straddle constraint.
 ### Yield-Instrumentation Patterns
 
 - **The blocking-word checklist is exhaustive and explicit:** `KEY`, `KEY?`,
-  `ACCEPT` (input wait), `EMIT` (per-emit yield). A story adding any new blocking
-  primitive MUST add it to this list — an omitted yield is a starvation bug, not
-  a style nit. `PAUSE` goes *inside* the wait/poll loop, before re-testing the
-  condition.
+  `ACCEPT` (input wait). **`EMIT` does NOT yield** (AD-P6-6, project-lead
+  2026-06-29 — clean concurrent output, no char-level interleaving). A story
+  adding any new blocking *input* primitive MUST add it to this list — an omitted
+  yield is a starvation bug, not a style nit. `PAUSE` goes *inside* the wait/poll
+  loop, before re-testing the condition.
 
 ### Testing Patterns (S2 + the banking-probe lessons)
 
