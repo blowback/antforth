@@ -562,9 +562,11 @@ w_THROW_cf:
         ;     still points at the faulting task, so the next yielding QUERY→PAUSE
         ;     snapshots operator state into the task's TCB — scheduler desync.
         ;     Instead SUSPEND the faulting task (out of the rotation; .TASKS shows
-        ;     it, WAKE of it is a documented no-op — redefine + re-ACTIVATE to
-        ;     recover) and hand control back to the operator's own parked
-        ;     continuation. Only the operator path runs the INCLUDE-chain / asm
+        ;     it. WAKE does NOT cleanly recover a fault-suspended task — it re-arms
+        ;     it from its stale pre-fault registers (see multitasker.asm WAKE), so
+        ;     the correct recovery is redefine + re-ACTIVATE) and hand control back
+        ;     to the operator's own parked continuation. Only the operator path
+        ;     runs the INCLUDE-chain / asm
         ;     cleanups below — those are operator-interpreter state a background
         ;     task never owns. ---
         LD      HL, (current_tcb)
@@ -595,6 +597,15 @@ w_THROW_cf:
         LD      DE, TCB_STATUS
         ADD     HL, DE
         LD      (HL), TASK_SUSPENDED
+        ; Reset SP to the faulting task's stack base before the handoff. Story
+        ; 25.5's conditional re-page in sched_resume_current CALLs mbb_set_slot2
+        ; (3 PUSH + return) BEFORE step 5 reloads SP wholesale — without this those
+        ; pushes land on the faulting task's live (and, if the fault was a deep- or
+        ; over-flowed-stack condition, unsafe) data stack and could underflow its
+        ; ps_area into the TCB header (ring link). sp_base is this task's t_sp_base
+        ; here (PAUSE swapped it in on resume), so it is a valid empty-stack top.
+        LD      HL, (sp_base)
+        LD      SP, HL
         LD      HL, operator_tcb
         LD      (current_tcb), HL       ; running task := operator
         JP      sched_resume_current    ; restore operator context, NEXT

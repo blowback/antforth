@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-bank test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -353,6 +353,29 @@ test-repl-multitasker-throw: $(TARGET)
 		--present '^   1   SUSPENDED' 'throw-task-suspended-row' \
 		'PASS: throw-words-resolve' 'PASS: throw-operator-survives' \
 		'PASS: throw-operator-catch' 'PASS: throw-alive'
+
+# Story 25.5 — conditional MBB_SET_PAGE re-page in PAUSE's resume tail. Drives a
+# real cross-bank task switch at INTERPRET level (caller IP < $8000, dodging the
+# $8000 straddle-halt and the BANK! portal-window guard): the default CL tail
+# brings up 12 banks, TASK carves a TCB while the operator is in bank 0, then
+# `1 BANK! ACTIVATE 0 BANK!` hands the task bank 1 while the operator returns to
+# bank 0, so every operator<->task PAUSE crosses a bank boundary and re-pages
+# slot 2. Asserts STRUCTURE (project-lead OQ#1): the cross-bank round-robin builds
+# its accumulator with no corruption, the operator's BANK@ reads 0 afterward, a
+# same-bank control still round-robins (the compare-and-skip common case), and the
+# interpreter is alive (runtime 42 token). True cross-bank window CONTENTS +
+# wall-clock ride S9. MUST run under $(IZCPM_BANKING) (banking-modelling iz-cpm).
+# Fail-loud timeout (a wedged ring / bad re-page -> loud FAIL, not a CI hang);
+# verdicts via the Story 24.4 column-0 helper. Single-feature target; NOT folded
+# into plain `test-repl`.
+MULTITASKER_BANK_PROBE = tests/multitasker_bank_tests.fth
+test-repl-multitasker-bank: $(TARGET)
+	@echo "Running Story 25.5 cross-bank task-switch probe under $(IZCPM_BANKING)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_BANK_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-bank probe — timed out after $(PROBE_TIMEOUT)s (cross-bank re-page wedged the ring / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-bank probe" --fail-line '^FAIL:' \
+		'PASS: bank-words-resolve' 'PASS: bank-multi-active' 'PASS: bank-task-advances' \
+		'PASS: operator-bank-restored' 'PASS: bank-same-control' 'PASS: bank-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;

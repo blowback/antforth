@@ -297,7 +297,7 @@ development_status:
   25-2-key-hooked-repl-multitasking-input-only-yield: done
   25-3-yielding-per-task-delay: done
   25-4-task-suspend-resume-wake-sleep-tasks-introspection: done
-  25-5-per-bank-task-switching: backlog
+  25-5-per-bank-task-switching: done
   25-6-background-task-exception-isolation: backlog
   25-7-keyboard-break-documented-starvation: backlog
   25-8-headline-demo-background-traffic-light-live-repl: backlog

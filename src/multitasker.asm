@@ -14,9 +14,12 @@
 ; {catch_top, current_bank, base} — see src/structures.asm TCB doc for why those
 ; three and only those three are per-task.
 ;
-; No banking re-page in this story: the per-task current_bank cell is saved and
-; restored, but the conditional MBB_SET_PAGE on a bank change is deferred to Story
-; 25.5 (single-bank here).
+; Banking re-page: the per-task current_bank cell is saved and restored, and on a
+; switch to a task whose bank differs from the outgoing one PAUSE re-pages slot 2
+; via MBB_SET_PAGE (conditionally — same-bank switches pay zero BIOS cost). The
+; per-bank dictionary triple is NEVER swapped on this path: HERE/LATEST/wordlist
+; are global operator-owned cells and a background task runs pre-compiled words
+; only (operator-only-compile lock).
 
 ; === Fixed-memory scheduler state (always below $8000) ===
 ; Lives in the always-mapped kernel image like timer.asm's tick_count, so PAUSE
@@ -135,9 +138,16 @@ w_PAUSE_cf:
 ; The uncaught-THROW handler (exception.asm) jumps here to hand control back to the
 ; operator after suspending a faulting background task.
 sched_resume_current:
-        ; (4) Restore the next task's UserArea subset. NO MBB_SET_PAGE re-page in
-        ;     this story — current_bank is copied as a cell only; the conditional
-        ;     page call on a bank change is Story 25.5 (single-bank here).
+        ; (4) Restore the next task's UserArea subset, then re-page slot 2 to its
+        ;     bank iff it differs from the outgoing one. Capture the outgoing bank
+        ;     NOW — the live current_bank cell still holds it (PAUSE: the outgoing
+        ;     task; exception resume: the faulting task) until RESTORE_UA_CELL below
+        ;     overwrites it with the next task's bank. current_bank.high is
+        ;     invariantly 0 (idx < 29), so the low byte is the whole compare key. B
+        ;     is free here and survives RESTORE_UA_CELL/sp_base (they touch only
+        ;     A/HL); step 5 reloads BC wholesale.
+        LD      A, (IY+UserArea.current_bank)   ; A = outgoing (or faulting) bank
+        LD      B, A                            ; B = outgoing bank — held across the restore
         LD      DE, TCB_CATCH
         ADD     HL, DE                  ; HL -> next.t_catch_top
         RESTORE_UA_CELL UserArea.catch_top      ; -> t_current_bank
@@ -148,6 +158,21 @@ sched_resume_current:
         INC     HL
         LD      A, (HL)
         LD      (sp_base+1), A
+        ; Conditional re-page: map slot 2 to the next task's bank only when it
+        ; differs from the outgoing one — same-bank switches (the common case) pay
+        ; zero BIOS cost. mbb_set_slot2 routes through MBB_SET_PAGE (never a raw MMU
+        ; OUT) and preserves DE=IP/BC/HL. The dictionary triple is NOT swapped: it
+        ; is global operator-owned state a background task never touches.
+        LD      A, (IY+UserArea.current_bank)   ; A = next bank (just restored)
+        CP      B                               ; compare against the outgoing bank
+        JR      Z, .same_bank                   ; same bank → skip the BIOS page call
+        LD      C, A                            ; C = next bank index
+        LD      B, 0                            ; high byte invariantly 0 → BC = index
+        LD      HL, ACTIVE_PAGES_BASE
+        ADD     HL, BC                          ; HL -> active_pages[next]
+        LD      A, (HL)                         ; A = physical page for that bank
+        CALL    mbb_set_slot2                   ; re-page slot 2; preserves DE/BC/HL
+.same_bank:
         ; (5) Restore {SP,IX,DE,BC} from the next TCB via the scratch bridge, then
         ;     NEXT. The switch lands ONLY here, at a NEXT boundary.
         LD      HL, (current_tcb)
