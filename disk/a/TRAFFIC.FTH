@@ -1,51 +1,32 @@
-\ TRAFFIC.FTH -- 64 Hz tick-driven traffic-light demo for antforth
+\ TRAFFIC.FTH -- background traffic-light demo for antforth (cooperative task)
 \ Hardware: Z84C20 (Z80 PIO), Port A.  Data reg = $10, control reg = $12.
-\ Idea: assemble a 64 Hz timer interrupt in Forth's own assembler, install
-\ it through the MicroBeast BIOS, then count seconds in plain Forth.
-\ `4 DELAY` waits 4 seconds.
 \
-\ Load all of this at the boot bank (bank 0) so the ISR + counter live in
-\ fixed memory -- an interrupt fires no matter which bank is mapped.
+\ The headline moment of the cooperative multitasker: the lights cycle on tempo
+\ as a BACKGROUND TASK while the `ok` prompt stays live -- you keep defining and
+\ evaluating words with one hand while the machine keeps time with the other.
+\
+\ This is the SEQUEL to the earlier terminal-hijacking prototype.  Two things
+\ make it a real background task instead of a loop that owns the terminal:
+\   * every `DELAY` is the KERNEL's yielding DELAY -- while a light is holding,
+\     the task parks at a PAUSE inside DELAY and hands the CPU back to the ring,
+\     so the prompt never freezes (that is the whole point);
+\   * the tick clock is the KERNEL's -- `TIMER-ON` installs the 64 Hz slot the
+\     yielding DELAY counts against.  The demo installs NO interrupt of its own:
+\     a private ISR would evict the kernel tick slot and DELAY would then hang.
+\ So there is no private DELAY and no private ISR here -- both would shadow /
+\ evict the kernel's and re-freeze the prompt.
+\
+\ RUN RECIPE (operator, at the prompt or via INCLUDE then the last two lines):
+\   INCLUDE TRAFFIC.FTH        \ compiles the words below; defines LIGHTS
+\   TIMER-ON                   \ start the 64 Hz tick so DELAY can complete
+\   ' RUN-LIGHTS LIGHTS ACTIVATE   \ arm the background light task
+\   ( keep typing -- the prompt is live; the lights keep time )
+\   .TASKS                     \ shows  0 * AWAKE  (you) and  1   AWAKE  (LIGHTS)
+\ STOP / RECOVER:
+\   Ctrl-\  breaks a runaway task (in-band keyboard break); or  LIGHTS SLEEP
+\   parks the light task; then  TIMER-OFF  stops the tick.
 
-\ ---- 1. Fixed-memory countdown cell ----------------------------------
-VARIABLE TICKS-LEFT
-
-\ ---- 2. The 64 Hz interrupt service routine --------------------------
-\ Firmware fires this 64x/sec, after EXX (so HL is the shadow reg, free)
-\ and with AF preserved (so A is free).  It MUST end in RET, -- NOT NEXT,
-\ -- because the firmware CALLs it; the Forth interpreter never does.
-CODE TICK-ISR
-   HL TICKS-LEFT () LD,     \ LD HL,(TICKS-LEFT)
-   A H LD,   L OR,          \ A = H OR L  -> Z flag set when HL = 0
-   Z RET,                   \ already at 0? nothing to do
-   HL DEC,                  \ one tick closer
-   TICKS-LEFT () HL LD,     \ LD (TICKS-LEFT),HL
-   RET,
-END-CODE
-
-\ ---- 3. Install / remove the ISR through the BIOS --------------------
-\ MBB_SET_USR_INT @ $FDC7 : HL = routine address (0 disables).
-\ DE is the Forth instruction pointer -- save it across the BIOS call.
-CODE (SET-USR-INT)   ( addr -- )
-   DE PUSH,                 \ preserve the Forth IP
-   H B LD,   L C LD,        \ HL = BC  (addr is TOS in BC)
-   $FDC7 CALL,              \ MBB_SET_USR_INT
-   DE POP,                  \ restore IP
-   BC POP,                  \ load next TOS (addr consumed)
-   NEXT,
-END-CODE
-
-: START-CLOCK ( -- )  ['] TICK-ISR (SET-USR-INT) ;
-: STOP-CLOCK  ( -- )  0 (SET-USR-INT) ;
-
-\ ---- 4. DELAY: 64 ticks = 1 second -----------------------------------
-\ The firmware header says "60th of a second" -- that is WRONG; the tick
-\ really is 64 Hz, so 1 second = 64 ticks.
-: DELAY ( seconds -- )
-   64 *  TICKS-LEFT !
-   BEGIN  TICKS-LEFT @  0=  UNTIL ;
-
-\ ---- 5. Z84C20 PIO, Port A -------------------------------------------
+\ ---- Z84C20 PIO, Port A ----------------------------------------------
 \ A Z80 PIO drives nothing until you program its mode.
 $10 CONSTANT PIO-A-DATA
 $12 CONSTANT PIO-A-CTRL
@@ -53,18 +34,26 @@ $12 CONSTANT PIO-A-CTRL
    $0F PIO-A-CTRL OUT       \ mode-control word: Mode 0 (all 8 lines output)
    $07 PIO-A-CTRL OUT ;     \ interrupt-control word: PIO interrupts OFF
 
-\ ---- 6. The traffic light --------------------------------------------
+\ ---- The three lamps -------------------------------------------------
+\ Note: if the LEDs are active-low, invert the colour masks.
 1 CONSTANT RED   2 CONSTANT AMBER   4 CONSTANT GREEN
-: TRAFFIC ( -- )
-   PIO-INIT  START-CLOCK
+
+\ ---- The background light task ---------------------------------------
+\ A named task handle.  `TASK` is ( -- task ): it splices a new TCB into the
+\ ring and pushes its handle; a CONSTANT gives that handle a name.
+TASK CONSTANT LIGHTS
+
+\ The cycle.  Forever loop is `BEGIN ... 0 UNTIL` (terminable) -- `AGAIN` is not
+\ defined in antforth.  Each `DELAY` is the kernel yielding DELAY: the task parks
+\ there and the prompt keeps running.  `RUN-LIGHTS` never calls TIMER-ON itself,
+\ so the operator arms the tick once (see the run recipe) and can TIMER-OFF later
+\ without editing the task.
+: RUN-LIGHTS ( -- )
+   PIO-INIT
    BEGIN
       RED          PIO-A-DATA OUT   4 DELAY    \ stop
       RED AMBER OR PIO-A-DATA OUT   1 DELAY    \ get ready
       GREEN        PIO-A-DATA OUT   4 DELAY    \ go
       AMBER        PIO-A-DATA OUT   2 DELAY    \ slow down
-   AGAIN ;
-
-\ Run:    TRAFFIC          ( break with the keyboard, then  STOP-CLOCK )
-\ Test:   START-CLOCK 60 DELAY   should be 60 s on a stopwatch, +/- 1.
-\ Note:   if the LEDs are active-low, invert the colour masks.
+   0 UNTIL ;
 

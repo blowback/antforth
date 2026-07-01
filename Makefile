@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -402,6 +402,31 @@ test-repl-multitasker-bank: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-bank probe" --fail-line '^FAIL:' \
 		'PASS: bank-words-resolve' 'PASS: bank-multi-active' 'PASS: bank-task-advances' \
 		'PASS: operator-bank-restored' 'PASS: bank-same-control' 'PASS: bank-alive'
+
+# Story 25.8 — headline demo: background traffic light + live REPL. No new kernel
+# word; this drives the shipped demo asset (disk/a/TRAFFIC.FTH, mounted
+# directory-backed via IZCPM_DISKS — no `make disk` needed) end-to-end: INCLUDE
+# it, activate the LIGHTS background task, show both the operator and LIGHTS AWAKE
+# (`^   2   AWAKE` — LIGHTS is ring index 2, behind the probe's index-1 counter
+# task since TASK splices after the operator; runtime output of .TASKS, absent from
+# echoed source — the 23.2 false-green defence), and prove the light task YIELDS
+# while parked in a nonzero
+# DELAY (a free-running counter and the operator both keep progressing — FR14/FR15,
+# NFR-P6-7). On-tempo cycling / "prompt returns immediately" / "4 DELAY does not
+# freeze the prompt" need the real 64 Hz tick and are HARDWARE S9 (AC4, the MVP
+# gate NFR-P6-6): the emulator never fires 0xFDC7 so a nonzero DELAY never
+# completes here (it yields each pass, which is exactly what no-monopoly tests).
+# Fail-loud timeout (a monopolizing / non-yielding DELAY -> loud FAIL, not a CI
+# hang); verdicts via the Story 24.4 column-0 helper. Single-feature target; NOT
+# folded into plain `test-repl`.
+MULTITASKER_DEMO_PROBE = tests/multitasker_demo_tests.fth
+test-repl-multitasker-demo: $(TARGET)
+	@echo "Running Story 25.8 headline traffic-light demo probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_DEMO_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-demo probe — timed out after $(PROBE_TIMEOUT)s (light task monopolized the ring / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-demo probe" --fail-line '^FAIL:' \
+		--present '^   2   AWAKE' 'demo-lights-awake-row' \
+		'PASS: demo-activates' 'PASS: demo-no-monopoly' 'PASS: demo-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
