@@ -82,3 +82,70 @@ interrupt, so `TICKS` never advances and a nonzero `DELAY` never completes there
 On-tempo cycling, "the prompt returns immediately", and "`4 DELAY` doesn't freeze
 the prompt" are the real-hardware experience — the MVP acceptance gate, verified
 on silicon over the serial TTY.
+
+## Coordination — the counting semaphore (`SEMAPHORE` / `SIGNAL` / `WAIT`)
+
+Once two tasks share a buffer, they need a way to hand data across without one
+reading a slot the other hasn't filled. The Phase-6 answer is a **counting
+semaphore**: a single cell holding a count, with three words.
+
+- `n SEMAPHORE name` — create a semaphore `name` whose count starts at `n`. It's an
+  ordinary `@`/`!`-addressable cell (like a `VARIABLE`), so `name @` reads the
+  count. `0 SEMAPHORE g` starts "blocked"; `1 SEMAPHORE m` is the makings of a
+  mutex (Story 26.2).
+- `sem SIGNAL` — add one unit (increment the count). This is how a producer says
+  "one more item is ready".
+- `sem WAIT` — take one unit. If the count is already non-zero it decrements and
+  returns at once; if it's zero the task **yields with `PAUSE` on every pass** until
+  someone `SIGNAL`s, then decrements and returns.
+
+The documented producer/consumer pattern:
+
+```forth
+CREATE BUF  4 CELLS ALLOT
+0 SEMAPHORE FULL              \ counts items available to the consumer
+
+: PRODUCER ( -- )            \ a background task
+   4 0 DO
+     I 1+ 10 *  I CELLS BUF + !   \ fill BUF[I]
+     FULL SIGNAL                  \ announce it
+     PAUSE
+   LOOP ;
+
+' PRODUCER TASK ACTIVATE
+
+: CONSUME ( -- )             \ the operator (or another task)
+   4 0 DO
+     FULL WAIT               \ blocks (yielding) until an item is ready
+     I CELLS BUF + @  .      \ read BUF[I] — guaranteed already written
+   LOOP ;
+CONSUME
+```
+
+The consumer's *k*-th `WAIT` cannot succeed until the producer has issued *k*
+`SIGNAL`s, so it never reads a slot the producer hasn't filled — no corruption, no
+lost values, and the two run interleaved without the operator ever freezing.
+
+### Non-atomic by design — and why that's safe
+
+`WAIT` checks the count and, if non-zero, decrements it — **without** masking
+interrupts around the check-and-decrement. That is deliberate. The multitasker is
+cooperative: a context switch happens *only* at a `PAUSE`, and the 64 Hz tick ISR
+touches only `TICKS`, never a semaphore cell. `WAIT` places its only `PAUSE` at the
+**top** of the loop, before the check; there is no `PAUSE` between "count > 0" and
+the decrement, so no other task can slip in and consume the same unit. Two tasks
+blocked on one semaphore cannot both take a single `SIGNAL`: whichever the
+round-robin runs first decrements to zero, the other sees zero and loops again. No
+lock, no masking — and it would be a *bug* to add a `PAUSE` inside that window.
+
+### Starvation vs. the reset-required stall
+
+If nobody ever `SIGNAL`s a semaphore, a task blocked in `WAIT` never progresses —
+but because `WAIT` yields every pass, **the rest of the ring stays alive**: the
+REPL still echoes, peer tasks still run. That is the cooperative-friendly failure,
+and it's the opposite of the Story 25.7 non-yielding stall (a task in a tight loop
+with *no* `PAUSE`), which wedges the whole scheduler and is only recoverable by
+reset. A starving `WAIT`er you can observe and redefine; a non-yielding loop you
+cannot. The `make test-repl-semaphore` probe asserts exactly this: a task parked
+forever in `WAIT` on a never-signalled semaphore, while a peer counter keeps
+advancing and the probe still runs to completion.

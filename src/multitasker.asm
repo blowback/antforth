@@ -539,6 +539,80 @@ w_TO_TASK_cf:
         LD      C, L                    ; BC = TCB base = new TOS
         NEXT
 
+; =====================================================================
+; === Coordination section (AD-P6-8, Epic 26) — counting semaphores ===
+; =====================================================================
+; Cooperative, non-atomic-by-design primitives layered on the scheduler. Safe ONLY
+; because the model is single-threaded except the 64 Hz ISR, and the ISR touches
+; only TICKS (never a semaphore cell) — so no interrupt masking is needed. A context
+; switch happens only at a PAUSE (a NEXT boundary); see WAIT for why the test-and-
+; decrement is atomic w.r.t. the ring without a guard.
+
+; === SEMAPHORE ( n "<spaces>name" -- ) — create a count cell initialised to n ===
+; Mirrors VARIABLE's CREATE-then-comma shape (bootstrap.asm) but stores the SUPPLIED
+; count instead of a literal 0: CREATE lays a JP DOVAR word whose body is HERE, then
+; `,` stores the TOS count into that body cell. `name` afterwards pushes the count-
+; cell address, @/!-addressable like any VARIABLE. A zero/negative n is stored
+; verbatim (no clamping) — 0 SEMAPHORE means "start blocked".
+; antforth extension — counting-semaphore constructor (Story 26.1, FR17).
+w_SEMAPHORE:
+        DEFWORD "SEMAPHORE", 0
+w_SEMAPHORE_body:
+w_SEMAPHORE_cf EQU w_SEMAPHORE_body - 3
+        DW      w_CREATE_cf             ; ( n )  parse name, lay DOVAR word, HERE=body
+        DW      w_COMMA_cf              ; ( )    store n into the body cell
+        DW      EXIT_CODE
+
+; === SIGNAL ( sem -- ) — increment the semaphore count ===
+; Threaded DUP @ 1+ SWAP ! — reuses proven primitives, so no PAUSE register-contract
+; exposure (DE=IP is preserved by every leaf here). One SIGNAL releases exactly one
+; waiting unit; two WAITers blocked on the same cell cannot both consume it (see WAIT).
+; antforth extension — release one unit of a counting semaphore (Story 26.1, FR17).
+w_SIGNAL:
+        DEFWORD "SIGNAL", 0
+w_SIGNAL_body:
+w_SIGNAL_cf EQU w_SIGNAL_body - 3
+        DW      w_DUP_cf                ; ( sem sem )
+        DW      w_FETCH_cf              ; ( sem count )
+        DW      w_ONE_PLUS_cf           ; ( sem count+1 )
+        DW      w_SWAP_cf               ; ( count+1 sem )
+        DW      w_STORE_cf              ; ( )
+        DW      EXIT_CODE
+
+; === WAIT ( sem -- ) — yield-and-wait until count>0, then take one unit ===
+; The loop mirrors (DELAY)'s PAUSE-FIRST spin seam (timer.asm): PAUSE is the first
+; cell, so a task blocked on a zero count yields to the ring every pass instead of
+; busy-spinning — the REPL and peer tasks keep running (FR17). The fetched count IS
+; the loop flag: QBRANCH loops back on 0 (still blocked) and falls through on non-zero
+; (a unit is available), so no 0=/0<> polarity word is needed.
+; Non-atomic-but-safe: the ONLY PAUSE is at the top, BEFORE the check. Between the
+; non-zero fall-through and the `!` decrement there is no PAUSE, so no other task can
+; observe or mutate the count mid-decrement. Two tasks both blocked here cannot both
+; consume a single SIGNAL: after SIGNAL bumps count to 1, whichever the round-robin
+; runs next decrements it to 0; the other sees 0 and loops. No lost wakeup, no double-
+; take — which is why masking is unnecessary and adding a PAUSE inside the check-
+; decrement window would be WRONG.
+; Starvation note (AI-25-3): a WAIT on a never-SIGNALed semaphore parks THIS task
+; forever but keeps the ring alive (PAUSE-first) — the cooperative-friendly failure,
+; unlike Story 25.7's non-yielding stall (a hard, reset-required wedge).
+; antforth extension — take one unit of a counting semaphore, blocking (Story 26.1, FR17).
+w_WAIT:
+        DEFWORD "WAIT", 0
+w_WAIT_body:
+w_WAIT_cf EQU w_WAIT_body - 3
+.wait_begin:
+        DW      w_PAUSE_cf              ; yield-first every pass (FR17; ring stays live)
+        DW      w_DUP_cf                ; ( sem sem )
+        DW      w_FETCH_cf              ; ( sem count )  count is the flag
+        DW      w_QBRANCH_cf
+        DW      .wait_begin - $         ; loop back while count == 0
+        DW      w_DUP_cf                ; ( sem sem )    count>0: take one unit
+        DW      w_FETCH_cf              ; ( sem count )
+        DW      w_ONE_MINUS_cf          ; ( sem count-1 )
+        DW      w_SWAP_cf               ; ( count-1 sem )
+        DW      w_STORE_cf              ; ( )   atomic w.r.t. the ring (no PAUSE above)
+        DW      EXIT_CODE
+
 ; Cross-bank invariant (mirrors timer.asm): the whole scheduler — code, ring
 ; state, and the operator's static TCB — MUST live in always-mapped fixed memory
 ; below $8000, or PAUSE would lose the ring under a foreign bank mapping. The

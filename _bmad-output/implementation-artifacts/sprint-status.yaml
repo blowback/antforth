@@ -303,8 +303,8 @@ development_status:
   25-8-headline-demo-background-traffic-light-live-repl: done
   epic-25-retrospective: done
 
-  epic-26: backlog
-  26-1-counting-semaphore-signal-wait: backlog
+  epic-26: in-progress
+  26-1-counting-semaphore-signal-wait: done
   26-2-mutex-binary-semaphore: backlog
   26-3-one-slot-mailbox: backlog
   epic-26-retrospective: optional

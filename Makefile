@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -427,6 +427,27 @@ test-repl-multitasker-demo: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-demo probe" --fail-line '^FAIL:' \
 		--present '^   2   AWAKE' 'demo-lights-awake-row' \
 		'PASS: demo-activates' 'PASS: demo-no-monopoly' 'PASS: demo-alive'
+
+# --- Story 26.1 counting semaphore (SEMAPHORE / SIGNAL / WAIT) probe ---
+# SEMAPHORE constructs a count cell; SIGNAL increments; WAIT PAUSE-spins until the
+# count is non-zero then decrements. Semaphores do NOT depend on the 64 Hz tick ISR
+# (unlike DELAY), so the full SIGNAL/WAIT/producer-consumer hand-off STRUCTURE runs
+# to completion under emulation — no-loss / no-corruption / no-deadlock (AC4) and
+# starvation-liveness (AC6) are asserted here; wall-clock interleave rides S9. The
+# hand-off (no-loss) and starve (ring-alive) verdicts turn on RUNTIME-COMPUTED
+# witnesses (sum 100 / 4-good; a peer counter that must advance while a task is
+# blocked in WAIT), defeating the 23.2 echoed-source false-green. Fail-loud timeout
+# (a genuine deadlock -> loud FAIL, never a CI hang); the --fail-line tripwire also
+# catches the never-expected sem-prod-waiter-unblocked FAIL. Verdicts via the Story
+# 24.4 column-0 helper. Single-feature target; NOT folded into plain `test-repl`.
+SEMAPHORE_PROBE = tests/semaphore_tests.fth
+test-repl-semaphore: $(TARGET)
+	@echo "Running Story 26.1 counting-semaphore probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(SEMAPHORE_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL semaphore probe — timed out after $(PROBE_TIMEOUT)s (a WAIT deadlocked / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL semaphore probe" --fail-line '^FAIL:' \
+		'PASS: sem-words-resolve' 'PASS: sem-constructor-init' 'PASS: sem-signal-wait-count' \
+		'PASS: sem-handoff-no-loss' 'PASS: sem-wait-starves-ring-alive' 'PASS: sem-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
