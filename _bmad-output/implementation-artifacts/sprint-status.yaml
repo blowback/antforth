@@ -292,7 +292,7 @@ development_status:
   24-4-shared-verdict-assert-helper: done
   epic-24-retrospective: done
 
-  epic-25: in-progress
+  epic-25: done
   25-1-pause-circular-ring-task-activate-single-bank-fixed-memory: done
   25-2-key-hooked-repl-multitasking-input-only-yield: done
   25-3-yielding-per-task-delay: done
@@ -300,7 +300,7 @@ development_status:
   25-5-per-bank-task-switching: done
   25-6-background-task-exception-isolation: done
   25-7-keyboard-break-documented-starvation: done
-  25-8-headline-demo-background-traffic-light-live-repl: review
+  25-8-headline-demo-background-traffic-light-live-repl: done
   epic-25-retrospective: done
 
   epic-26: backlog

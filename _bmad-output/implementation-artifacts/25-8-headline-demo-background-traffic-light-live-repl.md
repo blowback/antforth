@@ -1,6 +1,6 @@
 # Story 25.8: Headline demo — background traffic light + live REPL
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -416,8 +416,11 @@ probe; #4 no `examples/` mirror.
   traffic-light hardware (Z84C20 PIO Port A). All four sub-checks confirmed by the operator:
   on-tempo LED cycling with the prompt live, `.TASKS` both-awake rows, `4 DELAY` non-freeze,
   and `Ctrl-\` break + clean stop. **Phase 6 MVP acceptance gate (NFR-P6-6) met.**
-  _(Capture filename + banner free-byte reading to be slotted in from the operator's session
-  log for the record.)_
+  Capture `~/Downloads/beastty-20260701-135403.bin` (same silicon session as the 25.7
+  re-smoke); banner reads **23,578 bytes free @ 30,438 B kernel** (0-delta from 25.7's
+  fixed build, as expected — 25.8 adds no kernel byte).
+- 2026-07-01 — Story 25.8 **DONE** (status review → done). Capture filename + banner
+  free-byte reading recorded above (retro AI-25-1); no code change. Epic 25 fully closed.
 
 ## Open Questions (for the operator — non-blocking, sensible defaults taken)
 
