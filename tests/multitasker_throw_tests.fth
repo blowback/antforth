@@ -58,6 +58,47 @@ _survives
 ;
 _opcatch
 
+\ --- AC3: per-task catch_top isolation. The operator holds an open CATCH across
+\ the PAUSE that enters a fresh throwing task (BOOM2, -7). Because PAUSE swaps the
+\ per-task catch_top, BOOM2's uncaught throw hits ITS chain (empty), suspends the
+\ task, and resumes the operator INSIDE the protected region — the operator's CATCH
+\ must see NO throw (returns 0). BOOM2 sets the RAN2 sentinel BEFORE it throws, so a
+\ post-PAUSE RAN2=1 witnesses that BMT2 actually executed in the BACKGROUND — checked
+\ before the direct operator CATCH below (which would also set it). Without that
+\ witness the test would PASS even if BMT2 never ran. A final direct operator CATCH
+\ still round-trips -7, proving the operator's own exception machinery is intact.
+\ (BOOM2's background fault also emits a `task 1: error -7` diagnostic.) ---
+VARIABLE RAN2   0 RAN2 !
+: BOOM2 ( -- )  1 RAN2 ! -7 THROW ;
+' BOOM2 TASK DUP CONSTANT BMT2 ACTIVATE
+: _iso ( -- )
+  ['] PAUSE CATCH 0=            \ (a) operator's CATCH must NOT catch the task's throw
+  RAN2 @ 1 = AND               \ (b) ...and BMT2 really ran in the background (pre-suspend)
+  ['] BOOM2 CATCH -7 = AND      \ (c) operator CATCH still round-trips afterward
+  IF ." PASS: throw-catch-isolated" ELSE ." FAIL: throw-catch-isolated" THEN CR
+;
+_iso
+
+\ --- AC4: recovery without restart (FR21). Re-ACTIVATE the SAME suspended TCB
+\ handle (BMT, the fault-suspended BOOM) with a GOOD replacement word, PAUSE, and
+\ prove the task ran by a sentinel it wrote. ACTIVATE re-seeds the TCB to AWAKE with
+\ fresh stacks, so the stale pre-fault registers are discarded (WAKE would revive
+\ them — hence redefine + re-ACTIVATE is the sanctioned path). The sentinel 42 is
+\ written by the SCHEDULED task, so a PASS proves genuine post-fault progress.
+\ BMT2 is explicitly SLEPT first so this test does NOT depend on _iso having
+\ suspended it (an AC3 regression that left BMT2 AWAKE would otherwise make the
+\ single PAUSE run BMT2 instead of BMT); SLEEP forces it out of rotation so the
+\ PAUSE deterministically reaches BMT regardless of BMT2's state. ---
+VARIABLE RESULT   0 RESULT !
+: FIXED ( -- )  42 RESULT ! ;
+BMT2 SLEEP            \ decouple from _iso: park BMT2 unconditionally
+' FIXED BMT ACTIVATE
+PAUSE
+: _recov ( -- )
+  RESULT @ 42 = IF ." PASS: throw-reactivate-recovers" ELSE ." FAIL: throw-reactivate-recovers" THEN CR
+;
+_recov
+
 \ --- Final liveness: interpreter healthy after the whole sequence ---
 : _alive ( -- )  6 7 * 42 = IF ." PASS: throw-alive" ELSE ." FAIL: throw-alive" THEN CR ;
 _alive

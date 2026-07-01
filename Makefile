@@ -351,8 +351,10 @@ test-repl-multitasker-throw: $(TARGET)
 	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-throw probe — timed out after $(PROBE_TIMEOUT)s (task uncaught THROW desynced the scheduler / never reached BYE)"; exit 1; fi; \
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-throw probe" --fail-line '^FAIL:' \
 		--present '^   1   SUSPENDED' 'throw-task-suspended-row' \
+		--present 'task 1: error -99' 'throw-task-labeled-notice' \
 		'PASS: throw-words-resolve' 'PASS: throw-operator-survives' \
-		'PASS: throw-operator-catch' 'PASS: throw-alive'
+		'PASS: throw-operator-catch' 'PASS: throw-catch-isolated' \
+		'PASS: throw-reactivate-recovers' 'PASS: throw-alive'
 
 # Story 25.5 — conditional MBB_SET_PAGE re-page in PAUSE's resume tail. Drives a
 # real cross-bank task switch at INTERPRET level (caller IP < $8000, dodging the

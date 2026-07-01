@@ -544,6 +544,54 @@ w_THROW_cf:
         ; Stash n; it's needed across bdos_print_str calls (BDOS helper
         ; takes the length arg in B, clobbering BC).
         LD      (throw_saved_n), BC
+        ; --- Task label: a background fault prefixes the diagnostic with
+        ;     "task N: " (N = the .TASKS ring index, operator = 0) so the
+        ;     operator can tell which task faulted. An operator throw prints the
+        ;     bare "error <n>" — byte-identical to Phase 5. Same current_tcb vs
+        ;     operator_tcb compare as the post-print discrimination below; done
+        ;     ahead of the shared line because the label must lead. BC is free
+        ;     here (n is parked in throw_saved_n; the shared print reloads it). ---
+        LD      HL, (current_tcb)
+        LD      A, L
+        CP      LOW operator_tcb
+        JR      NZ, .throw_uncaught_label
+        LD      A, H
+        CP      HIGH operator_tcb
+        JR      Z, .throw_uncaught_shared       ; operator — no task label
+.throw_uncaught_label:
+        ; N = ring index of current_tcb: walk from operator_tcb (index 0)
+        ; following TCB_LINK until the walk pointer == current_tcb. Identical
+        ; walk to .TASKS/>TASK; a live TCB is always in the ring, so it halts.
+        LD      D, H
+        LD      E, L                            ; DE = target TCB base (HL still holds current_tcb from the compare above)
+        LD      HL, operator_tcb                ; HL = walk pointer (task 0)
+        LD      C, 0                            ; C = index
+.throw_uncaught_walk:
+        LD      A, L
+        CP      E
+        JR      NZ, .throw_uncaught_wnext
+        LD      A, H
+        CP      D
+        JR      Z, .throw_uncaught_wfound
+.throw_uncaught_wnext:
+        LD      A, (HL)                         ; follow link (TCB_LINK = 0)
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                            ; HL = next TCB base
+        INC     C
+        JR      .throw_uncaught_walk
+.throw_uncaught_wfound:
+        PUSH    BC                              ; save index across bdos_print_str
+        LD      HL, str_task_notice
+        LD      B, str_task_notice_len
+        CALL    bdos_print_str                  ; "task "
+        POP     BC                              ; C = index
+        LD      B, 0                            ; BC = index (>= 1, a ring pos)
+        CALL    print_signed_dec_bc             ; N
+        LD      HL, str_colon_space
+        LD      B, 2
+        CALL    bdos_print_str                  ; ": "
+.throw_uncaught_shared:
         ; --- Print "error " ---
         LD      HL, str_throw_prefix
         LD      B, STR_THROW_PREFIX_LEN
@@ -846,6 +894,8 @@ chain_walk_target:      DW      0
 ; -----------------------------------------------
 str_throw_prefix:       DB      "error "
 STR_THROW_PREFIX_LEN    EQU     6
+str_task_notice:        DB      "task "  ; background-fault label: "task N: " precedes the error line
+str_task_notice_len     EQU     5
 str_colon_space:        DB      ": "
 
 ; -----------------------------------------------

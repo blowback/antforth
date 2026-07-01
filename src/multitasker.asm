@@ -368,8 +368,9 @@ w_WAKE_cf:
 ; each TCB it prints "   N M STATE": N = decimal index (print_bank_col_4), M = '*'
 ; for the current task else ' ' (mirrors .BANKS' current-bank marker), STATE one of
 ; AWAKE/ASLEEP/SUSPENDED. Mutates nothing — saves the caller's TOS+IP like .BANKS
-; and runs straight-line asm with free use of BC/DE/HL. SUSPENDED is rendered but
-; not produced until Story 25.6, so 25.6's recovery path needs no .TASKS edit.
+; and runs straight-line asm with free use of BC/DE/HL. SUSPENDED is produced by the
+; uncaught-THROW reroute in exception.asm (a faulting background task is parked
+; SUSPENDED; recovery = redefine + re-ACTIVATE, not WAKE).
 ; antforth extension — task-set introspection (the .S/.BANKS convention).
 w_DOT_TASKS:
         DEFCODE ".TASKS", 0
@@ -447,8 +448,8 @@ w_DOT_TASKS_cf:
         NEXT
 
 ; State strings for .TASKS' status->name map (length-prefixed by EQU, the
-; str_*/_len convention of banking.asm's .BANKS table). SUSPENDED is rendered now
-; though no task produces it until Story 25.6.
+; str_*/_len convention of banking.asm's .BANKS table). SUSPENDED is produced by the
+; exception.asm uncaught-THROW reroute (fault-suspended background task).
 str_task_awake:         DB "AWAKE"
 str_task_awake_len      EQU 5
 str_task_aslp:          DB "ASLEEP"

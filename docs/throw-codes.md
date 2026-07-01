@@ -64,6 +64,32 @@ extensions, the assembler-error string).
 
 ---
 
+## (a.1) Uncaught-THROW Diagnostic Format
+
+When a THROW is not caught by any `CATCH`, `.throw_uncaught`
+(`src/exception.asm`) prints a one-line diagnostic, then recovers. The line
+depends on **which task** faulted:
+
+| Faulting task | Diagnostic line | Recovery |
+|---|---|---|
+| Operator (the REPL task) | `error <n>[: <desc>]` | In-place: INCLUDE-chain close + `asm_cleanup` + reset, then re-enter `QUIT`. |
+| A background task | `task N: error <n>[: <desc>]` | The task is parked **SUSPENDED** (out of the scheduler rotation but still linked in the ring, so `.TASKS` shows it) and control returns to the operator, whose REPL and other tasks keep running. |
+
+`N` is the faulting task's **ring index**, identical to what `.TASKS` prints
+and `>TASK` consumes (the operator is task 0, so the first background task is
+`task 1`). `<n>` is the signed THROW code, printed in decimal regardless of
+`BASE`; `<desc>` is the description-table lookup (§b/§c), omitted on a miss.
+
+**Recovering a suspended task:** a fault-suspended task is *not* revived by
+`WAKE` — `WAKE` re-arms it from its stale pre-fault registers (a mid-unwind
+resume point). The sanctioned recovery is **redefine + re-`ACTIVATE`**: define
+a corrected word and `ACTIVATE` the same task handle, which re-seeds the task
+to `AWAKE` with fresh stacks. This is an operator activity (the operator
+compiles the replacement); the background task still executes pre-compiled
+words only (FR24 operator-only-compile lock).
+
+---
+
 ## (b) ANS Standard THROW Codes (DPANS94 / ANS Forth 1994 §9.3.5)
 
 All 58 standard codes, transcribed verbatim. The "Used this epic?" column
