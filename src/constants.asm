@@ -56,6 +56,10 @@ SLOT2_WINDOW_BASE EQU 0x8000
 ; which preserve the inner-interpreter registers (BC=TOS, DE=IP, HL).
 MBB_GET_PAGE    EQU     0xFDDC          ; C = logical page 0-2 -> A = physical (0xFF err)
 MBB_SET_PAGE    EQU     0xFDDF          ; A = logical page 0-2, E = physical page
+; User-interrupt install vector: HL = ISR address (0 disables). Fires the
+; routine 64 Hz — NOT the "60th of a second" the firmware header wrongly claims
+; (see src/timer.asm). The slot holds a single user routine at a time.
+MBB_SET_USR_INT EQU     0xFDC7          ; HL = ISR addr (0 = disable); 64 Hz
 
 ; === BDOS Function Numbers ===
 P_TERMCPM       EQU     0               ; BDOS function 0: terminate program
@@ -89,6 +93,39 @@ RS_SIZE         EQU     256             ; Return stack: 128 cells (256 bytes)
 ; This gap keeps that transient inside antforth's own arena instead of clobbering
 ; the byte at top-of-TPA (the BDOS entry / warm-boot vector).
 SP_GUARD        EQU     8
+
+; === Phase-6 Multitasker — TCB field offsets & status enum ===
+; A Task Control Block (TCB) is a fixed-memory record (always below $8000). TASK
+; carves one per background task from the bank-0 dictionary; the operator (task
+; 0) is a static header-only record (operator_tcb, src/multitasker.asm). PAUSE
+; saves the running task's {SP,IX,DE,BC} plus the per-task UserArea subset
+; {catch_top,current_bank,base} into its TCB and restores the next AWAKE task's.
+; Fields are addressed by these named offsets, never by magic number. The
+; doc-STRUCT in src/structures.asm mirrors this table and ASSERTs each offset
+; against these EQUs, so the two representations cannot drift.
+TCB_LINK        EQU 0           ; next TCB in the circular ring (2)
+TCB_STATUS      EQU 2           ; TASK_AWAKE / TASK_ASLEEP / TASK_SUSPENDED (1)
+TCB_SP          EQU 3           ; saved data-stack pointer (2)
+TCB_IX          EQU 5           ; saved return-stack pointer (2)
+TCB_DE          EQU 7           ; saved IP / resume-thread address (2)
+TCB_BC          EQU 9           ; saved TOS (2)
+TCB_CATCH       EQU 11          ; per-task CATCH-TOP (2)
+TCB_BANK        EQU 13          ; per-task current_bank (2; re-paged in 25.5)
+TCB_BASE        EQU 15          ; per-task BASE (2)
+TCB_SPBASE      EQU 17          ; per-task data-stack base (2). PAUSE swaps the global sp_base
+                                ; cell to this so check_overflow/check_underflow/DEPTH measure
+                                ; against the RUNNING task's private ps_area, not the operator's.
+                                ; (rp_base stays global — only operator-run QUIT uses it.)
+TCB_THREAD      EQU 19          ; resume thread [xt | epilogue_cf] (4)
+TCB_HDR_SIZE    EQU 23          ; header size (link .. t_thread end)
+TCB_PS          EQU TCB_HDR_SIZE        ; private parameter-stack area (PS_SIZE)
+TCB_RS          EQU TCB_PS + PS_SIZE    ; private return-stack area (RS_SIZE)
+TCB_SIZE        EQU TCB_RS + RS_SIZE    ; full dictionary-allocated task footprint
+; Status enum. SUSPENDED is reserved now (used by Story 25.6) so the PAUSE walk's
+; "skip non-AWAKE" test is final from the start.
+TASK_ASLEEP     EQU 0
+TASK_AWAKE      EQU 1
+TASK_SUSPENDED  EQU 2
 
 ; === Dictionary ===
 ; HASH_BUCKETS retired — single source of truth is now WORDLIST_BUCKETS
@@ -161,6 +198,7 @@ THROW_COMPILE_ONLY      EQU -14  ; ANS Forth 1994 §9.3.5
 THROW_ZERO_LEN_NAME     EQU -16  ; ANS Forth 1994 §9.3.5
 THROW_PIC_OVERFLOW      EQU -17  ; ANS Forth 1994 §9.3.5
 THROW_CONTROL_MISMATCH  EQU -22  ; ANS Forth 1994 §9.3.5
+THROW_USER_INTERRUPT    EQU -28  ; ANS Forth 1994 §9.3.5 (keyboard break; Ctrl-\ consumed at the PAUSE yield seam, Story 25.7)
 THROW_INVALID_NAME_ARG  EQU -32  ; ANS Forth 1994 §9.3.5 (invalid name argument, e.g. TO xxx)
 THROW_SEARCH_ORDER_OVERFLOW EQU -49  ; ANS Forth 1994 §9.3.5 (search-order overflow; SET-ORDER bounds check)
 THROW_END_OF_INPUT      EQU -58  ; ANS Forth 1994 §9.3.5

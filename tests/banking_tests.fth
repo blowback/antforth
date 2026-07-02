@@ -32,6 +32,21 @@ END-CODE
 \ write-only, so the readback is open bus. Slot-2 mapping is now read via
 \ MBB-GET-2 (MBB_GET_PAGE; defined in 16.3-probe.fth, loaded first).
 
+\ === +BANK cap-probe helpers — DEFINED EARLY (fixed memory, below $8000) ===
+\ These are the compiled helpers the Probe-G +BANK cap test (further down)
+\ executes. They are defined HERE, at the top of the suite where HERE is still
+\ well below the $8000 slot-2 window, so their dictionary headers live in fixed
+\ memory and stay findable under any bank mapping. Defined late (next to the
+\ probe) they straddle $8000 once cumulative kernel growth lifts HERE to the
+\ boundary, and the post-seed lookup then fails as the foreign-bank window hides
+\ a header above $8000 (feedback_banking_probe_straddle_halt — surfaced when the
+\ Phase-6 multitasker grew the kernel ~470 B in Story 25.1). The orchestration +
+\ verdict still run interpret-level at the probe site (Story 23.2).
+: _do-29-+bank ( -- )
+  29 0 DO $22 +BANK LOOP
+;
+: _do-one-more-+bank ( -- ) $22 +BANK ;
+
 \ === Probe 1: BANK-MAPPING-ON idempotence + stack effect ===
 \ Stack-effect verification — repeated BANK-MAPPING-ON has stack effect
 \ `( -- )` and the word body completes cleanly. Idempotent: mapping is
@@ -268,31 +283,28 @@ _probe-d
 \ F2 (data check): after the shift, 0 BANK! maps slot 2 to active_pages[0];
 \ MBB-GET-2 readback should equal $23 (the shifted-in value), catching the
 \ case where LDIR skipped without leaving the right page at index 0.
-: _probe-minus-bank-ldir ( -- )
-  $22 +BANK $23 +BANK $24 +BANK
-  $22 -BANK   \ if LDIR works: [$23, $24, ...], bank_count=2
-  $22 -BANK   \ $22 absent → no-op; bank_count stays 2 if shift worked
-  BANKS DUP 2 = IF
-    ." PASS: minus-bank-ldir-shift-count — second $22 -BANK was a no-op (BANKS=2)"
-    DROP
-  ELSE
-    ." FAIL: minus-bank-ldir-shift-count — BANKS = " .
-  THEN
-  CR
-  0 BANK!     \ slot 2 ← active_pages[0]
-  MBB-GET-2 DUP $23 = IF
-    ." PASS: minus-bank-ldir-shift-data — MBB slot-2 readback = $23 (shifted-in value at index 0)"
-    DROP
-  ELSE
-    ." FAIL: minus-bank-ldir-shift-data — MBB slot-2 readback = $" BASE @ HEX SWAP . BASE !
-  THEN
-  CR
-  \ Cleanup: restore bank 0 (HERE/LATEST snapshot) BEFORE BANKS-CLEAR
-  \ so subsequent REPL state stays sane (see BANKS-CLEAR docstring).
-  0 BANK!
-  BANKS-CLEAR
-;
-_probe-minus-bank-ldir
+\ Story 24.2 restructure: cumulative kernel growth (the 24.2 DELAY/MS words)
+\ pushed the former `: _probe-minus-bank-ldir ... ;` colon body across the
+\ $8000 slot-2 window, tripping the F1 straddle halt in the body's cleanup tail
+\ (the class enumerated by test-straddle-regression) — both PASS lines printed,
+\ then the IP wedged crossing $8000. Driven at interpret level now, exactly like
+\ the +BANK cap probe below (Story 23.2): the running IP stays kernel-resident
+\ (<$8000), and the raw count/data witnesses are printed for the Makefile to
+\ assert, so no compile-mode IF/THEN verdict word — hence no straddle-prone
+\ body — survives. $22/$23/$24 are $-prefixed hex literals; witnesses are
+\ forced DECIMAL so the asserted values (count 2, data 35 = $23) are base-stable.
+DECIMAL
+BANKS-CLEAR
+." ---minus-bank-ldir-start---" CR
+$22 +BANK $23 +BANK $24 +BANK
+$22 -BANK   \ if LDIR works: [$23, $24, ...], bank_count=2
+$22 -BANK   \ $22 absent → no-op; bank_count stays 2 if the shift worked
+." mbl-count: " BANKS . CR              \ expect 2 (second -BANK was a no-op)
+0 BANK!     \ slot 2 ← active_pages[0]
+." mbl-data: " MBB-GET-2 . CR           \ expect 35 ($23 shifted-in at index 0)
+0 BANK!
+BANKS-CLEAR
+." ---minus-bank-ldir-end---" CR
 
 \ Probe G (Story 17.5.1 rewrite, supersedes Story 17.3 Code Review H2):
 \ +BANK cap check at bank_count == 29 — AC2 / PD-P4-13.
@@ -323,10 +335,9 @@ _probe-minus-bank-ldir
 \ entries and the seed loop would trip the cap mid-iteration) and the
 \ TAIL one (handoff guard for any probes added after probe G — leaves
 \ bank_count = 0 for the next probe's known state). Do not move either.
-: _do-29-+bank ( -- )
-  29 0 DO $22 +BANK LOOP
-;
-: _do-one-more-+bank ( -- ) $22 +BANK ;
+\ _do-29-+bank / _do-one-more-+bank are defined EARLY (top of this file, fixed
+\ memory) so their headers stay below $8000 and findable under any bank mapping
+\ — see the note there. The orchestration + verdict below stay interpret-level.
 \ Story 23.2 restructure: the +BANK cap probe is now DRIVEN AT INTERPRET
 \ LEVEL, so the running IP stays kernel-resident (<$8000). The prior single
 \ `: _probe-plus-bank-cap ... ;` colon body straddled the $8000 slot-2 window

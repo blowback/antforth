@@ -68,3 +68,63 @@ prompt_show_bank    DW      0       ; opt-in REPL prompt bank indicator (Story 2
                                     ; (COLD zero-inits). DEFCODE-readable kernel cell (not an ANS VALUE, per the
                                     ; bank_mapping_state precedent above). Set/cleared by PROMPT-SHOW-BANK.
     ENDS
+
+; === Task Control Block (Phase-6 cooperative multitasker) ===
+; A fixed-memory record (always below $8000). TASK carves one per background task
+; from the bank-0 dictionary; the operator (task 0) is a static header-only
+; record (operator_tcb, src/multitasker.asm) that reuses the system stacks, so it
+; needs no private ps_area/rs_area.
+;
+; PAUSE saves the running task's {saved_sp, saved_ix, saved_de, saved_bc} plus the
+; per-task UserArea SUBSET {t_catch_top, t_current_bank, t_base} into its TCB, then
+; restores the next AWAKE task's. That subset is EXACTLY the three cells AD-P6-1
+; declares per-task: each task owns its exception-frame chain (catch_top), its bank
+; (current_bank — saved/restored as a plain cell here; the conditional MBB_SET_PAGE
+; re-page is Story 25.5), and its number base. Every OTHER UserArea cell (STATE,
+; HERE, LATEST, the TIB/>IN parse state, search order, the whole bank-table) stays
+; GLOBAL and is never touched by a task switch — background tasks run pre-compiled
+; words and neither parse nor compile, so the interpreter/dictionary cells are
+; operator-owned and uncontended.
+;
+; t_sp_base is NOT part of the AD-P6-1 subset — it is an implementation cell that
+; makes the existing depth guards task-aware: each task's check_overflow /
+; check_underflow / DEPTH must measure against its OWN private parameter stack, so
+; PAUSE swaps the global sp_base cell to the running task's t_sp_base. (rp_base
+; stays global; no background path guards the return stack.)
+;
+; t_thread is the 2-cell resume thread [xt | epilogue_cf] that ACTIVATE builds;
+; saved_de points at it, so the task word's terminal EXIT chases past its xt into
+; the completion epilogue (task_exit) and can never run off the end into garbage.
+;
+; Doc-struct only: the live record is hand-addressed via the TCB_* EQUs
+; (src/constants.asm). The ASSERTs below pin the two representations together so a
+; field reorder here without a matching EQU edit fails the build.
+    STRUCT TCB
+link            DW      0
+status          DB      0
+saved_sp        DW      0
+saved_ix        DW      0
+saved_de        DW      0
+saved_bc        DW      0
+t_catch_top     DW      0
+t_current_bank  DW      0
+t_base          DW      0
+t_sp_base       DW      0
+t_thread        DS      4
+ps_area         DS      PS_SIZE
+rs_area         DS      RS_SIZE
+    ENDS
+    ASSERT TCB.link == TCB_LINK
+    ASSERT TCB.status == TCB_STATUS
+    ASSERT TCB.saved_sp == TCB_SP
+    ASSERT TCB.saved_ix == TCB_IX
+    ASSERT TCB.saved_de == TCB_DE
+    ASSERT TCB.saved_bc == TCB_BC
+    ASSERT TCB.t_catch_top == TCB_CATCH
+    ASSERT TCB.t_current_bank == TCB_BANK
+    ASSERT TCB.t_base == TCB_BASE
+    ASSERT TCB.t_sp_base == TCB_SPBASE
+    ASSERT TCB.t_thread == TCB_THREAD
+    ASSERT TCB.ps_area == TCB_PS
+    ASSERT TCB.rs_area == TCB_RS
+    ASSERT TCB == TCB_SIZE

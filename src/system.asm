@@ -8,6 +8,16 @@
 w_BYE:
         DEFCODE "BYE", 0
 w_BYE_cf:
+        ; Release the 64 Hz tick slot before exit. COLD auto-installs tick_isr
+        ; into the single user-interrupt vector; leaving it pointing into the
+        ; freed TPA would let the firmware CALL into whatever the next program
+        ; loads there. Under the yielding fn-1/fn-11 line reader BYE is the sole
+        ; clean exit to CP/M: a `^C` at column 0 is caught by (EDIT) and routed
+        ; here (JP w_BYE_cf, src/io.asm .edit_etx) — it no longer triggers a BDOS
+        ; warm-boot — so the slot is released on both the explicit-BYE and the
+        ; interactive-^C exit, and no stale ISR is left live in the freed TPA.
+        LD      HL, 0                   ; 0 = disable the user-interrupt slot
+        CALL    MBB_SET_USR_INT
         LD      C, P_TERMCPM
         JP      BDOS_ENTRY
         ; No NEXT — BYE never returns

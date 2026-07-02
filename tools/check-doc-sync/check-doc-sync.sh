@@ -51,19 +51,21 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 cd "$PROJECT_ROOT" || { echo "[fatal] cannot cd to project root from $SCRIPT_DIR" >&2; exit 1; }
 
 # Input files. The canonical 'epics.md' was split into per-phase files in
-# commit 51bc6d6 (2026-05-10); the script walks all four phase files in
-# the order Phase-1 → Phase-2 → Phase-3 → Phase-4.
+# commit 51bc6d6 (2026-05-10); the script walks every phase file in order
+# Phase-1 → Phase-6 (Phase-5/6 added as the concurrency bundle landed).
 PRD="_bmad-output/planning-artifacts/prd.md"
 ARCH="_bmad-output/planning-artifacts/architecture.md"
 EPICS_P1="_bmad-output/planning-artifacts/epics-phase1-epics-1-8.md"
 EPICS_P2="_bmad-output/planning-artifacts/epics-phase2-epics-9-13.5.md"
 EPICS_P3="_bmad-output/planning-artifacts/epics-phase3-epics-14-15.md"
 EPICS_P4="_bmad-output/planning-artifacts/epics-phase4-epics-16-22.md"
+EPICS_P5="_bmad-output/planning-artifacts/epics-phase5-epic-23.md"
+EPICS_P6="_bmad-output/planning-artifacts/epics-phase6-epics-24-26.md"
 COMPLIANCE="docs/ans-forth-core-compliance.md"
 
 # Verify inputs exist; emit fatal + exit 1 on any missing file.
 fatal=0
-for f in "$PRD" "$ARCH" "$EPICS_P1" "$EPICS_P2" "$EPICS_P3" "$EPICS_P4" "$COMPLIANCE"; do
+for f in "$PRD" "$ARCH" "$EPICS_P1" "$EPICS_P2" "$EPICS_P3" "$EPICS_P4" "$EPICS_P5" "$EPICS_P6" "$COMPLIANCE"; do
     if [ ! -r "$f" ]; then
         printf '[fatal] required input file missing or unreadable: %s\n' "$f" >&2
         fatal=1
@@ -92,7 +94,7 @@ ARCH_LINES="$(awk '{printf "%d:%s\n", NR, $0}' "$ARCH")"
 PRD_LINES="$(awk '{printf "%d:%s\n", NR, $0}' "$PRD")"
 COMP_LINES="$(awk '{printf "%d:%s\n", NR, $0}' "$COMPLIANCE")"
 EPICS_HEADERS="$(awk 'FNR==1{f=FILENAME} /^### Story /{print f":"FNR":"$0}' \
-    "$EPICS_P1" "$EPICS_P2" "$EPICS_P3" "$EPICS_P4")"
+    "$EPICS_P1" "$EPICS_P2" "$EPICS_P3" "$EPICS_P4" "$EPICS_P5" "$EPICS_P6")"
 
 # Architecture references FR-P3-N / NFR-P3-N tokens both as singletons
 # ("FR-P3-15") and as inclusive ranges ("FR-P3-22..25", "NFR-P3-22..33").
@@ -175,10 +177,10 @@ fi
 #------------------------------------------------------------------------------
 # Check (b): Story X.Y citation resolution
 #------------------------------------------------------------------------------
-# Resolution: a header line matching '^### Story X.Y:' or '^### Story X.Y.Z:'
-# in any of the four per-phase epics files (epics-phase1-epics-1-8.md,
-# epics-phase2-epics-9-13.5.md, epics-phase3-epics-14-15.md,
-# epics-phase4-epics-16-22.md).
+# Resolution: a header line matching '^### Story X.Y' followed by ':' (the
+# Phase-1..4/6 style, '### Story X.Y: Title') or a space (the Phase-5 style,
+# '### Story X.Y — Title'), in any per-phase epics file (epics-phase1..6). The
+# trailing [: ] guard still rejects prefix false-matches (X.Y won't match X.Y0).
 # Regex matches singular "Story " only; plural "Stories" forms (e.g.,
 # "Stories 14.1 / 14.2 / 14.3") are not extracted by this check — they
 # are conventionally human prose, not citations the reader follows.
@@ -190,7 +192,7 @@ if [ -n "$arch_stories" ]; then
         # Header pattern: '### <cite>:' (anchored to a line whose
         # content begins '### ' after the awk-injected '<file>:<n>:'
         # prefix in $EPICS_HEADERS).
-        if printf '%s\n' "$EPICS_HEADERS" | grep -qE ":### ${cite}:"; then
+        if printf '%s\n' "$EPICS_HEADERS" | grep -qE ":### ${cite}[: ]"; then
             continue
         fi
         loc="$(printf '%s\n' "$ARCH_LINES" | grep -E "${cite}([^0-9]|$)" | head -1 | cut -d: -f1)"

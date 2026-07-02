@@ -258,6 +258,31 @@ cold_start:
         ;     cl_tail_parse below for the full source comment.
         CALL    cl_tail_parse
 
+        ; 8j. Phase-6 timer foundation — zero the 32-bit tick_count and install
+        ;     the kernel 64 Hz ISR via MBB_SET_USR_INT so TICKS is live on every
+        ;     boot (FR16). Straight asm — no Forth stack marshalling at COLD.
+        ;     Registers are scratch here (DE is loaded with the entry thread just
+        ;     before NEXT below), and MBB_SET_USR_INT preserves IX/IY (the
+        ;     TRAFFIC.FTH precedent), so no save/restore is needed.
+        LD      HL, 0
+        LD      (tick_count), HL
+        LD      (tick_count+2), HL
+        LD      HL, tick_isr
+        CALL    MBB_SET_USR_INT
+
+        ; 8k. Phase-6 multitasker — wire the static operator task-0 TCB into a
+        ;     length-1 ring and make it the running task: status = AWAKE, link =
+        ;     self, current_tcb = operator_tcb. The saved-register slots fill on the
+        ;     operator's first PAUSE (it is the running task at boot). A length-1
+        ;     ring means PAUSE walks link once back to self and resumes unchanged —
+        ;     byte-identical single-task behaviour until a 2nd TASK links in
+        ;     (FR9 / AC1). Straight asm (registers scratch here, like 8j).
+        LD      HL, operator_tcb
+        LD      (current_tcb), HL
+        LD      (operator_tcb + TCB_LINK), HL  ; link = self
+        LD      A, TASK_AWAKE
+        LD      (operator_tcb + TCB_STATUS), A
+
         ; 9. FORTH-WORDLIST is pre-populated in the binary (see src/wordlists.asm)
         ;    No runtime initialisation needed
 
@@ -722,6 +747,8 @@ str_empty_q_len  EQU 6
         INCLUDE "system.asm"
         INCLUDE "exception.asm"
         INCLUDE "banking.asm"
+        INCLUDE "timer.asm"
+        INCLUDE "multitasker.asm"
         INCLUDE "file_access.asm"
 
 ; === Forth bootstrap definitions (depend on everything above) ===
@@ -782,7 +809,7 @@ sp_base:        DW      0               ; Initial SP value, set during cold star
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
 ; Banner-version is a same-length string: a same-length swap is zero
 ; binary cost for a version bump.
-str_banner1:    DB      "AntForth v3.1.0 (C) ant.org 2026"
+str_banner1:    DB      "AntForth v3.2.0 (C) ant.org 2026"
 STR_BANNER1_LEN EQU     32
 str_banner2:    DB      "MicroBeast - "
 STR_BANNER2_LEN EQU     13

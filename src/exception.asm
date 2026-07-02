@@ -544,6 +544,54 @@ w_THROW_cf:
         ; Stash n; it's needed across bdos_print_str calls (BDOS helper
         ; takes the length arg in B, clobbering BC).
         LD      (throw_saved_n), BC
+        ; --- Task label: a background fault prefixes the diagnostic with
+        ;     "task N: " (N = the .TASKS ring index, operator = 0) so the
+        ;     operator can tell which task faulted. An operator throw prints the
+        ;     bare "error <n>" — byte-identical to Phase 5. Same current_tcb vs
+        ;     operator_tcb compare as the post-print discrimination below; done
+        ;     ahead of the shared line because the label must lead. BC is free
+        ;     here (n is parked in throw_saved_n; the shared print reloads it). ---
+        LD      HL, (current_tcb)
+        LD      A, L
+        CP      LOW operator_tcb
+        JR      NZ, .throw_uncaught_label
+        LD      A, H
+        CP      HIGH operator_tcb
+        JR      Z, .throw_uncaught_shared       ; operator — no task label
+.throw_uncaught_label:
+        ; N = ring index of current_tcb: walk from operator_tcb (index 0)
+        ; following TCB_LINK until the walk pointer == current_tcb. Identical
+        ; walk to .TASKS/>TASK; a live TCB is always in the ring, so it halts.
+        LD      D, H
+        LD      E, L                            ; DE = target TCB base (HL still holds current_tcb from the compare above)
+        LD      HL, operator_tcb                ; HL = walk pointer (task 0)
+        LD      C, 0                            ; C = index
+.throw_uncaught_walk:
+        LD      A, L
+        CP      E
+        JR      NZ, .throw_uncaught_wnext
+        LD      A, H
+        CP      D
+        JR      Z, .throw_uncaught_wfound
+.throw_uncaught_wnext:
+        LD      A, (HL)                         ; follow link (TCB_LINK = 0)
+        INC     HL
+        LD      H, (HL)
+        LD      L, A                            ; HL = next TCB base
+        INC     C
+        JR      .throw_uncaught_walk
+.throw_uncaught_wfound:
+        PUSH    BC                              ; save index across bdos_print_str
+        LD      HL, str_task_notice
+        LD      B, str_task_notice_len
+        CALL    bdos_print_str                  ; "task "
+        POP     BC                              ; C = index
+        LD      B, 0                            ; BC = index (>= 1, a ring pos)
+        CALL    print_signed_dec_bc             ; N
+        LD      HL, str_colon_space
+        LD      B, 2
+        CALL    bdos_print_str                  ; ": "
+.throw_uncaught_shared:
         ; --- Print "error " ---
         LD      HL, str_throw_prefix
         LD      B, STR_THROW_PREFIX_LEN
@@ -556,19 +604,59 @@ w_THROW_cf:
         CALL    print_throw_description
         ; --- Trailing CR/LF ---
         CALL    bdos_crlf
+        ; --- Whose THROW is this? An uncaught THROW from a background task must
+        ;     NOT reset the interpreter in place: QUIT rebuilds the return stack
+        ;     from the global rp_base and re-enters the REPL while current_tcb
+        ;     still points at the faulting task, so the next yielding QUERY→PAUSE
+        ;     snapshots operator state into the task's TCB — scheduler desync.
+        ;     Instead SUSPEND the faulting task (out of the rotation; .TASKS shows
+        ;     it. WAKE does NOT cleanly recover a fault-suspended task — it re-arms
+        ;     it from its stale pre-fault registers (see multitasker.asm WAKE), so
+        ;     the correct recovery is redefine + re-ACTIVATE) and hand control back
+        ;     to the operator's own parked continuation. Only the operator path
+        ;     runs the INCLUDE-chain / asm
+        ;     cleanups below — those are operator-interpreter state a background
+        ;     task never owns. ---
+        LD      HL, (current_tcb)
+        LD      A, L
+        CP      LOW operator_tcb
+        JR      NZ, .throw_uncaught_task
+        LD      A, H
+        CP      HIGH operator_tcb
+        JR      NZ, .throw_uncaught_task
+        ; --- Operator threw: in-place REPL recovery, inlined HERE rather than
+        ;     `JP w_ABORT_cf`: ABORT is itself -1 THROW, so jumping to it would
+        ;     loop (user-ABORT → -1 THROW → uncaught → ABORT → ...).
+        ;     w_QUIT_cf's IX/STATE/CATCH-TOP reset closes the recovery. ---
         ; --- Walk the INCLUDE-TOP chain to completion. Closes every FID
         ;     from in-progress INCLUDEs and restores the input-spec back to
         ;     the outermost (typically keyboard) — no orphaned FIDs after
         ;     THROW. ---
         CALL    throw_chain_walk_uncaught
-        ; --- State reset + REPL recovery, inlined HERE rather than `JP
-        ;     w_ABORT_cf`: ABORT is itself -1 THROW, so jumping to it would
-        ;     loop (user-ABORT → -1 THROW → uncaught → ABORT → ...).
-        ;     w_QUIT_cf's IX/STATE/CATCH-TOP reset closes the recovery. ---
         CALL    asm_cleanup             ; If asm_mode set, restore HERE/bucket
         LD      HL, (sp_base)
         LD      SP, HL                  ; Reset parameter stack
         JP      w_QUIT_cf               ; Enter QUIT (resets return stack + STATE + CATCH-TOP)
+
+.throw_uncaught_task:
+        ; HL = current_tcb (the faulting background task). Mark it SUSPENDED so
+        ; PAUSE's walk skips it, then resume the operator's saved continuation via
+        ; the scheduler's restore tail (full {SP,IX,IP,TOS,bank,base,catch} swap).
+        LD      DE, TCB_STATUS
+        ADD     HL, DE
+        LD      (HL), TASK_SUSPENDED
+        ; Reset SP to the faulting task's stack base before the handoff. Story
+        ; 25.5's conditional re-page in sched_resume_current CALLs mbb_set_slot2
+        ; (3 PUSH + return) BEFORE step 5 reloads SP wholesale — without this those
+        ; pushes land on the faulting task's live (and, if the fault was a deep- or
+        ; over-flowed-stack condition, unsafe) data stack and could underflow its
+        ; ps_area into the TCB header (ring link). sp_base is this task's t_sp_base
+        ; here (PAUSE swapped it in on resume), so it is a valid empty-stack top.
+        LD      HL, (sp_base)
+        LD      SP, HL
+        LD      HL, operator_tcb
+        LD      (current_tcb), HL       ; running task := operator
+        JP      sched_resume_current    ; restore operator context, NEXT
 
 ; -----------------------------------------------
 ; print_signed_dec_bc — Print BC as signed decimal via BDOS.
@@ -806,6 +894,8 @@ chain_walk_target:      DW      0
 ; -----------------------------------------------
 str_throw_prefix:       DB      "error "
 STR_THROW_PREFIX_LEN    EQU     6
+str_task_notice:        DB      "task "  ; background-fault label: "task N: " precedes the error line
+str_task_notice_len     EQU     5
 str_colon_space:        DB      ": "
 
 ; -----------------------------------------------

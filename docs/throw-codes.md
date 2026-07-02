@@ -64,6 +64,108 @@ extensions, the assembler-error string).
 
 ---
 
+## (a.1) Uncaught-THROW Diagnostic Format
+
+When a THROW is not caught by any `CATCH`, `.throw_uncaught`
+(`src/exception.asm`) prints a one-line diagnostic, then recovers. The line
+depends on **which task** faulted:
+
+| Faulting task | Diagnostic line | Recovery |
+|---|---|---|
+| Operator (the REPL task) | `error <n>[: <desc>]` | In-place: INCLUDE-chain close + `asm_cleanup` + reset, then re-enter `QUIT`. |
+| A background task | `task N: error <n>[: <desc>]` | The task is parked **SUSPENDED** (out of the scheduler rotation but still linked in the ring, so `.TASKS` shows it) and control returns to the operator, whose REPL and other tasks keep running. |
+
+`N` is the faulting task's **ring index**, identical to what `.TASKS` prints
+and `>TASK` consumes (the operator is task 0, so the first background task is
+`task 1`). `<n>` is the signed THROW code, printed in decimal regardless of
+`BASE`; `<desc>` is the description-table lookup (§b/§c), omitted on a miss.
+
+**When does a background fault appear?** No explicit `PAUSE` is needed. The
+REPL's line reader yields (`KEY` is `BEGIN KEY? 0= WHILE PAUSE REPEAT (KEY)`,
+`src/io.asm`), so while the operator sits idle at the ` ok` prompt the
+scheduler is already ticking. An `ACTIVATE`d task therefore runs — and, if it
+throws uncaught, prints its `task N: error …` line — on the next prompt-idle
+poll, i.e. right after the `ACTIVATE` returns, before the operator types
+anything. Explicit `PAUSE` is only for forcing a switch at a *deterministic*
+point (as the batch-input test probes do, where the reader does not idle-spin).
+
+**Recovering a suspended task:** a fault-suspended task is *not* revived by
+`WAKE` — `WAKE` re-arms it from its stale pre-fault registers (a mid-unwind
+resume point). The sanctioned recovery is **redefine + re-`ACTIVATE`**: define
+a corrected word and `ACTIVATE` the same task handle, which re-seeds the task
+to `AWAKE` with fresh stacks. This is an operator activity (the operator
+compiles the replacement); the background task still executes pre-compiled
+words only (FR24 operator-only-compile lock).
+
+---
+
+## (a.2) Cooperative Starvation & Keyboard Break (`-28`)
+
+The scheduler is **cooperative round-robin**: a task advances the ring only by
+reaching a yield point — a `PAUSE` (directly, or via the yielding input words
+`KEY`/`ACCEPT`/`QUERY` and `DELAY`, which all `PAUSE` while they wait). A task
+runs *only by yielding*; it keeps the CPU until it does. This is by design (no
+timer-preemption of the interpreter), and it has one sharp edge worth stating
+plainly.
+
+**Breaking a *yielding* runaway task.** A task that loops but still reaches a
+yield can be broken from the console. Press **`Ctrl-\` (0x1C)**: the operator's
+line editor (`(EDIT)`, `src/io.asm`) recognises the byte in-band and sets the
+`break_pending` flag (it is not stored into the line, so it never becomes a
+word). The flag is consumed at the next `PAUSE`, which raises **`-28` "user
+interrupt"** in the running background task. That funnels through the same
+uncaught-THROW path as any background fault (§a.1): it prints `task N: error -28`,
+parks the task **SUSPENDED**, and returns control to the operator, whose REPL and
+other tasks keep running. Recover exactly as for any suspended task — **redefine
+the word and re-`ACTIVATE`** the same handle (not `WAKE`).
+
+Only a **non-operator** task is ever broken: the operator is the task that *reads*
+the `Ctrl-\` byte, so when the operator yields with a break pending it leaves the
+flag set and hands off; the misbehaving background task consumes it on its own
+next yield. The break never lands on the operator's prompt.
+
+**Two caveats on *which* task takes the break.** `break_pending` is a single
+global latch, not a per-task request, so:
+
+- **It lands on the first background task to yield, not necessarily "the"
+  runaway.** With more than one AWAKE background task, whichever reaches a `PAUSE`
+  first after the operator hands off consumes the flag and takes the `-28`. When a
+  single runaway is the only busy task this is exactly that task; with several
+  live tasks the break is not guaranteed to hit the one you meant.
+- **An active `CATCH` in the target intercepts it.** The break is a genuine
+  `THROW -28`, so if the running background task has a live `CATCH` frame at the
+  yield point, *that* `CATCH` catches the `-28` — the task handles it and keeps
+  running instead of being suspended, and no `task N: error -28` prints. A task
+  that guards its whole loop in `CATCH` therefore cannot be broken from the
+  keyboard (redefine + reset is the fallback).
+
+If `Ctrl-\` is pressed while **no** breakable task is AWAKE (only the operator, or
+all others `ASLEEP`/`SUSPENDED`), the flag simply latches and is drained the next
+time a task enters the rotation (`ACTIVATE`/`WAKE` clear it) — it never ambushes a
+task armed later.
+
+**Why `Ctrl-\` and not `ESC`.** `ESC` (0x1B) is the lead byte of terminal escape
+sequences — an arrow key arrives as `ESC [ D` and friends — so a lone-`ESC` break
+would false-trigger on every cursor key. `Ctrl-\` is a single byte, never an
+escape-sequence prefix, and is the traditional Unix-tty "quit" key. (`Ctrl-C` was
+unavailable: at column 0 it is already the REPL's exit-to-CP/M key.)
+
+**The honest limit — a *never-yielding* task is a hard stall.** A task that never
+reaches a yield point (e.g. `: SPIN BEGIN 0 UNTIL ;` with no `PAUSE`) **starves the
+ring**: once the scheduler switches to it, the operator never gets another turn.
+All console input flows through the operator's line editor, which only runs on an
+operator turn — so during the stall **no keystroke is read at all**: not `Ctrl-\`
+(so the break is never detected), and **not even `Ctrl-C`** (the normal
+exit-to-CP/M key is handled by the same `(EDIT)` path). The terminal appears dead.
+This is the inherent limit of a cooperative model and of in-band detection alike —
+no yield → no operator turn → no input of any kind. It is a **documented,
+reset-required** failure mode, not something the kernel papers over: the **only**
+recovery is a hardware reset. The fix is to give long background loops a `PAUSE`
+(or use the yielding input/`DELAY` words) so they never wedge the ring in the
+first place.
+
+---
+
 ## (b) ANS Standard THROW Codes (DPANS94 / ANS Forth 1994 §9.3.5)
 
 All 58 standard codes, transcribed verbatim. The "Used this epic?" column
@@ -99,7 +201,7 @@ back to the per-file inventory in §d.
 | -25 | return stack imbalance | no | — |
 | -26 | loop parameters unavailable | no | — |
 | -27 | invalid recursion | no | — |
-| -28 | user interrupt | no | — |
+| -28 | user interrupt | **done — Story 25.7** | `THROW_USER_INTERRUPT EQU -28` (`constants.asm`) — keyboard break: `Ctrl-\` (0x1C) recognised in-band by `(EDIT)` (`io.asm`) sets `break_pending`; `PAUSE` (`multitasker.asm`) consumes it and raises `-28` in the running background task (never the operator), reusing the Story-25.6 uncaught-THROW reroute. See §(a.2). |
 | -29 | compiler nesting | no | — |
 | -30 | obsolescent feature | no | — |
 | -31 | >BODY used on non-CREATEd definition | no | — |
