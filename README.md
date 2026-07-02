@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.1.0
+## Version 3.2.0
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -63,8 +63,20 @@ honest `ENVIRONMENT?` wordset-presence rows (the wordsets antforth does
 not implement now answer `false` rather than over-claiming), and a fix
 to the assembler's `IN,`/`OUT,` words so they take Zilog
 destination-source operand order like the rest of the instruction set.
+3.2.0 closes Phase 6 (Epics 24–26): concurrency and on-device
+applications. A 64 Hz timer interrupt with a monotonic `TICKS` counter
+and yielding `DELAY`/`MS` (Epic 24) feed a cooperative multitasker —
+`PAUSE`/`TASK`/`ACTIVATE`, per-task stacks and banks, `SLEEP`/`WAKE`,
+`.TASKS` introspection, background-task exception isolation, and an
+in-band `Ctrl-\` keyboard break (Epic 25) — which in turn carries a
+coordination toolkit: counting semaphores (`SEMAPHORE`/`SIGNAL`/`WAIT`),
+a mutex (`MUTEX`/`LOCK`/`UNLOCK`), and a one-slot mailbox
+(`MAILBOX`/`POST`/`FETCH`) (Epic 26). All of it is cooperative,
+non-atomic by design, and verified on real MicroBeast silicon — the
+headline being a background traffic-light demo blinking real LEDs on
+the PIO while the `ok>` prompt stays live.
 
-V3.1.0 supports the following ANS Forth standard words:
+V3.2.0 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|

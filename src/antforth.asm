@@ -809,7 +809,7 @@ sp_base:        DW      0               ; Initial SP value, set during cold star
 rp_base:        DW      0               ; Initial IX value, set during cold start (for QUIT)
 ; Banner-version is a same-length string: a same-length swap is zero
 ; binary cost for a version bump.
-str_banner1:    DB      "AntForth v3.1.0 (C) ant.org 2026"
+str_banner1:    DB      "AntForth v3.2.0 (C) ant.org 2026"
 STR_BANNER1_LEN EQU     32
 str_banner2:    DB      "MicroBeast - "
 STR_BANNER2_LEN EQU     13

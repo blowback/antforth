@@ -17,3 +17,7 @@ disk/b/*.BIN
 # P1.TXT..P8.TXT in the iz-cpm root (= repo root). Each run leaves
 # zero-byte artifacts in the working tree; ignore them at the root.
 /P[1-8].TXT
+# Phase 6 HW-smoke — S9 verification on real MicroBeast dumps a serial
+# capture (beastty-<timestamp>.bin) next to the story records. These are
+# archived out-of-repo per story Change Logs, never committed as blobs.
+_bmad-output/implementation-artifacts/beastty-*.bin
