@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -469,6 +469,28 @@ test-repl-mutex: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL mutex probe" --fail-line '^FAIL:' \
 		'PASS: mutex-words-resolve' 'PASS: mutex-constructor-init' 'PASS: mutex-lock-unlock-cycle' \
 		'PASS: mutex-exclusion-clean' 'PASS: mutex-ring-alive' 'PASS: mutex-alive'
+
+# --- Story 26.3 one-slot mailbox (MAILBOX / POST / FETCH) probe ---
+# A mailbox is a bounded-buffer of capacity 1: two Story 26.1 counting semaphores
+# (empty=1 free slot, full=0 no item) plus a value cell. POST = empty WAIT / value !
+# / full SIGNAL; FETCH = full WAIT / value @ / empty SIGNAL. Like the 26.1 semaphore
+# this does NOT depend on the 64 Hz tick ISR, so the full producer->consumer hand-off
+# STRUCTURE runs to completion under emulation — no-loss/no-overwrite (AC4) and ring-
+# liveness (AC5) are asserted here; wall-clock interleave rides S9. The hand-off verdict
+# turns on RUNTIME-COMPUTED witnesses (sum=100 AND good=4 computed by the operator's
+# consumer loop as a background PRODUCER POSTs (I+1)*10 into a one-slot mailbox in
+# lockstep), defeating the 23.2 echoed-source false-green. Fail-loud timeout (a wedged
+# hand-off -> loud FAIL, never a CI hang); the --fail-line tripwire also catches the
+# never-expected mailbox-producer-unblocked FAIL. Verdicts via the Story 24.4 column-0
+# helper. Single-feature target; NOT folded into plain `test-repl`.
+MAILBOX_PROBE = tests/mailbox_tests.fth
+test-repl-mailbox: $(TARGET)
+	@echo "Running Story 26.3 one-slot mailbox probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(MAILBOX_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL mailbox probe — timed out after $(PROBE_TIMEOUT)s (a POST/FETCH deadlocked / never reached BYE)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL mailbox probe" --fail-line '^FAIL:' \
+		'PASS: mailbox-words-resolve' 'PASS: mailbox-constructor-init' 'PASS: mailbox-roundtrip-single' \
+		'PASS: mailbox-handoff-no-loss' 'PASS: mailbox-empty-blocks-ring-alive' 'PASS: mailbox-alive'
 
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;

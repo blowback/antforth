@@ -232,3 +232,82 @@ check-decrement window.
 > reset** — even a set `Ctrl-\` break cannot recover it (an operator yield hands off, it
 > never breaks itself). Do all blocking `LOCK`s in a background `TASK`; keep the operator
 > free to service the console.
+
+## Coordination — the one-slot mailbox (`MAILBOX` / `POST` / `FETCH`)
+
+Where a semaphore counts units and a mutex guards a resource, a **mailbox** *carries a
+value* from one task to another. This one is a **bounded buffer of capacity 1**: a
+single slot that holds exactly one value, with the transfer gated so a producer and a
+consumer hand off in lockstep — no value is ever lost, and none is ever overwritten
+before it is read.
+
+- `MAILBOX name` — create an empty one-slot mailbox `name`. Under the hood it is three
+  ordinary `@`/`!`-addressable cells laid by `CREATE` + `,` (the `SEMAPHORE` mechanic):
+  `[value][empty][full]` at `name+0`, `name CELL+`, `name CELL+ CELL+`. It starts
+  **empty** — `empty = 1` (one free slot), `full = 0` (no item), `value = 0` (cosmetic,
+  overwritten by the first `POST`).
+- `x mbx POST` — deposit `x`. Waits on the **empty** slot (`empty WAIT`, yield-first),
+  stores `x` into the value cell, then signals **full**. If the mailbox is already full
+  it yields with `PAUSE` on every pass until a `FETCH` frees the slot.
+- `mbx FETCH` — collect a value. Waits on **full** (`full WAIT`, yield-first), reads the
+  value cell, then signals **empty**. If the mailbox is empty it yields until a `POST`
+  fills it, then returns the value.
+
+### The design — two semaphores plus a value cell
+
+The two count cells **are** Story 26.1 counting semaphores. `empty` starts at `1` ("one
+free slot available"); `full` starts at `0` ("no item yet"). `POST` = `empty WAIT` (take
+the free slot, blocking) → `value !` → `full SIGNAL` (announce an item). `FETCH` is the
+mirror: `full WAIT` (take the item) → `value @` → `empty SIGNAL` (announce a free slot).
+The only new code is the three threaded bodies; `WAIT`/`SIGNAL`/`CREATE`/`,` are the
+same proven leaves used everywhere else.
+
+Because `empty` never exceeds `1` under this protocol, **the producer cannot `POST`
+reading *i+1* until the consumer has `FETCH`ed reading *i*** and signalled `empty` — the
+empty/full pair force a lockstep hand-off. That is the no-loss, no-overwrite guarantee.
+It is also safe for multiple producers/consumers: at most one task is ever inside the
+transfer window.
+
+The documented producer→consumer pattern — the blocking side in a background `TASK`, the
+consumer in the operator (or another `TASK`):
+
+```forth
+MAILBOX MBX                    \ starts empty
+
+: PRODUCER ( -- )              \ a background task
+   4 0 DO
+     I 1+ 10 *  MBX POST      \ blocks (yielding) until the slot is free
+   LOOP
+   BEGIN PAUSE 0 UNTIL ;       \ park, still yielding; AGAIN is undefined
+
+' PRODUCER TASK ACTIVATE
+
+: CONSUMER  4 0 DO  MBX FETCH .  LOOP ;   \ collects each reading, in order
+CONSUMER                                  \ => 10 20 30 40, prompt responsive
+```
+
+`DO`/`LOOP`/`I` are **compile-only** — they must live inside a `: … ;` definition, so the
+consumer loop is wrapped in `CONSUMER` rather than typed bare at the prompt (a bare
+`4 0 DO … LOOP` at the operator throws `-14: interpreting a compile-only word`).
+
+### Non-atomic by design — inherited from `WAIT`
+
+`POST`/`FETCH` compose `WAIT`/`SIGNAL`, so they inherit the same proof: the multitasker
+is cooperative, a context switch happens *only* at a `PAUSE`, and the 64 Hz tick ISR
+touches only `TICKS`, never a mailbox cell. The only `PAUSE` in the transfer path is
+inside `WAIT`, *before* the slot is taken; once `WAIT` falls through, the value `!`/`@`
+and the following `SIGNAL` run straight-line with no `PAUSE`, so no other task can
+observe or mutate the value mid-transfer. Two tasks both blocked in `FETCH` on the same
+mailbox cannot both consume a single `POST`: after `POST` signals `full` to `1`,
+whichever the round-robin runs next decrements it to `0`; the other sees `0` and loops.
+No lost wakeup, no double-take.
+
+> **⚠️ Footgun — never `POST`/`FETCH` in the operator on a mailbox no background task
+> will service.** This carries over verbatim from the `WAIT`/`LOCK` warnings above. The
+> operator **is** the REPL — the task that reads the keyboard — and is break-exempt by
+> design. If you run `mbx FETCH` directly at the prompt on an **empty** mailbox (or
+> `x mbx POST` on a **full** one) with no background task to fill (or drain) it, the
+> operator parks in the spin loop with nothing left to echo your keystrokes: the console
+> goes dead and it is **unrecoverable without a reset** — even a set `Ctrl-\` break cannot
+> recover it (an operator yield hands off, it never breaks itself). Do all blocking
+> `POST`/`FETCH` in a background `TASK`; keep the operator free to service the console.

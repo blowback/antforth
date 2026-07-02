@@ -668,6 +668,94 @@ w_UNLOCK_cf EQU w_UNLOCK_body - 3
         DW      w_STORE_cf              ; ( )   set to 1 (unlocked), never 2
         DW      EXIT_CODE
 
+; =====================================================================
+; === Coordination section — the one-slot mailbox (Story 26.3) ========
+; =====================================================================
+; A mailbox is a bounded-buffer of capacity 1: two Story 26.1 counting
+; semaphores plus a value cell — the textbook design, maximal reuse.
+; The three cells at [value][empty][full] are ordinary @/!-addressable
+; data-space cells: `empty` starts 1 (one free slot), `full` starts 0
+; (no item yet), `value` is cosmetic 0 until the first POST. POST/FETCH
+; gate the value transfer with WAIT/SIGNAL on the two count cells, so the
+; producer cannot post reading i+1 until the consumer has fetched reading
+; i (empty capped at 1) — lockstep hand-off, no loss, no overwrite.
+; Non-atomic-but-safe, same proof as WAIT: the only PAUSE in the transfer
+; path is inside WAIT, BEFORE the slot is taken; the value !/@ and the
+; following SIGNAL run straight-line, so no task observes the value mid-
+; transfer. Operator-context wedge caveat carries over from WAIT/LOCK
+; (docs/phase6-multitasker.md): a blocking POST to a full mailbox — or a
+; FETCH from an empty one — run AT THE REPL PROMPT with no background task
+; to unblock it hard-wedges the machine; do blocking hand-off in TASKs.
+
+; === MAILBOX ( "<spaces>name" -- ) — create an empty one-slot mailbox ===
+; Reuses CREATE + `,` (the SEMAPHORE mechanic): CREATE parses `name` and
+; lays a JP DOVAR word whose body is HERE; three `,` then lay
+; [value=0][empty=1][full=0], so `name` afterwards pushes the base address
+; of the three-cell structure ([value] at name+0, [empty] at name CELL+,
+; [full] at name CELL+ CELL+). No new parse machinery.
+; antforth extension — one-slot mailbox constructor (Story 26.3, FR19).
+w_MAILBOX:
+        DEFWORD "MAILBOX", 0
+w_MAILBOX_body:
+w_MAILBOX_cf EQU w_MAILBOX_body - 3
+        DW      w_CREATE_cf             ; ( )  parse name, lay DOVAR word, HERE=body
+        DW      w_LIT_cf
+        DW      0                       ; value = 0 (cosmetic; first POST overwrites)
+        DW      w_COMMA_cf              ; lay [value]
+        DW      w_LIT_cf
+        DW      1                       ; empty = 1 (one free slot)
+        DW      w_COMMA_cf              ; lay [empty]
+        DW      w_LIT_cf
+        DW      0                       ; full = 0 (no item yet)
+        DW      w_COMMA_cf              ; lay [full]
+        DW      EXIT_CODE
+
+; === POST ( x mbx -- ) — wait empty, store, signal full ===
+; Stash the base on the return stack (per-task, safe across WAIT's PAUSE),
+; WAIT the empty slot at `mbx CELL+`, store x into the value cell at `mbx`,
+; then SIGNAL full at `mbx CELL+ CELL+`. The value store sits between WAIT
+; and SIGNAL with NO PAUSE — atomic w.r.t. the ring (AC6). Blocking POST to
+; a full mailbox belongs in a background TASK (operator wedge, see above).
+; antforth extension — post a value to a one-slot mailbox (Story 26.3, FR19).
+w_POST:
+        DEFWORD "POST", 0
+w_POST_body:
+w_POST_cf EQU w_POST_body - 3
+        DW      w_DUP_cf                ; ( x mbx mbx )
+        DW      w_TO_R_cf               ; ( x mbx )   R: mbx (value-cell base)
+        DW      w_CELL_PLUS_cf          ; ( x mbx+2 ) empty-slot address
+        DW      w_WAIT_cf               ; ( x )       take the free slot (blocking)
+        DW      w_R_FETCH_cf            ; ( x mbx )   value-cell address
+        DW      w_STORE_cf              ; ( )         value = x (no PAUSE: atomic)
+        DW      w_R_FROM_cf             ; ( mbx )
+        DW      w_CELL_PLUS_cf          ; ( mbx+2 )
+        DW      w_CELL_PLUS_cf          ; ( mbx+4 )   full-slot address
+        DW      w_SIGNAL_cf             ; ( )         announce an item
+        DW      EXIT_CODE
+
+; === FETCH ( mbx -- x ) — wait full, read, signal empty ===
+; Mirror of POST. Stash the base, WAIT the full slot at `mbx CELL+ CELL+`,
+; read the value cell at `mbx`, then SIGNAL empty at `mbx CELL+`. The value
+; read sits between WAIT and SIGNAL, no PAUSE in the window (AC6); leaves
+; exactly ( x ). NOTE the internal label w_FETCH_cf is @'s CFA — the new
+; VISIBLE word FETCH does not collide with it.
+; antforth extension — fetch a value from a one-slot mailbox (Story 26.3, FR19).
+w_MB_FETCH:
+        DEFWORD "FETCH", 0
+w_MB_FETCH_body:
+w_MB_FETCH_cf EQU w_MB_FETCH_body - 3
+        DW      w_DUP_cf                ; ( mbx mbx )
+        DW      w_TO_R_cf               ; ( mbx )     R: mbx (value-cell base)
+        DW      w_CELL_PLUS_cf          ; ( mbx+2 )
+        DW      w_CELL_PLUS_cf          ; ( mbx+4 )   full-slot address
+        DW      w_WAIT_cf               ; ( )         take the item (blocking)
+        DW      w_R_FETCH_cf            ; ( mbx )     value-cell address
+        DW      w_FETCH_cf              ; ( x )       read value (no PAUSE: atomic)
+        DW      w_R_FROM_cf             ; ( x mbx )
+        DW      w_CELL_PLUS_cf          ; ( x mbx+2 ) empty-slot address
+        DW      w_SIGNAL_cf             ; ( x )       announce a free slot
+        DW      EXIT_CODE
+
 ; Cross-bank invariant (mirrors timer.asm): the whole scheduler — code, ring
 ; state, and the operator's static TCB — MUST live in always-mapped fixed memory
 ; below $8000, or PAUSE would lose the ring under a foreign bank mapping. The
