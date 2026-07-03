@@ -1,15 +1,23 @@
 name: release
 
-# Publish a GitHub Release whenever a version tag is pushed.
-#   git tag v3.2.0 && git push origin v3.2.0
-# CI assembles build/antforth.com with the pinned assembler and attaches it.
-# Assemble-only: the build-time ASSERT guards in the .asm (e.g. the $8000
-# straddle / window-top checks) are the correctness gate. The full REPL suite
-# needs the iz-cpm-banking fork and is intentionally left to a separate CI.
+# Publish a GitHub Release for a version tag.
+#   Automatic: git tag v3.2.0 && git push origin v3.2.0
+#   Manual:    Actions tab -> release -> "Run workflow" -> enter a tag (e.g. v3.2.0)
+# The manual path (workflow_dispatch) is handy for (re)building a release for an
+# already-pushed tag. CI assembles build/antforth.com with the pinned assembler
+# and attaches it. Assemble-only: the build-time ASSERT guards in the .asm (e.g.
+# the $8000 straddle / window-top checks) are the correctness gate. The full REPL
+# suite needs the iz-cpm-banking fork and is intentionally left to a separate CI.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build and release, e.g. v3.2.0 (must already exist)'
+        required: true
+        type: string
 
 permissions:
   contents: write        # required for gh release create
@@ -18,13 +26,20 @@ env:
   # Pin to the assembler version used for the silicon-verified builds so the
   # released .com is byte-reproducible. Bump in lockstep with the local tool.
   SJASMPLUS_VERSION: v1.23.0
+  # The version tag to build: the manual input when dispatched, else the pushed
+  # tag. Empty on push events for the input, so the fallback takes over.
+  VERSION_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout the tagged commit
         uses: actions/checkout@v4
+        with:
+          # Build the exact commit the tag points at (matters for a manual run
+          # dispatched from a branch — we want the tag's code, not the branch's).
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Cache sjasmplus
         id: cache-sjasmplus
@@ -61,19 +76,19 @@ jobs:
           # Guard against a tag/banner mismatch (e.g. tagging v3.3.0 without
           # bumping the src/antforth.asm banner). Assert the built artifact
           # itself carries "AntForth <tag>".
-          if ! grep -aq "AntForth ${GITHUB_REF_NAME} " build/antforth.com; then
-            echo "::error::Banner in build/antforth.com does not match tag ${GITHUB_REF_NAME}."
-            echo "Expected the binary to contain: AntForth ${GITHUB_REF_NAME}"
+          if ! grep -aq "AntForth ${VERSION_TAG} " build/antforth.com; then
+            echo "::error::Banner in build/antforth.com does not match tag ${VERSION_TAG}."
+            echo "Expected the binary to contain: AntForth ${VERSION_TAG}"
             echo "Found banner string:"
             strings build/antforth.com | grep -i 'AntForth v' || true
             exit 1
           fi
-          echo "Banner OK: build/antforth.com carries AntForth ${GITHUB_REF_NAME}"
+          echo "Banner OK: build/antforth.com carries AntForth ${VERSION_TAG}"
 
       - name: Stage versioned asset
         run: |
           set -euo pipefail
-          cp build/antforth.com "antforth-${GITHUB_REF_NAME}.com"
+          cp build/antforth.com "antforth-${VERSION_TAG}.com"
 
       - name: Create Release
         env:
@@ -82,11 +97,17 @@ jobs:
           set -euo pipefail
           # Mark rc/beta tags (v3.2.0-rc1) as pre-releases automatically.
           PRERELEASE=""
-          case "$GITHUB_REF_NAME" in
+          case "$VERSION_TAG" in
             *-*) PRERELEASE="--prerelease" ;;
           esac
-          gh release create "$GITHUB_REF_NAME" \
-            "antforth-${GITHUB_REF_NAME}.com" \
-            --title "antforth ${GITHUB_REF_NAME}" \
-            --generate-notes \
-            $PRERELEASE
+          # Idempotent for the manual path: if a release for this tag already
+          # exists, update its asset instead of failing.
+          if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
+            gh release upload "$VERSION_TAG" "antforth-${VERSION_TAG}.com" --clobber
+          else
+            gh release create "$VERSION_TAG" \
+              "antforth-${VERSION_TAG}.com" \
+              --title "antforth ${VERSION_TAG}" \
+              --generate-notes \
+              $PRERELEASE
+          fi
