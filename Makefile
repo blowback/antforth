@@ -2566,10 +2566,10 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env te
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.2.0'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.2.0'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.2.1'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.2.1'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.2.0' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.2.1' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \
