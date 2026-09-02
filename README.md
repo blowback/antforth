@@ -11,6 +11,18 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
+## Built by robots
+
+If you're thinking "there's not much modern about a 56 year 
+old language on a 50 year old processor" then [wait til you see 
+how I implemented it](https://blowback.github.io/antforth/) using state-of-the-art agentic LLMs...
+
+![antforth venn diagram](images/venn.svg)
+
+There's still plenty to do if you're the Human in the Loop tho:
+
+![forth books](images/books.jpg)
+
 ## Version 3.2.1
 
 AntForth is a full ANS Forth for the MicroBeast: all 133 Core words, an
@@ -174,16 +186,4 @@ antforth address the MicroBeast's full 512 KB of RAM via the MMU portal at
 **2.0** — A full Z80 assembler, custom wordlists, and CP/M file support.
 
 **1.x** — Bare-bones.
-
-## Built by robots
-
-If you're thinking "there's not much modern about a 56 year 
-old language on a 50 year old processor" then [wait til you see 
-how I implemented it](https://blowback.github.io/antforth/) using state-of-the-art agentic LLMs...
-
-![antforth venn diagram](images/venn.svg)
-
-There's still plenty to do if you're the Human in the Loop tho:
-
-![forth books](images/books.jpg)
 
