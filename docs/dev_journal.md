@@ -53,13 +53,22 @@ interpreter case did. It hangs identically with no `CATCH` anywhere near it.
 rather than trusting the incoming IX, so an unbalanced CODE word under `CATCH`
 (`1 ' >R CATCH .`) returns 0 cleanly.
 
-Per ANS Forth 1994 §3.2.3.3 an unbalanced colon body is undefined, and every
-Forth behaves this way, so this may simply be the cost of doing business. The
-only guard that could catch it lives in `EXIT_CODE` — the hottest path in the
-system, taken on every colon return — so it is a deliberate performance
-decision, not an oversight. A cheap partial version (reject a popped IP below
-`$0100`, catching the common small-integer case for ~5 B and ~11 T-states per
-return) is written up but NOT implemented, pending a call on the tax.
+DECIDED 2026-09-02 (project lead): leave it. Per ANS Forth 1994 §3.2.3.3 an
+unbalanced colon body is undefined, and gforth / SwiftForth / F83 all fail the
+same way. The only place a guard could live is `EXIT_CODE`, taken on every
+colon return, so the fix is a permanent tax on the hottest path in the system
+to catch a programmer error the standard already calls undefined.
+
+The option costed and rejected, recorded so it need not be re-derived: reject a
+popped IP below `$0100` (`LD A,D` / `CP 1` / `JR C`) and raise -274 instead of
+jumping into CP/M's warm boot. 11 bytes; +18 T-states on `EXIT_CODE`'s ~96,
+roughly 2% overall once amortised across the other NEXT dispatches. It cannot
+false-positive — every legitimate return address is a thread cell at `$0100` or
+above — but it only catches strays below `$0100`, so `1000 >R` still gets
+through. Partial cover for a permanent cost was judged the wrong trade.
+
+The REPL surface — the one a user actually hits — is covered by the -274 guard
+above. This entry is about the deeper case only.
 
 ## 2025-xx-xx (RESOLVED 2026-06-28, Story 23.4)
 
