@@ -11,7 +11,7 @@ Here's it running on the target hardware:
 
 ![antforth running on microbeast](images/antforth.png)
 
-## Version 3.2.0
+## Version 3.2.1
 
 The 1.x series releases were a bit bare-bones; 2.0 added a full Z80
 assembler, custom wordlists, and CP/M file support; 3.0.1 brought
@@ -76,7 +76,17 @@ non-atomic by design, and verified on real MicroBeast silicon — the
 headline being a background traffic-light demo blinking real LEDs on
 the PIO while the `ok>` prompt stays live.
 
-V3.2.0 supports the following ANS Forth standard words:
+3.2.1 is a fix release. Typing a word at the prompt that left the return
+stack unbalanced — a bare `1 >R` or `R>` — used to end the session: the
+text interpreter runs each token inside its own return frame, so the
+stray cell was popped as a return address and the machine fell into
+CP/M's warm boot with no message. It now raises a catchable
+`-274 return stack imbalance` and hands the prompt straight back. A
+stray `>R` in an `INCLUDE`d or `EVALUATE`d line lands there too.
+Balanced same-line use (`1 >R R> .`) stays legal, since the check is
+per line rather than per word.
+
+V3.2.1 supports the following ANS Forth standard words:
 
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
