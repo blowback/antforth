@@ -44,11 +44,22 @@ canary holds a one-cell `DW EXIT_CODE` thread so a bare `EXIT` typed at the
 prompt still just ends the line as it always did. Regression probe:
 `make test-repl-rstack-guard`. Cost: +75 B.
 
-STILL OPEN, found while fixing this: `CATCH` assumes its `xt` is
-return-stack-neutral — its success path pops the 10-byte frame relative to the
-current IX. `' X CATCH` where `X` is unbalanced (e.g. `: X 1 >R ;`) therefore
-resumes through a bad address and hangs. This predates the fix above and is
-unchanged by it; the interpreter guard cannot see inside `CATCH`.
+STILL OPEN, found while fixing this — and it is NOT a `CATCH` defect, though
+it first looked like one. A colon body that is return-stack-unbalanced at its
+own `EXIT` pops the stray cell as its return address: `: X 1 >R ;` then `X`
+jumps through address `0x0001` and the session is gone, exactly as the
+interpreter case did. It hangs identically with no `CATCH` anywhere near it.
+`CATCH` itself is fine — `catch_resume_cf` re-anchors IX from `CATCH-TOP`
+rather than trusting the incoming IX, so an unbalanced CODE word under `CATCH`
+(`1 ' >R CATCH .`) returns 0 cleanly.
+
+Per ANS Forth 1994 §3.2.3.3 an unbalanced colon body is undefined, and every
+Forth behaves this way, so this may simply be the cost of doing business. The
+only guard that could catch it lives in `EXIT_CODE` — the hottest path in the
+system, taken on every colon return — so it is a deliberate performance
+decision, not an oversight. A cheap partial version (reject a popped IP below
+`$0100`, catching the common small-integer case for ~5 B and ~11 T-states per
+return) is written up but NOT implemented, pending a call on the tax.
 
 ## 2025-xx-xx (RESOLVED 2026-06-28, Story 23.4)
 
