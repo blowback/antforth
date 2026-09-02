@@ -258,3 +258,13 @@ THROW_ASM_BIT_RANGE         EQU -272 ; antforth extension — see docs/throw-cod
 ; catchable THROW. Raised from banking.asm w_BANK_STORE_cf via the
 ; kernel-internal w_THROW_cf.kernel_entry path.
 THROW_BANK_FROM_BANKED      EQU -273 ; antforth extension — see docs/throw-codes.md
+
+; --- antforth extensions: interpreter-integrity codes (-274..) ---
+; -274 is raised by the text interpreter's return-stack balance check when a
+; word it just EXECUTEd left the IX return stack at a different depth than it
+; found it (e.g. a bare `>R` or `R>` typed at the prompt). INTERPRET runs the
+; word inside its own DOCOL frame, so an unbalanced word corrupts INTERPRET's
+; return address; without the check the next EXIT jumps through garbage and the
+; system silently drops to CP/M. See src/outer_interpreter.asm ((RMARK) /
+; (RCHECK) / (RUNMARK)) and docs/throw-codes.md.
+THROW_RSTACK_IMBALANCE      EQU -274 ; antforth extension — see docs/throw-codes.md

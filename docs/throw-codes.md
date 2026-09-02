@@ -317,7 +317,15 @@ code by splitting -271). Every Epic-11 extension comes from the assembler
 codes. Story 19.5.1 (Phase 4) continued the contiguous series past the
 assembler block with the first non-assembler extension: `-273
 THROW_BANK_FROM_BANKED`, the `BANK!` portal-window guard (ADR 19.5
-DR-1 fix F1). `-256` is unallocated (reserved gap). `-257` is reserved by
+DR-1 fix F1). `-274 THROW_RSTACK_IMBALANCE` continues it with the text
+interpreter's return-stack balance check: `INTERPRET` executes each typed
+token with `EXECUTE` from inside its own `DOCOL` frame, so a token that
+does not restore the return-stack depth overwrites `INTERPRET`'s return
+address. `1 >R` at the prompt used to send the next `EXIT` through address
+`0x0001` and drop the session to CP/M with no diagnostic; the check runs
+once per line, at `.interp_done`, and raises `-274` instead. It is net per
+line, not per token, so a balanced `1 >R R> .` on one line stays legal.
+`-256` is unallocated (reserved gap). `-257` is reserved by
 `architecture.md:478,606` for `THROW_ASM_LOAD_FAIL` (Epic 13 lazy-load
 assembler) and is declared upfront in `src/constants.asm` even though no
 Epic 11 site references it.
@@ -359,6 +367,7 @@ discipline.
 | -271 | THROW_ASM_DISP_RANGE        | `+D` 8-bit displacement out of range                  | `assembler.asm:1204` (`asm_disp_range_err` direct raise)                 | **done — 11.5.6** |
 | -272 | THROW_ASM_BIT_RANGE         | `BIT,`/`RES,`/`SET,` bit number not in 0..7           | `assembler.asm:1210` (`asm_bit_range_err` direct raise)                  | **done — 11.5.6** |
 | -273 | THROW_BANK_FROM_BANKED      | bank switch from banked code — foreign-bank `BANK!` with caller IP in `$8000..$BFFF` (portal-window aliasing guard; fires BEFORE any MMU/state mutation) | `banking.asm` (`w_BANK_STORE_cf` direct raise)              | **done — 19.5.1** |
+| -274 | THROW_RSTACK_IMBALANCE      | return stack imbalance — the line the text interpreter just ran left the IX return stack at a different depth than it found it (a bare `>R` or `R>`, typed at the prompt or left stranded in an `INCLUDE`d line) | `outer_interpreter.asm` (`w_PAREN_RCHECK_cf` direct raise)  | **done** |
 
 **Note on -271 / -272 split (Story 11.5.6 closure).** The original
 Story 11.6 allocation collapsed two structurally-different conditions

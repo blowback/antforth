@@ -1018,6 +1018,13 @@ throw_desc_table:
         DW      THROW_BANK_FROM_BANKED      ; -273
         DB      28
         DB      "bank switch from banked code"
+        ; --- antforth extension code -274 (interpreter integrity) ---
+        ; The word the text interpreter just EXECUTEd left the return stack at
+        ; a different depth than it found it — e.g. a bare `>R` or `R>` typed
+        ; at the prompt. See src/outer_interpreter.asm ((RCHECK)).
+        DW      THROW_RSTACK_IMBALANCE      ; -274
+        DB      22
+        DB      "return stack imbalance"
         DW      0                       ; terminator
 
 ; -----------------------------------------------
