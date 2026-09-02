@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -186,6 +186,17 @@ TIMER_PROBE = tests/timer_tests.fth
 # NOPE regression. Verdicts are COLUMN-0-ANCHORED (^PASS: / ^FAIL: / ^udA= ...):
 # runtime output lands at column 0 while echoed source (." , : ) does not.
 UD_ENV_PROBE = tests/ud_env_tests.fth
+
+# --- Text-interpreter return-stack balance guard probe (-274) ---
+# Pins the fix for the silent drop to CP/M on a bare `1 >R` at the prompt:
+# INTERPRET executes typed tokens inside its own DOCOL frame, so an unbalanced
+# token used to overwrite its return address and the next EXIT jumped through
+# garbage. Asserts the two -274 throws, that the REPL survives them, and — just
+# as important — that the three things which MUST keep working still do:
+# balanced same-line >R/R>, compiled >R/R>, and a bare EXIT. Regression here is
+# fail-loud by construction: a lost guard drops the emulator to CP/M mid-file
+# and the trailing verdicts never appear.
+RSTACK_GUARD_PROBE = tests/rstack_guard_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
 BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
 BANKING_23_9_PROBE = tests/banking_tests_23_9.fth
@@ -631,6 +642,15 @@ test-repl-ud-env: $(TARGET)
 		'PASS: env-excep$$' 'PASS: env-excep-x$$' 'PASS: env-srch$$' 'PASS: env-dbl$$' 'PASS: env-dbl-x$$' \
 		'PASS: env-srch-x$$' 'PASS: env-core$$' 'PASS: env-core-x$$' 'PASS: env-miss$$' \
 		'udA=0 ' 'udB=4294967295 ' 'udC=100000 ' 'udD=-1 ' 'udE=1234ABCD '
+
+test-repl-rstack-guard: $(TARGET)
+	@echo "Running interpreter return-stack balance guard probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(RSTACK_GUARD_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL rstack-guard probe — timed out after $(PROBE_TIMEOUT)s"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL rstack-guard probe" --fail-line '^FAIL: rg-' \
+		--count 3 '^error -274: return stack imbalance' 'rg-274-raised-three-times' \
+		'PASS: rg-repl-survives$$' 'PASS: rg-same-line-balanced$$' 'PASS: rg-compiled-unaffected$$' \
+		'PASS: rg-bare-exit-benign$$' 'PASS: rg-evaluate-nests$$' 'PASS: rg-nested-throw$$'
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
@@ -1903,7 +1923,7 @@ test: $(SRCS) | $(BUILDDIR_STAMP)
 # Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
 # prerequisites so a bare `make test-repl` exercises them — they are otherwise
 # green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env $(TARGET)
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \

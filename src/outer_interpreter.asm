@@ -162,6 +162,70 @@ w_QUERY_cf  EQU  w_QUERY_body - 3
         DW      EXIT_CODE
 
 ; -----------------------------------------------
+; Text-interpreter return-stack balance guard    [headerless kernel-internal]
+;
+;   INTERPRET runs each typed token with EXECUTE from inside its own DOCOL
+;   frame, so a token that leaves the IX return stack at a different depth
+;   than it found it overwrites INTERPRET's return address. `1 >R` at the
+;   prompt used to leave the 1 on top, INTERPRET's EXIT jumped to address
+;   0x0001, and the machine fell into CP/M's warm boot with no diagnostic.
+;   (RMARK) / (RCHECK) convert that whole class — a bare >R or R> typed at
+;   the prompt, or one left stranded in an INCLUDEd line — into a catchable
+;   -274 THROW that lands back at the prompt with the dictionary intact.
+;
+;   (RMARK) pushes one canary cell at INTERPRET entry; (RCHECK) asserts the
+;   canary is still the top rstack cell and drops it. The check is
+;   NET, once per line at .interp_done — not per token — because `1 >R R> .`
+;   typed on one line is legitimate and passes through an intentionally
+;   unbalanced rstack in the middle. Only the depth INTERPRET is about to
+;   EXIT through has to be right. A THROW out of INTERPRET abandons the
+;   canary along with the rest of the frame, which is correct — both THROW
+;   paths reset IX wholesale.
+;
+;   The canary's VALUE is chosen so a bare `EXIT` typed at the prompt keeps
+;   working: EXIT pops the canary into IP, and interp_exit_stub is a one-cell
+;   thread whose only act is EXIT, so control falls straight through to
+;   INTERPRET's real caller (the QUIT loop) exactly as it did before the
+;   guard existed. Any other constant would send IP into the rstack.
+; -----------------------------------------------
+interp_exit_stub:
+        DW      EXIT_CODE               ; one-cell thread: "return to my caller"
+
+; -----------------------------------------------
+; (RMARK) ( -- ) ( R: -- canary )      [headerless kernel-internal]
+;   Push the balance canary. Emitted once at INTERPRET entry, ahead of the
+;   token loop, so nesting (EVALUATE / INCLUDE re-entering INTERPRET) gets one
+;   canary per invocation.
+; -----------------------------------------------
+w_PAREN_RMARK_cf:
+        LD      HL, interp_exit_stub
+        CALL    rpush_hl
+        NEXT
+
+; -----------------------------------------------
+; (RCHECK) ( -- ) ( R: canary -- )     [headerless kernel-internal]
+;   Assert the canary is still on top of the return stack, then drop it.
+;   Byte-at-a-time compare (as in (QMARK-BANK)) so BC — the live TOS — is
+;   never disturbed. On mismatch, raise -274 through the kernel THROW entry
+;   WITHOUT dropping: IX is untrustworthy at that point, but both THROW paths
+;   (catch-frame restore, or the uncaught asm_cleanup + rp_base reset + QUIT)
+;   reset it wholesale before anything reads it.
+; -----------------------------------------------
+w_PAREN_RCHECK_cf:
+        LD      A, (IX+0)
+        CP      LOW interp_exit_stub
+        JR      NZ, .rchk_imbalance
+        LD      A, (IX+1)
+        CP      HIGH interp_exit_stub
+        JR      NZ, .rchk_imbalance
+        INC     IX
+        INC     IX                      ; balanced — drop the canary
+        NEXT
+.rchk_imbalance:
+        LD      BC, THROW_RSTACK_IMBALANCE
+        JP      w_THROW_cf.kernel_entry
+
+; -----------------------------------------------
 ; INTERPRET ( -- )
 ;   Parse and execute all words in the input buffer
 ;   Uses BRANCH/?BRANCH with manual offsets (no control flow words)
@@ -170,6 +234,7 @@ w_INTERPRET:
         DEFWORD "INTERPRET", 0
 w_INTERPRET_body:
 w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes before body
+        DW      w_PAREN_RMARK_cf        ; ( R: -- canary )  balance guard, once per entry
 .interp_loop:
         DW      w_BL_cf                 ; ( -- 32 )
         DW      w_WORD_cf               ; ( 32 -- c-addr )
@@ -327,6 +392,7 @@ w_INTERPRET_cf  EQU     w_INTERPRET_body - 3    ; Code field = JP DOCOL, 3 bytes
         DW      w_THROW_cf
 .interp_done:
         DW      w_DROP_cf               ; drop the empty c-addr
+        DW      w_PAREN_RCHECK_cf       ; ( R: canary -- ) net line balance, then drop
         DW      EXIT_CODE               ; return to caller (QUIT loop)
 
 ; -----------------------------------------------

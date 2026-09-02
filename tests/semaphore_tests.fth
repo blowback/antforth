@@ -23,6 +23,14 @@
 
 DECIMAL
 
+\ DICTIONARY BUDGET: TCBs carve from the ~1.8 KB of fixed RAM below $8000 and
+\ nothing reclaims them, so this probe used to finish with HERE *past* $8000 —
+\ every later definition compiling into the bank window by accident, and any
+\ kernel growth turning the second TASK into a -8. Sections (a)-(c) need no
+\ task and none of their words are referenced after (c), so they are wrapped in
+\ a MARKER and handed back (~307 B) before the first carve.
+MARKER -SEM-ABC
+
 \ --- (a) Words resolve (AC1/AC2) ---
 \ ' parses at interpret level; a miss throws -13 before the verdict, so reaching
 \ PASS proves SEMAPHORE/SIGNAL/WAIT are all resolvable words.
@@ -49,6 +57,11 @@ _init
    IF ." PASS: sem-signal-wait-count" ELSE ." FAIL: sem-signal-wait-count" THEN CR ;
 _sigwait
 
+\ Sections (a)-(c) are done and nothing below refers to STWO/SZERO/SNEG/SCT or
+\ the _init/_sigwait checkers. Hand the space back before the TASK carves; no
+\ task exists yet, so there is no live TCB for the reclaim to strand.
+-SEM-ABC
+
 \ --- (d) AC3+AC4: producer/consumer hand-off over a shared buffer, no loss, in
 \ order. A zero-count WAIT blocks until the BACKGROUND producer SIGNALs (AC3); the
 \ consumer receives every value exactly once, in order (AC4). PROD writes
@@ -68,6 +81,10 @@ CREATE PBUF  4 CELLS ALLOT
    NEVER WAIT                       \ starve-but-yield forever (AC6 waiter)
    ." FAIL: sem-prod-waiter-unblocked" CR ;
 ' PROD TASK ACTIVATE
+\ Same reclaim for (d)'s checker. The marker sits ABOVE PROD's TCB and above
+\ PBUF/FULL/NEVER/PROD, all of which the now-live task still needs, so the
+\ FORGET takes back only CSUM/GOOD/_handoff.
+MARKER -SEM-D
 VARIABLE CSUM   VARIABLE GOOD
 : _handoff ( -- )
    0 CSUM !  0 GOOD !
@@ -80,6 +97,7 @@ VARIABLE CSUM   VARIABLE GOOD
    CSUM @ 100 =  GOOD @ 4 = AND
    IF ." PASS: sem-handoff-no-loss" ELSE ." FAIL: sem-handoff-no-loss" THEN CR ;
 _handoff
+-SEM-D
 
 \ --- (e) AC6: a WAIT on a never-signalled sem starves ITS task but keeps the ring
 \ alive (PAUSE-first) — the cooperative-friendly failure, vs Story 25.7's hard,
