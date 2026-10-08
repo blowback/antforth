@@ -97,7 +97,7 @@ w_FILL_cf:
 
 Cost: entry `EXX` (1 byte), exit `EXX` (1 byte) = 2 bytes total.
 
-Other Group A examples: `MARKER` (`src/system.asm:21`), `WORD` (`src/strings.asm:10`), `ROLL` (`src/stack_ops.asm:111`), `>NUMBER` (`src/strings.asm:336`), `COLON` (`src/compiler.asm:358`), `CREATE` (`src/compiler.asm:548`), `CODE` (`src/assembler.asm:1165`).
+Other Group A examples: `MARKER` (`src/system.asm:21`), `WORD` (`src/strings.asm:10`), `ROLL` (`src/stack_ops.asm:152`), `>NUMBER` (`src/strings.asm:336`), `COLON` (`src/compiler.asm:358`), `CREATE` (`src/compiler.asm:548`), `CODE` (`src/assembler.asm:1165`).
 
 ### Group B — TOS needed live in main BC throughout body
 

@@ -6,8 +6,8 @@
  - "EXCEPTION" and "EXCEPTION-EXT" environment queries — RESOLVED 2026-06-28, Story 23.4
  - "DOUBLE" and "DOUBLE-EXT" environment queries — RESOLVED 2026-06-28, Story 23.4
  - "SEARCH-ORDER" and "SEARCH-ORDER-EXT" environment queries — RESOLVED 2026-06-28, Story 23.4
- - `-ROT`
- - ?
+ - `-ROT` — RESOLVED 2026-10-08, Story 27.1
+ - `?` - does a fetch followed by a print `: ? ( addr -- ) @ . ` — RESOLVED 2026-10-08, Story 27.1
  - "MBB-VERSION" and "MBB-PLATFORM" environment queries, returning the firmware version 
    and platform (1 for MicroBeast, 2 for NanoBeast) respectively.
  - make startup banner say "MicroBeast" or "NanoBeast" depending on MBB-PLATFORM.
@@ -21,7 +21,7 @@
  - ?DO 
  - AGAIN 
  - DEFER, DEFER!, DEFER@, IS
- - NIP, TUCK 
+ - NIP, TUCK — RESOLVED 2026-10-08, Story 27.1
  - U.R, U>
  - random number facility: fast xorshift is fine: seed, rnd ( n -- ), random ( n -- 0..n-1 )
 

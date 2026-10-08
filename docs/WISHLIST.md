@@ -102,7 +102,7 @@ Would be could to have previous line at least, and be able to edit it.
 
 # Small tasks
 
-See docs/dev_journal.mdi
+See docs/dev_journal.md
 
 ---
 

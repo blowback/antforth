@@ -46,7 +46,7 @@ Full [release history](#release-history) is at the bottom.
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
 | **6.1** | Core | 133 / 133 | **100%** |
-| **6.2** | Core Extensions | 14 / 46 | ~30% |
+| **6.2** | Core Extensions | 17 / 46 (+ HOLDS) | ~37% |
 | **7.6** | Block | 0 | 0% (deferred) |
 | **8.6** | Double-Number | 13 / 14 | ~93% |
 | **9.6** | Exception | 4 / 4 | **100%** |
@@ -55,7 +55,7 @@ Full [release history](#release-history) is at the bottom.
 | **12.6** | Floating-Point | 0 | 0% (deferred) |
 | **13.6** | Locals | 0 | 0% (deferred) |
 | **14.6** | Memory-Allocation | 0 | 0% (deferred) |
-| **15.6** | Programming-Tools | 2 / 5 | ~40% (.S, WORDS — no SEE/DUMP/?) |
+| **15.6** | Programming-Tools | 3 / 5 | ~60% (.S, WORDS, ? — no SEE/DUMP) |
 | **16.6** | Search-Order | 6 / 6 | **100%** + ext |
 | **17.6** | String | 1 / ~9 | low (MOVE only) |
 

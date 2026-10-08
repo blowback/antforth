@@ -1,4 +1,4 @@
-# generated: 2026-06-29
+# generated: 2026-10-08
 # project: antforth
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-06-29
+generated: 2026-10-08
 project: antforth
 project_key: NOKEY
 tracking_system: file-system
@@ -211,7 +211,7 @@ development_status:
   17-6-iron-spike-first-hand-built-cross-bank-call-on-real-microbeast-epic-17-close-out-antforth-3-x-1-tag: done
   epic-17-retrospective: done
 
-  epic-18: in-progress
+  epic-18: done
   18-1-descriptor-stub-allocator-xt-as-stub-address-contract: done
   18-2-sentinel-trampoline-cross-bank-return-kernel-exit-distinguishes-intra-bank-from-cross-bank: done
   18-3-kernel-execute-dispatches-through-stub-initial-compile-comma-stub-emission-wiring-dispatch-budget-verification: done
@@ -303,9 +303,20 @@ development_status:
   25-8-headline-demo-background-traffic-light-live-repl: done
   epic-25-retrospective: done
 
-  epic-26: in-progress
+  epic-26: done
   26-1-counting-semaphore-signal-wait: done
   26-2-mutex-binary-semaphore: done
   26-3-one-slot-mailbox: done
   epic-26-retrospective: done
 
+  # === Phase 7 — Common-word gaps, antforth v3.3.0 (added 2026-10-08) ===
+  # Source: epics-phase7-epic-27.md (no PRD/architecture; requirements from
+  # docs/dev_journal.md + ans-forth-core-compliance.md). 27.1–27.4 independent,
+  # any order; 27.5 needs all four. Budget ≈335 B, envelope ≤500 B vs 30,754 B.
+  epic-27: in-progress
+  27-1-stack-words-nip-tuck-rot-and-question: done
+  27-2-comparison-words-ne-0ne-0gt-ugt-le-ge: backlog
+  27-3-again: backlog
+  27-4-question-do: backlog
+  27-5-epic-27-close-out-and-v3-3-0: backlog
+  epic-27-retrospective: optional

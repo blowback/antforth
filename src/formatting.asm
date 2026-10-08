@@ -258,6 +258,19 @@ w_U_D_DOT_cf    EQU     w_U_D_DOT_body - 3
         DW      EXIT_CODE
 
 ; -----------------------------------------------
+; ? ( a-addr -- )   Display the cell at a-addr.
+; ANS Forth 1994 §15.6.1.0600   ?   — Programming-Tools
+; Defined as @ . ; @ supplies the underflow check and . follows BASE.
+; -----------------------------------------------
+w_QUESTION:
+        DEFWORD "?", 0
+w_QUESTION_body:
+w_QUESTION_cf   EQU     w_QUESTION_body - 3
+        DW      w_FETCH_cf              ; @
+        DW      w_DOT_cf                ; .
+        DW      EXIT_CODE
+
+; -----------------------------------------------
 ; .S ( -- )
 ;   Display stack contents non-destructively
 ;   Format: <depth> item1 item2 ... itemN

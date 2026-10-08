@@ -1,7 +1,7 @@
 ; stack_ops.asm — Parameter stack, return stack, and stack pointer primitives
 ; AntForth — A Forth for CP/M on Z80
 ;
-; Parameter stack: DUP, DROP, SWAP, OVER, ROT, PICK, ROLL, DEPTH
+; Parameter stack: DUP, DROP, SWAP, OVER, NIP, TUCK, ROT, -ROT, PICK, ROLL, DEPTH
 ; Stack pointers:  SP@, SP!, RP@, RP!
 ; Return stack:    >R, R>, R@
 
@@ -70,19 +70,60 @@ w_OVER_cf:
         NEXT
 
 ; -----------------------------------------------
+; NIP ( x1 x2 -- x2 )
+;   Drop the second item
+; ANS Forth 1994 §6.2.1930   NIP   (Core Extension)
+; -----------------------------------------------
+w_NIP:
+        DEFCODE "NIP", 0
+w_NIP_cf:
+        CALL    check_underflow_2
+        POP     HL              ; Discard x1; BC = x2 already
+        NEXT
+
+; -----------------------------------------------
+; TUCK ( x1 x2 -- x2 x1 x2 )
+;   Copy the top item below the second
+; ANS Forth 1994 §6.2.2300   TUCK   (Core Extension)
+; -----------------------------------------------
+w_TUCK:
+        DEFCODE "TUCK", 0
+w_TUCK_cf:
+        CALL    check_underflow_2
+        POP     HL              ; HL = x1
+        PUSH    BC              ; x2
+        PUSH    HL              ; x1
+        NEXT                    ; BC = x2 unchanged
+
+; -----------------------------------------------
 ; ROT ( x1 x2 x3 -- x2 x3 x1 )
 ;   Rotate third item to top
 ; -----------------------------------------------
 w_ROT:
         DEFCODE "ROT", 0
 w_ROT_cf:
-        CALL    check_underflow_2 ; Catches DEPTH 0-1; DEPTH=2 (only 2 items) not caught
+        CALL    check_underflow_3
         ; BC = x3 (TOS), (SP) = x2, (SP+2) = x1
         POP     HL              ; HL = x2
         EX      (SP), HL        ; HL = x1, (SP) = x2
         PUSH    BC              ; Push x3
         LD      B, H
         LD      C, L            ; BC = x1 (new TOS)
+        NEXT
+
+; -----------------------------------------------
+; -ROT ( x1 x2 x3 -- x3 x1 x2 )   ; antforth extension
+;   Rotate the top item to third; the inverse of ROT
+; -----------------------------------------------
+w_MINUS_ROT:
+        DEFCODE "-ROT", 0
+w_MINUS_ROT_cf:
+        CALL    check_underflow_3
+        LD      H, B
+        LD      L, C            ; HL = x3
+        POP     BC              ; BC = x2 (new TOS), (SP) = x1
+        EX      (SP), HL        ; HL = x1, deep slot = x3
+        PUSH    HL              ; x1 above x3
         NEXT
 
 ; -----------------------------------------------
