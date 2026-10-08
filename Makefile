@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -198,6 +198,7 @@ UD_ENV_PROBE = tests/ud_env_tests.fth
 # and the trailing verdicts never appear.
 RSTACK_GUARD_PROBE = tests/rstack_guard_tests.fth
 STACK_WORDS_PROBE = tests/stack_words_tests.fth
+COMPARISON_PROBE = tests/comparison_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
 BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
 BANKING_23_9_PROBE = tests/banking_tests_23_9.fth
@@ -662,6 +663,18 @@ test-repl-stack-words: $(TARGET)
 		'swA=<1> 2 $$' 'swB=<3> 2 1 2 $$' 'swC=<3> 3 1 2 $$' 'swD=<3> 1 2 3 $$' \
 		'qA=42 $$' 'qB=2A $$' 'qC=-1 $$' 'qD=42 $$' 'qE=2A $$' \
 		'PASS: sw-nip$$' 'PASS: sw-tuck$$' 'PASS: sw-mrot$$' 'PASS: sw-mrot-rot$$' 'PASS: sw-survives$$'
+
+test-repl-comparisons: $(TARGET)
+	@echo "Running <> 0<> 0> U> <= >= comparisons probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(COMPARISON_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL comparisons probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL comparisons probe" --fail-line '^FAIL: cmp-' \
+		--count 20 '^error -4: stack underflow' 'comparisons underflow raises -4 20 times' \
+		'neA=0 -1 0 -1 $$' 'zneA=0 -1 -1 -1 $$' 'zgtA=0 -1 0 -1 0 -1 $$' 'ugtA=-1 0 0 -1 0 $$' \
+		'leA=-1 -1 0 -1 0 $$' 'le2A=-1 -1 0 -1 -1 $$' 'geA=-1 0 -1 0 -1 $$' 'ge2A=0 0 -1 -1 $$' \
+		'neB=0 -1 0 -1 $$' 'zneB=0 -1 -1 -1 $$' 'zgtB=0 -1 0 -1 0 -1 $$' 'ugtB=-1 0 0 -1 0 $$' \
+		'leB=-1 -1 0 -1 0 $$' 'le2B=-1 -1 0 -1 -1 $$' 'geB=-1 0 -1 0 -1 $$' 'ge2B=0 0 -1 -1 $$' \
+		'PASS: cmp-depth$$' 'PASS: cmp-survives$$'
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
@@ -1934,7 +1947,7 @@ test: $(SRCS) | $(BUILDDIR_STAMP)
 # Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
 # prerequisites so a bare `make test-repl` exercises them — they are otherwise
 # green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words $(TARGET)
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \

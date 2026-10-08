@@ -36,9 +36,7 @@ VARIABLE batrightx ( x cord of right-edge of bat )
 5 batw !
 batw @ 2/ dup halfbat ! ( halfbat -- )
 dup 1 + batminx ! ( halfbat -- ) \ min x coord of bat centre
-dup width swap - batmaxx ! ( halfbat -- ) \ max x coord of bat centre
-dup batx @ swap - batleftx ! ( halfbat -- ) \ left end x coord
-dup batx @ + batrightx ! ( -- ) \ right end x coord
+width swap - batmaxx ! ( -- ) \ max x coord of bat centre
 
 
 \ score position & amount
@@ -46,10 +44,6 @@ VARIABLE score
 VARIABLE scorex
 VARIABLE scorey
 33 scorex ! 24 scorey !
-
-\ system ticks: 32 bit counter, highly FW version-specific! 
-0xff04 CONSTANT ticks_lo
-0xff06 CONSTANT ticks_hi
 
 \ timer related variables
 VARIABLE last_tick_lo
@@ -63,6 +57,12 @@ VARIABLE bat_tick_delta
 \ misc flags & vars
 VARIABLE gameover
 
+\ recompute the bat's end x coords from its centre
+: set_batedges
+    batx @ halfbat @ - batleftx !
+    batx @ halfbat @ + batrightx !
+;
+
 \ initialise everything
 : init_game
     \ init score & state
@@ -73,6 +73,7 @@ VARIABLE gameover
     16 ball_tick_delta !
     1 bat_tick_delta !
     40 batx ! 23 baty ! 
+    set_batedges
 
     \ init the ball
     1 x !
@@ -80,10 +81,6 @@ VARIABLE gameover
     1 dx !
     1 dy !
 ;
-
-\ utility words 
-: >= ( n1 n2 -- flag ) < 0= ;
-: <= ( n1 n2 -- flag ) > 0= ;
 
 \ change the sign of a VARIABLE
 : flip ( addr -- ) dup @ negate swap ! ;
@@ -174,10 +171,8 @@ VARIABLE gameover
 
 \ move the bat by n chars (-ve is left, +ve is right)
 : batmove ( n --)
-    dup dup
-    batx @ + batminx @ max batx !
-    batleftx @ + batleftx ! 
-    batrightx @ + batrightx ! 
+    batx @ + batminx @ max batmaxx @ min batx !
+    set_batedges
 ;
 
 \ move the bat left by n chars
@@ -204,7 +199,7 @@ VARIABLE gameover
 
 \ calculate number of 64 Hz ticks since last call
 : update_delta 
-   ticks_lo @ ticks_hi @ 2dup last_tick_lo @ last_tick_hi @ D- D>S delta !
+   TICKS 2dup last_tick_lo @ last_tick_hi @ D- D>S delta !
    last_tick_hi ! last_tick_lo !
 ;
 

@@ -46,7 +46,7 @@ Full [release history](#release-history) is at the bottom.
 | § | Module | antforth | Coverage |
 |---|--------|----------|----------|
 | **6.1** | Core | 133 / 133 | **100%** |
-| **6.2** | Core Extensions | 17 / 46 (+ HOLDS) | ~37% |
+| **6.2** | Core Extensions | 21 / 46 (+ HOLDS) | ~46% |
 | **7.6** | Block | 0 | 0% (deferred) |
 | **8.6** | Double-Number | 13 / 14 | ~93% |
 | **9.6** | Exception | 4 / 4 | **100%** |

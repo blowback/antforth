@@ -89,6 +89,16 @@ All return a well-formed flag: TRUE = -1 (all bits set), FALSE = 0.
   location; `?` gets a Tools row; `-ROT`, `<=`, `>=` are listed as extensions.
   `docs/dev_journal.md` entries for all twelve words are marked resolved.
 
+#### Stack safety (FR-P7-14)
+
+- **FR-P7-14 (one-operand underflow):** every kernel word that consumes stack
+  items raises `-4` when the stack holds too few, instead of running on the
+  stale top-of-stack register. Found while drafting 27.2 (2026-10-08): on an
+  empty stack `0=`, `0<`, `1+`, `1-`, `2*`, `2/`, `INVERT`, `ABS`, `?DUP`, `C@`,
+  `CELLS`, `CELL+`, `CHAR+` raise no error, and `DUP` pushes a made-up cell
+  (`DEPTH` 0 → 1), while `NEGATE`, `DROP`, `@`, `S>D` raise `-4`. That list is
+  a sample, not a full audit. Added to Phase 7 by the project lead 2026-10-08.
+
 ### NonFunctional Requirements
 
 - **NFR-P7-1 (regression):** the v3.2.1 baseline (`make test` PASS,
@@ -155,6 +165,7 @@ phase):
 | FR-P7-11 | 27 | `?DO` |
 | FR-P7-12 | 27 | `?` |
 | FR-P7-13 | 27 | compliance doc + dev journal sync |
+| FR-P7-14 | 27 | underflow checks on one-operand words |
 
 ## Epic List
 
@@ -166,7 +177,7 @@ gforth or written from Forth tutorials runs without local definitions, and the
 demos lose their `BEGIN … 0 UNTIL` workaround. No new execution model, no
 banking change, zero regressions.
 
-**FRs covered:** FR-P7-1 … FR-P7-13
+**FRs covered:** FR-P7-1 … FR-P7-14
 
 ## Epic 27: Common-word gaps (antforth v3.3.0)
 
@@ -174,11 +185,13 @@ banking change, zero regressions.
 ported from gforth or written from Forth tutorials runs without local
 definitions. Ship as v3.3.0 with zero regressions.
 
-**Standalone:** each of 27.1–27.4 depends only on the v3.2.1 baseline and may
-land in any order. 27.5 needs all four.
+**Standalone:** each of 27.1–27.4 and 27.6 depends only on the v3.2.1 baseline
+and may land in any order. 27.5 needs all five.
 
-**Byte budget:** estimate ≈ 335 B (27.1 ≈ 85 · 27.2 ≈ 150 · 27.3 ≈ 30 ·
-27.4 ≈ 70 · 27.5 ≈ 0); envelope ≤ 500 B.
+**Byte budget:** estimate ≈ 425 B (27.1 ≈ 85, measured 76 · 27.2 ≈ 180 ·
+27.3 ≈ 30 · 27.4 ≈ 70 · 27.6 ≈ 60 · 27.5 ≈ 0); envelope ≤ 500 B. 27.2's
+original ≈ 150 B was re-itemised at story drafting (179 B, incl. underflow
+checks on `0<>`/`0>`).
 
 **Inventory found while drafting:** `examples/batnball.fth:85-86` defines its
 own `>=`/`<=` (removed in 27.2). 17 `BEGIN … 0 UNTIL` sites exist across
@@ -375,6 +388,48 @@ and the dev-journal entry is marked resolved
 
 ---
 
+### Story 27.6: Underflow checks on one-operand words
+
+**Covers:** FR-P7-14; NFR-P7-4
+
+As a Forth programmer,
+I want every word that takes stack items to raise `-4` when they aren't there,
+So that a stack bug fails loudly at the word that caused it instead of
+computing on a stale register.
+
+**Acceptance Criteria:**
+
+**Given** the kernel source
+**When** it is audited
+**Then** every word that consumes one or more stack items is listed with its
+current check (none / `check_underflow*` / inherited from a word it calls),
+from the source, not from the 2026-10-08 sample
+**And** the audit table is recorded in the story file
+
+**Given** each word the audit marks unchecked
+**When** it runs on a stack with too few items
+**Then** it raises `-4` through an existing `check_underflow*` helper
+(threaded words may inherit the check from a checked word they call)
+**And** `DUP` on an empty stack raises `-4` and `DEPTH` stays 0
+
+**Given** the hot-path words (`DUP`, `0=`, `1+`, `1-`, and any other word the
+audit finds inside `NEXT`-adjacent inner loops of the kernel)
+**When** the check is added
+**Then** the added cost per call is stated in the story (T-states), and any
+word the kernel calls internally on a known-good stack keeps an unchecked
+entry point if that is needed to avoid slowing the interpreter itself
+
+**Given** the candidate kernel
+**When** `make test` and `make test-repl` run
+**Then** both pass; a REPL-piped probe file covers an empty-stack case for every
+newly checked word, at interpret level and inside a colon body
+**And** the dev-journal entry from 27.2 is marked resolved
+**And** the real byte delta is recorded (est. ≈ 60 B: about 20 words × 3 B
+`CALL`; re-itemise from the audit)
+**And** the S9 hardware-smoke recipe is posted in the closing review message
+
+---
+
 ### Story 27.5: Epic 27 close-out and v3.3.0
 
 **Covers:** FR-P7-13 (final sync); NFR-P7-1, NFR-P7-2
@@ -386,7 +441,7 @@ surface aligned.
 
 **Acceptance Criteria:**
 
-**Given** stories 27.1–27.4 are done
+**Given** stories 27.1–27.4 and 27.6 are done
 **When** the full suite runs
 **Then** `make test` passes and `make test-repl` shows the 1012-test baseline
 plus the new probes at 0 FAIL, on iz-cpm and the banking emulator

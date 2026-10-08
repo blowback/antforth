@@ -13,8 +13,8 @@
  - make startup banner say "MicroBeast" or "NanoBeast" depending on MBB-PLATFORM.
  - "ANTFORTH" environment query that returns AntForth version
  - TRUE/FALSE words that evaluate to -1 and 0 respectively
- - <=, >=, <> 
- - 0>, 0<>
+ - <=, >=, <> — RESOLVED 2026-10-08, Story 27.2
+ - 0>, 0<> — RESOLVED 2026-10-08, Story 27.2
  - .(  (immediate print)
  - 2>R, 2R>
  - :NONAME 
@@ -22,8 +22,28 @@
  - AGAIN 
  - DEFER, DEFER!, DEFER@, IS
  - NIP, TUCK — RESOLVED 2026-10-08, Story 27.1
- - U.R, U>
+ - U.R, U> — RESOLVED 2026-10-08, Story 27.2 (U.R already present since Story 10.8)
  - random number facility: fast xorshift is fine: seed, rnd ( n -- ), random ( n -- 0..n-1 )
+
+## 2026-10-08 (OPEN, Story 27.6) — one-operand words don't check for underflow
+
+Most one-operand words run on whatever is in BC when the stack is empty
+instead of raising `-4`. Two-operand words call `check_underflow_2`; the
+one-operand ones are inconsistent (`NEGATE` checks, `INVERT` doesn't).
+Typing `DEPTH . <word> DEPTH .` on an empty stack (iz-cpm-banking, 30,830 B
+binary):
+
+| Word | Output |
+|---|---|
+| `0=` `0<` `1+` `1-` `2*` `2/` `INVERT` `ABS` `?DUP` `C@` `CELLS` `CELL+` `CHAR+` | `0 0  ok` — no error; the word ran on the phantom BC |
+| `DUP` | `0 1  ok` — no error; a phantom cell is now on the stack |
+| `NEGATE` `DROP` `@` `S>D` | `0 error -4: stack underflow` |
+
+Affected: `0=`, `0<`, `1+`, `1-`, `2*`, `2/`, `INVERT`, `ABS`, `?DUP`, `C@`,
+`CELLS`, `CELL+`, `CHAR+`, `DUP`. The new `0<>` and `0>` call
+`check_underflow`, so they don't add to the list. Some of these (`0=`, `1+`,
+`DUP`) are on hot paths, where a `CALL check_underflow` costs about 50
+T-states per use; Story 27.6 has to weigh that.
 
 ## 2026-09-02 (RESOLVED) — `1 >R` at the prompt dropped the session to CP/M
 

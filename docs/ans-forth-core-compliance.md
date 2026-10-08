@@ -75,7 +75,7 @@
 
 | Core Extension bonus | Count |
 |----------------------|-------|
-| Core Extension words implemented (§6.2) | 17 of 46 (+ `HOLDS`, Forth-2014) |
+| Core Extension words implemented (§6.2) | 21 of 46 (+ `HOLDS`, Forth-2014) |
 
 ### Epic-10 closure plan
 
@@ -187,11 +187,11 @@ grouping.
 | §6.1.1805 | `LSHIFT ( x1 u -- x2 )` | Implemented | src/logic.asm:84 | v2.0 baseline | |
 | §6.1.2162 | `RSHIFT ( x1 u -- x2 )` | Implemented | src/logic.asm:105 | v2.0 baseline | |
 | §6.1.0530 | `= ( x1 x2 -- flag )` | Implemented | src/logic.asm:127 | v2.0 baseline | |
-| §6.1.0480 | `< ( n1 n2 -- flag )` | Implemented | src/logic.asm:147 | v2.0 baseline | |
-| §6.1.0540 | `> ( n1 n2 -- flag )` | Implemented | src/logic.asm:172 | v2.0 baseline | |
-| §6.1.0270 | `0= ( x -- flag )` | Implemented | src/logic.asm:201 | v2.0 baseline | |
-| §6.1.0250 | `0< ( n -- flag )` | Implemented | src/logic.asm:216 | v2.0 baseline | |
-| §6.1.2340 | `U< ( u1 u2 -- flag )` | Implemented | src/logic.asm:231 | v2.0 baseline | |
+| §6.1.0480 | `< ( n1 n2 -- flag )` | Implemented | src/logic.asm:167 | v2.0 baseline | |
+| §6.1.0540 | `> ( n1 n2 -- flag )` | Implemented | src/logic.asm:192 | v2.0 baseline | |
+| §6.1.0270 | `0= ( x -- flag )` | Implemented | src/logic.asm:268 | v2.0 baseline | |
+| §6.1.0250 | `0< ( n -- flag )` | Implemented | src/logic.asm:300 | v2.0 baseline | |
+| §6.1.2340 | `U< ( u1 u2 -- flag )` | Implemented | src/logic.asm:335 | v2.0 baseline | |
 
 ### Memory
 
@@ -384,16 +384,19 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ## §6.2 Core Extension (CCD-P3-1)
 
-**17** of 46 DPANS94 1994 §6.2 Core Extension words are implemented, plus **1** Forth-2014 addition (`HOLDS` at §6.2.1675), making **18 §6.2-shaped entries** on antforth's surface (`SAVE-INPUT` + `RESTORE-INPUT` added by Story 13.5.5 — TD-7 closure 2026-05-06; `PAD` added by Story 13.5.4 — TD-6 closure 2026-05-06; `TO` + `VALUE` added by Story 23.2; `NIP` + `TUCK` added by Story 27.1). The remaining 29 §6.2 words from the DPANS94 1994 baseline are deliberately omitted with per-row rationale per CCD-P3-1's "no silent gaps" rule.
+**21** of 46 DPANS94 1994 §6.2 Core Extension words are implemented, plus **1** Forth-2014 addition (`HOLDS` at §6.2.1675), making **22 §6.2-shaped entries** on antforth's surface (`SAVE-INPUT` + `RESTORE-INPUT` added by Story 13.5.5 — TD-7 closure 2026-05-06; `PAD` added by Story 13.5.4 — TD-6 closure 2026-05-06; `TO` + `VALUE` added by Story 23.2; `NIP` + `TUCK` added by Story 27.1; `0<>`, `0>`, `<>` + `U>` added by Story 27.2). The remaining 25 §6.2 words from the DPANS94 1994 baseline are deliberately omitted with per-row rationale per CCD-P3-1's "no silent gaps" rule.
 
 **Story 15.1 audit finding (2026-05-09):** the v2.0 doc reported "14 of 46 implemented" by counting `HOLDS` inside the 46. `HOLDS` is a Forth-2014 addition (§6.2.1675) and not part of DPANS94 1994's 46-word §6.2 baseline. The corrected count is 13 of 46 (DPANS94 1994) + 1 Forth-2014 bonus = 14 §6.2-shaped entries; the §6.2 baseline coverage rate is 13/46 ≈ 28% (not 14/46). No code consequence — purely a count-rationalisation correction. Forth-2012 / Forth-2014 added §-rules beyond DPANS94 1994; the 46-word baseline below is DPANS94 1994 only.
 
-### §6.2 Implemented (17 of 46 — DPANS94 1994 baseline)
+### §6.2 Implemented (21 of 46 — DPANS94 1994 baseline)
 
 | § | Rule | Verdict | Source | Closure | Notes |
 |---|------|---------|--------|---------|-------|
 | §6.2.0060 | `#TIB ( -- a-addr )` | Implemented | src/outer_interpreter.asm:56 | v2.0 baseline | Obsolescent in Forth-2012; antforth retains for backward-compat. |
 | §6.2.0210 | `.R ( n1 n2 -- )` | Implemented | src/formatting.asm:203 | Story 10.8 | Right-aligned numeric output; DEFWORD on pictured foundation. |
+| §6.2.0260 | `0<> ( x -- flag )` | Implemented | src/logic.asm:284 | Story 27.2 | DEFCODE; `check_underflow` (unlike `0=`, which has no check). |
+| §6.2.0280 | `0> ( n -- flag )` | Implemented | src/logic.asm:316 | Story 27.2 | DEFCODE; `check_underflow` (unlike `0<`, which has no check). |
+| §6.2.0500 | `<> ( x1 x2 -- flag )` | Implemented | src/logic.asm:147 | Story 27.2 | DEFCODE; `check_underflow_2` as for `=`/`U<`. |
 | §6.2.0945 | `COMPILE, ( xt -- )` | Implemented | src/compiler.asm:321 | v2.0 baseline | Append execution semantics. |
 | §6.2.1660 | `HEX ( -- )` | Implemented | src/formatting.asm:390 | v2.0 baseline | Set BASE to 16. |
 | §6.2.1850 | `MARKER ( "<spaces>name" -- )` | Implemented | src/system.asm:22 | v2.0 baseline | Snapshot/restore dictionary state. |
@@ -406,6 +409,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | §6.2.2182 | `SAVE-INPUT ( -- xn ... x1 n )` | Implemented-with-caveat | src/outer_interpreter.asm:490 | Story 13.5.5 | Pushes uniform-quadruple description: `( -- tib_addr tib_len >IN SOURCE-ID 4 )`. Same shape across all SOURCE-ID classes (0 keyboard / -1 EVALUATE / >0 INCLUDE-FILE). Primary scope: EVALUATE arm round-trip; keyboard / INCLUDE-FILE arms work structurally with cross-REFILL caveat. Distinct from the EVALUATE-private R-stack `(SAVE-INPUT)` plumbing helper. See Story 13.5.5 caveats below. |
 | §6.2.2295 | `TO ( i*x "<spaces>name" -- )` | Implemented | `src/compiler.asm:1068` (`w_TO_cf`) | Story 23.2 | IMMEDIATE + STATE-aware: interpreting stores TOS into the named VALUE's cell now; compiling emits `LIT <xt> (TO)` (`w_PAREN_TO_cf`) so the store runs at run time. Compiles the bank-stable xt, not a raw cell addr, so it is correct across banks. Name parsed via the `'` path (undefined → -13); a non-VALUE target raises -32 (`THROW_INVALID_NAME_ARG`). |
 | §6.2.2300 | `TUCK ( x1 x2 -- x2 x1 x2 )` | Implemented | src/stack_ops.asm:90 | Story 27.1 | DEFCODE; `check_underflow_2` as for `SWAP`/`OVER`. |
+| §6.2.2350 | `U> ( u1 u2 -- flag )` | Implemented | src/logic.asm:354 | Story 27.2 | DEFCODE; `check_underflow_2` as for `=`/`U<`. |
 | §6.2.2330 | `U.R ( u n -- )` | Implemented | src/formatting.asm:217 | Story 10.8 | Right-aligned unsigned print on pictured foundation. |
 | §6.2.2405 | `VALUE ( x "<spaces>name" -- )` | Implemented | `src/compiler.asm:1010` (`w_VALUE_cf`) | Story 23.2 | Defining word: emits `JP DOVALUE` (`src/inner_interpreter.asm:106`, runtime = push cell at cf+3, distinct address from DOCON so TO can type-check) and stores the initial cell value. Carries the CREATE-style bank-aware descriptor-stub block, so a VALUE defined in bank N>0 gets a bank-stable xt and is read+written cross-bank. Zero-length name → -16. Paired with `TO` (§6.2.2295). |
 | §6.2.2535 | `\ ( "ccc<eol>" -- )` | Implemented | src/strings.asm:806 | v2.0 baseline | Line comment; F_IMMEDIATE. |
@@ -416,7 +420,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 |---|------|---------|--------|---------|-------|
 | §6.2.1675 | `HOLDS ( c-addr u -- )` | Implemented | src/pictured.asm:199 | Story 10.7 | Forth-2014 addition; counterpart of `HOLD` for strings. Inserts counted string into pictured buffer. Not part of the 46-word DPANS94 1994 §6.2 baseline. |
 
-### §6.2 Deliberately Omitted (29 of 46)
+### §6.2 Deliberately Omitted (25 of 46)
 
 Per CCD-P3-1: "no silent gaps". Each unimplemented §6.2 word carries an
 explicit rationale. The blanket rationale for most omissions is:
@@ -430,13 +434,10 @@ under the A.1-D3 canonical six-step shape.
 | § | Rule | Verdict | Source | Closure | Notes |
 |---|------|---------|--------|---------|-------|
 | §6.2.0200 | `.( ( "ccc<paren>" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Compile-time print; deferred — out of v2.0 scope. Workaround: `[CHAR] ( EMIT ... CR` or test-only emit chains. |
-| §6.2.0260 | `0<> ( x -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Trivially synthesisable as `0= INVERT`; deferred — out of v2.0 scope. |
-| §6.2.0280 | `0> ( n -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Trivially synthesisable as `0 SWAP <`; deferred — out of v2.0 scope. |
 | §6.2.0340 | `2>R ( x1 x2 -- ) ( R: -- x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP >R >R`; deferred — out of v2.0 scope. |
 | §6.2.0410 | `2R> ( -- x1 x2 ) ( R: x1 x2 -- )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `R> R> SWAP`; deferred — out of v2.0 scope. |
 | §6.2.0415 | `2R@ ( -- x1 x2 ) ( R: x1 x2 -- x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable; deferred — out of v2.0 scope. |
 | §6.2.0455 | `:NONAME ( -- xt )` | Deliberately-omitted | N-A | v2.0 baseline | Anonymous colon definition; deferred — out of v2.0 scope. No in-tree caller. |
-| §6.2.0500 | `<> ( x1 x2 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `= INVERT`; deferred — out of v2.0 scope. |
 | §6.2.0620 | `?DO ( n1 n2 -- )` | Deliberately-omitted | N-A | v2.0 baseline | Conditional DO (skip when limit==index); deferred — out of v2.0 scope. Workaround: `2DUP = IF 2DROP ELSE DO ... LOOP THEN`. |
 | §6.2.0700 | `AGAIN ( -- )` | Deliberately-omitted | N-A | v2.0 baseline | Unconditional BEGIN-loop tail; deferred — out of v2.0 scope. Workaround: `BEGIN ... 0 UNTIL`. |
 | §6.2.0855 | `C" ( "ccc<quote>" -- c-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Counted-string compile; deferred — `S"` covers the modern idiom. |
@@ -454,7 +455,6 @@ under the A.1-D3 canonical six-step shape.
 | §6.2.2240 | `SPAN ( -- a-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — paired with EXPECT (also omitted). |
 | §6.2.2290 | `TIB ( -- c-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent in Forth-2012 — replaced by `SOURCE`. Deferred. |
 | §6.2.2298 | `TRUE ( -- true )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `-1`; deferred — out of v2.0 scope. |
-| §6.2.2350 | `U> ( u1 u2 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `SWAP U<`; deferred — out of v2.0 scope. |
 | §6.2.2395 | `UNUSED ( -- u )` | Deliberately-omitted | N-A | v2.0 baseline | Reports remaining dictionary space; deferred — out of v2.0 scope. |
 | §6.2.2440 | `WITHIN ( n1 n2 n3 -- flag )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable as `OVER - >R - R> U<`; deferred — out of v2.0 scope. |
 | §6.2.2530 | `[COMPILE] ( "<spaces>name" -- )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — replaced by `POSTPONE` (§6.1.2033); not exposed because `POSTPONE` is the modern equivalent. |
@@ -865,6 +865,8 @@ antforth also defines words that are useful but outside the Core word sets:
 | `.S` | `formatting.asm:283` | TOOLS |
 | `?` | `formatting.asm:266` | TOOLS — §15.6.1.0600 (`@ .`; Story 27.1) |
 | `-ROT` | `stack_ops.asm:119` | Non-standard (antforth extension; inverse of `ROT`; Story 27.1) |
+| `<=` | `logic.asm:223` | Non-standard (antforth extension; Story 27.2) |
+| `>=` | `logic.asm:246` | Non-standard (antforth extension; Story 27.2) |
 | `KEY?` | `io.asm:169` | FACILITY |
 | `SP@` `SP!` `RP@` `RP!` | `stack_ops.asm:239,253,266,278` | Non-standard (common extension) |
 | Z80 assembler (107 words) | `assembler.asm` | Non-standard (antforth extension) |

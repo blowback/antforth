@@ -2,7 +2,7 @@
 ; AntForth — A Forth for CP/M on Z80
 ;
 ; Logic: AND, OR, XOR, INVERT, LSHIFT, RSHIFT
-; Comparison: =, <, >, 0=, 0<, U<
+; Comparison: =, <>, <, >, <=, >=, 0=, 0<>, 0<, 0>, U<, U>
 ;
 ; Register contract:
 ;   BC = TOS, DE = IP (preserve!), SP = parameter stack
@@ -139,6 +139,26 @@ w_EQUALS_cf:
     NEXT
 
 ; -----------------------------------------------
+; <> ( x1 x2 -- flag )
+;   TRUE if x1 differs from x2
+; ANS Forth 1994 §6.2.0500   <>   (Core Extension)
+; -----------------------------------------------
+w_NOT_EQUALS:
+    DEFCODE "<>", 0
+w_NOT_EQUALS_cf:
+    CALL    check_underflow_2
+    POP     HL              ; HL = x1
+    OR      A               ; Clear carry
+    SBC     HL, BC          ; HL = x1 - x2
+    LD      BC, 0           ; Assume FALSE
+    LD      A, H
+    OR      L
+    JR      Z, .ne_done     ; Equal
+    DEC     BC              ; BC = TRUE
+.ne_done:
+    NEXT
+
+; -----------------------------------------------
 ; < ( n1 n2 -- flag )
 ;   TRUE if n1 < n2 (signed comparison)
 ;   After SBC: signed less if Sign XOR Overflow = 1
@@ -194,6 +214,53 @@ w_GREATER_cf:
     NEXT
 
 ; -----------------------------------------------
+; <= ( n1 n2 -- flag )   ; antforth extension
+;   TRUE if n1 <= n2 (signed comparison)
+;   SCF makes SBC compute n1 - n2 - 1, which is negative iff n1 <= n2;
+;   S XOR V gives the sign of that full result, as in <
+; -----------------------------------------------
+w_LESS_EQUALS:
+    DEFCODE "<=", 0
+w_LESS_EQUALS_cf:
+    CALL    check_underflow_2
+    POP     HL              ; HL = n1
+    SCF
+    SBC     HL, BC          ; HL = n1 - n2 - 1, sets S and P/V flags
+    LD      BC, 0           ; Assume FALSE
+    JP      PO, .le_no_ov
+    JP      M, .le_done     ; S=1, V=1 -> not less
+    DEC     BC              ; S=0, V=1 -> less
+    JR      .le_done
+.le_no_ov:
+    JP      P, .le_done     ; S=0, V=0 -> not less
+    DEC     BC              ; S=1, V=0 -> less
+.le_done:
+    NEXT
+
+; -----------------------------------------------
+; >= ( n1 n2 -- flag )   ; antforth extension
+;   TRUE if n1 >= n2 (signed comparison)
+;   The inverse of <: same subtraction, sign tests swapped
+; -----------------------------------------------
+w_GREATER_EQUALS:
+    DEFCODE ">=", 0
+w_GREATER_EQUALS_cf:
+    CALL    check_underflow_2
+    POP     HL              ; HL = n1
+    OR      A
+    SBC     HL, BC          ; HL = n1 - n2, sets S and P/V flags
+    LD      BC, 0           ; Assume FALSE
+    JP      PO, .ge_no_ov
+    JP      P, .ge_done     ; S=0, V=1 -> less -> FALSE
+    DEC     BC              ; S=1, V=1 -> not less -> TRUE
+    JR      .ge_done
+.ge_no_ov:
+    JP      M, .ge_done     ; S=1, V=0 -> less -> FALSE
+    DEC     BC              ; S=0, V=0 -> not less -> TRUE
+.ge_done:
+    NEXT
+
+; -----------------------------------------------
 ; 0= ( x -- flag )
 ;   TRUE if x is zero
 ; -----------------------------------------------
@@ -206,6 +273,23 @@ w_ZERO_EQUALS_cf:
     JR      NZ, .zeq_done
     DEC     BC              ; BC = TRUE
 .zeq_done:
+    NEXT
+
+; -----------------------------------------------
+; 0<> ( x -- flag )
+;   TRUE if x is nonzero
+; ANS Forth 1994 §6.2.0260   0<>   (Core Extension)
+; -----------------------------------------------
+w_ZERO_NOT_EQUALS:
+    DEFCODE "0<>", 0
+w_ZERO_NOT_EQUALS_cf:
+    CALL    check_underflow
+    LD      A, B
+    OR      C               ; Z flag set if BC = 0
+    LD      BC, 0
+    JR      Z, .zne_done
+    DEC     BC              ; BC = TRUE
+.zne_done:
     NEXT
 
 ; -----------------------------------------------
@@ -224,6 +308,26 @@ w_ZERO_LESS_cf:
     NEXT
 
 ; -----------------------------------------------
+; 0> ( n -- flag )
+;   TRUE if n is nonzero and bit 15 is clear
+; ANS Forth 1994 §6.2.0280   0>   (Core Extension)
+; -----------------------------------------------
+w_ZERO_GREATER:
+    DEFCODE "0>", 0
+w_ZERO_GREATER_cf:
+    CALL    check_underflow
+    LD      A, B
+    OR      C               ; Z flag set if n = 0
+    LD      A, B            ; Sign byte; flags unchanged
+    LD      BC, 0           ; Assume FALSE
+    JR      Z, .zgt_done
+    RLA                     ; Bit 15 -> carry
+    JR      C, .zgt_done    ; Negative
+    DEC     BC              ; BC = TRUE
+.zgt_done:
+    NEXT
+
+; -----------------------------------------------
 ; U< ( u1 u2 -- flag )
 ;   TRUE if u1 < u2 (unsigned comparison)
 ; -----------------------------------------------
@@ -238,4 +342,23 @@ w_U_LESS_cf:
     JR      NC, .ult_done   ; No borrow: u1 >= u2
     DEC     BC              ; Borrow: u1 < u2, TRUE
 .ult_done:
+    NEXT
+
+; -----------------------------------------------
+; U> ( u1 u2 -- flag )
+;   TRUE if u1 > u2 (unsigned comparison)
+;   SCF makes SBC compute u1 - u2 - 1, which borrows iff u1 <= u2
+; ANS Forth 1994 §6.2.2350   U>   (Core Extension)
+; -----------------------------------------------
+w_U_GREATER:
+    DEFCODE "U>", 0
+w_U_GREATER_cf:
+    CALL    check_underflow_2
+    POP     HL              ; HL = u1
+    SCF
+    SBC     HL, BC          ; HL = u1 - u2 - 1
+    LD      BC, 0
+    JR      C, .ugt_done    ; Borrow: u1 <= u2
+    DEC     BC              ; No borrow: u1 > u2, TRUE
+.ugt_done:
     NEXT
