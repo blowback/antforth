@@ -272,7 +272,7 @@ Per-file breakdown of every convention-bound EXX site. In each table, the **Line
 The following `rpush_de`/`rpush_bc` call sites remain unconverted by explicit Epic 7/8 decision. They are documented here to prevent rediscovery as "missed opportunities":
 
 - **`src/compiler.asm:689`** — `(;CODE)` / DOES> runtime exit. Category D exclusion (hot path, functional R-stack manipulation).
-- **`src/control_flow.asm:207`** — `(DO)` runtime. Category D (functional R-stack use — loop params pushed for `LOOP`/`+LOOP` to consume).
+- **`src/control_flow.asm:208`** — `(DO)` runtime. Category D (functional R-stack use — loop params pushed for `LOOP`/`+LOOP` to consume).
 - **`src/outer_interpreter.asm:99–127`** — the INTERPRET loop itself. Category D (*is* the main thread; any EXX here reframes the whole interpreter state model).
 - **`src/system.asm:122`** (`.paq_abort` inside `w_ABORT_QUOTE_cf` @ line 155) — the `(ABORT")` runtime. See §7 exception note.
 

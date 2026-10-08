@@ -385,7 +385,7 @@
 \ DOCON, DOVAR, DODOES) plus the outer-interpreter parsed-number push
 \ sites (NUMBER?, NUMBER-PREFIX?, ASM-RECOGNIZE) plus push_user_var.
 \
-\ TOV exercises the LIT guard. antforth has no AGAIN, so the infinite-
+\ TOV exercises the LIT guard. The infinite
 \ grow-loop is `BEGIN 1 0 UNTIL`: each iteration pushes 1 (LIT 1),
 \ pushes 0 (LIT 0), then UNTIL's ?BRANCH pops the 0 and branches back
 \ because the popped flag is zero. Net stack delta per iteration: +1

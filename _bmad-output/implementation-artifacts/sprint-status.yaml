@@ -317,7 +317,7 @@ development_status:
   epic-27: in-progress
   27-1-stack-words-nip-tuck-rot-and-question: done
   27-2-comparison-words-ne-0ne-0gt-ugt-le-ge: done
-  27-3-again: backlog
+  27-3-again: done
   27-4-question-do: backlog
   27-6-one-operand-underflow-checks: backlog
   27-5-epic-27-close-out-and-v3-3-0: backlog

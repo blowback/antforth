@@ -54,7 +54,7 @@ _cycle
 \ Because the operator reads only while holding the mutex, it never catches a
 \ half-stamped buffer: bad MUST be 0 and consistent MUST be > 0. Both witnesses are
 \ RUNTIME-computed by the checker loop (never one echoed literal), defeating false-
-\ green. WRITER is a forever task via BEGIN..0 UNTIL (AGAIN is undefined in antforth). ---
+\ green. WRITER is a forever task via BEGIN..0 UNTIL (written before AGAIN existed). ---
 CREATE WBUF  2 CELLS ALLOT
 0 WBUF !  0 WBUF CELL+ !          \ start internally-consistent (0,0), not garbage
 VARIABLE WTAG   1 WTAG !

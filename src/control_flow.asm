@@ -106,6 +106,23 @@ w_UNTIL_cf EQU w_UNTIL_body - 3
         DW EXIT_CODE
 
 ; -----------------------------------------------
+; AGAIN ( begin-addr -- )  IMMEDIATE, compile-only
+;   Compile BRANCH with backward offset to begin-addr
+; -----------------------------------------------
+w_AGAIN:
+        DEFIMMED "AGAIN"
+w_AGAIN_body:
+w_AGAIN_cf EQU w_AGAIN_body - 3
+        DW w_QCOMP_cf               ; compile-only guard
+        ; ( begin-addr -- )
+        DW w_LIT_cf, w_BRANCH_cf
+        DW w_COMMA_cf                ; compile BRANCH
+        DW w_HERE_cf                 ; ( begin-addr here ) here = offset cell addr
+        DW w_MINUS_cf                ; ( begin-addr - here ) negative backward offset
+        DW w_COMMA_cf                ; compile offset
+        DW EXIT_CODE
+
+; -----------------------------------------------
 ; WHILE ( begin-addr -- while-fwd begin-addr )  IMMEDIATE, compile-only
 ;   Compile ?BRANCH + placeholder, SWAP so begin-addr is on top for REPEAT
 ; -----------------------------------------------
@@ -125,26 +142,15 @@ w_WHILE_cf EQU w_WHILE_body - 3
 
 ; -----------------------------------------------
 ; REPEAT ( while-fwd begin-addr -- )  IMMEDIATE, compile-only
-;   Compile BRANCH back to begin-addr, then resolve WHILE's fwd-ref
+;   Compile BRANCH back to begin-addr (AGAIN), then resolve WHILE's fwd-ref (THEN)
 ; -----------------------------------------------
 w_REPEAT:
         DEFIMMED "REPEAT"
 w_REPEAT_body:
 w_REPEAT_cf EQU w_REPEAT_body - 3
-        DW w_QCOMP_cf               ; compile-only guard
         ; ( while-fwd begin-addr -- )
-        ; Compile BRANCH back to begin-addr
-        DW w_LIT_cf, w_BRANCH_cf
-        DW w_COMMA_cf                ; compile BRANCH
-        DW w_HERE_cf                 ; ( while-fwd begin-addr here )
-        DW w_MINUS_cf                ; ( while-fwd begin-addr-here ) backward offset
-        DW w_COMMA_cf                ; compile backward offset; ( while-fwd )
-        ; Resolve WHILE's forward reference
-        DW w_HERE_cf                 ; ( while-fwd here )
-        DW w_OVER_cf                 ; ( while-fwd here while-fwd )
-        DW w_MINUS_cf                ; ( while-fwd here-while-fwd )
-        DW w_SWAP_cf                 ; ( offset while-fwd )
-        DW w_STORE_cf                ; store offset at while-fwd; ( )
+        DW w_AGAIN_cf                ; compile BRANCH back to begin-addr; ( while-fwd )
+        DW w_THEN_cf                 ; resolve WHILE's forward reference; ( )
         DW EXIT_CODE
 
 ; Runtime return-stack frame layout after (DO):

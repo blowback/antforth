@@ -151,7 +151,7 @@ escape-sequence prefix, and is the traditional Unix-tty "quit" key. (`Ctrl-C` wa
 unavailable: at column 0 it is already the REPL's exit-to-CP/M key.)
 
 **The honest limit — a *never-yielding* task is a hard stall.** A task that never
-reaches a yield point (e.g. `: SPIN BEGIN 0 UNTIL ;` with no `PAUSE`) **starves the
+reaches a yield point (e.g. `: SPIN BEGIN AGAIN ;` with no `PAUSE`) **starves the
 ring**: once the scheduler switches to it, the operator never gets another turn.
 All console input flows through the operator's line editor, which only runs on an
 operator turn — so during the stall **no keystroke is read at all**: not `Ctrl-\`
@@ -187,7 +187,7 @@ back to the per-file inventory in §d.
 | -11 | result out of range | no | — |
 | -12 | argument type mismatch | no | — |
 | -13 | undefined word | done — Story 11.5 | `compiler.asm:48` (`'`), `compiler.asm:451` (`COMP-ERROR`), `outer_interpreter.asm:226` (`INTERPRET`) |
-| -14 | interpreting a compile-only word | done — Story 11.5 | `compiler.asm:469` (`;`), `compiler.asm:641` (`DOES>`), `control_flow.asm:20` (`?COMP`) |
+| -14 | interpreting a compile-only word | done — Story 11.5 | `compiler.asm:469` (`;`), `compiler.asm:641` (`DOES>`), `control_flow.asm:18` (`?COMP`) |
 | -15 | invalid FORGET | no | — |
 | -16 | attempt to use zero-length string as a name | done — Story 11.5 | `system.asm:80` (`MARKER`), `compiler.asm:398` (`:`), `compiler.asm:577` (`CREATE`), `compiler.asm:624` (`CONSTANT`) |
 | -17 | pictured numeric output string overflow | done — Story 11.6 | `pictured.asm:251` (`do_pic_overflow_error`; migrated) |
@@ -447,7 +447,7 @@ Inventory grouped by source file (alphabetical), then by line number.
 
 | Line | Word / context | Trigger | Proposed THROW code | Migration story |
 |---:|---|---|---|---|
-| 20 | `?COMP` (generic compile-only guard) | compile-only word interpreted | `-14` | **done — 11.5** |
+| 18 | `?COMP` (generic compile-only guard) | compile-only word interpreted | `-14` | **done — 11.5** |
 
 ### `src/outer_interpreter.asm`
 
@@ -521,7 +521,7 @@ fully delivered post-Story-11.7.
 | Migration story | Theme | Sites migrated | Codes used |
 |---|---|---|---|
 | **11.4** | Stack / arithmetic / memory leaf primitives | `system.asm:559→591` (`do_underflow_error`) — done; `arithmetic.asm:130` (`udivmod` divisor=0 guard) — done; `double.asm:569` (`UM/MOD` divisor=0 guard) — done | `-4`, `-10` |
-| **11.5** | Compiler / dictionary / control flow / assembler-internal state | `compiler.asm:48`, `compiler.asm:398`, `compiler.asm:451`, `compiler.asm:469`, `compiler.asm:577`, `compiler.asm:624`, `compiler.asm:641`, `control_flow.asm:20`, `outer_interpreter.asm:226`, `system.asm:80` (`MARKER`), `assembler.asm:281` (`asm_die` fan-in), `assembler.asm:337` (`asm_err_bare_int`), `assembler.asm:381` (`asm_print_error_with_name` fan-in) | `-13`, `-14`, `-16`, `-258..-269` |
+| **11.5** | Compiler / dictionary / control flow / assembler-internal state | `compiler.asm:48`, `compiler.asm:398`, `compiler.asm:451`, `compiler.asm:469`, `compiler.asm:577`, `compiler.asm:624`, `compiler.asm:641`, `control_flow.asm:18`, `outer_interpreter.asm:226`, `system.asm:80` (`MARKER`), `assembler.asm:281` (`asm_die` fan-in), `assembler.asm:337` (`asm_err_bare_int`), `assembler.asm:381` (`asm_print_error_with_name` fan-in) | `-13`, `-14`, `-16`, `-258..-269` |
 | **11.6** | Strings / I-O / buffer-shaped errors + asm-die residual cleanup | `strings.asm:953` (`(` missing-`)`) — **done**; `pictured.asm:251` (pictured buffer overflow) — **done**; `assembler.asm:472` (`check_asm_mode`, Story 11.5 D1) — **done**; `assembler.asm:1204` (`asm_disp_range_err`, ex-`asm_range_err`, Story 11.5 D1; later split by Story 11.5.6) — **done**; `asm_die` body retired | `-17`, `-58`, `-270`, `-271` |
 | **11.5.6** | F4 LOW-deferred closure: split generic `-271 range` into per-condition codes | `assembler.asm:1204` (`asm_disp_range_err`, +D path) — **done**; `assembler.asm:1210` (`asm_bit_range_err`, BIT/RES/SET path) — **done** | `-271` (semantic), `-272` (new) |
 | **11.7** | `ABORT` / `ABORT"` retarget — capstone (**done**) | `system.asm:131→139` (`(ABORT")` `.paq_do_abort`) → `-2 THROW` (**done**); `system.asm:260→286` (`w_ABORT_cf` entry) → `-1 THROW` (**done**); `exception.asm:420` (`.throw_uncaught` recovery-chain delegate) → inlined chain at `exception.asm:412+` (**done**) | `-1`, `-2` |

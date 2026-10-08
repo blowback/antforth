@@ -66,9 +66,7 @@ difference:
    slot, after which the yielding `DELAY` would have nothing to count and would
    hang. So `TIMER-ON` once, before you activate the task.
 
-Two smaller notes for anyone reading the source: the forever-loop is
-`BEGIN … 0 UNTIL`, not `BEGIN … AGAIN` (`AGAIN` isn't defined in antforth); and if
-your LEDs are wired active-low, invert the colour masks.
+If your LEDs are wired active-low, invert the colour masks.
 
 ## What the emulator can and can't show
 
@@ -201,7 +199,7 @@ MUTEX GATE                     \ starts unlocked (1)
      GATE LOCK                \ blocks (yielding) until the gate is free
      42 SHARED !  PAUSE  42 SHARED CELL+ !   \ two-step write; safe under the lock
      GATE UNLOCK
-   0 UNTIL ;                   \ AGAIN is undefined in antforth; forever = BEGIN..0 UNTIL
+   AGAIN ;
 
 ' WRITER TASK ACTIVATE
 ```
@@ -278,7 +276,7 @@ MAILBOX MBX                    \ starts empty
    4 0 DO
      I 1+ 10 *  MBX POST      \ blocks (yielding) until the slot is free
    LOOP
-   BEGIN PAUSE 0 UNTIL ;       \ park, still yielding; AGAIN is undefined
+   BEGIN PAUSE AGAIN ;       \ park, still yielding
 
 ' PRODUCER TASK ACTIVATE
 

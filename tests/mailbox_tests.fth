@@ -57,7 +57,7 @@ _roundtrip
 \ the producer cannot POST reading i+1 until the consumer has FETCHed reading i — the
 \ empty/full semaphores force lockstep, so no loss and no overwrite. sum=100 AND good=4
 \ are RUNTIME-computed by the consumer loop (never one echoed literal), defeating false-
-\ green. PRODUCER is a forever task via BEGIN..0 UNTIL park (AGAIN is undefined). ---
+\ green. PRODUCER is a forever task via BEGIN..0 UNTIL park (written before AGAIN existed). ---
 0 SEMAPHORE NEVER
 : PRODUCER ( -- )
    4 0 DO

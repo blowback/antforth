@@ -33,7 +33,7 @@ DECIMAL
 \ ===================================================================
 
 \ A cooperative runaway: loops forever but reaches a yield every iteration
-\ (AGAIN is undefined here, so the forever-loop idiom is BEGIN ... 0 UNTIL).
+\ (BEGIN ... 0 UNTIL; written before AGAIN existed).
 : YIELDER ( -- )  BEGIN PAUSE 0 UNTIL ;
 
 \ ' YIELDER (xt), TASK (handle) — DUP keeps the handle in a CONSTANT before

@@ -75,7 +75,7 @@
 
 | Core Extension bonus | Count |
 |----------------------|-------|
-| Core Extension words implemented (§6.2) | 21 of 46 (+ `HOLDS`, Forth-2014) |
+| Core Extension words implemented (§6.2) | 22 of 46 (+ `HOLDS`, Forth-2014) |
 
 ### Epic-10 closure plan
 
@@ -276,22 +276,22 @@ grouping.
 
 | § | Rule | Verdict | Source | Closure | Notes |
 |---|------|---------|--------|---------|-------|
-| §6.1.1700 | `IF ( x -- )` | Implemented | src/control_flow.asm:32 | v2.0 baseline | DEFIMMED. |
-| §6.1.2270 | `THEN ( -- )` | Implemented | src/control_flow.asm:48 | v2.0 baseline | DEFIMMED. |
-| §6.1.1310 | `ELSE ( -- )` | Implemented | src/control_flow.asm:65 | v2.0 baseline | DEFIMMED. |
-| §6.1.0760 | `BEGIN ( -- )` | Implemented | src/control_flow.asm:89 | v2.0 baseline | DEFIMMED. |
-| §6.1.2390 | `UNTIL ( x -- )` | Implemented | src/control_flow.asm:101 | v2.0 baseline | DEFIMMED. |
-| §6.1.2430 | `WHILE ( x -- )` | Implemented | src/control_flow.asm:118 | v2.0 baseline | DEFIMMED. |
-| §6.1.2140 | `REPEAT ( -- )` | Implemented | src/control_flow.asm:136 | v2.0 baseline | DEFIMMED. |
-| §6.1.1240 | `DO ( n1 n2 -- )` | Implemented | src/control_flow.asm:356 | v2.0 baseline | DEFIMMED. |
-| §6.1.1800 | `LOOP ( -- )` | Implemented | src/control_flow.asm:374 | v2.0 baseline | DEFIMMED. |
-| §6.1.0140 | `+LOOP ( n -- )` | Implemented | src/control_flow.asm:413 | v2.0 baseline | DEFIMMED. |
-| §6.1.1680 | `I ( -- n )` | Implemented | src/control_flow.asm:331 | v2.0 baseline | |
-| §6.1.1730 | `J ( -- n )` | Implemented | src/control_flow.asm:343 | v2.0 baseline | |
-| §6.1.1760 | `LEAVE ( -- )` | Implemented | src/control_flow.asm:451 | v2.0 baseline | DEFIMMED. |
-| §6.1.2380 | `UNLOOP ( -- )` | Implemented | src/control_flow.asm:318 | v2.0 baseline | |
+| §6.1.1700 | `IF ( x -- )` | Implemented | src/control_flow.asm:27 | v2.0 baseline | DEFIMMED. |
+| §6.1.2270 | `THEN ( -- )` | Implemented | src/control_flow.asm:43 | v2.0 baseline | DEFIMMED. |
+| §6.1.1310 | `ELSE ( -- )` | Implemented | src/control_flow.asm:60 | v2.0 baseline | DEFIMMED. |
+| §6.1.0760 | `BEGIN ( -- )` | Implemented | src/control_flow.asm:84 | v2.0 baseline | DEFIMMED. |
+| §6.1.2390 | `UNTIL ( x -- )` | Implemented | src/control_flow.asm:96 | v2.0 baseline | DEFIMMED. |
+| §6.1.2430 | `WHILE ( x -- )` | Implemented | src/control_flow.asm:130 | v2.0 baseline | DEFIMMED. |
+| §6.1.2140 | `REPEAT ( -- )` | Implemented | src/control_flow.asm:148 | v2.0 baseline | DEFIMMED. |
+| §6.1.1240 | `DO ( n1 n2 -- )` | Implemented | src/control_flow.asm:357 | v2.0 baseline | DEFIMMED. |
+| §6.1.1800 | `LOOP ( -- )` | Implemented | src/control_flow.asm:375 | v2.0 baseline | DEFIMMED. |
+| §6.1.0140 | `+LOOP ( n -- )` | Implemented | src/control_flow.asm:414 | v2.0 baseline | DEFIMMED. |
+| §6.1.1680 | `I ( -- n )` | Implemented | src/control_flow.asm:332 | v2.0 baseline | |
+| §6.1.1730 | `J ( -- n )` | Implemented | src/control_flow.asm:344 | v2.0 baseline | |
+| §6.1.1760 | `LEAVE ( -- )` | Implemented | src/control_flow.asm:452 | v2.0 baseline | DEFIMMED. |
+| §6.1.2380 | `UNLOOP ( -- )` | Implemented | src/control_flow.asm:319 | v2.0 baseline | |
 | §6.1.1380 | `EXIT ( -- )` | Implemented | src/inner_interpreter.asm:32 | v2.0 baseline | DEFCODE wrapping `EXIT_CODE`. |
-| §6.1.2120 | `RECURSE ( -- )` | Implemented | src/control_flow.asm:472 | v2.0 baseline | F_IMMEDIATE. |
+| §6.1.2120 | `RECURSE ( -- )` | Implemented | src/control_flow.asm:473 | v2.0 baseline | F_IMMEDIATE. |
 
 ### Compiler and Defining Words
 
@@ -384,11 +384,11 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 
 ## §6.2 Core Extension (CCD-P3-1)
 
-**21** of 46 DPANS94 1994 §6.2 Core Extension words are implemented, plus **1** Forth-2014 addition (`HOLDS` at §6.2.1675), making **22 §6.2-shaped entries** on antforth's surface (`SAVE-INPUT` + `RESTORE-INPUT` added by Story 13.5.5 — TD-7 closure 2026-05-06; `PAD` added by Story 13.5.4 — TD-6 closure 2026-05-06; `TO` + `VALUE` added by Story 23.2; `NIP` + `TUCK` added by Story 27.1; `0<>`, `0>`, `<>` + `U>` added by Story 27.2). The remaining 25 §6.2 words from the DPANS94 1994 baseline are deliberately omitted with per-row rationale per CCD-P3-1's "no silent gaps" rule.
+**22** of 46 DPANS94 1994 §6.2 Core Extension words are implemented, plus **1** Forth-2014 addition (`HOLDS` at §6.2.1675), making **23 §6.2-shaped entries** on antforth's surface (`SAVE-INPUT` + `RESTORE-INPUT` added by Story 13.5.5 — TD-7 closure 2026-05-06; `PAD` added by Story 13.5.4 — TD-6 closure 2026-05-06; `TO` + `VALUE` added by Story 23.2; `NIP` + `TUCK` added by Story 27.1; `0<>`, `0>`, `<>` + `U>` added by Story 27.2; `AGAIN` added by Story 27.3). The remaining 24 §6.2 words from the DPANS94 1994 baseline are deliberately omitted with per-row rationale per CCD-P3-1's "no silent gaps" rule.
 
 **Story 15.1 audit finding (2026-05-09):** the v2.0 doc reported "14 of 46 implemented" by counting `HOLDS` inside the 46. `HOLDS` is a Forth-2014 addition (§6.2.1675) and not part of DPANS94 1994's 46-word §6.2 baseline. The corrected count is 13 of 46 (DPANS94 1994) + 1 Forth-2014 bonus = 14 §6.2-shaped entries; the §6.2 baseline coverage rate is 13/46 ≈ 28% (not 14/46). No code consequence — purely a count-rationalisation correction. Forth-2012 / Forth-2014 added §-rules beyond DPANS94 1994; the 46-word baseline below is DPANS94 1994 only.
 
-### §6.2 Implemented (21 of 46 — DPANS94 1994 baseline)
+### §6.2 Implemented (22 of 46 — DPANS94 1994 baseline)
 
 | § | Rule | Verdict | Source | Closure | Notes |
 |---|------|---------|--------|---------|-------|
@@ -397,6 +397,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 | §6.2.0260 | `0<> ( x -- flag )` | Implemented | src/logic.asm:284 | Story 27.2 | DEFCODE; `check_underflow` (unlike `0=`, which has no check). |
 | §6.2.0280 | `0> ( n -- flag )` | Implemented | src/logic.asm:316 | Story 27.2 | DEFCODE; `check_underflow` (unlike `0<`, which has no check). |
 | §6.2.0500 | `<> ( x1 x2 -- flag )` | Implemented | src/logic.asm:147 | Story 27.2 | DEFCODE; `check_underflow_2` as for `=`/`U<`. |
+| §6.2.0700 | `AGAIN ( -- )` | Implemented | src/control_flow.asm:113 | Story 27.3 | DEFIMMED; `BRANCH` + backward offset, as `UNTIL` with `?BRANCH`. |
 | §6.2.0945 | `COMPILE, ( xt -- )` | Implemented | src/compiler.asm:321 | v2.0 baseline | Append execution semantics. |
 | §6.2.1660 | `HEX ( -- )` | Implemented | src/formatting.asm:390 | v2.0 baseline | Set BASE to 16. |
 | §6.2.1850 | `MARKER ( "<spaces>name" -- )` | Implemented | src/system.asm:22 | v2.0 baseline | Snapshot/restore dictionary state. |
@@ -420,7 +421,7 @@ antforth is a single-cell (16-bit) system. The following §6.1 Core words operat
 |---|------|---------|--------|---------|-------|
 | §6.2.1675 | `HOLDS ( c-addr u -- )` | Implemented | src/pictured.asm:199 | Story 10.7 | Forth-2014 addition; counterpart of `HOLD` for strings. Inserts counted string into pictured buffer. Not part of the 46-word DPANS94 1994 §6.2 baseline. |
 
-### §6.2 Deliberately Omitted (25 of 46)
+### §6.2 Deliberately Omitted (24 of 46)
 
 Per CCD-P3-1: "no silent gaps". Each unimplemented §6.2 word carries an
 explicit rationale. The blanket rationale for most omissions is:
@@ -439,7 +440,6 @@ under the A.1-D3 canonical six-step shape.
 | §6.2.0415 | `2R@ ( -- x1 x2 ) ( R: x1 x2 -- x1 x2 )` | Deliberately-omitted | N-A | v2.0 baseline | Synthesisable; deferred — out of v2.0 scope. |
 | §6.2.0455 | `:NONAME ( -- xt )` | Deliberately-omitted | N-A | v2.0 baseline | Anonymous colon definition; deferred — out of v2.0 scope. No in-tree caller. |
 | §6.2.0620 | `?DO ( n1 n2 -- )` | Deliberately-omitted | N-A | v2.0 baseline | Conditional DO (skip when limit==index); deferred — out of v2.0 scope. Workaround: `2DUP = IF 2DROP ELSE DO ... LOOP THEN`. |
-| §6.2.0700 | `AGAIN ( -- )` | Deliberately-omitted | N-A | v2.0 baseline | Unconditional BEGIN-loop tail; deferred — out of v2.0 scope. Workaround: `BEGIN ... 0 UNTIL`. |
 | §6.2.0855 | `C" ( "ccc<quote>" -- c-addr )` | Deliberately-omitted | N-A | v2.0 baseline | Counted-string compile; deferred — `S"` covers the modern idiom. |
 | §6.2.0873 | `CASE ( x -- )` | Deliberately-omitted | N-A | v2.0 baseline | CASE/OF/ENDOF/ENDCASE control structure; deferred — out of v2.0 scope. Workaround: nested `IF ... ELSE`. |
 | §6.2.0970 | `CONVERT ( ud1 c-addr1 -- ud2 c-addr2 )` | Deliberately-omitted | N-A | v2.0 baseline | Obsolescent — replaced by `>NUMBER` (§6.1.0570); not exposed because `>NUMBER` is the modern equivalent. |

@@ -19,11 +19,43 @@
  - 2>R, 2R>
  - :NONAME 
  - ?DO 
- - AGAIN 
+ - AGAIN — RESOLVED 2026-10-08, Story 27.3
  - DEFER, DEFER!, DEFER@, IS
  - NIP, TUCK — RESOLVED 2026-10-08, Story 27.1
  - U.R, U> — RESOLVED 2026-10-08, Story 27.2 (U.R already present since Story 10.8)
  - random number facility: fast xorshift is fine: seed, rnd ( n -- ), random ( n -- 0..n-1 )
+
+## 2026-10-08 (OPEN) — a word defined in one bank can hide `BANK!` from another
+
+Found while writing the Story 27.3 probe. On the 31,009 B binary (before
+27.3), under iz-cpm-banking:
+
+```forth
+BANKS-CLEAR $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+2 BANK!  : _by 1 ;
+3 BANK!
+0 BANK!        \ BANK! ?  error -13: undefined word
+```
+
+From bank 3, `BANK!` is no longer found; `' DUP` and `' BANK@` still are.
+It depends on the name and the address:
+
+| Case | `0 BANK!` from bank 3 |
+|---|---|
+| `_by` defined at bank 2's first `HERE` (`$8000`) | `-13` |
+| `_zz` defined at the same place | works |
+| `_by` defined after `$C000 HERE - 100 - ALLOT` in bank 2 | works |
+| `_by` started in bank 2 but aborted by `-8`, then any `:` in bank 3 | `-13` |
+
+Same result on real MicroBeast hardware (2026-10-08, 31,017 B binary, fresh
+boot): `_by` gives `-13`, `_zz` is fine.
+
+Not yet traced. The name dependence suggests `_by` shares `BANK!`'s hash
+bucket and the bucket walk from bank 3 stops at the bank-2 entry instead of
+following its link back to the kernel words; the address dependence (`$8000`
+fails, `$BF9C` works) is unexplained. If the bucket reading is right, any
+kernel word that shares a bucket with a word defined in another bank is exposed,
+not only `BANK!`.
 
 ## 2026-10-08 (OPEN, Story 27.6) — one-operand words don't check for underflow
 

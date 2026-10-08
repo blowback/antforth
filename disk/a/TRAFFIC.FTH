@@ -43,11 +43,11 @@ $12 CONSTANT PIO-A-CTRL
 \ ring and pushes its handle; a CONSTANT gives that handle a name.
 TASK CONSTANT LIGHTS
 
-\ The cycle.  Forever loop is `BEGIN ... 0 UNTIL` (terminable) -- `AGAIN` is not
-\ defined in antforth.  Each `DELAY` is the kernel yielding DELAY: the task parks
-\ there and the prompt keeps running.  `RUN-LIGHTS` never calls TIMER-ON itself,
-\ so the operator arms the tick once (see the run recipe) and can TIMER-OFF later
-\ without editing the task.
+\ The cycle.  A `BEGIN ... AGAIN` forever loop that Ctrl-\ can still stop:
+\ each `DELAY` is the kernel yielding DELAY, so the task parks there, the prompt
+\ keeps running, and a pending break is taken there.  `RUN-LIGHTS` never calls
+\ TIMER-ON itself, so the operator arms the tick once (see the run recipe) and
+\ can TIMER-OFF later without editing the task.
 : RUN-LIGHTS ( -- )
    PIO-INIT
    BEGIN
@@ -55,5 +55,5 @@ TASK CONSTANT LIGHTS
       RED AMBER OR PIO-A-DATA OUT   1 DELAY    \ get ready
       GREEN        PIO-A-DATA OUT   4 DELAY    \ go
       AMBER        PIO-A-DATA OUT   2 DELAY    \ slow down
-   0 UNTIL ;
+   AGAIN ;
 
