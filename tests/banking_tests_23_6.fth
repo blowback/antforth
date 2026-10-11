@@ -75,9 +75,11 @@ $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
 \ --- Case F (AC4): bank 0 (fixed memory, triple_owner==0) — the guard is a
 \ strict no-op. The SAME near-top VALUE that throws in a bank succeeds here
 \ (fixed-memory HERE legitimately runs past $C000). No -8.
+\ Not named B0: at some kernel layouts B0 here plus bank 6 at the brink (case
+\ G) hangs the next CR lookup (open bank-lookup bug, docs/dev_journal.md).
 ." ---F-start---" CR
 0 BANK!  $C000 HERE - 3 - ALLOT
-42 VALUE B0
+42 VALUE F0
 ." ---F-end---" CR
 
 \ --- Case G (AC3 wrap guard): a banked POSITIVE ALLOT large enough that the

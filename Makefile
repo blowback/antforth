@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -200,6 +200,7 @@ RSTACK_GUARD_PROBE = tests/rstack_guard_tests.fth
 STACK_WORDS_PROBE = tests/stack_words_tests.fth
 COMPARISON_PROBE = tests/comparison_tests.fth
 AGAIN_PROBE = tests/again_tests.fth
+QDO_PROBE = tests/qdo_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
 BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
 BANKING_23_9_PROBE = tests/banking_tests_23_9.fth
@@ -688,6 +689,18 @@ test-repl-again: $(TARGET)
 		--present '^49152 error -8: dictionary overflow' 'banked AGAIN ending at BFFF accepted' \
 		'agA=5 $$' 'agB=0 98 $$' 'agC=12 $$' 'agD=4 $$' 'agS=-1 -2 -1 $$' 'agR=8 -1 -10 0 $$' \
 		'PASS: ag-depth$$' 'ag-alive=42 $$'
+
+test-repl-qdo: $(TARGET)
+	@echo "Running ?DO probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(QDO_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL ?DO probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL ?DO probe" --fail-line '^FAIL: qd-|^error -13|^error -274' \
+		--count 1 '^error -14: interpreting a compile-only word' '?DO at the prompt raises -14' \
+		--count 2 '^error -8: dictionary overflow' 'banked ?DO cell crossing C000 raises -8' \
+		--present '^49152 error -8: dictionary overflow' 'banked ?DO ending at BFFF accepted' \
+		'qdA=0 1 5 $$' 'qdB=0 5 5 5 5 $$' 'qdC=0 6 6 6 6 $$' 'qdI=1 4 7 1 4 7 $$' 'qdD=1 0 3 2 $$' \
+		'qdE=4 -1 $$' 'qdF=63 3 6 $$' 'qdG=7 8 $$' 'qdS=-1 6 -2 12 6 $$' 'PASS: qd-depth$$' \
+		'qdK=0 3 2 $$' 'qdL=0 3 2 $$' 'qd-alive=42 4 $$'
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
@@ -1960,7 +1973,7 @@ test: $(SRCS) | $(BUILDDIR_STAMP)
 # Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
 # prerequisites so a bare `make test-repl` exercises them — they are otherwise
 # green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again $(TARGET)
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \

@@ -18,7 +18,7 @@
  - .(  (immediate print)
  - 2>R, 2R>
  - :NONAME 
- - ?DO 
+ - ?DO — RESOLVED 2026-10-08, Story 27.4
  - AGAIN — RESOLVED 2026-10-08, Story 27.3
  - DEFER, DEFER!, DEFER@, IS
  - NIP, TUCK — RESOLVED 2026-10-08, Story 27.1
@@ -56,6 +56,50 @@ following its link back to the kernel words; the address dependence (`$8000`
 fails, `$BF9C` works) is unexplained. If the bucket reading is right, any
 kernel word that shares a bucket with a word defined in another bank is exposed,
 not only `BANK!`.
+
+Second instance, found while writing the Story 27.4 probe: `_qk` defined in
+bank 1 hides `CR` from banks 2 and 3, and from bank 0 after switching through
+bank 3. Reproduced on the 31,017 B binary (before 27.4) and the 31,077 B
+binary (after), no `?DO` involved:
+
+```forth
+BANKS-CLEAR $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+1 BANK! : _qk 1 ;
+2 BANK!
+CR             \ CR ?  error -13: undefined word
+```
+
+`_zz` in the same place is fine. This confirms that kernel words other than
+`BANK!` are exposed.
+
+Third instance, also during Story 27.4, and this one hangs instead of raising
+`-13`. The +60 B of `?DO` made `test-repl-banking-23-6` hang (it has no
+timeout) on its unchanged probe. Minimal repro on the 31,077 B binary:
+
+```forth
+BANKS-CLEAR $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK $22 +BANK
+0 BANK!  $C000 HERE - 3 - ALLOT
+42 VALUE B0
+6 BANK!  $C000 HERE - 2 - ALLOT
+1 2 + . CR     \ prints 3, then CR never returns
+```
+
+| Variation (31,077 B binary) | Result |
+|---|---|
+| as above | hang in `CR` lookup |
+| `ZZ`, `Q7`, `F0` instead of `B0` | works |
+| bank 6 not driven to the brink (`6 BANK!` alone) | `CR` found |
+| same input on the 31,017 B binary | works |
+
+`CR` is the victim here as with `_qk`. The bank-0 `B0` header straddles
+`$BFFD..$C000+`, so its start is in the window and only visible with bank 0
+paged in. The probe word was renamed to `F0` so the 23-6 regression keeps
+testing the `-8` guard; the bug itself is unchanged.
+
+Same hang on real MicroBeast hardware (2026-10-11, 31,077 B binary): the
+repro printed `3` and `CR` never returned. That run followed the 27.4 UAT
+session rather than a fresh boot, with `BANKS-CLEAR` resetting the banks
+first.
 
 ## 2026-10-08 (OPEN, Story 27.6) — one-operand words don't check for underflow
 

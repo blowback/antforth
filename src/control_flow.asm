@@ -159,6 +159,7 @@ w_REPEAT_cf EQU w_REPEAT_body - 3
 ;
 ; Compile-time data stack convention:
 ;   DO      ( -- do-addr old-lc )
+;   ?DO     ( -- do-addr old-lc )   its skip cell is the first link of the new chain
 ;   LOOP    ( do-addr old-lc -- )
 ;   +LOOP   ( do-addr old-lc -- )
 ;
@@ -199,6 +200,7 @@ w_PAREN_DO:
 w_PAREN_DO_cf:
         ; BC = start (TOS), SP -> [limit, ...]
         POP     HL                   ; HL = limit
+.push_frame:                         ; (?DO) enters here with HL = limit, BC = start
         ; Push limit to return stack (at IX+2,3 after index push)
         DEC     IX
         DEC     IX
@@ -208,6 +210,26 @@ w_PAREN_DO_cf:
         CALL    rpush_bc
         POP     BC                   ; New TOS
         NEXT
+
+; -----------------------------------------------
+; (?DO) ( limit start -- ) ( R: -- limit index | )
+;   Runtime primitive. If limit = start, drop both and take the inline
+;   forward offset past the loop; else skip the offset cell and run (DO).
+; -----------------------------------------------
+w_PAREN_QDO:
+        DEFCODE "(?DO)", 0
+w_PAREN_QDO_cf:
+        POP     HL                   ; HL = limit
+        OR      A
+        SBC     HL, BC               ; Z if limit = start
+        ADD     HL, BC               ; HL = limit again; Z unchanged
+        JR      NZ, .qdo_enter
+        POP     BC                   ; drop limit and start
+        JP      w_BRANCH_cf          ; DE = IP at the offset cell
+.qdo_enter:
+        INC     DE
+        INC     DE                   ; IP past the offset cell
+        JR      w_PAREN_DO_cf.push_frame
 
 ; -----------------------------------------------
 ; (LOOP) ( -- ) ( R: limit index -- limit index' | )
@@ -364,6 +386,27 @@ w_DO_cf EQU w_DO_body - 3
         DW w_LCFETCH_cf              ; push old leave chain head
         DW w_LIT_cf, 0
         DW w_LCSTORE_cf              ; reset leave chain head to 0
+        DW EXIT_CODE
+
+; -----------------------------------------------
+; ?DO ( -- do-addr old-lc )  IMMEDIATE, compile-only
+;   Compile (?DO) + a forward-offset cell that starts this loop's LEAVE
+;   chain, so LOOP/+LOOP patch it to the loop exit like any LEAVE.
+; -----------------------------------------------
+w_QDO:
+        DEFIMMED "?DO"
+w_QDO_body:
+w_QDO_cf EQU w_QDO_body - 3
+        DW w_QCOMP_cf               ; compile-only guard
+        DW w_LIT_cf, w_PAREN_QDO_cf
+        DW w_COMMA_cf                ; compile (?DO)
+        DW w_HERE_cf                 ; ( skip-cell )
+        DW w_LIT_cf, 0
+        DW w_COMMA_cf                ; compile 0 = end of this loop's LEAVE chain
+        DW w_HERE_cf                 ; ( skip-cell do-addr )
+        DW w_LCFETCH_cf              ; ( skip-cell do-addr old-lc )
+        DW w_ROT_cf                  ; ( do-addr old-lc skip-cell )
+        DW w_LCSTORE_cf              ; chain head = skip-cell; ( do-addr old-lc )
         DW EXIT_CODE
 
 ; -----------------------------------------------
