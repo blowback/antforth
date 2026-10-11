@@ -98,6 +98,18 @@ All return a well-formed flag: TRUE = -1 (all bits set), FALSE = 0.
   `CELLS`, `CELL+`, `CHAR+` raise no error, and `DUP` pushes a made-up cell
   (`DEPTH` 0 → 1), while `NEGATE`, `DROP`, `@`, `S>D` raise `-4`. That list is
   a sample, not a full audit. Added to Phase 7 by the project lead 2026-10-08.
+  The 27.6 audit also found `>NUMBER` reading ud1 with its cells swapped;
+  the project lead folded that fix into 27.6 (2026-10-11).
+
+#### Bank lookup (FR-P7-15)
+
+- **FR-P7-15 (cross-bank lookup):** a word defined in one bank never hides a
+  kernel word from another bank, and a header that straddles `$C000` never
+  hangs a later lookup. Found during 27.3 and 27.4 (`docs/dev_journal.md`,
+  2026-10-08 OPEN entry): `_by` in bank 2 hides `BANK!` from bank 3, `_qk` in
+  bank 1 hides `CR` from banks 2 and 3, and a bank-0 `B0` straddling `$C000`
+  plus bank 6 at the brink hangs the next `CR` lookup (also on hardware).
+  Added to Phase 7 by the project lead 2026-10-11.
 
 ### NonFunctional Requirements
 
@@ -166,6 +178,7 @@ phase):
 | FR-P7-12 | 27 | `?` |
 | FR-P7-13 | 27 | compliance doc + dev journal sync |
 | FR-P7-14 | 27 | underflow checks on one-operand words |
+| FR-P7-15 | 27 | cross-bank lookup hides or hangs on kernel words |
 
 ## Epic List
 
@@ -174,10 +187,10 @@ phase):
 Twelve words Forth programmers expect to type without defining them first:
 `NIP TUCK -ROT`, `<> 0<> 0> U> <= >=`, `AGAIN ?DO`, and `?`. Code ported from
 gforth or written from Forth tutorials runs without local definitions, and the
-demos lose their `BEGIN … 0 UNTIL` workaround. No new execution model, no
-banking change, zero regressions.
+demos lose their `BEGIN … 0 UNTIL` workaround. No new execution model, zero
+regressions. 27.7 fixes a cross-bank lookup bug found while writing the probes.
 
-**FRs covered:** FR-P7-1 … FR-P7-14
+**FRs covered:** FR-P7-1 … FR-P7-15
 
 ## Epic 27: Common-word gaps (antforth v3.3.0)
 
@@ -186,12 +199,15 @@ ported from gforth or written from Forth tutorials runs without local
 definitions. Ship as v3.3.0 with zero regressions.
 
 **Standalone:** each of 27.1–27.4 and 27.6 depends only on the v3.2.1 baseline
-and may land in any order. 27.5 needs all five.
+and may land in any order. 27.7 runs after 27.6. 27.5 needs all six.
 
 **Byte budget:** estimate ≈ 425 B (27.1 ≈ 85, measured 76 · 27.2 ≈ 180 ·
-27.3 ≈ 30 · 27.4 ≈ 70 · 27.6 ≈ 60 · 27.5 ≈ 0); envelope ≤ 500 B. 27.2's
+27.3 ≈ 30 · 27.4 ≈ 70 · 27.6 ≈ 60 · 27.7 = re-derive from the trace · 27.5 ≈ 0); envelope ≤ 500 B. 27.2's
 original ≈ 150 B was re-itemised at story drafting (179 B, incl. underflow
-checks on `0<>`/`0>`).
+checks on `0<>`/`0>`). 27.6 was re-itemised at story drafting (2026-10-11)
+to ≈ 263 B: the audit found ≈ 55 unchecked sites, not ≈ 20, plus the
+assembler. The project lead accepted taking the epic past the 500 B envelope
+for it (NFR-P7-2 stated reason).
 
 **Inventory found while drafting:** `examples/batnball.fth:85-86` defines its
 own `>=`/`<=` (removed in 27.2). 17 `BEGIN … 0 UNTIL` sites exist across
@@ -424,9 +440,54 @@ entry point if that is needed to avoid slowing the interpreter itself
 **Then** both pass; a REPL-piped probe file covers an empty-stack case for every
 newly checked word, at interpret level and inside a colon body
 **And** the dev-journal entry from 27.2 is marked resolved
-**And** the real byte delta is recorded (est. ≈ 60 B: about 20 words × 3 B
-`CALL`; re-itemise from the audit)
+**And** `>NUMBER` continues correctly from a nonzero ud1 (`1 0 S" 0" >NUMBER
+2DROP D.` prints `10`), the cell-order fix found by the audit
+**And** the real byte delta is recorded (re-itemised at drafting: ≈ 263 B for
+≈ 55 sites plus the assembler; overage past the envelope accepted 2026-10-11)
 **And** the S9 hardware-smoke recipe is posted in the closing review message
+
+---
+
+### Story 27.7: Cross-bank lookup hides or hangs on kernel words
+
+**Covers:** FR-P7-15; NFR-P7-1, NFR-P7-6
+
+As a Forth programmer using banks,
+I want a word I define in one bank never to hide or hang a kernel word in
+another,
+So that `CR`, `BANK!` and the rest are always found, whatever I name my words
+and wherever their headers land.
+
+**Acceptance Criteria:**
+
+**Given** the three repros in the `docs/dev_journal.md` 2026-10-08 OPEN entry
+(`_by`/`BANK!`, `_qk`/`CR`, `B0`/`CR` hang)
+**When** the lookup path is traced (FIND, bucket walk, fat-pointer page-in)
+**Then** the root cause of each is stated in the story with the code
+location, including why the name and the address matter
+**And** whether all three share one cause is stated
+
+**Given** the fixed kernel
+**When** each repro runs under iz-cpm-banking
+**Then** `BANK!` and `CR` are found, nothing raises `-13`, and nothing hangs
+**And** the 23-6 case F word goes back to `B0` and the 27.4 bank probe back
+to `_qk`, so the existing probes cover the original names
+
+**Given** a new REPL-piped probe for the three repros
+**When** `make test-repl` runs
+**Then** it passes, and every probe target that drives banks (including
+`test-repl-banking-23-6`) runs under `timeout $(PROBE_TIMEOUT)` with an
+rc 124 FAIL branch, so a future hang reports FAIL instead of stalling
+`make test`
+
+**Given** the candidate kernel
+**When** `make test` and `make test-repl` run
+**Then** both pass with no probes removed
+**And** the dev-journal entry is marked resolved
+**And** the real byte delta is recorded with a reason (no estimate until the
+cause is known)
+**And** the S9 hardware-smoke recipe, including the `B0`/`CR` hang repro, is
+posted in the closing review message
 
 ---
 
@@ -441,7 +502,7 @@ surface aligned.
 
 **Acceptance Criteria:**
 
-**Given** stories 27.1–27.4 and 27.6 are done
+**Given** stories 27.1–27.4, 27.6 and 27.7 are done
 **When** the full suite runs
 **Then** `make test` passes and `make test-repl` shows the 1012-test baseline
 plus the new probes at 0 FAIL, on iz-cpm and the banking emulator

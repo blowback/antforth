@@ -298,6 +298,7 @@ w_BRANCH_cf:
 w_QBRANCH:
         DEFCODE "?BRANCH", 0
 w_QBRANCH_cf:
+        CALL    check_underflow
         LD      A, B
         OR      C               ; Test if BC (TOS) is zero
         POP     BC              ; Pop new TOS from stack regardless
@@ -334,6 +335,7 @@ w_QBRANCH_cf:
 w_EXECUTE:
         DEFCODE "EXECUTE", 0
 w_EXECUTE_cf:
+        CALL    check_underflow
         LD      H, B
         LD      L, C                ; HL = xt
         POP     BC                  ; new TOS

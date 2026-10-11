@@ -8,6 +8,7 @@
 w_COUNT:
         DEFCODE "COUNT", 0
 w_COUNT_cf:
+        CALL    check_underflow
         LD      A, (BC)         ; A = count/flags byte
         INC     BC              ; BC = c-addr+1 (name start)
         PUSH    BC              ; Push c-addr+1 (second on stack)
@@ -25,6 +26,7 @@ w_COUNT_cf:
 w_FIND:
         DEFCODE "FIND", 0
 w_FIND_cf:
+        CALL    check_underflow
         PUSH    DE              ; save IP
         PUSH    BC              ; save c-addr (for miss case)
         ; Parse counted-string input: HL = c-addr → name addr + length.

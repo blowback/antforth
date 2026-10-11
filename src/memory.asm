@@ -12,6 +12,7 @@
 w_CELL_PLUS:
         DEFCODE "CELL+", 0
 w_CELL_PLUS_cf:
+        CALL    check_underflow
         INC     BC
         INC     BC
         NEXT
@@ -23,6 +24,7 @@ w_CELL_PLUS_cf:
 w_CHAR_PLUS:
         DEFCODE "CHAR+", 0
 w_CHAR_PLUS_cf:
+        CALL    check_underflow
         INC     BC
         NEXT
 
@@ -33,6 +35,7 @@ w_CHAR_PLUS_cf:
 w_CHARS:
         DEFCODE "CHARS", 0
 w_CHARS_cf:
+        CALL    check_underflow
         NEXT
 
 ; -----------------------------------------------
@@ -75,6 +78,7 @@ w_STORE_cf:
 w_C_FETCH:
         DEFCODE "C@", 0
 w_C_FETCH_cf:
+        CALL    check_underflow
         LD      H, B
         LD      L, C            ; HL = addr
         LD      C, (HL)         ; C = byte
@@ -194,7 +198,8 @@ w_PAD_cf:
 ; -----------------------------------------------
 w_ALLOT:
         DEFCODE "ALLOT", 0
-w_ALLOT_cf:                             ; No underflow check — low-risk dictionary op
+w_ALLOT_cf:
+        CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = current HERE
         ADD     HL, BC                     ; HL = HERE + n  (prospective one-past-end)
@@ -233,7 +238,8 @@ w_ALLOT_cf:                             ; No underflow check — low-risk dictio
 ; -----------------------------------------------
 w_COMMA:
         DEFCODE ",", 0
-w_COMMA_cf:                             ; No underflow check — low-risk dictionary op
+w_COMMA_cf:
+        CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = HERE
         GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if the cell straddles $C000 on a bank
@@ -259,7 +265,8 @@ w_COMMA_cf:                             ; No underflow check — low-risk dictio
 ; -----------------------------------------------
 w_C_COMMA:
         DEFCODE "C,", 0
-w_C_COMMA_cf:                           ; No underflow check — low-risk dictionary op
+w_C_COMMA_cf:
+        CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
         GUARD_BANKED_WRITE 1               ; Story 23.6: -8 if the byte straddles $C000 on a bank
@@ -294,6 +301,7 @@ w_ALIGN_cf:
 w_ALIGNED:
         DEFCODE "ALIGNED", 0
 w_ALIGNED_cf:
+        CALL    check_underflow
         BIT     0, C            ; Test if addr is odd
         JR      Z, .ok
         INC     BC              ; Round up
@@ -307,6 +315,7 @@ w_ALIGNED_cf:
 w_CELLS:
         DEFCODE "CELLS", 0
 w_CELLS_cf:
+        CALL    check_underflow
         SLA     C
         RL      B               ; BC = BC * 2
         NEXT
@@ -317,7 +326,8 @@ w_CELLS_cf:
 ; -----------------------------------------------
 w_FILL:
         DEFCODE "FILL", 0
-w_FILL_cf:                              ; No underflow check — low-risk bulk op
+w_FILL_cf:
+        CALL    check_underflow_3
         ; BC = char (TOS), (SP) = u, (SP+2) = addr
         ; Capture char in A (survives EXX), then use EXX to free BC/DE/HL scratch
         LD      A, C            ; A = fill byte (char) — must precede EXX
@@ -356,7 +366,8 @@ w_FILL_cf:                              ; No underflow check — low-risk bulk o
 ; -----------------------------------------------
 w_MOVE:
         DEFCODE "MOVE", 0
-w_MOVE_cf:                              ; No underflow check — low-risk bulk op
+w_MOVE_cf:
+        CALL    check_underflow_3
         ; BC = u (TOS), (SP) = addr2, (SP+2) = addr1
         ; Preserve u across the EXX so main BC still holds count for LDIR/LDDR
         PUSH    BC              ; save u on param stack

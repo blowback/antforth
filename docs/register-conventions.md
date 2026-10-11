@@ -83,7 +83,7 @@ There are two standard entry idioms. Choose based on whether the body needs the 
 Use when the body consumes TOS early into a stable main register (or into A), or when the body operates on param-stack cells below TOS exclusively. The body gets all three main scratch registers (BC/DE/HL) free.
 
 ```asm
-; FILL ( addr u char -- )    src/memory.asm:224
+; FILL ( addr u char -- )    src/memory.asm:229
 w_FILL_cf:
         LD      A, C            ; A = fill byte (char) — must precede EXX
         EXX                     ; Save TOS/IP/W to shadows; main BC/DE/HL = scratch
@@ -97,7 +97,7 @@ w_FILL_cf:
 
 Cost: entry `EXX` (1 byte), exit `EXX` (1 byte) = 2 bytes total.
 
-Other Group A examples: `MARKER` (`src/system.asm:21`), `WORD` (`src/strings.asm:10`), `ROLL` (`src/stack_ops.asm:152`), `>NUMBER` (`src/strings.asm:336`), `COLON` (`src/compiler.asm:358`), `CREATE` (`src/compiler.asm:548`), `CODE` (`src/assembler.asm:1165`).
+Other Group A examples: `MARKER` (`src/system.asm:21`), `WORD` (`src/strings.asm:10`), `ROLL` (`src/stack_ops.asm:155`), `>NUMBER` (`src/strings.asm:337`), `COLON` (`src/compiler.asm:359`), `CREATE` (`src/compiler.asm:550`), `CODE` (`src/assembler.asm:1185`).
 
 ### Group B — TOS needed live in main BC throughout body
 
@@ -130,7 +130,7 @@ Other Group B examples: `U.` (`src/formatting.asm:153`), `.R` variant (see note 
 When a word computes its **new TOS** in the body (rather than preserving the incoming TOS), A is the only main-set register whose value crosses the exit `EXX` intact. The idiom:
 
 ```asm
-; CHAR ( -- char )    src/strings.asm:160
+; CHAR ( -- char )    src/strings.asm:161
 w_CHAR_cf:
         PUSH    BC              ; save old TOS on param stack
         EXX                     ; park IP in DE'; main BC/DE/HL free
@@ -143,7 +143,7 @@ w_CHAR_cf:
         NEXT
 ```
 
-See `src/strings.asm:200–234` for the full sequence. This idiom is the reason the FILL example in §4 also does `LD A, C` *before* its entry EXX — `LD A, C` before the swap would not have worked.
+See `src/strings.asm:201–234` for the full sequence. This idiom is the reason the FILL example in §4 also does `LD A, C` *before* its entry EXX — `LD A, C` before the swap would not have worked.
 
 ---
 
@@ -154,7 +154,7 @@ For words with stack effect `( x -- ... )` that need the original `x` on one exi
 ### Canonical example — `NUMBER?`
 
 ```asm
-; NUMBER? ( c-addr -- n true | c-addr false )    src/strings.asm:369
+; NUMBER? ( c-addr -- n true | c-addr false )    src/strings.asm:370
 w_NUMBER_Q_cf:
         PUSH    BC              ; save c-addr on param stack
         EXX                     ; save TOS/IP/W; shadow BC' = c-addr_orig
@@ -271,8 +271,8 @@ Per-file breakdown of every convention-bound EXX site. In each table, the **Line
 
 The following `rpush_de`/`rpush_bc` call sites remain unconverted by explicit Epic 7/8 decision. They are documented here to prevent rediscovery as "missed opportunities":
 
-- **`src/compiler.asm:689`** — `(;CODE)` / DOES> runtime exit. Category D exclusion (hot path, functional R-stack manipulation).
-- **`src/control_flow.asm:210`** — `(DO)` runtime. Category D (functional R-stack use — loop params pushed for `LOOP`/`+LOOP` to consume).
+- **`src/compiler.asm:691`** — `(;CODE)` / DOES> runtime exit. Category D exclusion (hot path, functional R-stack manipulation).
+- **`src/control_flow.asm:211`** — `(DO)` runtime. Category D (functional R-stack use — loop params pushed for `LOOP`/`+LOOP` to consume).
 - **`src/outer_interpreter.asm:99–127`** — the INTERPRET loop itself. Category D (*is* the main thread; any EXX here reframes the whole interpreter state model).
 - **`src/system.asm:122`** (`.paq_abort` inside `w_ABORT_QUOTE_cf` @ line 155) — the `(ABORT")` runtime. See §7 exception note.
 

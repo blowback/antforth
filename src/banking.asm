@@ -255,6 +255,7 @@ w_BANK_AT_cf:
 w_BANK_STORE:
         DEFCODE "BANK!", 0
 w_BANK_STORE_cf:
+        CALL    check_underflow
         ; --- Precondition: BC.high == 0 AND BC.low < bank_count ---
         LD      A, B
         OR      A
@@ -455,6 +456,7 @@ w_BANKS_cf:
 w_PLUS_BANK:
         DEFCODE "+BANK", 0
 w_PLUS_BANK_cf:
+        CALL    check_underflow
         ; --- Cap check ---
         LD      A, (IY+UserArea.bank_count)
         CP      BANK_TABLE_CAP
@@ -566,6 +568,7 @@ str_cap_q_len    EQU 4
 w_MINUS_BANK:
         DEFCODE "-BANK", 0
 w_MINUS_BANK_cf:
+        CALL    check_underflow
         LD      A, (IY+UserArea.bank_count)
         OR      A
         JR      Z, .not_found                       ; empty list — no-op
@@ -1139,6 +1142,7 @@ stub_allocate:
 w_PAREN_STUB_ALLOCATE:
         DEFCODE "(stub-allocate)", 0
 w_PAREN_STUB_ALLOCATE_cf:
+        CALL    check_underflow_2
         LD      B, C                                ; B = target_bank.low (signed byte)
         POP     HL                                  ; HL = target_addr (NOS)
         PUSH    DE                                  ; save IP across allocator call
@@ -1172,6 +1176,7 @@ w_PAREN_STUB_ALLOCATE_cf:
 w_BANK_OF:
         DEFCODE "BANK-OF", 0
 w_BANK_OF_cf:
+        CALL    check_underflow
         ; --- legacy-CFA xt discriminator ---
         ; Bank-0 `:` keeps the legacy CFA-as-xt path (no descriptor stub
         ; allocated). BANK-OF on such an xt would otherwise read a code

@@ -312,13 +312,16 @@ development_status:
   # === Phase 7 — Common-word gaps, antforth v3.3.0 (added 2026-10-08) ===
   # Source: epics-phase7-epic-27.md (no PRD/architecture; requirements from
   # docs/dev_journal.md + ans-forth-core-compliance.md). 27.1–27.4 and 27.6
-  # independent, any order; 27.5 needs all five. Budget ≈425 B, envelope ≤500 B
+  # independent, any order; 27.5 needs all six. Budget ≈425 B, envelope ≤500 B
   # vs 30,754 B. 27.6 added 2026-10-08 (one-operand underflow gap, found in 27.2).
+  # 27.7 added 2026-10-11 (cross-bank lookup hide/hang, found in 27.3/27.4);
+  # runs after 27.6, before 27.5.
   epic-27: in-progress
   27-1-stack-words-nip-tuck-rot-and-question: done
   27-2-comparison-words-ne-0ne-0gt-ugt-le-ge: done
   27-3-again: done
   27-4-question-do: done
-  27-6-one-operand-underflow-checks: backlog
+  27-6-one-operand-underflow-checks: done
+  27-7-cross-bank-lookup-hides-or-hangs-on-kernel-words: backlog
   27-5-epic-27-close-out-and-v3-3-0: backlog
   epic-27-retrospective: optional

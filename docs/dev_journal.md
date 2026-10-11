@@ -25,7 +25,43 @@
  - U.R, U> — RESOLVED 2026-10-08, Story 27.2 (U.R already present since Story 10.8)
  - random number facility: fast xorshift is fine: seed, rnd ( n -- ), random ( n -- 0..n-1 )
 
-## 2026-10-08 (OPEN) — a word defined in one bank can hide `BANK!` from another
+## 2026-10-11 (OPEN) — fixed RAM below `$8000` now holds only two TCBs
+
+Found during Story 27.6. A TCB has to sit below `$8000` (`TASK` raises `-8`
+otherwise), and that room is whatever the kernel leaves between the boot
+`HERE` and `$8000`. Every kernel byte comes out of it. On the 31,336 B binary
+(after 27.6) the boot `HERE` is 31,592, which leaves 1,176 B. A TCB is 535 B
+(547 B with the `CONSTANT` that names it), so two tasks fit with about 80 B to
+spare, and only if they are carved before anything else is defined. The
+comment in `TASK` said "the slack below `$8000` is ~3 KB"; it was about 1.8 KB
+before Epic 27 and 1,435 B on the 31,077 B binary (after 27.4).
+
+What broke: `test-repl-multitasker-bank` and `test-repl-mailbox` were already
+failing on HEAD `09b3c00` (27.1–27.4 had added 323 B; neither target is a
+`test-repl` prerequisite, so nothing ran them). 27.6's +259 B broke
+`test-repl-multitasker-throw`, `-semaphore` and `-multitasker-demo` the same
+way: the second `TASK` raised `-8`. Fixed in 27.6 by carving every TCB before
+other definitions: the four probes, and `disk/a/TRAFFIC.FTH` (`TASK CONSTANT
+LIGHTS` moved to the top; the demo probe now asserts `LIGHTS` as ring index 1).
+The bank probe is the tightest: its bank-1 task's code must also sit below
+`$8000`, so it has 14 B to spare. Any kernel growth of more than 14 B (27.7?)
+breaks it again.
+
+Still open: the room shrinks with every kernel story. Options if it matters:
+a smaller per-task data/return stack, TCBs carved from a pool outside the
+dictionary, or accepting "two tasks, carved first" as the documented limit.
+
+## 2026-10-11 (RESOLVED 2026-10-11, Story 27.6) — `>NUMBER` read ud1 with its cells swapped
+
+`>NUMBER` stored the cell under c-addr1 as ud1-low and the one under that as
+ud1-high; a double has its high cell nearer the top (§3.1.4.1). Every test
+passed `0 0`, so it only showed with a nonzero ud1: `DECIMAL 1 0 S" 0"
+>NUMBER 2DROP D.` printed `655360` (want `10`), and `0 0 S" 12" >NUMBER 2DROP
+S" 34" >NUMBER 2DROP D.` printed `78643234` (want `1234`). Fixed by swapping
+the two stores in `w_TO_NUMBER_cf` (0 B); the output pushes were already
+right. Probe: `ur=`/`us=` in `tests/underflow_tests.fth`.
+
+## 2026-10-08 (OPEN, Story 27.7) — a word defined in one bank can hide `BANK!` from another
 
 Found while writing the Story 27.3 probe. On the 31,009 B binary (before
 27.3), under iz-cpm-banking:
@@ -101,7 +137,7 @@ repro printed `3` and `CR` never returned. That run followed the 27.4 UAT
 session rather than a fresh boot, with `BANKS-CLEAR` resetting the banks
 first.
 
-## 2026-10-08 (OPEN, Story 27.6) — one-operand words don't check for underflow
+## 2026-10-08 (RESOLVED 2026-10-11, Story 27.6) — one-operand words don't check for underflow
 
 Most one-operand words run on whatever is in BC when the stack is empty
 instead of raising `-4`. Two-operand words call `check_underflow_2`; the
@@ -120,6 +156,27 @@ Affected: `0=`, `0<`, `1+`, `1-`, `2*`, `2/`, `INVERT`, `ABS`, `?DUP`, `C@`,
 `check_underflow`, so they don't add to the list. Some of these (`0=`, `1+`,
 `DUP`) are on hot paths, where a `CALL check_underflow` costs about 50
 T-states per use; Story 27.6 has to weigh that.
+
+Resolved by Story 27.6: every kernel word that takes stack items now raises
+`-4` before any side effect. That is 51 words with a new `CALL
+check_underflow`/`_2`/`_3` at entry (the one-operand words above plus
+`TYPE`, `FILL`, `MOVE`, `EMIT`, `,`, `ALLOT`, `EXECUTE`, `?BRANCH`, `(DO)`,
+`(+LOOP)`, `CONSTANT`, `ACTIVATE`, `BANK!` and others), `PICK`/`ROLL` via a
+new `check_underflow_u` (needs u+2 items, so an oversized u raises too),
+guards at the head of `ACCEPT`, `POST` and `SEMAPHORE`, the one-cell-short
+checks in `SET-ORDER` and `RESTORE-INPUT` fixed, and the assembler's
+operand-taking mnemonics. `ABS`, `TO`, `WAIT`, `LOCK`, `FETCH`, `SIGNAL`
+inherit the check from their first word. Left unchecked: headerless helpers
+with a fixed caller (`LC!`, `(EDIT)`, `(LINE)`, `(QUERY-FINISH)`,
+`to_verify`), `COMP-ERROR`, and `TEST-BRIDGE` (test build only).
+
+The real cost of `CALL check_underflow` is 94 T-states, not about 50: `DUP`
+goes from 49 to 143 T, `1+` from 44 to 138 T. Measured on iz-cpm (Z80
+cycles only, BDOS excluded): `INCLUDE` costs 9.7% more per found-word token
+and 14.3% more on a file of colon definitions; typed input costs about 21%
+more per token, mostly three checks per character in the line reader's key
+loop, which waits on the serial line on hardware anyway. No unchecked kernel
+entry points were added. Byte cost: +259 B (31,077 → 31,336).
 
 ## 2026-09-02 (RESOLVED) — `1 >R` at the prompt dropped the session to CP/M
 

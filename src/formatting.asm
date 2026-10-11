@@ -133,9 +133,9 @@ w_D_DOT_R:
         DEFWORD "D.R", 0
 w_D_DOT_R_body:
 w_D_DOT_R_cf    EQU     w_D_DOT_R_body - 3
-        ; Underflow: >R is unchecked; OVER below (check_underflow_2) traps for
-        ; DEPTH < 3.  ABORT resets both SP and RP, so the stashed +n on R-stack
-        ; is cleaned up; <# has not yet been called, so pictured state is intact.
+        ; Underflow: >R traps DEPTH 0, DUP traps DEPTH 1, DABS traps DEPTH 2.
+        ; THROW resets both SP and RP, so the stashed +n on R-stack is cleaned
+        ; up; <# has not yet been called, so pictured state is intact.
         ; Under §3.1.4.1 hi=BC=TOS. Replace pre-flip OVER
         ; (depth-1 under OLD = hi) with DUP (TOS under NEW = hi).
         DW      w_TO_R_cf               ; >R     ( lo hi ; R:+n )
@@ -212,8 +212,8 @@ w_DOT_R:
         DEFWORD ".R", 0
 w_DOT_R_body:
 w_DOT_R_cf      EQU     w_DOT_R_body - 3
-        ; Underflow: >R unchecked; S>D (check_underflow) traps for DEPTH < 2.
-        ; ABORT resets RP, clearing the stashed +n.
+        ; Underflow: >R traps DEPTH 0, S>D traps DEPTH 1.
+        ; THROW resets RP, clearing the stashed +n.
         DW      w_TO_R_cf               ; >R     ( n ; R:+n )
         DW      w_S_TO_D_cf             ; S>D    ( d ; R:+n )
         DW      w_R_FROM_cf             ; R>     ( d +n )
@@ -228,9 +228,9 @@ w_U_DOT_R:
         DEFWORD "U.R", 0
 w_U_DOT_R_body:
 w_U_DOT_R_cf    EQU     w_U_DOT_R_body - 3
-        ; Underflow: >R unchecked; LIT/+ (check_underflow) traps for DEPTH < 1
-        ; before the >R; D.R itself does check_underflow_3 on entry.
-        ; ABORT resets RP, clearing the stashed +n.
+        ; Underflow: >R traps DEPTH 0; for DEPTH 1, D.R's DABS traps (the
+        ; LIT 0 and +n leave D.R one cell short).
+        ; THROW resets RP, clearing the stashed +n.
         ; SWAP removed — under §3.1.4.1 the high cell (0)
         ; is on TOS = BC; LIT 0 already places it correctly.
         DW      w_TO_R_cf               ; >R     ( u ; R:+n )

@@ -1485,6 +1485,7 @@ w_W_SLASH_O_cf:
 w_BIN:
         DEFCODE "BIN", 0
 w_BIN_cf:
+        CALL    check_underflow
         LD      A, C
         OR      4
         LD      C, A

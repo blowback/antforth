@@ -10,6 +10,7 @@
 w_TO_BODY:
         DEFCODE ">BODY", 0
 w_TO_BODY_cf:
+        CALL    check_underflow
         INC     BC              ; +1
         INC     BC              ; +2
         INC     BC              ; +3
@@ -540,6 +541,7 @@ w_POSTPONE_cf EQU w_POSTPONE_body - 3
 w_COMPILE_COMMA:
         DEFCODE "COMPILE,", 0
 w_COMPILE_COMMA_cf:
+        CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
         GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if a banked colon body crosses $C000 (AC2)
@@ -832,6 +834,7 @@ w_RIGHT_BRACKET_cf:
 w_LITERAL:
         DEFCODE "LITERAL", F_IMMEDIATE
 w_LITERAL_cf:
+        CALL    check_underflow
         ; Compile LIT xt at HERE
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
@@ -947,6 +950,7 @@ w_CREATE_cf:
 w_CONSTANT:
         DEFCODE "CONSTANT", 0
 w_CONSTANT_cf:
+        CALL    check_underflow
         EXX                                      ; Save TOS (value)/IP/W to shadows
         XOR     A                                ; flags = 0
         CALL    build_header
@@ -1008,6 +1012,7 @@ w_CONSTANT_cf:
 w_VALUE:
         DEFCODE "VALUE", 0
 w_VALUE_cf:
+        CALL    check_underflow
         EXX                                      ; Save TOS (value)/IP/W to shadows
         XOR     A                                ; flags = 0
         CALL    build_header
@@ -1090,6 +1095,7 @@ w_TO_cf EQU w_TO_body - 3
 w_PAREN_TO:
         DEFCODE "(TO)", 0
 w_PAREN_TO_cf:
+        CALL    check_underflow_2
         ; ( x xt -- ) BC = xt (TOS); x = NOS on the data stack
         PUSH    DE                      ; save IP (DE is free across resolve)
         LD      H, B

@@ -289,7 +289,7 @@
 : T266 S" CODE BAD6 1 EQU FOO NEXT, END-CODE " EVALUATE ;
 ' T266 CATCH .                          \ expect: -266  ok    (assembler.asm:303 .asm_err_equ_in_code)
 
-: T267 S" CODE BADI 5 BIT, NEXT, END-CODE " EVALUATE ;
+: T267 S" CODE BADI 0 # 5 BIT, NEXT, END-CODE " EVALUATE ;
 ' T267 CATCH .                          \ expect: -267  ok    (assembler.asm:309 .asm_err_bare_int — pre-prints "bare integer 0005 ?")
 
 : T268 S" CODE BAD8 LABEL X X JR, NEXT, END-CODE " EVALUATE ;

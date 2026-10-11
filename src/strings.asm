@@ -10,6 +10,7 @@
 w_WORD:
         DEFCODE "WORD", 0
 w_WORD_cf:
+        CALL    check_underflow
         ; BC = delimiter char (TOS, only C matters)
         ; Capture delim in A (survives EXX), then free BC/DE/HL via shadows
         LD      A, C            ; A = delimiter — must precede EXX
@@ -344,8 +345,8 @@ w_TO_NUMBER_cf:
         ; Stack on entry:
         ;   BC = u1 (TOS, count)
         ;   SP+0 = c-addr1
-        ;   SP+2 = ud1-low
-        ;   SP+4 = ud1-high
+        ;   SP+2 = ud1-high  (a double's high cell is nearer the top, §3.1.4.1)
+        ;   SP+4 = ud1-low
         CALL    check_underflow_4       ; need 4 user cells (BC + 3 SP)
         LD      A, C                    ; stash count low byte (8-bit limit
         LD      (.tonum_count), A       ;  — see header comment)
@@ -353,9 +354,9 @@ w_TO_NUMBER_cf:
         POP     HL
         LD      (.tonum_ptr), HL        ; c-addr1
         POP     HL
-        LD      (.tonum_ud_lo), HL      ; ud1-low
-        POP     HL
         LD      (.tonum_ud_hi), HL      ; ud1-high
+        POP     HL
+        LD      (.tonum_ud_lo), HL      ; ud1-low
 
 .tonum_loop:
         LD      A, (.tonum_count)
@@ -447,6 +448,7 @@ w_TO_NUMBER_cf:
 w_NUMBER_Q:
         DEFCODE "NUMBER?", 0
 w_NUMBER_Q_cf:
+        CALL    check_underflow
         ; -3 THROW guard. NUMBER? grows the data stack
         ; by 1 cell on BOTH the success path (n + true) and the fail
         ; path (c-addr + false), so guard at entry covers both.

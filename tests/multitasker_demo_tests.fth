@@ -27,6 +27,11 @@
 
 DECIMAL
 
+\ BG's TCB is carved before the INCLUDE: TCBs must sit below $8000, and the fixed
+\ RAM free there at boot holds only about two. TRAFFIC.FTH carves LIGHTS before
+\ its own definitions for the same reason.
+TASK CONSTANT BGT
+
 \ --- (a) INCLUDE the shipped asset; its words resolve; activation is clean ------
 \ INCLUDE compiles TRAFFIC.FTH (which does `TASK CONSTANT LIGHTS` — LIGHTS is
 \ spliced into the ring ASLEEP, safely skipped by INCLUDE's yielding reader until
@@ -38,17 +43,17 @@ INCLUDE TRAFFIC.FTH
 VARIABLE CNT
 : BG ( -- )  BEGIN  CNT @ 1+ CNT !  PAUSE  0 UNTIL ;   \ parks at PAUSE each pass
 0 CNT !
-' BG TASK ACTIVATE                                    \ counter task -> ring
+' BG BGT ACTIVATE                                     \ counter task -> ring
 ' RUN-LIGHTS LIGHTS ACTIVATE                          \ the demo light task -> AWAKE
 : _act ( -- )  DEPTH 0= IF ." PASS: demo-activates" ELSE ." FAIL: demo-activates" THEN CR ;
 _act
 
 \ --- (b) AC2: .TASKS shows BOTH the operator and LIGHTS awake --------------------
-\ `^   2   AWAKE` is RUNTIME output of .TASKS — LIGHTS is ring index 2. TASK
+\ `^   1   AWAKE` is RUNTIME output of .TASKS — LIGHTS is ring index 1. TASK
 \ splices each new TCB right after the operator, so index order is REVERSE of
-\ creation: LIGHTS (made first, during INCLUDE) is pushed to index 2 when BG (the
-\ counter task above) is spliced in at index 1. Anchoring on index 2 pins LIGHTS
-\ specifically — an index-1 match would green on BG even if LIGHTS never activated.
+\ creation: BG's TCB (carved first, before the INCLUDE) is pushed to index 2 when
+\ LIGHTS is spliced in at index 1. Anchoring on index 1 pins LIGHTS specifically —
+\ an index-2 match would green on BG even if LIGHTS never activated.
 \ The row never appears in this echoed source, so a --present match proves .TASKS
 \ executed and rendered LIGHTS as AWAKE (the Journey-1 "two things at once"
 \ witness; 23.2 false-green defence).

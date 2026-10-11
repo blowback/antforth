@@ -18,12 +18,19 @@
 \ count), so a correct build always makes progress. If the hand-off wedged, the probe
 \ never reaches BYE and the Story 24.3 fail-loud timeout turns it into a loud FAIL.
 \
-\ TASK BUDGET: TCBs carve from the ~2 KB of fixed RAM below $8000 (F4/NFR-P6-11), so
+\ TASK BUDGET: TCBs carve from the fixed RAM below $8000 (F4/NFR-P6-11), about two TCBs' worth at boot, so
 \ this probe activates only TWO forever-tasks — PRODUCER (later parks on NEVER, the
 \ AC5 starving-but-yielding waiter) and PEER (the AC5 liveness counter). The operator's
 \ consumer is a bounded DO loop, not a third task. Story 26.1 hit the -8 guard at 4 tasks.
 
 DECIMAL
+
+\ TCBs must sit below $8000, and kernel growth leaves only about two TCBs' worth
+\ of fixed RAM above the boot HERE. So every TCB is carved here, before any other
+\ definition, and ACTIVATEd by name where the test needs it. TASK splices each new
+\ TCB in right after the operator, so carve order decides the ring order.
+TASK CONSTANT T-PRODUCER
+TASK CONSTANT T-PEER
 
 \ --- (a) Words resolve (AC1/AC2) ---
 \ ' parses at interpret level; a miss throws -13 before the verdict, so reaching
@@ -65,7 +72,7 @@ _roundtrip
    LOOP
    NEVER WAIT                       \ starve-but-yield forever (AC5 waiter)
    ." FAIL: mailbox-producer-unblocked" CR ;
-' PRODUCER TASK ACTIVATE
+' PRODUCER T-PRODUCER ACTIVATE
 VARIABLE CSUM   VARIABLE GOOD
 : _handoff ( -- )
    0 CSUM !  0 GOOD !
@@ -84,7 +91,7 @@ _handoff
 \ non-yielding stall. Two forever-tasks max: PRODUCER + PEER. ---
 VARIABLE PC2   0 PC2 !
 : PEER ( -- )  BEGIN  PC2 @ 1+ PC2 !  PAUSE  0 UNTIL ;
-' PEER TASK ACTIVATE
+' PEER T-PEER ACTIVATE
 PAUSE PAUSE PAUSE PAUSE PAUSE PAUSE       \ rotate the ring a few times
 : _ringalive ( -- )
    PC2 @ 0 >

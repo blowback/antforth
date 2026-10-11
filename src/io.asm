@@ -12,6 +12,7 @@
 w_EMIT:
         DEFCODE "EMIT", 0
 w_EMIT_cf:
+        CALL    check_underflow
         LD      A, C            ; A = char (save from TOS before BDOS clobbers)
         BDOS_SAVE               ; PUSH DE, PUSH BC
         LD      E, A            ; E = char for BDOS
@@ -27,6 +28,7 @@ w_EMIT_cf:
 w_TYPE:
         DEFCODE "TYPE", 0
 w_TYPE_cf:
+        CALL    check_underflow_2
         ; BC = u (count, TOS), (SP) = c-addr
         POP     HL              ; HL = c-addr
         ; BC = count — if count is 0, skip entirely
@@ -89,6 +91,7 @@ w_SPACE_cf:
 w_SPACES:
         DEFCODE "SPACES", 0
 w_SPACES_cf:
+        CALL    check_underflow
         ; BC = n (count)
         LD      A, B
         OR      A               ; Check if high byte is negative (bit 7 set)
@@ -422,6 +425,7 @@ w_ACCEPT:
         DEFWORD "ACCEPT", 0
 w_ACCEPT_body:
 w_ACCEPT_cf  EQU  w_ACCEPT_body - 3
+        DW      w_PIC_QGUARD_2_cf       ; 2-cell underflow guard
         DW      w_PAREN_LINE_cf         ; ( c-addr max -- count )
         DW      EXIT_CODE
 

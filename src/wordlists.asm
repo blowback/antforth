@@ -217,15 +217,18 @@ w_SET_ORDER_cf:
         CP      17
         JP      NC, do_search_order_overflow   ; n >= 17
         ; n in 0..16. Verify n more cells on SP-stack (variable underflow).
-        ; Need sp_base - SP >= 2*n bytes below current SP for the n wids.
+        ; Need sp_base - SP >= 2*n + 2: the n wids plus the cell the final
+        ; POP BC takes as the new TOS.
         LD      H, 0
         LD      L, A                    ; HL = n
         ADD     HL, HL                  ; HL = 2*n (max 32)
-        EX      DE, HL                  ; DE = 2*n
+        INC     HL
+        INC     HL                      ; HL = 2*n + 2
+        EX      DE, HL                  ; DE = 2*n + 2
         LD      HL, (sp_base)
         OR      A
         SBC     HL, SP                  ; HL = sp_base - SP (bytes below SP)
-        SBC     HL, DE                  ; HL = bytes_below_SP - 2*n
+        SBC     HL, DE                  ; HL = bytes_below_SP - (2*n + 2)
         JP      C, do_underflow_error   ; insufficient cells below SP
         ; All checks passed. Set depth = n.
         LD      A, C

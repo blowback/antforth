@@ -264,8 +264,10 @@ w_TASK_cf:
         JR      C, .task_room
         ; reach-or-cross $8000: a TCB ending at/above the window is unreachable
         ; under a foreign mapping. (A carve ending exactly at $8000 is rejected
-        ; too — conservative; the slack below $8000 is ~3 KB so this costs nothing
-        ; real.) The earlier PUSH BC residue is wiped by THROW's wholesale SP reset.
+        ; too — conservative; it only matters for a carve ending on that byte.)
+        ; The fixed RAM free below $8000 at boot holds about two TCBs, so carve
+        ; tasks before other definitions. The earlier PUSH BC residue is wiped by
+        ; THROW's wholesale SP reset.
         JP      dict_overflow_throw     ; raises -8 via w_THROW_cf.kernel_entry
 .task_room:
         LD      (IY+UserArea.here), L
@@ -307,6 +309,7 @@ w_TASK_cf:
 w_ACTIVATE:
         DEFCODE "ACTIVATE", 0
 w_ACTIVATE_cf:
+        CALL    check_underflow_2
         LD      (sched_ip), DE          ; preserve caller IP — the body uses DE as a pointer
         ; Drain any stale keyboard-break latch (Story 25.7). A Ctrl-\ pressed while
         ; no breakable task was AWAKE leaves break_pending set on the operator arm
@@ -384,6 +387,7 @@ w_ACTIVATE_cf:
 w_SLEEP:
         DEFCODE "SLEEP", 0
 w_SLEEP_cf:
+        CALL    check_underflow
         LD      H, B
         LD      L, C                    ; HL = task (TCB base, the TOS)
         INC     HL
@@ -402,6 +406,7 @@ w_SLEEP_cf:
 w_WAKE:
         DEFCODE "WAKE", 0
 w_WAKE_cf:
+        CALL    check_underflow
         XOR     A
         LD      (break_pending), A      ; drain a stale break latch (see ACTIVATE) —
                                         ; a task rejoining the rotation is not the
@@ -559,6 +564,7 @@ w_SEMAPHORE:
         DEFWORD "SEMAPHORE", 0
 w_SEMAPHORE_body:
 w_SEMAPHORE_cf EQU w_SEMAPHORE_body - 3
+        DW      w_DUP_cf, w_DROP_cf     ; ( n )  1-cell underflow guard, before CREATE parses
         DW      w_CREATE_cf             ; ( n )  parse name, lay DOVAR word, HERE=body
         DW      w_COMMA_cf              ; ( )    store n into the body cell
         DW      EXIT_CODE
@@ -721,6 +727,7 @@ w_POST:
         DEFWORD "POST", 0
 w_POST_body:
 w_POST_cf EQU w_POST_body - 3
+        DW      w_PIC_QGUARD_2_cf       ; 2-cell underflow guard, before WAIT takes the slot
         DW      w_DUP_cf                ; ( x mbx mbx )
         DW      w_TO_R_cf               ; ( x mbx )   R: mbx (value-cell base)
         DW      w_CELL_PLUS_cf          ; ( x mbx+2 ) empty-slot address

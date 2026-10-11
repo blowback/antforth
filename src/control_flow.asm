@@ -198,6 +198,7 @@ leave_chain_head: DW 0
 w_PAREN_DO:
         DEFCODE "(DO)", 0
 w_PAREN_DO_cf:
+        CALL    check_underflow_2
         ; BC = start (TOS), SP -> [limit, ...]
         POP     HL                   ; HL = limit
 .push_frame:                         ; (?DO) enters here with HL = limit, BC = start
@@ -219,6 +220,7 @@ w_PAREN_DO_cf:
 w_PAREN_QDO:
         DEFCODE "(?DO)", 0
 w_PAREN_QDO_cf:
+        CALL    check_underflow_2
         POP     HL                   ; HL = limit
         OR      A
         SBC     HL, BC               ; Z if limit = start
@@ -279,6 +281,7 @@ w_PAREN_LOOP_cf:
 w_PAREN_PLUS_LOOP:
         DEFCODE "(+LOOP)", 0
 w_PAREN_PLUS_LOOP_cf:
+        CALL    check_underflow
         ; Save IP (DE) to a scratch cell since we will clobber DE.
         LD      (ploop_saved_ip), DE
         ; HL = old_index

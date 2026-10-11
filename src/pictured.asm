@@ -175,9 +175,10 @@ w_PIC_SIGN_cf:
 
 ; -----------------------------------------------
 ; (?2) ( -- )
-;   Internal 2-cell underflow guard. Used as the prefix of DEFWORD HOLDS
-;   because its canonical body starts with DUP (1-cell guard), which
-;   would not catch DEPTH = 1. Pictured-local helper.
+;   Shared 2-cell underflow guard for colon words whose body would not
+;   catch DEPTH = 1 before a side effect: HOLDS (body starts with DUP),
+;   ACCEPT ((LINE) reads keys into the buffer) and POST (WAIT takes the
+;   free slot before `!` would fail).
 ; -----------------------------------------------
 w_PIC_QGUARD_2:
         DEFCODE "(?2)", 0

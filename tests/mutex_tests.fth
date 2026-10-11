@@ -17,7 +17,7 @@
 \ progress. If exclusion broke into a wedge, the probe never reaches BYE and the Story
 \ 24.3 fail-loud timeout turns it into a loud FAIL rather than a silent CI hang.
 \
-\ TASK BUDGET: TCBs carve from the ~2 KB of fixed RAM below $8000 (F4/NFR-P6-11), so
+\ TASK BUDGET: TCBs carve from the fixed RAM below $8000 (F4/NFR-P6-11), about two TCBs' worth at boot, so
 \ this probe activates only ONE forever-task (WRITER); the operator's checker is a
 \ bounded DO loop, not a second task. Story 26.1 hit the -8 guard at 4 tasks.
 

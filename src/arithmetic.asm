@@ -12,6 +12,7 @@
 w_ONE_PLUS:
         DEFCODE "1+", 0
 w_ONE_PLUS_cf:
+        CALL    check_underflow
         INC     BC
         NEXT
 
@@ -22,6 +23,7 @@ w_ONE_PLUS_cf:
 w_ONE_MINUS:
         DEFCODE "1-", 0
 w_ONE_MINUS_cf:
+        CALL    check_underflow
         DEC     BC
         NEXT
 
@@ -32,6 +34,7 @@ w_ONE_MINUS_cf:
 w_TWO_STAR:
         DEFCODE "2*", 0
 w_TWO_STAR_cf:
+        CALL    check_underflow
         SLA     C
         RL      B
         NEXT
@@ -43,6 +46,7 @@ w_TWO_STAR_cf:
 w_TWO_SLASH:
         DEFCODE "2/", 0
 w_TWO_SLASH_cf:
+        CALL    check_underflow
         SRA     B
         RR      C
         NEXT

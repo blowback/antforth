@@ -20,6 +20,17 @@ DECIMAL
 \ --- Word-existence pre-flight: the switch needs PAUSE + the banking words ---
 ' PAUSE DROP  ' BANK! DROP  ' BANK@ DROP  ' ACTIVATE DROP  ." PASS: bank-words-resolve" CR
 
+\ FIXED-RAM BUDGET: a TCB, and the code a bank-1 task runs (BG, APP, TAPE), must
+\ sit below $8000, where kernel growth leaves only about two TCBs' worth of room.
+\ So BG's words come first, then both TCBs, then everything else (which may
+\ compile into the bank-0 window). TASK splices each new TCB in right after the
+\ operator, so carve order decides the ring order.
+VARIABLE TAPE
+: APP ( d -- ) TAPE @ 10 * + TAPE ! ;
+: BG ( -- ) 2 APP PAUSE 2 APP ;             \ 2 turns, then EXIT -> task_exit (ASLEEP+PAUSE)
+TASK CONSTANT BT1
+TASK CONSTANT BT2
+
 \ --- >1 bank active (the default CL tail populates 12) so bank 1 exists ---
 : _multi ( -- ) BANKS 1 > IF ." PASS: bank-multi-active" ELSE ." FAIL: bank-multi-active" THEN CR ;
 _multi
@@ -29,13 +40,10 @@ _multi
 \ (operator->1, background->2). Strict alternation builds a fixed value = the
 \ deterministic round-robin proof; here every operator<->BG switch crosses a bank
 \ boundary (BG owns bank 1, operator bank 0) so each PAUSE re-pages slot 2.
-VARIABLE TAPE
-: APP ( d -- ) TAPE @ 10 * + TAPE ! ;
-: BG ( -- ) 2 APP PAUSE 2 APP ;             \ 2 turns, then EXIT -> task_exit (ASLEEP+PAUSE)
 : DRV ( -- ) 1 APP PAUSE 1 APP PAUSE 1 APP ;
 
 0 TAPE !
-' BG TASK            \ ( xt task ) — carve the TCB while the operator is in bank 0
+' BG BT1             \ ( xt task ) — the TCB was carved while the operator was in bank 0
 1 BANK!              \ operator -> bank 1 (BANK! consumes the 1)
 ACTIVATE             \ task inherits current_bank = 1 from the operator ( xt task -- )
 0 BANK!              \ operator -> bank 0; the TASK now owns bank 1
@@ -56,7 +64,7 @@ VARIABLE TAPE2
 : BG2 ( -- ) 2 APP2 PAUSE 2 APP2 ;
 : DRV2 ( -- ) 1 APP2 PAUSE 1 APP2 PAUSE 1 APP2 ;
 0 TAPE2 !
-' BG2 TASK ACTIVATE  \ activated while operator is in bank 0 -> every switch same-bank
+' BG2 BT2 ACTIVATE   \ activated while operator is in bank 0 -> every switch same-bank
 DRV2
 : _same ( -- ) TAPE2 @ 12121 = IF ." PASS: bank-same-control" ELSE ." FAIL: bank-same-control" THEN CR ;
 _same

@@ -26,6 +26,13 @@
 \   Ctrl-\  breaks a runaway task (in-band keyboard break); or  LIGHTS SLEEP
 \   parks the light task; then  TIMER-OFF  stops the tick.
 
+\ ---- The task handle -------------------------------------------------
+\ A named task handle.  `TASK` is ( -- task ): it splices a new TCB into the
+\ ring and pushes its handle; a CONSTANT gives that handle a name.  It comes
+\ first: a TCB must sit below $8000, and the fixed RAM free there at boot holds
+\ only about two of them, so carve before defining anything else.
+TASK CONSTANT LIGHTS
+
 \ ---- Z84C20 PIO, Port A ----------------------------------------------
 \ A Z80 PIO drives nothing until you program its mode.
 $10 CONSTANT PIO-A-DATA
@@ -39,10 +46,6 @@ $12 CONSTANT PIO-A-CTRL
 1 CONSTANT RED   2 CONSTANT AMBER   4 CONSTANT GREEN
 
 \ ---- The background light task ---------------------------------------
-\ A named task handle.  `TASK` is ( -- task ): it splices a new TCB into the
-\ ring and pushes its handle; a CONSTANT gives that handle a name.
-TASK CONSTANT LIGHTS
-
 \ The cycle.  A `BEGIN ... AGAIN` forever loop that Ctrl-\ can still stop:
 \ each `DELAY` is the kernel yielding DELAY, so the task parks there, the prompt
 \ keeps running, and a pending break is taken there.  `RUN-LIGHTS` never calls

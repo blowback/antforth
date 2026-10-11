@@ -68,6 +68,7 @@ w_XOR_cf:
 w_INVERT:
     DEFCODE "INVERT", 0
 w_INVERT_cf:
+    CALL    check_underflow
     LD      A, B
     CPL
     LD      B, A
@@ -267,6 +268,7 @@ w_GREATER_EQUALS_cf:
 w_ZERO_EQUALS:
     DEFCODE "0=", 0
 w_ZERO_EQUALS_cf:
+    CALL    check_underflow
     LD      A, B
     OR      C               ; Z flag set if BC = 0
     LD      BC, 0
@@ -299,6 +301,7 @@ w_ZERO_NOT_EQUALS_cf:
 w_ZERO_LESS:
     DEFCODE "0<", 0
 w_ZERO_LESS_cf:
+    CALL    check_underflow
     LD      A, B            ; Save high byte before clobbering BC
     LD      BC, 0           ; Assume FALSE
     RLA                     ; Bit 7 -> carry

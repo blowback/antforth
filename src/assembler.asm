@@ -507,6 +507,25 @@ check_asm_mode:
         JP      w_THROW_cf.kernel_entry
 
 ; -----------------------------------------------
+; asm_need1 / asm_need2 / asm_need3 — check_asm_mode, then check for 1/2/3
+;   operand cells. -270 (not in CODE) takes priority over -4. The JP leaves
+;   only the caller's own return address on SP, so the check_underflow
+;   thresholds hold. Callers are DEFCODE bodies (or tails reached by JP from
+;   one) with nothing extra on SP.
+;   Clobbers: AF, HL
+;   Preserves: BC, DE, IX, IY, SP
+; -----------------------------------------------
+asm_need1:
+        CALL    check_asm_mode
+        JP      check_underflow
+asm_need2:
+        CALL    check_asm_mode
+        JP      check_underflow_2
+asm_need3:
+        CALL    check_asm_mode
+        JP      check_underflow_3
+
+; -----------------------------------------------
 ; asm_emit_byte — Write A at HERE, advance HERE.
 ;   Entry:    A = byte to emit
 ;   Clobbers: HL
@@ -1077,7 +1096,7 @@ w_ASM_RECOGNIZE_cf:
 w_ABS_PAREN:
         DEFCODE "()", 0
 w_ABS_PAREN_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         ; TOS (BC) = address value (bare integer). Push it as NOS, tag on TOS.
         PUSH    BC                      ; address becomes NOS
         LD      C, ASM_CLASS_INDIRECT | ASM_IND_ABS ; 0x89
@@ -1096,6 +1115,7 @@ w_HASH_cf:
         LD      A, (asm_mode)
         OR      A
         JP      Z, w_PIC_HASH_cf        ; not in CODE block → pictured-output #
+        CALL    check_underflow         ; the value under the marker
         PUSH    BC                      ; old TOS becomes NOS
         LD      C, ASM_CLASS_IMM        ; C = 0x40
         LD      B, ASM_TAG_HI           ; B = 0xFF → BC = 0xFF40
@@ -1177,6 +1197,8 @@ asm_emit_ixiy_prefix:
 ;   Entry: BC was the indexed tag (already consumed); Forth param stack
 ;          has displacement on top, then old TOS below.
 ;   Exit:  A = displacement byte, BC = new TOS (from under disp)
+;   No underflow check here: callers run check_underflow_2 before
+;   emitting any byte, so a short stack throws with HERE untouched.
 ;   Clobbers: HL
 ;   Preserves: DE (IP)
 ; -----------------------------------------------
@@ -1198,7 +1220,7 @@ asm_pop_indexed_disp:
 w_PLUS_D:
         DEFCODE "+D", 0
 w_PLUS_D_cf:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; TOS (BC) = displacement (bare integer)
         ; Range check: must fit signed 8-bit (-128..+127)
         ; B=0x00 and C<=0x7F (positive), or B=0xFF and C>=0x80 (negative).
@@ -1446,7 +1468,7 @@ w_END_CODE_cf:
 ; -----------------------------------------------
 asm_pushpop_word:
         LD      (asm_tmp), A            ; spill base opcode
-        CALL    check_asm_mode
+        CALL    asm_need1
         CALL    asm_check_tagged        ; verify B==0xFF
         CALL    asm_is_reg16_tag
         JP      NZ, asm_bad_operand     ; not a 16-bit register
@@ -1544,7 +1566,7 @@ assert_8bit_reg_or_ihl:
 w_LD_COMMA:
         DEFCODE "LD,", 0
 w_LD_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need2
         CALL    asm_check_tagged        ; TOS must be tagged
         ; Class-indexed dispatch on source operand
         LD      A, C
@@ -1672,6 +1694,9 @@ w_LD_COMMA_cf:
 .ldc_idx_dst:
         ; NOS is indexed = SOURCE per AC: LD r,(IX+d)
         ; asm_tmp = dst r-field, HL = indexed tag
+        LD      B, L                    ; keep the tag; BC (src, in asm_tmp) is dead
+        CALL    check_underflow_2       ; the displacement under the tag
+        LD      L, B
         PUSH    AF                      ; save index
         LD      A, L
         AND     ASM_INDEX_MASK
@@ -1735,6 +1760,7 @@ w_LD_COMMA_cf:
 .ldc_idx_src:
         ; TOS is indexed = DESTINATION per AC: LD (IX+d),r
         ; TOS = indexed tag (BC). Need to get src register from under displacement.
+        CALL    check_underflow_3       ; tag, displacement, src register
         CALL    asm_get_index           ; A = 3(IXD) or 4(IYD)
         CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         ; Pop displacement
@@ -1759,6 +1785,7 @@ w_LD_COMMA_cf:
 
 .ldc_imm:
         ; TOS is imm marker — pop value and destination.
+        CALL    check_underflow_3       ; marker, value, destination
         POP     BC                      ; BC = value
         POP     HL                      ; HL = destination tag
         LD      A, H
@@ -1835,6 +1862,9 @@ w_LD_COMMA_cf:
 .ldc_imm_idx:
         ; LD (IX+d),n / LD (IY+d),n
         ; HL = dst indirect tag, BC = value (from imm pop above)
+        PUSH    HL
+        CALL    check_underflow_3       ; HL just pushed + displacement + cell under
+        POP     HL
         LD      A, L
         AND     ASM_INDEX_MASK
         CP      ASM_IND_IXD
@@ -1886,6 +1916,7 @@ w_LD_COMMA_cf:
 ; --- () as source: LD dst,(nn) ---
 .ldc_abs_src:
         ; TOS = () tag. NOS = address. NNOS = destination.
+        CALL    check_underflow_3
         POP     BC                      ; BC = address (lo=C, hi=B)
         POP     HL                      ; HL = destination tag
         LD      A, H
@@ -2026,6 +2057,7 @@ w_LD_COMMA_cf:
 ; --- () as destination from REG8: LD (nn),A ---
 .ldc_abs_r8_dst:
         ; NOS popped into HL = () tag. asm_tmp = src r-field.
+        CALL    check_underflow_2       ; the address under the () tag
         LD      A, (asm_tmp)
         CP      7                       ; only A
         JP      NZ, asm_bad_operand
@@ -2043,6 +2075,7 @@ w_LD_COMMA_cf:
 ; --- () as destination from REG16: LD (nn),rr ---
 .ldc_r16_abs_dst:
         ; NOS is () tag (peeked and verified). Pop it, pop address.
+        CALL    check_underflow_3       ; src, () tag, address
         POP     HL                      ; discard () tag (was peeked)
         POP     BC                      ; BC = address (lo=C, hi=B)
         LD      A, (asm_tmp)            ; source reg16 index
@@ -2143,7 +2176,7 @@ asm_get_r8:
 ; -----------------------------------------------
 asm_arith_word:
         LD      (asm_tmp), A            ; spill base opcode
-        CALL    check_asm_mode
+        CALL    asm_need1
         CALL    asm_check_tagged        ; TOS must be tagged
         CALL    asm_is_imm_tag
         JR      Z, .arith_imm
@@ -2171,6 +2204,7 @@ asm_arith_word:
         NEXT
 .arith_idx:
         ; ADD A,(IX+d) = DD base|06 dd
+        CALL    check_underflow_2       ; disp + the cell under it, before emitting
         CALL    asm_get_index
         CALL    asm_emit_ixiy_prefix    ; DD or FD
         LD      A, (asm_tmp)
@@ -2180,6 +2214,7 @@ asm_arith_word:
         CALL    asm_emit_byte
         NEXT
 .arith_imm:
+        CALL    check_underflow_2       ; marker + value
         POP     BC                      ; new TOS = value (n)
         LD      A, (asm_tmp)
         AND     0x38
@@ -2205,7 +2240,7 @@ w_ADD_COMMA_cf:
         LD      A, 0x80
         JP      asm_arith_word
 .add_16bit:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; TOS (BC) = source reg16, extract index
         CALL    asm_get_index           ; A = source index
         LD      (asm_tmp), A            ; save raw source index
@@ -2481,7 +2516,7 @@ w_LABEL_cf:
 w_FIX:
         DEFCODE "FIX", 0
 w_FIX_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         ; Validate label tag in BC.
         CALL    asm_check_tagged
         CALL    asm_is_label_tag
@@ -2527,7 +2562,7 @@ w_FIX_cf:
 w_JR_COMMA:
         DEFCODE "JR,", 0
 w_JR_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         LD      (asm_ip_save), DE
         ; Conditional-prefix detection: peek NOS for a condition tag.
         POP     HL                      ; HL = NOS
@@ -2648,7 +2683,7 @@ w_JP_COMMA_cf:
 .jp_iixiy:
         ; JP (IX) / JP (IY) = DD/FD E9
         LD      (asm_tmp), A            ; save tag index across check
-        CALL    check_asm_mode
+        CALL    asm_need1
         LD      A, (asm_tmp)
         CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, 0xE9
@@ -2672,7 +2707,7 @@ w_CALL_COMMA_cf:
 ; -----------------------------------------------
 asm_jp_call_word:
         LD      (asm_jp_op), A          ; save unconditional opcode
-        CALL    check_asm_mode
+        CALL    asm_need1
         LD      (asm_ip_save), DE
         ; Save target operand (BC) — could be label tag or literal.
         LD      H, B
@@ -2815,7 +2850,7 @@ w_RET_COMMA_cf:
 w_DB_COMMA:
         DEFCODE "DB,", 0
 w_DB_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         ; Reject any tagged operand — DB, expects a raw integer.
         LD      A, B
         CP      ASM_TAG_HI
@@ -2835,7 +2870,7 @@ w_DB_COMMA_cf:
 w_DW_COMMA:
         DEFCODE "DW,", 0
 w_DW_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         ; Check for label tag (class=LABEL).
         LD      A, B
         CP      ASM_TAG_HI
@@ -2900,7 +2935,7 @@ w_DW_COMMA_cf:
 w_DS_COMMA:
         DEFCODE "DS,", 0
 w_DS_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         ; Reject negative (high bit of B set).
         BIT     7, B
         JP      NZ, asm_bad_operand
@@ -2946,7 +2981,7 @@ w_EQU_cf:
 ;     asm_tmp+1 = 16-bit base (0x03 for INC, 0x0B for DEC)
 ; -----------------------------------------------
 asm_inc_dec_word:
-        CALL    check_asm_mode
+        CALL    asm_need1
         CALL    asm_check_tagged
         ; Dispatch on class
         CALL    asm_get_class
@@ -3031,7 +3066,8 @@ asm_inc_dec_word:
 
 .idc_ixiyd:
         ; INC/DEC (IX+d)/(IY+d) = DD/FD opcode disp
-        ; A = ASM_IND_IXD or ASM_IND_IYD from dispatch
+        CALL    check_underflow_2       ; disp + the cell under it, before emitting
+        CALL    asm_get_index           ; A = ASM_IND_IXD or ASM_IND_IYD
         CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, (asm_tmp)
         OR      0x30                    ; opcode for (HL) = base|(6<<3)
@@ -3069,7 +3105,7 @@ w_DEC_COMMA_cf:
 ;   Operand (TOS): REG8, (HL), (IX+d), (IY+d)
 ; -----------------------------------------------
 asm_cb_shift_word:
-        CALL    check_asm_mode
+        CALL    asm_need1
         CALL    asm_check_tagged
         CALL    asm_get_class
         JR      Z, .cbs_reg8
@@ -3114,7 +3150,8 @@ asm_cb_shift_word:
 
 .cbs_ixiyd:
         ; DDCB/FDCB: prefix, CB, displacement, opcode
-        ; A = ASM_IND_IXD or ASM_IND_IYD from dispatch
+        CALL    check_underflow_2       ; disp + the cell under it, before emitting
+        CALL    asm_get_index           ; A = ASM_IND_IXD or ASM_IND_IYD
         CALL    asm_emit_ixiy_prefix    ; emit DD/FD
         LD      A, 0xCB
         CALL    asm_emit_byte
@@ -3187,7 +3224,7 @@ w_SRL_COMMA_cf:
 ;     Under that: immediate marker (#), then bit value
 ; -----------------------------------------------
 asm_bit_op_word:
-        CALL    check_asm_mode
+        CALL    asm_need3
         CALL    asm_check_tagged
         ; Save operand tag class+index
         CALL    asm_get_class
@@ -3269,6 +3306,7 @@ asm_bit_op_word:
         ; Stack: ... | bit_val | imm_marker | disp | tag(consumed)
         ; A = ASM_IND_IXD or ASM_IND_IYD from dispatch
         LD      (asm_ip_save), A        ; save tag index for prefix emit
+        CALL    check_underflow_4       ; tag, displacement, marker, bit number
         ; Validate operands before emitting any bytes
         POP     HL                      ; HL = displacement cell
         LD      A, L
@@ -3328,7 +3366,7 @@ w_SET_COMMA_cf:
 w_IN_COMMA:
         DEFCODE "IN,", 0
 w_IN_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; Zilog dst-src order: `A (C) IN,` / `A $74 # IN,`. TOS = src port
         ; specifier ((C) or imm marker, possibly 2 cells); dst register is
         ; below it. Read the port first so the immediate's value cell is
@@ -3368,6 +3406,7 @@ w_IN_COMMA_cf:
 
 .in_imm:
         ; Immediate port: TOS was imm marker, pop port value, then register
+        CALL    check_underflow_3       ; marker, port, register
         POP     BC                      ; BC = port number
         LD      A, C
         LD      (asm_tmp), A            ; save port
@@ -3389,7 +3428,7 @@ w_IN_COMMA_cf:
 w_OUT_COMMA:
         DEFCODE "OUT,", 0
 w_OUT_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; Zilog dst-src order: `(C) A OUT,` / `$74 # A OUT,`. TOS = src
         ; register; dst port specifier ((C) or imm marker, possibly 2 cells)
         ; is below it. Read the register first (1 cell), so the port — which
@@ -3429,6 +3468,7 @@ w_OUT_COMMA_cf:
 
 .out_imm:
         ; Immediate port — only valid for A (r=7)
+        CALL    check_underflow_2       ; the port value under the marker
         LD      A, (asm_tmp)
         CP      7
         JP      NZ, asm_bad_operand
@@ -3602,7 +3642,7 @@ w_IM2_COMMA_cf:
 w_EX_COMMA:
         DEFCODE "EX,", 0
 w_EX_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; TOS = second operand, NOS = first operand
         CALL    asm_check_tagged
         LD      H, B
@@ -3782,7 +3822,7 @@ w_ADC_COMMA_cf:
         LD      A, 0x88
         JP      asm_arith_word
 .adc_16bit:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; TOS (BC) = source reg16, extract rp
         CALL    asm_get_index           ; A = source index
         ; Validate: BC(0), DE(1), HL(2), SP(4). Reject AF(3), IX(5)+.
@@ -3832,7 +3872,7 @@ w_SBC_COMMA_cf:
         LD      A, 0x98
         JP      asm_arith_word
 .sbc_16bit:
-        CALL    check_asm_mode
+        CALL    asm_need2
         ; TOS (BC) = source reg16, extract rp
         CALL    asm_get_index           ; A = source index
         ; Validate: BC(0), DE(1), HL(2), SP(4). Reject AF(3), IX(5)+.
@@ -3874,7 +3914,7 @@ w_SBC_COMMA_cf:
 w_DJNZ_COMMA:
         DEFCODE "DJNZ,", 0
 w_DJNZ_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         LD      (asm_ip_save), DE
         ; Emit opcode 0x10
         LD      A, 0x10
@@ -3939,7 +3979,7 @@ w_DJNZ_COMMA_cf:
 w_RST_COMMA:
         DEFCODE "RST,", 0
 w_RST_COMMA_cf:
-        CALL    check_asm_mode
+        CALL    asm_need1
         ; TOS (BC) = vector (bare integer). B must be 0.
         LD      A, B
         OR      A

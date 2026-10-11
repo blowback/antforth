@@ -12,6 +12,7 @@
 w_QDUP:
         DEFCODE "?DUP", 0
 w_QDUP_cf:
+        CALL    check_underflow
         LD      A, B
         OR      C               ; Test if BC is zero
         JR      Z, .qdup_zero
@@ -26,6 +27,7 @@ w_QDUP_cf:
 w_DUP:
         DEFCODE "DUP", 0
 w_DUP_cf:
+        CALL    check_underflow
         PUSH    BC              ; Push TOS copy to parameter stack
         NEXT                    ; BC (TOS) unchanged
 
@@ -134,6 +136,7 @@ w_MINUS_ROT_cf:
 w_PICK:
         DEFCODE "PICK", 0
 w_PICK_cf:
+        CALL    check_underflow_u
         ; BC = u. (SP+0) = x0, (SP+2) = x1, ..., (SP+u*2) = xu
         LD      H, B
         LD      L, C            ; HL = u
@@ -152,6 +155,7 @@ w_PICK_cf:
 w_ROLL:
         DEFCODE "ROLL", 0
 w_ROLL_cf:
+        CALL    check_underflow_u
         ; Algorithm: save xu, shift x0..xu-1 up one cell via LDDR, put xu in TOS.
         ; Uses return stack to save IP since LDDR needs DE.
         ;
@@ -252,6 +256,7 @@ w_SP_FETCH_cf:
 w_SP_STORE:
         DEFCODE "SP!", 0
 w_SP_STORE_cf:
+        CALL    check_underflow
         LD      H, B
         LD      L, C
         LD      SP, HL
@@ -277,6 +282,7 @@ w_RP_FETCH_cf:
 w_RP_STORE:
         DEFCODE "RP!", 0
 w_RP_STORE_cf:
+        CALL    check_underflow
         PUSH    BC
         POP     IX              ; IX = addr
         POP     BC              ; New TOS
@@ -288,7 +294,8 @@ w_RP_STORE_cf:
 ; -----------------------------------------------
 w_TO_R:
         DEFCODE ">R", 0
-w_TO_R_cf:                              ; No underflow check — used internally in colon defs
+w_TO_R_cf:
+        CALL    check_underflow
         DEC     IX
         DEC     IX
         LD      (IX+1), B       ; Store high byte

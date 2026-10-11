@@ -716,20 +716,23 @@ w_SAVE_INPUT_cf:
 w_RESTORE_INPUT:
         DEFCODE "RESTORE-INPUT", 0
 w_RESTORE_INPUT_cf:
+        CALL    check_underflow         ; the count cell
         ; BC = n (count cell, TOS). Compare to 4.
         LD      HL, 4
         OR      A                       ; clear CY
         SBC     HL, BC                  ; HL = 4 - BC; Z iff BC = 4
         JR      NZ, .ri_count_mismatch
-        ; count == 4 — verify 4 description cells available.
+        ; Pop x1 = saved SOURCE-ID into BC (the count is spent; both exits
+        ; reload BC with the flag), so the check below can clobber HL.
+        POP     BC
+        ; count == 4 — x2..x4 must still be there (five cells in all). On a
+        ; short stack the POP above read SP_GUARD; THROW resets SP.
         CALL    check_underflow_4
-        ; Pop x1 = saved SOURCE-ID; validate against current.
-        POP     HL
         LD      A, (IY+UserArea.source_id)
-        CP      L
+        CP      C
         JR      NZ, .ri_src_mismatch
         LD      A, (IY+UserArea.source_id+1)
-        CP      H
+        CP      B
         JR      NZ, .ri_src_mismatch
         ; SOURCE-ID matches current; UA.source_id is already correct,
         ; so skip the redundant write-back and commit the rest.

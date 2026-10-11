@@ -225,6 +225,7 @@ w_MARKER_cf:
 w_PAREN_ABORT_QUOTE:
         DEFCODE '(ABORT")', 0
 w_PAREN_ABORT_QUOTE_cf:
+        CALL    check_underflow
         ; BC = flag (TOS)
         LD      A, B
         OR      C               ; Test if flag is zero
@@ -723,6 +724,36 @@ check_underflow_4:
         CP      10              ; Need >= 10 (2 ret addr + 8 for four cells)
         RET     NC              ; HL >= 10, OK
 .underflow4:
+        JP      do_underflow_error
+
+; -----------------------------------------------
+; check_underflow_u — Internal subroutine (not a Forth word)
+;   Verify DEPTH >= u+2 for u PICK / u ROLL, with u in BC (TOS).
+;   Threshold: sp_base - SP_measured >= 2u + 6
+;   (2 ret addr + 2 for u itself + 2(u+1) for x0..xu).
+;   BC is subtracted twice rather than doubled so a large u cannot
+;   overflow: any u > 129 borrows on the first SBC.
+;
+;   On underflow: JP do_underflow_error (-4 THROW).
+;   Clobbers: AF, HL
+;   Preserves: BC (TOS), DE (IP), IX, IY, SP
+; -----------------------------------------------
+check_underflow_u:
+        LD      HL, (sp_base)
+        OR      A               ; Clear carry
+        SBC     HL, SP          ; HL = sp_base - SP_measured
+        JR      C, .underflow_u ; sp_base < SP = corrupt
+        SBC     HL, BC          ; carry is clear here
+        JR      C, .underflow_u
+        SBC     HL, BC          ; HL = sp_base - SP_measured - 2u
+        JR      C, .underflow_u
+        LD      A, H
+        OR      A
+        RET     NZ              ; HL >= 256, plenty of stack
+        LD      A, L
+        CP      6               ; Need >= 6 (2 ret addr + 2 for u + 2 for x0)
+        RET     NC
+.underflow_u:
         JP      do_underflow_error
 
 ; -----------------------------------------------

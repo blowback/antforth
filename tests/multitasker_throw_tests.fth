@@ -22,6 +22,14 @@
 
 DECIMAL
 
+\ TCBs must sit below $8000, and kernel growth leaves only about two TCBs' worth
+\ of fixed RAM above the boot HERE. So every TCB is carved here, before any other
+\ definition, and ACTIVATEd by name where the test needs it. TASK splices each new
+\ TCB in right after the operator, so carve order decides the ring order. BMT2 is
+\ carved first so BMT is ring index 1 (the `task 1:` notice and the .TASKS row).
+TASK CONSTANT BMT2
+TASK CONSTANT BMT
+
 \ --- Word-existence pre-flight: all must resolve (a miss throws -13) ---
 ' PAUSE DROP  ' TASK DROP  ' ACTIVATE DROP  ' .TASKS DROP  ." PASS: throw-words-resolve" CR
 
@@ -31,7 +39,7 @@ DECIMAL
 
 \ ' BOOM (xt), TASK (handle) — DUP keeps the handle in BMT before ACTIVATE eats
 \ it. BOOM is the only task, spliced after the operator: ring index 1.
-' BOOM TASK DUP CONSTANT BMT ACTIVATE
+' BOOM BMT ACTIVATE
 
 \ One operator yield: the scheduler enters BOOM, -99 unwinds uncaught; the fix
 \ must SUSPEND BOOM and return control HERE (right after PAUSE). Before the fix
@@ -70,7 +78,7 @@ _opcatch
 \ (BOOM2's background fault also emits a `task 1: error -7` diagnostic.) ---
 VARIABLE RAN2   0 RAN2 !
 : BOOM2 ( -- )  1 RAN2 ! -7 THROW ;
-' BOOM2 TASK DUP CONSTANT BMT2 ACTIVATE
+' BOOM2 BMT2 ACTIVATE
 : _iso ( -- )
   ['] PAUSE CATCH 0=            \ (a) operator's CATCH must NOT catch the task's throw
   RAN2 @ 1 = AND               \ (b) ...and BMT2 really ran in the background (pre-suspend)

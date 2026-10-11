@@ -16,19 +16,24 @@
 \ operator's WAIT blocks, the probe never reaches BYE, and the Story 24.3 fail-loud
 \ timeout turns it into a loud FAIL rather than a silent CI hang.
 \
-\ TASK BUDGET: TCBs carve from the ~2 KB of fixed RAM below $8000 (F4/NFR-P6-11),
+\ TASK BUDGET: TCBs carve from the fixed RAM below $8000 (F4/NFR-P6-11), about two TCBs' worth at boot,
 \ so this probe activates only TWO forever-tasks — PROD (producer, later the AC6
 \ starving waiter) and PEER (the AC6 liveness counter). The single-task checks
 \ (a/b/c) run before any task exists.
 
 DECIMAL
 
-\ DICTIONARY BUDGET: TCBs carve from the ~1.8 KB of fixed RAM below $8000 and
-\ nothing reclaims them, so this probe used to finish with HERE *past* $8000 —
-\ every later definition compiling into the bank window by accident, and any
-\ kernel growth turning the second TASK into a -8. Sections (a)-(c) need no
-\ task and none of their words are referenced after (c), so they are wrapped in
-\ a MARKER and handed back (~307 B) before the first carve.
+\ TCBs must sit below $8000, and kernel growth leaves only about two TCBs' worth
+\ of fixed RAM above the boot HERE. So every TCB is carved here, before any other
+\ definition, and ACTIVATEd by name where the test needs it. TASK splices each new
+\ TCB in right after the operator, so carve order decides the ring order.
+TASK CONSTANT T-PROD
+TASK CONSTANT T-PEER
+
+\ DICTIONARY BUDGET: nothing reclaims a TCB, and definitions made after the
+\ carves above compile on into the bank window. Sections (a)-(c) need no task
+\ and none of their words are referenced after (c), so they are wrapped in a
+\ MARKER and handed back (~307 B).
 MARKER -SEM-ABC
 
 \ --- (a) Words resolve (AC1/AC2) ---
@@ -58,8 +63,8 @@ _init
 _sigwait
 
 \ Sections (a)-(c) are done and nothing below refers to STWO/SZERO/SNEG/SCT or
-\ the _init/_sigwait checkers. Hand the space back before the TASK carves; no
-\ task exists yet, so there is no live TCB for the reclaim to strand.
+\ the _init/_sigwait checkers. Hand the space back; the TCBs sit below the
+\ marker, so the reclaim cannot strand them.
 -SEM-ABC
 
 \ --- (d) AC3+AC4: producer/consumer hand-off over a shared buffer, no loss, in
@@ -80,7 +85,7 @@ CREATE PBUF  4 CELLS ALLOT
    LOOP
    NEVER WAIT                       \ starve-but-yield forever (AC6 waiter)
    ." FAIL: sem-prod-waiter-unblocked" CR ;
-' PROD TASK ACTIVATE
+' PROD T-PROD ACTIVATE
 \ Same reclaim for (d)'s checker. The marker sits ABOVE PROD's TCB and above
 \ PBUF/FULL/NEVER/PROD, all of which the now-live task still needs, so the
 \ FORGET takes back only CSUM/GOOD/_handoff.
@@ -106,7 +111,7 @@ _handoff
 \ WAIT ever wrongly returned it prints sem-prod-waiter-unblocked (never seen). ---
 VARIABLE PC2   0 PC2 !
 : PEER ( -- )  BEGIN  PC2 @ 1+ PC2 !  PAUSE  0 UNTIL ;
-' PEER TASK ACTIVATE
+' PEER T-PEER ACTIVATE
 PAUSE PAUSE PAUSE PAUSE PAUSE PAUSE       \ rotate the ring a few times
 : _starve ( -- )
    PC2 @ 0 >

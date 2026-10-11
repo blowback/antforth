@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -201,6 +201,7 @@ STACK_WORDS_PROBE = tests/stack_words_tests.fth
 COMPARISON_PROBE = tests/comparison_tests.fth
 AGAIN_PROBE = tests/again_tests.fth
 QDO_PROBE = tests/qdo_tests.fth
+UNDERFLOW_PROBE = tests/underflow_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
 BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
 BANKING_23_9_PROBE = tests/banking_tests_23_9.fth
@@ -440,7 +441,7 @@ test-repl-multitasker-demo: $(TARGET)
 	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_DEMO_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
 	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-demo probe — timed out after $(PROBE_TIMEOUT)s (light task monopolized the ring / never reached BYE)"; exit 1; fi; \
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-demo probe" --fail-line '^FAIL:' \
-		--present '^   2   AWAKE' 'demo-lights-awake-row' \
+		--present '^   1   AWAKE' 'demo-lights-awake-row' \
 		'PASS: demo-activates' 'PASS: demo-no-monopoly' 'PASS: demo-alive'
 
 # --- Story 26.1 counting semaphore (SEMAPHORE / SIGNAL / WAIT) probe ---
@@ -701,6 +702,25 @@ test-repl-qdo: $(TARGET)
 		'qdA=0 1 5 $$' 'qdB=0 5 5 5 5 $$' 'qdC=0 6 6 6 6 $$' 'qdI=1 4 7 1 4 7 $$' 'qdD=1 0 3 2 $$' \
 		'qdE=4 -1 $$' 'qdF=63 3 6 $$' 'qdG=7 8 $$' 'qdS=-1 6 -2 12 6 $$' 'PASS: qd-depth$$' \
 		'qdK=0 3 2 $$' 'qdL=0 3 2 $$' 'qd-alive=42 4 $$'
+
+test-repl-underflow: $(TARGET)
+	@echo "Running stack-underflow probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(UNDERFLOW_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL underflow probe — timed out after $(PROBE_TIMEOUT)s (an unchecked WAIT/POST/ACCEPT blocked, or a \$$8000 straddle hang)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL underflow probe" --fail-line '^FAIL: u-|^error -13|^error -274' \
+		--count 9 '^error -4: stack underflow' 'assembler mnemonics short of operands raise -4' \
+		'u0=-4 0 $$' 'uA=-4 0 -4 0 -4 0 -4 0 $$' 'uB=-4 0 -4 0 -4 0 -4 0 $$' 'uC=-4 0 -4 0 -4 0 -4 0 $$' \
+		'uD=-4 0 -4 0 -4 0 -4 0 $$' 'uE=-4 0 -4 0 -4 0 -4 0 $$' 'uF=-4 0 -4 0 -4 0 $$' 'uG=-4 0 -4 0 -4 0 -4 0 $$' \
+		'uH=-4 0 -4 0 -4 0 -4 0 $$' 'uI=-4 0 -4 0 -4 0 -4 0 $$' 'uJ=-4 0 $$' 'uK=-4 -1 0 $$' 'uL=-4 0 -4 0 -4 0 $$' \
+		'uM=-4 0 $$' 'uN=-4 0 -4 1 0 $$' 'uO=-4 0 -4 -1 0 $$' 'uP=-4 0 -4 1 0 $$' 'uQ=-4 0 -4 1 0 $$' \
+		'uR=-4 0 -4 2 1 0 $$' 'uS=-4 0 -4 2 1 0 $$' 'uT=-4 0 -4 0 0 -4 1 0 $$' 'uU=-4 5 2 1 0 -4 300 2 1 0 $$' \
+		'uu=-4 -1 1 0 $$' 'uV=-4 0 -4 0 0 -4 5 2 1 0 $$' 'uW=7 7 1 3 2 1 9 1 3 2 5 6 0 $$' 'uX=-4 1 0 1 -1 $$' \
+		'uY=0 0 $$' 'uZ=-4 0 -4 4 3 2 1 0 $$' 'ua=0 -1 0 -1 0 $$' 'ub=-4 -4 -4 -4 -4 -4 0 $$' 'uc=-4 -4 -4 -4 -4 -4 0 $$' \
+		'ud=-4 -4 -4 -4 -4 -4 0 $$' 'ue=-4 -4 -4 -4 -4 -4 0 $$' 'uf=-4 -4 -4 -4 -4 -4 0 $$' 'ug=-4 -4 -4 -4 -4 -4 0 $$' \
+		'uh=-4 -4 -4 -4 -4 -4 0 $$' 'ui=-4 -4 -4 -4 -4 -4 0 $$' 'uj=-4 1 -4 2 1 -4 5 2 1 0 $$' 'uk=-4 -4 -4 -4 -4 0 $$' \
+		'ul=-4 1 -4 1 -4 -4 0 $$' 'um=-4 -4 5 0 9 $$' 'un=-4 0 -4 1 0 -4 0 $$' 'uo=-4 0 -4 0 -4 0 $$' \
+		'up=-4 0 -4 0 -4 -1 0 $$' 'uq=42 0 $$' 'ur=10 655360 655350 $$' 'us=1234 $$' 'PASS: u-depth$$' \
+		'ut=-270 -270 0 $$' 'uv=49 0 $$' 'uw=-4 0 0 $$' 'ux=-4 0 0 $$' 'uy=-4 0 0 $$' 'u-alive=42 $$'
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
@@ -1973,7 +1993,7 @@ test: $(SRCS) | $(BUILDDIR_STAMP)
 # Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
 # prerequisites so a bare `make test-repl` exercises them — they are otherwise
 # green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo $(TARGET)
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \
@@ -8215,11 +8235,11 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env te
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf "%s\r\n%s\r\n" "' DUP CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -qE '0  ok'; then \
-		echo "PASS: REPL test 732 — Story 11.5 positive control: ' DUP CATCH . returns 0 (CATCH framework still works; AC #15)"; \
+	@OUTPUT=$$(printf "%s\r\n%s\r\n" "7 ' DUP CATCH . . ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	if echo "$$OUTPUT" | grep -qE '0 7 7  ok'; then \
+		echo "PASS: REPL test 732 — Story 11.5 positive control: 7 ' DUP CATCH . . . returns 0 (CATCH framework still works; AC #15)"; \
 	else \
-		echo "FAIL: REPL test 732 — expected '0  ok' (positive control for CATCH framework)"; \
+		echo "FAIL: REPL test 732 — expected '0 7 7  ok' (positive control for CATCH framework)"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
@@ -8811,7 +8831,7 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env te
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi
-	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T267 S" CODE BADI 5 BIT, NEXT, END-CODE " EVALUATE ;' "' T267 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf '%s\r\n%s\r\n%s\r\n' ': T267 S" CODE BADI 0 # 5 BIT, NEXT, END-CODE " EVALUATE ;' "' T267 CATCH ." 'BYE' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q -- '-267  ok'; then \
 		echo "PASS: REPL test 792 — Story 11.5.3: caught -267 (bare integer) via EVALUATE"; \
 	else \
