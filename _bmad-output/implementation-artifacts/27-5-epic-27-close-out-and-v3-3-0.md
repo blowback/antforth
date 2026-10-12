@@ -1,6 +1,6 @@
 # Story 27.5: Epic 27 close-out and v3.3.0
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -423,3 +423,4 @@ Pass = every expected value above, no hang, no unexpected error. Save the termin
 
 - 2026-10-12 — Dev pass: bank probe fixed (0 kernel bytes), multitasker family made `test-repl` prerequisites, version surface bumped to v3.3.0, docs and memory updated, full sweep green on 31,395 B (+641 B over v3.2.1). Hardware smoke (Task 6.2) pending.
 - 2026-10-12 — Hardware smoke PASS (`beastty-20261012-093931.txt`); 27.1 stray-`5` anomaly closed (hardware matches the emulator). Status → review.
+- 2026-10-12 — `v3.3.0` tagged on `70778a5` and released by the project lead. Status → done.
