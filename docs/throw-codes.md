@@ -181,7 +181,7 @@ back to the per-file inventory in §d.
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |
 | -7  | do-loops nested too deeply during execution | no | — |
-| -8  | dictionary overflow | done — Story 23.6/23.7/23.9 | `banking.asm` (`check_banked_headroom` + `dict_overflow_throw`; banked window-top guard wired at `build_header` and `,`/`C,`/`ALLOT`/`COMPILE,`; Story 23.7 folds `MARKER`'s full body footprint into the `build_header` pre-commit guard via `bh_code_reserve`/`MARKER_CODE_RESERVE` — `system.asm` `w_MARKER_cf`; Story 23.9 extends coverage to the remaining HERE-growth paths `;`/`LITERAL`/`DOES>` — `compiler.asm` — and the inline-string compilers `S"`/`."`/`ABORT"` — `strings.asm` `compile_string`, `system.asm` `w_ABORT_QUOTE_cf`) |
+| -8  | dictionary overflow | done — Story 23.6/23.7/23.9 | `banking.asm` (`check_banked_headroom` + `dict_overflow_throw`; banked ceiling guard (`BANKED_CEILING` = `$BF58`, `$C000` less the 168-byte WORD/`PAD` reserve above `HERE`; bank 0 exempt) wired at `build_header` and `,`/`C,`/`ALLOT`/`COMPILE,`; Story 23.7 folds `MARKER`'s full body footprint into the `build_header` pre-commit guard via `bh_code_reserve`/`MARKER_CODE_RESERVE` — `system.asm` `w_MARKER_cf`; Story 23.9 extends coverage to the remaining HERE-growth paths `;`/`LITERAL`/`DOES>` — `compiler.asm` — and the inline-string compilers `S"`/`."`/`ABORT"` — `strings.asm` `compile_string`, `system.asm` `w_ABORT_QUOTE_cf`) |
 | -9  | invalid memory address | no | — |
 | -10 | division by zero | done — Story 11.4 | `arithmetic.asm:126` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm:569` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
 | -11 | result out of range | no | — |
@@ -191,7 +191,7 @@ back to the per-file inventory in §d.
 | -15 | invalid FORGET | no | — |
 | -16 | attempt to use zero-length string as a name | done — Story 11.5 | `system.asm:80` (`MARKER`), `compiler.asm:398` (`:`), `compiler.asm:577` (`CREATE`), `compiler.asm:624` (`CONSTANT`) |
 | -17 | pictured numeric output string overflow | done — Story 11.6 | `pictured.asm:251` (`do_pic_overflow_error`; migrated) |
-| -18 | parsed string overflow | no | — |
+| -18 | parsed string overflow | done — Story 27.7 | `strings.asm` (`WORD` `.word_too_long`; token longer than `WORD_MAX_LEN` = 128 characters) |
 | -19 | definition name too long | no | — |
 | -20 | write to a read-only location | no | — |
 | -21 | unsupported operation (e.g., AT-XY on a too-dumb terminal) | no | — |

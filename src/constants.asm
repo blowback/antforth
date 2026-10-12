@@ -136,6 +136,20 @@ TIB_SIZE        EQU     128             ; TIB size in bytes
 
 ; === PAD ===
 PAD_OFFSET      EQU     84              ; PAD is 84 bytes above HERE
+PAD_SIZE        EQU     84              ; PAD length, reported as /PAD
+
+; === WORD ===
+; Longest token WORD will copy; a longer one throws -18. Without the cap a
+; long EVALUATE token would run the counted string past the reserve below.
+WORD_MAX_LEN    EQU     TIB_SIZE        ; counted string spans HERE..HERE+128
+
+; Bank N > 0 keeps its dictionary below $C000 less the WORD/PAD transient
+; area above HERE (WORD at HERE..HERE+WORD_MAX_LEN, PAD at HERE+84..HERE+167).
+; Without this margin those writes would land at $C000+, which is fixed RAM
+; holding bank 0's dictionary once bank 0 grows past $C000.
+BANKED_TRANSIENT_RESERVE EQU PAD_OFFSET + PAD_SIZE      ; 168
+        ASSERT  WORD_MAX_LEN + 2 <= BANKED_TRANSIENT_RESERVE
+BANKED_CEILING  EQU     SLOT2_WINDOW_BASE + 0x4000 - BANKED_TRANSIENT_RESERVE ; $BF58
 
 ; === Number Formatting Buffer ===
 NUM_BUF_SIZE    EQU     18              ; Max 16 binary digits + sign + safety
@@ -197,6 +211,7 @@ THROW_UNDEFINED_WORD    EQU -13  ; ANS Forth 1994 §9.3.5
 THROW_COMPILE_ONLY      EQU -14  ; ANS Forth 1994 §9.3.5
 THROW_ZERO_LEN_NAME     EQU -16  ; ANS Forth 1994 §9.3.5
 THROW_PIC_OVERFLOW      EQU -17  ; ANS Forth 1994 §9.3.5
+THROW_PARSED_OVERFLOW   EQU -18  ; ANS Forth 1994 §9.3.5
 THROW_CONTROL_MISMATCH  EQU -22  ; ANS Forth 1994 §9.3.5
 THROW_USER_INTERRUPT    EQU -28  ; ANS Forth 1994 §9.3.5 (keyboard break; Ctrl-\ consumed at the PAUSE yield seam, Story 25.7)
 THROW_INVALID_NAME_ARG  EQU -32  ; ANS Forth 1994 §9.3.5 (invalid name argument, e.g. TO xxx)

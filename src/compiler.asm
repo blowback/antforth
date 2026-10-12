@@ -260,7 +260,7 @@ build_header:
 
         ; --- Story 23.6/23.7: banked dictionary window-top overflow guard ---
         ; Refuse a defining word whose header + code field + body would place any
-        ; byte at/past the slot-2 window top ($C000). prospective one-past-end =
+        ; byte at/past BANKED_CEILING. prospective one-past-end =
         ;   HERE + header_overhead(6) + name_len + bh_code_reserve
         ; header_overhead = 3 (fat hash_link) + 1 (count_flags) + 2 (bank-N
         ; stub-xt cell). bh_code_reserve is the caller-supplied code-field+body
@@ -544,7 +544,7 @@ w_COMPILE_COMMA_cf:
         CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
-        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if a banked colon body crosses $C000 (AC2)
+        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if a banked colon body crosses BANKED_CEILING (AC2)
         LD      (HL), C
         INC     HL
         LD      (HL), B
@@ -733,7 +733,7 @@ w_SEMICOLON_cf:
         ; --- 3.1: Compile EXIT_CODE into the definition ---
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
-        GUARD_BANKED_WRITE 2               ; -8 if a banked colon's EXIT crosses $C000
+        GUARD_BANKED_WRITE 2               ; -8 if a banked colon's EXIT crosses BANKED_CEILING
         LD      (HL), LOW EXIT_CODE
         INC     HL
         LD      (HL), HIGH EXIT_CODE
@@ -838,7 +838,7 @@ w_LITERAL_cf:
         ; Compile LIT xt at HERE
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)         ; HL = HERE
-        GUARD_BANKED_WRITE 4               ; -8 if LIT xt + value cell crosses $C000 on a bank
+        GUARD_BANKED_WRITE 4               ; -8 if LIT xt + value cell crosses BANKED_CEILING on a bank
         LD      (HL), LOW w_LIT_cf
         INC     HL
         LD      (HL), HIGH w_LIT_cf
@@ -1271,7 +1271,7 @@ w_DOES_cf:
         ; Compile (DOES>) into current definition
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
-        GUARD_BANKED_WRITE 2               ; -8 if (DOES>) xt crosses $C000 on a bank
+        GUARD_BANKED_WRITE 2               ; -8 if (DOES>) xt crosses BANKED_CEILING on a bank
         LD      (HL), LOW w_PAREN_DOES_cf
         INC     HL
         LD      (HL), HIGH w_PAREN_DOES_cf

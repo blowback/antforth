@@ -72,6 +72,8 @@ One row per page (32 rows) per AC6: downstream lookup ("what's at page 0xNN?") i
 | `0x3F` | (when mapped in slot 2) | ★ **DEFAULT BANK 11** of 11 (range `0x35..0x3F`) | `docs/antforth-banking-redesign.md` §5.1 |
 
 **Default capacity:** 12 banks × 16 KB = 192 KB user RAM (page 0x22 portal + pages 0x35–0x3F user banks).
+
+**Banked dictionary ceiling:** a bank N > 0 holds dictionary up to `$BF58` (16,216 bytes), not `$C000`. The top 168 bytes of the window stay free for the WORD buffer and `PAD`, which sit above `HERE` (`BANKED_CEILING`, `src/constants.asm`). `+BANK` refuses a page already in the active list, since two logical banks on one page share RAM.
 **Theoretical maximum:** 29 banks × 16 KB = 464 KB user RAM (sacrificing both virtual console at 0x24 and RAM disk at 0x25–0x34).
 *(`docs/antforth-banking-redesign.md` §5.1: "Default 12 banks × 16 KB = 192 KB user RAM. Theoretical max 29 banks × 16 KB = 464 KB.")*
 

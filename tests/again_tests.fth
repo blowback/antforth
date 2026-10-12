@@ -53,15 +53,13 @@ AGAIN
 : _u UNTIL ;
 : _g AGAIN ;
 
-\ --- Banked window top: X and Y straddle $C000 (-8); Z ends at $BFFF.
+\ --- Banked ceiling ($BF58): X and Y straddle it (-8); Z ends at $BF57.
 \ The witness after AGAIN in X and Y prints only if AGAIN did not throw; without
-\ it, the -8 from `;` writing EXIT would satisfy the count on its own.
-\ The names avoid BANK!'s hash bucket: a word defined in another bank in that
-\ bucket hides BANK! from bank 3 (open bug in docs/dev_journal.md). ---
-BANKS-CLEAR $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-1 BANK!  : _wx BEGIN [ $C000 HERE - 1 - ALLOT ] AGAIN [ ." FAIL: ag-wx" ] ;
-2 BANK!  : _wy BEGIN [ $C000 HERE - 3 - ALLOT ] AGAIN [ ." FAIL: ag-wy" ] ;
-3 BANK!  : _wz BEGIN [ $C000 HERE - 4 - ALLOT ] AGAIN [ HERE U. ] ;
+\ it, the -8 from `;` writing EXIT would satisfy the count on its own. ---
+BANKS-CLEAR $22 +BANK $35 +BANK $36 +BANK $37 +BANK
+1 BANK!  : _wx BEGIN [ $BF58 HERE - 1 - ALLOT ] AGAIN [ ." FAIL: ag-wx" ] ;
+2 BANK!  : _wy BEGIN [ $BF58 HERE - 3 - ALLOT ] AGAIN [ ." FAIL: ag-wy" ] ;
+3 BANK!  : _wz BEGIN [ $BF58 HERE - 4 - ALLOT ] AGAIN [ HERE U. ] ;
 0 BANK!
 
 \ --- Computed witness: only real execution prints 42 ---

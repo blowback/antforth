@@ -12,10 +12,11 @@
 \   E  ."       — inline string + TYPE xt               src/strings.asm
 \   F  ABORT"   — inline counted string (arbitrary len) src/system.asm
 \ Each now raises a clean uncaught -8 ("dictionary overflow") when it would
-\ place a byte at/past the slot-2 window top ($C000). G proves the guard does
+\ place a byte at/past the banked ceiling ($BF58 = $C000 less the 168-byte
+\ WORD/PAD reserve). G proves the guard does
 \ NOT over-reject a banked definition that fits; H proves it stays a strict
 \ no-op on bank 0 (fixed memory). I proves the exact boundary: a fixed-width
-\ write whose one-past-end is exactly $C000 is ACCEPTED (AC3 — 23.6 strictly->
+\ write whose one-past-end is exactly $BF58 is ACCEPTED (AC3 — 23.6 strictly->
 \ semantics), a NEW-path direct witness rather than leaning on 23.6's own
 \ `,`/`C,` boundary cases.
 \
@@ -39,8 +40,8 @@
 DECIMAL
 ." ===23-9-PROBE-START===" CR
 
-\ Each case reseeds the bank table from scratch via _RS (BANKS-CLEAR + 8x $22
-\ +BANK → logical banks 0..7, one physical page $22 in each). A reseed PER CASE
+\ Each case reseeds the bank table from scratch via _RS (BANKS-CLEAR + 8
+\ distinct pages → logical banks 0..7). A reseed PER CASE
 \ is load-bearing: a banked definition that throws -8 leaves a committed
 \ SMUDGEd header behind, and several of those accumulate into bank bucket-chain
 \ corruption that breaks FIND inside the NEXT banked definition
@@ -49,54 +50,54 @@ DECIMAL
 \ from any bank.  \ LINT-ALLOW-BANK: N/A (this is an isolated 23-9 fixture, not
 \ the in-suite banking_tests.fth)
 : _RS BANKS-CLEAR
-  $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-  $22 +BANK $22 +BANK $22 +BANK $22 +BANK ;
+  $22 +BANK $35 +BANK $36 +BANK $37 +BANK
+  $38 +BANK $39 +BANK $3A +BANK $3B +BANK ;
 
-\ --- A (`;`): EXIT (2 B) one past the top → -8. HERE driven to $BFFF so the
-\ EXIT cell would touch $BFFF..$C000 (prospective $C001 > $C000).
+\ --- A (`;`): EXIT (2 B) one past the ceiling → -8. HERE driven to $BF57 so the
+\ EXIT cell would touch $BF57..$BF58 (prospective $BF59 > $BF58).
 ." ---A-start---" CR
-_RS  1 BANK!  $C000 HERE - 300 - ALLOT
-: WA [ $C000 HERE - 1 - ALLOT ] ;
+_RS  1 BANK!  $BF58 HERE - 300 - ALLOT
+: WA [ $BF58 HERE - 1 - ALLOT ] ;
 ." ---A-end---" CR
 
-\ --- B (LITERAL): LIT xt + value cell (4 B) over the top → -8. HERE at $BFFE,
-\ the 4-byte LIT cell would reach $C001.
+\ --- B (LITERAL): LIT xt + value cell (4 B) over the ceiling → -8. HERE at
+\ $BF56, the 4-byte LIT cell would reach $BF59.
 ." ---B-start---" CR
-_RS  2 BANK!  $C000 HERE - 300 - ALLOT
-: WB [ $C000 HERE - 2 - ALLOT 5 ] LITERAL ;
+_RS  2 BANK!  $BF58 HERE - 300 - ALLOT
+: WB [ $BF58 HERE - 2 - ALLOT 5 ] LITERAL ;
 ." ---B-end---" CR
 
-\ --- C (DOES>): (DOES>) xt (2 B) over the top → -8. HERE at $BFFF.
+\ --- C (DOES>): (DOES>) xt (2 B) over the ceiling → -8. HERE at $BF57.
 ." ---C-start---" CR
-_RS  3 BANK!  $C000 HERE - 300 - ALLOT
-: WC [ $C000 HERE - 1 - ALLOT ] DOES> ;
+_RS  3 BANK!  $BF58 HERE - 300 - ALLOT
+: WC [ $BF58 HERE - 1 - ALLOT ] DOES> ;
 ." ---C-end---" CR
 
-\ --- D (S"): inline-string body crosses the top → -8 (per-char guard). HERE at
-\ $BFFC so the (S") framing fits but the 12-char body runs into $C000.
+\ --- D (S"): inline-string body crosses the ceiling → -8 (per-char guard). HERE
+\ at $BF54 so the (S") framing fits but the 12-char body runs past $BF58.
 ." ---D-start---" CR
-_RS  4 BANK!  $C000 HERE - 300 - ALLOT
-: WD [ $C000 HERE - 4 - ALLOT ] S" AAAAAAAAAAAA" ;
+_RS  4 BANK!  $BF58 HERE - 300 - ALLOT
+: WD [ $BF58 HERE - 4 - ALLOT ] S" AAAAAAAAAAAA" ;
 ." ---D-end---" CR
 
 \ --- E ("): same as D for the ." compiler (compile_string + TYPE xt).
 ." ---E-start---" CR
-_RS  5 BANK!  $C000 HERE - 300 - ALLOT
-: WE [ $C000 HERE - 4 - ALLOT ] ." AAAAAAAAAAAA" ;
+_RS  5 BANK!  $BF58 HERE - 300 - ALLOT
+: WE [ $BF58 HERE - 4 - ALLOT ] ." AAAAAAAAAAAA" ;
 ." ---E-end---" CR
 
-\ --- F (ABORT"): inline-string body crosses the top → -8 (per-char guard).
+\ --- F (ABORT"): inline-string body crosses the ceiling → -8 (per-char guard).
 ." ---F-start---" CR
-_RS  6 BANK!  $C000 HERE - 300 - ALLOT
-: WF [ $C000 HERE - 4 - ALLOT ] ABORT" AAAAAAAAAAAA" ;
+_RS  6 BANK!  $BF58 HERE - 300 - ALLOT
+: WF [ $BF58 HERE - 4 - ALLOT ] ABORT" AAAAAAAAAAAA" ;
 ." ---F-end---" CR
 
 \ --- G (accept): a banked definition that FITS is accepted — the guard must
-\ not over-reject. Far below $C000; runtime witness G-OK=-1 (HERE U< $C000).
+\ not over-reject. Far below $BF58; runtime witness G-OK=-1 (HERE U< $BF58).
 ." ---G-start---" CR
-_RS  7 BANK!  $C000 HERE - 300 - ALLOT
+_RS  7 BANK!  $BF58 HERE - 300 - ALLOT
 : WG S" hi" 2DROP ;
-." G-OK=" HERE $C000 U< . CR
+." G-OK=" HERE $BF58 U< . CR
 ." ---G-end---" CR
 
 \ --- H (bank-0 no-op): the SAME near-top `;` that throws in a bank is a strict
@@ -107,16 +108,16 @@ _RS  0 BANK!  $C000 HERE - 300 - ALLOT
 ." H-DONE=" 3 4 + . CR
 ." ---H-end---" CR
 
-\ --- I (EXACT boundary accept, `;`): with HERE driven to $BFFE the closing
-\ `;` writes EXIT (2 B) at $BFFE..$BFFF — one-past-end is exactly $C000, which
-\ is the legal one-past-end ceiling (check_banked_headroom throws iff > $C000).
-\ So the close is ACCEPTED and HERE ends exactly at $C000. Runtime witness
-\ I-OK=-1 = (HERE = $C000); NO -8 in the span. Closes the AC3 gap for a NEW
+\ --- I (EXACT boundary accept, `;`): with HERE driven to $BF56 the closing
+\ `;` writes EXIT (2 B) at $BF56..$BF57 — one-past-end is exactly $BF58, which
+\ is the legal one-past-end ceiling (check_banked_headroom throws iff > $BF58).
+\ So the close is ACCEPTED and HERE ends exactly at $BF58. Runtime witness
+\ I-OK=-1 = (HERE = $BF58); NO -8 in the span. Closes the AC3 gap for a NEW
 \ fixed-width path directly (not via 23.6's `,`/`C,` boundary cases).
 ." ---I-start---" CR
-_RS  1 BANK!  $C000 HERE - 300 - ALLOT
-: WI [ $C000 HERE - 2 - ALLOT ] ;
-." I-OK=" HERE $C000 = . CR
+_RS  1 BANK!  $BF58 HERE - 300 - ALLOT
+: WI [ $BF58 HERE - 2 - ALLOT ] ;
+." I-OK=" HERE $BF58 = . CR
 ." ---I-end---" CR
 
 _RS 0 BANK!

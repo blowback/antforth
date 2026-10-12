@@ -53,7 +53,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.asm) $(wildcard $(SRCDIR)/tests/*.asm)
 DOCKER_IMAGE = antforth-toolchain
 DOCKER_RUN   = docker run --rm -v $(CURDIR):/workspace $(DOCKER_IMAGE)
 
-.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
+.PHONY: all asm build disk test test-repl test-repl-asm test-repl-value-to test-repl-in-out test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow test-repl-bank-lookup test-repl-banking test-repl-banking-isolated test-repl-banking-isolated-19-3 test-repl-banking-isolated-19-4 test-repl-banking-isolated-19-5-1 test-repl-banking-isolated-20-1 test-repl-banking-isolated-20-2 test-repl-banking-isolated-20-3 test-repl-banking-isolated-21-1 test-repl-banking-isolated-21-2 test-repl-banking-isolated-21-3 test-repl-banking-isolated-22-1 test-repl-banking-isolated-22-2 test-repl-banking-isolated-22-3 test-repl-banking-isolated-dot-banks lint-banking-probes test-repl-banking-23-6 test-repl-banking-23-7 test-repl-banking-23-9 test-straddle-regression test-file-sanity clean docker-build docker docker-test docker-disk firmware-repro firmware-repro-test check-doc-sync
 
 all: asm
 
@@ -202,21 +202,25 @@ COMPARISON_PROBE = tests/comparison_tests.fth
 AGAIN_PROBE = tests/again_tests.fth
 QDO_PROBE = tests/qdo_tests.fth
 UNDERFLOW_PROBE = tests/underflow_tests.fth
+BANK_LOOKUP_PROBE = tests/bank_lookup_tests.fth
 BANKING_23_6_PROBE = tests/banking_tests_23_6.fth
 BANKING_23_7_PROBE = tests/banking_tests_23_7.fth
 BANKING_23_9_PROBE = tests/banking_tests_23_9.fth
 
 # Story 23.6 — banked dictionary window-top overflow guard regression probe.
-# Drives a bank's HERE to the $C000 brink under iz-cpm-banking and asserts an
+# Drives a bank's HERE to the $BF58 ceiling under iz-cpm-banking and asserts an
 # uncaught -8 ("dictionary overflow") for a defining word (A), a colon body (B),
-# and raw ALLOT/, growth (C,D); plus the $BFFF acceptance boundary (E, no throw)
-# and a bank-0 no-op control (F, no throw). Per-case verdict is awk-extracted
+# and raw ALLOT/, growth (C,D); plus the $BF57 acceptance boundary (E, no throw),
+# a bank-0 no-op control (F, no throw), and that bank 0's B0 (straddling $C000)
+# survives bank 6's parse at its ceiling (H, B0=42). Per-case verdict is awk-extracted
 # from each ---X-start---..---X-end--- span (a global count is polluted by the
 # probe's own echoed header comment). Single-feature target like
 # test-repl-ud-env / test-repl-value-to; NOT folded into plain `test-repl`.
 test-repl-banking-23-6: $(TARGET)
 	@echo "Running Story 23.6 banked dictionary-overflow probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_6_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_6_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-23-6 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	FAILED=0; \
 	if ! echo "$$OUTPUT" | grep -q '===23-6-PROBE-ALIVE===42'; then \
 		echo "FAIL: dict-overflow probe — interpreter did not EXECUTE to the ALIVE witness (computed ===42 absent; echo-only sentinel does not count)"; \
@@ -225,7 +229,7 @@ test-repl-banking-23-6: $(TARGET)
 	for c in A B C D G; do \
 		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
 		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
-			echo "PASS: dict-overflow-$$c — banked over-\$$C000 growth raised -8 (dictionary overflow)"; \
+			echo "PASS: dict-overflow-$$c — banked over-\$$BF58 growth raised -8 (dictionary overflow)"; \
 		else \
 			echo "FAIL: dict-overflow-$$c — expected an uncaught -8 between ---$$c-start--- and ---$$c-end---"; \
 			FAILED=1; \
@@ -240,6 +244,12 @@ test-repl-banking-23-6: $(TARGET)
 			echo "PASS: dict-overflow-$$c — accepted without -8 (boundary/bank-0 no-op)"; \
 		fi; \
 	done; \
+	if echo "$$OUTPUT" | grep -q '^---H-B0=42 '; then \
+		echo "PASS: dict-overflow-H — bank-0 B0 straddling \$$C000 intact after bank 6 parsed at its ceiling"; \
+	else \
+		echo "FAIL: dict-overflow-H — expected ---H-B0=42 (bank 6's WORD/PAD spilled into \$$C000+)"; \
+		FAILED=1; \
+	fi; \
 	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
@@ -511,7 +521,7 @@ test-repl-mailbox: $(TARGET)
 # Story 23.7 — banked MARKER window-top overflow guard regression probe.
 # MARKER's ~372-byte body is the one banked-growth path 23.6 left unguarded;
 # 23.7 folds it into build_header's pre-commit guard. Drives a bank's HERE to
-# the $C000 brink under iz-cpm-banking and asserts an uncaught -8 ("dictionary
+# the $BF58 ceiling under iz-cpm-banking and asserts an uncaught -8 ("dictionary
 # overflow") for a banked MARKER one byte over the boundary (A); the exact
 # acceptance boundary (B, no throw); a bank-0 strict-no-op control (C, no
 # throw); and post-THROW liveness (D, no throw + the ALIVE witness). Per-case
@@ -526,7 +536,9 @@ test-repl-mailbox: $(TARGET)
 # execution. Each accept case still also asserts NO error text in its span.
 test-repl-banking-23-7: $(TARGET)
 	@echo "Running Story 23.7 banked MARKER-overflow probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_7_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_7_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-23-7 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	FAILED=0; \
 	if ! echo "$$OUTPUT" | grep -q '===23-7-PROBE-ALIVE===42'; then \
 		echo "FAIL: marker-overflow probe — interpreter did not EXECUTE to the ALIVE witness (computed PROBE-ALIVE===42 absent; echo-only sentinel does not count)"; \
@@ -535,7 +547,7 @@ test-repl-banking-23-7: $(TARGET)
 	for c in A; do \
 		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
 		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
-			echo "PASS: marker-overflow-$$c — banked MARKER over \$$C000 raised -8 (dictionary overflow)"; \
+			echo "PASS: marker-overflow-$$c — banked MARKER over the \$$BF58 ceiling raised -8 (dictionary overflow)"; \
 		else \
 			echo "FAIL: marker-overflow-$$c — expected an uncaught -8 between ---$$c-start--- and ---$$c-end---"; \
 			FAILED=1; \
@@ -550,7 +562,7 @@ test-repl-banking-23-7: $(TARGET)
 			echo "FAIL: marker-overflow-$$c — missing runtime witness $$c-OK=-1 (MARKER not built in-window, or the case never executed past the echo)"; \
 			FAILED=1; \
 		else \
-			echo "PASS: marker-overflow-$$c — accepted, MARKER built with one-past-end <= \$$C000 (runtime witness $$c-OK=-1)"; \
+			echo "PASS: marker-overflow-$$c — accepted, MARKER built with one-past-end <= its ceiling (runtime witness $$c-OK=-1)"; \
 		fi; \
 	done; \
 	if [ $$FAILED -ne 0 ]; then \
@@ -561,7 +573,7 @@ test-repl-banking-23-7: $(TARGET)
 # Story 23.9 (provisional) — complete banked window-top guard coverage. Covers
 # the five paths 23.6/23.7 left writing to HERE through their own hand-rolled
 # stores: `;` (EXIT), LITERAL, DOES>, S", ." and ABORT". Each must now raise an
-# uncaught -8 ("dictionary overflow") when it would cross $C000 in a bank
+# uncaught -8 ("dictionary overflow") when it would cross the $BF58 ceiling in a bank
 # (cases A-F); G proves a banked def that fits is NOT over-rejected; H proves a
 # strict bank-0 no-op. Per-case verdict is awk-extracted from each
 # ---X-start---..---X-end--- span. The ALIVE gate and the accept witnesses match
@@ -571,7 +583,9 @@ test-repl-banking-23-7: $(TARGET)
 # test-repl-banking-23-7; NOT folded into plain `test-repl`.
 test-repl-banking-23-9: $(TARGET)
 	@echo "Running Story 23.9 banked window-top guard COVERAGE probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_9_PROBE); printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANKING_23_9_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-23-9 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	FAILED=0; \
 	if ! echo "$$OUTPUT" | grep -q '===23-9-PROBE-ALIVE===42'; then \
 		echo "FAIL: coverage probe — interpreter did not EXECUTE to the ALIVE witness (computed ===42 absent; echo-only sentinel does not count)"; \
@@ -580,7 +594,7 @@ test-repl-banking-23-9: $(TARGET)
 	for c in A B C D E F; do \
 		SPAN=$$(echo "$$OUTPUT" | awk "/---$$c-start---/{p=1;next} /---$$c-end---/{p=0} p"); \
 		if echo "$$SPAN" | grep -q 'dictionary overflow'; then \
-			echo "PASS: coverage-$$c — banked over-\$$C000 growth raised -8 (dictionary overflow)"; \
+			echo "PASS: coverage-$$c — banked over-\$$BF58 growth raised -8 (dictionary overflow)"; \
 		else \
 			echo "FAIL: coverage-$$c — expected an uncaught -8 between ---$$c-start--- and ---$$c-end---"; \
 			FAILED=1; \
@@ -608,13 +622,13 @@ test-repl-banking-23-9: $(TARGET)
 	fi; \
 	SPAN_I=$$(echo "$$OUTPUT" | awk '/---I-start---/{p=1;next} /---I-end---/{p=0} p') && \
 	if echo "$$SPAN_I" | grep -q 'dictionary overflow'; then \
-		echo "FAIL: coverage-I — exact-\$$C000 boundary write wrongly raised -8 (guard off-by-one, over-rejecting the legal one-past-end)"; \
+		echo "FAIL: coverage-I — exact-\$$BF58 boundary write wrongly raised -8 (guard off-by-one, over-rejecting the legal one-past-end)"; \
 		FAILED=1; \
 	elif ! echo "$$SPAN_I" | grep -q 'I-OK=-1'; then \
-		echo "FAIL: coverage-I — missing runtime witness I-OK=-1 (HERE != \$$C000 after the accepted boundary close)"; \
+		echo "FAIL: coverage-I — missing runtime witness I-OK=-1 (HERE != \$$BF58 after the accepted boundary close)"; \
 		FAILED=1; \
 	else \
-		echo "PASS: coverage-I — a write whose one-past-end is exactly \$$C000 is accepted (AC3; runtime witness I-OK=-1)"; \
+		echo "PASS: coverage-I — a write whose one-past-end is exactly \$$BF58 is accepted (AC3; runtime witness I-OK=-1)"; \
 	fi; \
 	if [ $$FAILED -ne 0 ]; then \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
@@ -686,8 +700,8 @@ test-repl-again: $(TARGET)
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL AGAIN probe" --fail-line '^FAIL: ag-' \
 		--count 1 '^error -14: interpreting a compile-only word' 'AGAIN at the prompt raises -14' \
 		--count 2 '^error -4: stack underflow' 'UNTIL/AGAIN without BEGIN raise -4' \
-		--count 2 '^error -8: dictionary overflow' 'banked AGAIN cell crossing C000 raises -8' \
-		--present '^49152 error -8: dictionary overflow' 'banked AGAIN ending at BFFF accepted' \
+		--count 2 '^error -8: dictionary overflow' 'banked AGAIN cell crossing BF58 raises -8' \
+		--present '^48984 error -8: dictionary overflow' 'banked AGAIN ending at BF57 accepted' \
 		'agA=5 $$' 'agB=0 98 $$' 'agC=12 $$' 'agD=4 $$' 'agS=-1 -2 -1 $$' 'agR=8 -1 -10 0 $$' \
 		'PASS: ag-depth$$' 'ag-alive=42 $$'
 
@@ -697,8 +711,8 @@ test-repl-qdo: $(TARGET)
 	if [ $$rc -eq 124 ]; then echo "FAIL: REPL ?DO probe — timed out after $(PROBE_TIMEOUT)s (possible \$$8000 straddle hang; see feedback_banking_probe_straddle_halt)"; exit 1; fi; \
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL ?DO probe" --fail-line '^FAIL: qd-|^error -13|^error -274' \
 		--count 1 '^error -14: interpreting a compile-only word' '?DO at the prompt raises -14' \
-		--count 2 '^error -8: dictionary overflow' 'banked ?DO cell crossing C000 raises -8' \
-		--present '^49152 error -8: dictionary overflow' 'banked ?DO ending at BFFF accepted' \
+		--count 2 '^error -8: dictionary overflow' 'banked ?DO cell crossing BF58 raises -8' \
+		--present '^48984 error -8: dictionary overflow' 'banked ?DO ending at BF57 accepted' \
 		'qdA=0 1 5 $$' 'qdB=0 5 5 5 5 $$' 'qdC=0 6 6 6 6 $$' 'qdI=1 4 7 1 4 7 $$' 'qdD=1 0 3 2 $$' \
 		'qdE=4 -1 $$' 'qdF=63 3 6 $$' 'qdG=7 8 $$' 'qdS=-1 6 -2 12 6 $$' 'PASS: qd-depth$$' \
 		'qdK=0 3 2 $$' 'qdL=0 3 2 $$' 'qd-alive=42 4 $$'
@@ -721,6 +735,22 @@ test-repl-underflow: $(TARGET)
 		'ul=-4 1 -4 1 -4 -4 0 $$' 'um=-4 -4 5 0 9 $$' 'un=-4 0 -4 1 0 -4 0 $$' 'uo=-4 0 -4 0 -4 0 $$' \
 		'up=-4 0 -4 0 -4 -1 0 $$' 'uq=42 0 $$' 'ur=10 655360 655350 $$' 'us=1234 $$' 'PASS: u-depth$$' \
 		'ut=-270 -270 0 $$' 'uv=49 0 $$' 'uw=-4 0 0 $$' 'ux=-4 0 0 $$' 'uy=-4 0 0 $$' 'u-alive=42 $$'
+
+# +BANK refuses a page already listed; the banked ceiling ($BF58) keeps WORD/PAD
+# below $C000, and WORD caps tokens at 128 chars (-18) so EVALUATE can't pass
+# it; kernel words stay findable across banks (BANK!, CR, B0).
+test-repl-bank-lookup: $(TARGET)
+	@echo "Running bank lookup / +BANK dup / banked ceiling probe under $(IZCPM)..."
+	@OUTPUT=$$({ sed 's/$$/\r/' $(BANK_LOOKUP_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: REPL bank lookup probe — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL bank lookup probe" \
+		--fail-line '^FAIL: bl-|^error -274|^BANK! \?|^CR \?|^B0 \?|^_by \?|^_qk \?' \
+		--present '^dup\?error -2: ABORT' 'interpret-level duplicate +BANK aborts with dup? / -2' \
+		--count 2 '^error -8: dictionary overflow' 'banked growth past BF58 raises -8 (bank 5, bank 6 old brink)' \
+		--count 2 '^error -13: undefined word' 'the two long tokens parse at the bank-6 ceiling' \
+		'blA=dup\?-2 2 $$' 'blB=1 $$' 'blC=0 1 $$' 'blD=0 $$' 'blE=3 $$' 'blF=48984 $$' 'blG=48983 $$' \
+		'blH=48985 $$' 'blI=66 66 $$' 'blJ=3 $$' 'blK=42 $$' \
+		'blL=-13 $$' 'blM=-18 $$' 'blN=42 $$' 'bl-alive=42 $$'
 
 test-repl-asm: $(TARGET)
 	@echo "Running inline-assembler IN,/OUT, probe under $(IZCPM)..."
@@ -779,56 +809,64 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# expected warning markers per PD-P4-14). Six binding probes per AC7;
 	@# CL Probe 8 (optional dup) included for completeness (8 probes total).
 	@echo "Running Story 17.4 CL-tail probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '12 banks available'; then \
 		echo "PASS: cl-probe-defaults — empty CL → BANKS=12 + '12 banks available' banner clause under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-defaults — expected BANKS=12 + '12 banks available' banner"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35-37" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35-37" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^4  ok' && echo "$$OUTPUT" | grep -q '4 banks available'; then \
 		echo "PASS: cl-probe-single-range — '22 35-37' → BANKS=4 under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-single-range — expected BANKS=4"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35,36,3A" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35,36,3A" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^4  ok'; then \
 		echo "PASS: cl-probe-multi-list — '22 35,36,3A' → BANKS=4 under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-multi-list — expected BANKS=4"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 00-02" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 00-02" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^1  ok' && echo "$$OUTPUT" | grep -cE '^probe\? 0[0-2]' | grep -q '^3'; then \
 		echo "PASS: cl-probe-probe-fail — '22 00-02' → BANKS=1 + 3× probe? warnings under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-probe-fail — expected BANKS=1 + 3× probe? warnings"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "00 01-03" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "00 01-03" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^0  ok' && echo "$$OUTPUT" | grep -q '^empty?' && echo "$$OUTPUT" | grep -q '0 banks available'; then \
 		echo "PASS: cl-probe-empty-list — '00 01-03' → BANKS=0 + empty? warning + '0 banks available' banner under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-empty-list — expected BANKS=0 + empty? warning"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 XX,35" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 XX,35" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^2  ok' && echo "$$OUTPUT" | grep -q '^bad?'; then \
 		echo "PASS: cl-probe-bad-token — '22 XX,35' → BANKS=2 + bad? warning under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-bad-token — expected BANKS=2 + bad? warning"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 3F-35" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 3F-35" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^1  ok' && echo "$$OUTPUT" | grep -q '^range?'; then \
 		echo "PASS: cl-probe-reverse-range — '22 3F-35' → BANKS=1 + range? warning under $(IZCPM_BANKING)"; \
 	else \
 		echo "FAIL: cl-probe-reverse-range — expected BANKS=1 + range? warning"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; exit 1; \
 	fi
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35,35-3F" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "22 35,35-3F" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '^dup? 35'; then \
 		echo "PASS: cl-probe-dup — '22 35,35-3F' → BANKS=12 + 'dup? 35' warning under $(IZCPM_BANKING)"; \
 	else \
@@ -838,7 +876,8 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# Story 17.4 review CR fix H1 — AC2 edge case (i): all-whitespace tail
 	@# (non-zero length but only ws chars) MUST apply silent defaults, not
 	@# fall through to .post + empty?. Regression for the H1 finding.
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "    " 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "    " 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '12 banks available' && ! echo "$$OUTPUT" | grep -q '^empty?'; then \
 		echo "PASS: cl-probe-all-whitespace (H1) — all-ws tail '    ' → AC2 silent defaults (BANKS=12, no empty?) under $(IZCPM_BANKING)"; \
 	else \
@@ -848,7 +887,8 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# Story 17.4 review CR fix H2 — AC3: portal-page probe-fail MUST fall
 	@# into edge case (vi) (empty? + BANKS=0), not silently shift bank-list
 	@# pages into active_pages[0]. Regression for the H2 finding.
-	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "00 35-3F" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "00 35-3F" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^0  ok' && echo "$$OUTPUT" | grep -q '^probe? 00' && echo "$$OUTPUT" | grep -q '^empty?' && echo "$$OUTPUT" | grep -q '0 banks available'; then \
 		echo "PASS: cl-probe-portal-fail (H2) — '00 35-3F' → AC3 vi-disposition (BANKS=0, probe? 00 + empty? + '0 banks available') under $(IZCPM_BANKING)"; \
 	else \
@@ -860,7 +900,8 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# next WORD parse would overwrite the BIOS dispatch vectors at $0000-$0005
 	@# and the next BDOS call crashes the kernel). Fix: COLD clones bank-table[0]
 	@# to bank-table[1..28] so first-visit BANK! loads a valid HERE.
-	@OUTPUT=$$(printf 'BANKS .\r\n1 BANK!\r\nBANK@ .\r\n0 BANK!\r\nBANK@ .\r\nBYE\r\n' | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "24 35-3F" 2>/dev/null || true) && \
+	@OUTPUT=$$(printf 'BANKS .\r\n1 BANK!\r\nBANK@ .\r\n0 BANK!\r\nBANK@ .\r\nBYE\r\n' | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) "24 35-3F" 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi && \
 	if echo "$$OUTPUT" | grep -q '^12  ok' && echo "$$OUTPUT" | grep -q '^1  ok' && [ "$$(echo "$$OUTPUT" | grep -cE '^0  ok')" -ge 1 ]; then \
 		echo "PASS: cl-probe-bank-roundtrip (H3 AC8) — '24 35-3F' boot + 1 BANK! → BANK@ . → 0 BANK! → BANK@ . round-trip survives under $(IZCPM_BANKING)"; \
 	else \
@@ -884,7 +925,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# actually present in OUTPUT (catches a missing end sentinel — awk
 	@# extraction would otherwise swallow downstream output and false-PASS;
 	@# surfaced by Story 17.5.1 code-review M4 live negative-test sweep).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_G=$$(echo "$$OUTPUT" | awk '/---plus-bank-cap-start---$$/{p=1; next} /---plus-bank-cap-end---$$/{p=0} p') && \
 	if echo "$$PROBE_G" | grep -q 'seeded: 29' && echo "$$PROBE_G" | grep -q 'cap-catch-code: -2' && echo "$$PROBE_G" | grep -q 'cap-banks-after: 29' && ! echo "$$PROBE_G" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---plus-bank-cap-end---$$'; then \
 		echo "PASS: plus-bank-cap — cap-check fired after 29-entry seed under $(IZCPM_BANKING)"; \
@@ -938,7 +981,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# Story 25.2 yielding reader waits at EOF instead, so feed a real BYE (the
 	@# leading CRLF separates it from the 0x1A) and keep a fail-loud timeout net
 	@# (Story 24.3). The success literal is emitted before BYE either way.
-	@OUTPUT=$$({ sed 's/$$/\r/' disk/a/P193IRON.FTH; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ sed 's/$$/\r/' disk/a/P193IRON.FTH; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_IRONSPIKE=$$(echo "$$OUTPUT" | awk '/---iron-spike-19.3-start---$$/{p=1; next} /---iron-spike-19.3-end---$$/{p=0} p') && \
 	if echo "$$PROBE_IRONSPIKE" | grep -q 'iron-spike-sentinel-12345-returned' && ! echo "$$PROBE_IRONSPIKE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---iron-spike-19.3-end---$$'; then \
 		echo "PASS: iron-spike — hand-built cross-bank call round-trip returned sentinel 12345 under $(IZCPM_BANKING) (isolated subprocess via disk/a/P193IRON.FTH)"; \
@@ -958,7 +1003,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# (target_bank=5 banked target). Each probe is sentinel-bounded and
 	@# emits a unique PASS literal; awk-extract + grep follows the Story
 	@# 17.5.1 pattern (M4 end-sentinel-on-its-own-line check).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_1_C=$$(echo "$$OUTPUT" | awk '/---probe-18.1-c-start---$$/{p=1; next} /---probe-18.1-c-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_1_C" | grep -qE 'probe-18.1-c-pass-10-stubs-deltas-4-and-(first-base-last-base\+36|relative-stride-40)' && ! echo "$$PROBE_18_1_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-c-end---$$'; then \
 		echo "PASS: probe-18.1-c — 10 stubs allocated at +4-stride (relative to marker) under $(IZCPM_BANKING)"; \
@@ -966,7 +1013,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 		echo "FAIL: probe-18.1-c — sequential allocation / 10th-at-+36 / STUB_ALLOC_BASE-first assertion missing"; \
 		echo "  PROBE_18_1_C: $$PROBE_18_1_C"; exit 1; \
 	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_1_A=$$(echo "$$OUTPUT" | awk '/---probe-18.1-a-start---$$/{p=1; next} /---probe-18.1-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_1_A" | grep -q 'probe-18.1-a-pass-stub-A-fixed-memory-layout-correct' && ! echo "$$PROBE_18_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-a-end---$$'; then \
 		echo "PASS: probe-18.1-a — stub-A byte layout v2 (EF / FF / lo / hi) correct for fixed-memory target under $(IZCPM_BANKING)"; \
@@ -974,7 +1023,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 		echo "FAIL: probe-18.1-a — stub-A byte layout assertion missing or mismatched"; \
 		echo "  PROBE_18_1_A: $$PROBE_18_1_A"; exit 1; \
 	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_1_B=$$(echo "$$OUTPUT" | awk '/---probe-18.1-b-start---$$/{p=1; next} /---probe-18.1-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_1_B" | grep -q 'probe-18.1-b-pass-stub-B-banked-target-layout-correct' && ! echo "$$PROBE_18_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.1-b-end---$$'; then \
 		echo "PASS: probe-18.1-b — stub-B byte layout v2 (EF / 05 / 00 / 82) correct for banked target under $(IZCPM_BANKING)"; \
@@ -996,7 +1047,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# fitness witness is the 975-PASS test-repl baseline which exercises
 	@# EXIT_CODE on every colon-body return). Sentinel-bounded greps
 	@# follow the Story 17.5.1 pattern (M4 end-sentinel-on-its-own-line).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_19_5_2_A=$$(echo "$$OUTPUT" | awk '/---probe-19.5.2-a-start---$$/{p=1; next} /---probe-19.5.2-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_19_5_2_A" | grep -q 'probe-19.5.2-a-pass-rst-stub-dispatch-end-to-end' && ! echo "$$PROBE_19_5_2_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-19.5.2-a-end---$$'; then \
 		echo "PASS: probe-19.5.2-a — RST-$$28 stub self-dispatch end-to-end (EXECUTE → JP (HL) → RST → handler → DOCOL → 12345) under $(IZCPM_BANKING)"; \
@@ -1004,7 +1057,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 		echo "FAIL: probe-19.5.2-a — RST stub dispatch chain did not return 12345"; \
 		echo "  PROBE_19_5_2_A: $$PROBE_19_5_2_A"; exit 1; \
 	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_2_B=$$(echo "$$OUTPUT" | awk '/---probe-18.2-b-start---$$/{p=1; next} /---probe-18.2-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_2_B" | grep -q 'probe-18.2-b-pass-intra-bank-EXIT-round-trip' && ! echo "$$PROBE_18_2_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.2-b-end---$$'; then \
 		echo "PASS: probe-18.2-b — 100× intra-bank EXIT round-trip clean (BANK@ unchanged) under $(IZCPM_BANKING)"; \
@@ -1018,7 +1073,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# tests/banking_tests.fth. Probe-18.3-A exercises EXECUTE's intra-bank
 	@# fixed-memory marker path (target_bank = -1) which validates byte-0
 	@# read + discriminator + intra-bank fall-through.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_3_A=$$(echo "$$OUTPUT" | awk '/---probe-18.3-a-start---$$/{p=1; next} /---probe-18.3-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_3_A" | grep -q 'probe-18.3-a-pass-fixed-mem-stub-EXECUTE' && ! echo "$$PROBE_18_3_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.3-a-end---$$'; then \
 		echo "PASS: probe-18.3-a — fixed-mem stub EXECUTE via intra-bank path (target_bank = -1) under $(IZCPM_BANKING)"; \
@@ -1031,7 +1088,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# JR Z), distinct from Probe-18.3-A which exercises the -1 marker
 	@# JR Z. Target is BANK@ (DEFCODE in main RAM); current_bank == 0
 	@# at probe entry.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_3_A2=$$(echo "$$OUTPUT" | awk '/---probe-18.3-a2-start---$$/{p=1; next} /---probe-18.3-a2-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_3_A2" | grep -q 'probe-18.3-a2-pass-intra-bank-via-current-bank-EXECUTE' && ! echo "$$PROBE_18_3_A2" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.3-a2-end---$$'; then \
 		echo "PASS: probe-18.3-a2 — intra-bank stub EXECUTE via target_bank == current_bank under $(IZCPM_BANKING)"; \
@@ -1044,7 +1103,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# remap the running INTERPRET code (kernel-resident < $8000). Target
 	@# is the kernel DEFWORD NEGATE (xt < $D400, main-RAM CFA). Closes
 	@# the H1 coverage gap + the Story-18.2 CR-H2 carry-forward.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_3_F=$$(echo "$$OUTPUT" | awk '/---probe-18.3-f-start---$$/{p=1; next} /---probe-18.3-f-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_3_F" | grep -q 'probe-18.3-f-pass-cross-bank-EXECUTE-NEGATE-roundtrip' && ! echo "$$PROBE_18_3_F" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.3-f-end---$$'; then \
 		echo "PASS: probe-18.3-f — cross-bank EXECUTE round-trip via NEGATE in bank 1 under $(IZCPM_BANKING)"; \
@@ -1055,7 +1116,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# Story 18.4 Probe-18.4-A — BANK-OF one-byte read returns -1 for a
 	@# fixed-memory-marker stub (target_bank = $FF, sign-extended). Surface-
 	@# agnostic (no MMU writes, no inner-interpreter excursion).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_4_A=$$(echo "$$OUTPUT" | awk '/---probe-18.4-a-start---$$/{p=1; next} /---probe-18.4-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_4_A" | grep -q 'probe-18.4-a-pass-fixed-mem-marker' && ! echo "$$PROBE_18_4_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.4-a-end---$$'; then \
 		echo "PASS: probe-18.4-a — BANK-OF fixed-memory marker (target_bank=-1 → -1) under $(IZCPM_BANKING)"; \
@@ -1066,7 +1129,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# Story 18.4 Probe-18.4-B — BANK-OF returns 5 for a banked-bank-5
 	@# stub (target_bank = $05). Same byte-0 read path as Probe-A; verifies
 	@# the positive sign-extension arm ($00..$7F → cell 0..127).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_4_B=$$(echo "$$OUTPUT" | awk '/---probe-18.4-b-start---$$/{p=1; next} /---probe-18.4-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_4_B" | grep -q 'probe-18.4-b-pass-banked-bank-5' && ! echo "$$PROBE_18_4_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.4-b-end---$$'; then \
 		echo "PASS: probe-18.4-b — BANK-OF banked-bank-5 marker (target_bank=5 → 5) under $(IZCPM_BANKING)"; \
@@ -1083,7 +1148,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# is DEFWORD-only (inner_interpreter.asm:332..337). Marker block
 	@# preserves M4 end-sentinel discipline so Epic-19's bank-aware `:`
 	@# (per-bank wordlist plumbing) can inject the real probe in-place.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_4_C=$$(echo "$$OUTPUT" | awk '/---probe-18.4-c-start---$$/{p=1; next} /---probe-18.4-c-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_4_C" | grep -q 'probe-18.4-c-deferred-to-epic-19-xt-portability-witness' && ! echo "$$PROBE_18_4_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.4-c-end---$$'; then \
 		echo "SKIP: probe-18.4-c — AC4(c) xt-portability witness DEFERRED to Epic 19 (bank-aware FIND removes FIND-walks-through-slot-2 hazard) under $(IZCPM_BANKING)"; \
@@ -1095,7 +1162,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# invocation; target = bank 1, xt = ' BANK@. PASS marker asserts the
 	@# inner-bank value (= 1) is left on stack AND the caller's bank (= 0)
 	@# is restored after IN-BANK returns. See tests/banking_tests.fth:1349.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_A=$$(echo "$$OUTPUT" | awk '/---probe-18.5-a-start---$$/{p=1; next} /---probe-18.5-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_A" | grep -q 'probe-18.5-a-pass-in-bank-roundtrip' && ! echo "$$PROBE_18_5_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-a-end---$$'; then \
 		echo "PASS: probe-18.5-a — IN-BANK basic round-trip (target=1, xt=BANK@, caller bank restored) under $(IZCPM_BANKING)"; \
@@ -1109,7 +1178,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# inner colon body's bytes get remapped under the running IP). The
 	@# re-entrancy property of Q2's R-stack stash discipline is provable
 	@# structurally per the inline comment in tests/banking_tests.fth.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_B=$$(echo "$$OUTPUT" | awk '/---probe-18.5-b-start---$$/{p=1; next} /---probe-18.5-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_B" | grep -q 'probe-18.5-b-deferred-to-epic-19-nested-in-bank-re-entrancy-witness' && ! echo "$$PROBE_18_5_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-b-end---$$'; then \
 		echo "SKIP: probe-18.5-b — AC4(b) nested IN-BANK re-entrancy witness DEFERRED to Epic 19 (per-bank dictionary removes slot-2-remap-under-IP hazard) under $(IZCPM_BANKING)"; \
@@ -1122,7 +1193,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# THROW); CATCH wraps IN-BANK so -1 lands on data stack; PASS marker
 	@# asserts TOS = -1 (throw code propagated) AND BANK@ post-CATCH = 0
 	@# (caller's bank restored via the >R / R> stash on the unwind path).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_C=$$(echo "$$OUTPUT" | awk '/---probe-18.5-c-start---$$/{p=1; next} /---probe-18.5-c-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_C" | grep -q 'probe-18.5-c-pass-in-bank-catch-safe' && ! echo "$$PROBE_18_5_C" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-c-end---$$'; then \
 		echo "PASS: probe-18.5-c — IN-BANK CATCH-safe ('-1 THROW from xt unwinds with caller bank restored) under $(IZCPM_BANKING)"; \
@@ -1134,7 +1207,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# DEFERRED to Epic 19 per Q3 disposition in story Dev Notes. Same
 	@# slot-2-remap-under-IP hazard as Probe-18.4-C; structurally provable
 	@# meanwhile (stubs in fixed memory $D4CB+ are unaffected by slot-2 swap).
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_D=$$(echo "$$OUTPUT" | awk '/---probe-18.5-d-start---$$/{p=1; next} /---probe-18.5-d-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_D" | grep -q 'probe-18.5-d-deferred-to-epic-19-cross-bank-in-bank-xt-portability' && ! echo "$$PROBE_18_5_D" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-d-end---$$'; then \
 		echo "SKIP: probe-18.5-d — AC4(d) cross-bank IN-BANK xt-portability witness DEFERRED to Epic 19 (per-bank dictionary removes slot-2-remap-under-IP hazard) under $(IZCPM_BANKING)"; \
@@ -1148,7 +1223,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# (antforth CATCH frame preserves only TOS-cell per Story 11.4.1
 	@# saved-BC; deeper cells may be touched by xt). See
 	@# tests/banking_tests.fth:1483 for the comment-block rationale.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_E=$$(echo "$$OUTPUT" | awk '/---probe-18.5-e-start---$$/{p=1; next} /---probe-18.5-e-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_E" | grep -q 'probe-18.5-e-pass-in-bank-catch-safe-stash-witness' && ! echo "$$PROBE_18_5_E" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5-e-end---$$'; then \
 		echo "PASS: probe-18.5-e — IN-BANK CATCH-safe stash witness (FR-P4-4 / AC2 narrow binding via USER-variable stash, deeper-cell-independent) under $(IZCPM_BANKING)"; \
@@ -1163,7 +1240,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# path's scratch traffic. Pre-option-(b) both probes returned the
 	@# corrupted value at i*x's second-from-top; post-option-(b) the LDIR
 	@# stash-and-restore on the IX rstack closes the gap structurally.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_1_A=$$(echo "$$OUTPUT" | awk '/---probe-18.5.1-a-start---$$/{p=1; next} /---probe-18.5.1-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_1_A" | grep -q 'probe-18.5.1-a-pass-generic-catch-ix-preservation' && ! echo "$$PROBE_18_5_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5.1-a-end---$$'; then \
 		echo "PASS: probe-18.5.1-a — Reproducer B generic CATCH i*x deeper-cell preservation (100 200 ' SWAP-ABORT CATCH → ANS §9.6.1.0875) under $(IZCPM_BANKING)"; \
@@ -1171,7 +1250,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 		echo "FAIL: probe-18.5.1-a — generic CATCH i*x preservation failed"; \
 		echo "  PROBE_18_5_1_A: $$PROBE_18_5_1_A"; exit 1; \
 	fi
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_18_5_1_B=$$(echo "$$OUTPUT" | awk '/---probe-18.5.1-b-start---$$/{p=1; next} /---probe-18.5.1-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_18_5_1_B" | grep -q 'probe-18.5.1-b-pass-in-bank-ix-preservation' && ! echo "$$PROBE_18_5_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-18.5.1-b-end---$$'; then \
 		echo "PASS: probe-18.5.1-b — Reproducer A IN-BANK i*x deeper-cell preservation (1 ' ABORT ' IN-BANK CATCH → second-from-top preserved) under $(IZCPM_BANKING)"; \
@@ -1184,7 +1265,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# round-trip). Bank-0-only test; per-bank behavioural probes (AC7
 	@# a/b/c/d/e) deferred to Story 19.2 per test-surface limitation
 	@# documented in tests/banking_tests.fth:1639+ block comment.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_19_1_A=$$(echo "$$OUTPUT" | awk '/---probe-19.1-a-start---$$/{p=1; next} /---probe-19.1-a-end---$$/{p=0} p') && \
 	if echo "$$PROBE_19_1_A" | grep -q 'probe-19.1-a-pass-latest-word-semantic' && ! echo "$$PROBE_19_1_A" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-19.1-a-end---$$'; then \
 		echo "PASS: probe-19.1-a — LATEST DEFCODE word semantic (variable-style; LATEST @ / LATEST ! round-trip; addr stable) under $(IZCPM_BANKING)"; \
@@ -1200,7 +1283,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# assertion was test-history-dependent and fresh-boot-fragile;
 	@# dropped per CR review H2/H3 (2026-05-19). Behavioural per-bank
 	@# cell-write probes deferred to Story 19.2.
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE_19_1_B=$$(echo "$$OUTPUT" | awk '/---probe-19.1-b-start---$$/{p=1; next} /---probe-19.1-b-end---$$/{p=0} p') && \
 	if echo "$$PROBE_19_1_B" | grep -q 'probe-19.1-b-pass-bank-table-ldir-clone-witness' && ! echo "$$PROBE_19_1_B" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE '^---probe-19.1-b-end---$$'; then \
 		echo "PASS: probe-19.1-b — bank-table[0] / bank-table[5] LDIR-clone witness (both non-zero) under $(IZCPM_BANKING)"; \
@@ -1209,7 +1294,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 		echo "  PROBE_19_1_B: $$PROBE_19_1_B"; exit 1; \
 	fi
 	@# Story 19.2 bank-0 probes (Q4-γ-default; AC7-a/d + AC6 + Q3-β invariants)
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	for pid in a b c h j; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.2-"p"-start---";re="---probe-19.2-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -q "probe-19.2-$$pid-pass" && ! echo "$$PROBE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE "^---probe-19.2-$$pid-end---$$"; then \
@@ -1224,7 +1311,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@# Probe-B: bank-0 CREATE/DOES> regression sanity (AC2)
 	@# Probe-C: bank-0 entry has NO F_HAS_STUB_XT_CELL flag (AC1)
 	@# Probe-H: bank-0 NFR-P4-8 state integrity after empty-name CREATE -16 THROW
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	for pid in a b c h; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.3-"p"-start---";re="---probe-19.3-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -q "probe-19.3-$$pid-pass" && ! echo "$$PROBE" | grep -q 'FAIL:' && echo "$$OUTPUT" | grep -qE "^---probe-19.3-$$pid-end---$$"; then \
@@ -1241,7 +1330,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 	@#          $8000); a SKIP surfaces as SKIP here, not PASS or FAIL.
 	@# Probe-B: bank-N first-visit HERE = $8000 (F2 COLD-init —
 	@#          page-resident from byte 0; the re-landed 19.2-H5 fix)
-	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ for f in $(BANKING_PROBES); do sed 's/$$/\r/' $$f; done; printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	for pid in a b; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.5.1-"p"-start---";re="---probe-19.5.1-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -q "probe-19.5.1-$$pid-pass" && ! echo "$$PROBE" | grep -q 'FAIL:' && ! echo "$$PROBE" | grep -q 'SKIP:' && echo "$$OUTPUT" | grep -qE "^---probe-19.5.1-$$pid-end---$$"; then \
@@ -1278,7 +1369,9 @@ test-repl-banking: lint-banking-probes $(TARGET)
 # stub-xt for compiled colon bodies deferred to Story 19.5.
 test-repl-banking-isolated: $(TARGET)
 	@echo "Running Story 19.2 isolated per-bank probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_2.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	for pid in d e f g i; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.2-"p"-start---";re="---probe-19.2-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-19.2-$$pid-end---$$"; then \
@@ -1288,7 +1381,9 @@ test-repl-banking-isolated: $(TARGET)
 			echo "  PROBE: $$PROBE"; exit 1; \
 		fi; \
 	done
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_2.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	if echo "$$OUTPUT" | grep -qE '^---probe-19.2-suite-end---$$'; then \
 		echo "PASS: probe-19.2-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
 	else \
@@ -1311,7 +1406,9 @@ test-repl-banking-isolated: $(TARGET)
 # fail), anything else → FAIL.
 test-repl-banking-isolated-19-3: $(TARGET)
 	@echo "Running Story 19.3 isolated per-bank CREATE/DOES> probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_3.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-19-3 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	for pid in d e f g; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-19.3-"p"-start---";re="---probe-19.3-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -qE "^probe-19.3-$$pid-deferred-" && echo "$$OUTPUT" | grep -qE "^---probe-19.3-$$pid-end---$$"; then \
@@ -1384,7 +1481,9 @@ test-repl-banking-isolated-19-3: $(TARGET)
 # (blocked by the DTC + non-DOCOL-trampoline defects anchored on Epic 19.5).
 test-repl-banking-isolated-19-4: $(TARGET)
 	@echo "Running Story 19.4 Epic-19 close-out integration probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_4.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_19_4.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-19-4 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-19.4-a-start---";re="---probe-19.4-a-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 	if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE '^---probe-19.4-a-end---$$'; then \
 		echo "PASS: probe-19.4-a (isolated) — Epic-19 verified mechanism end-to-end (BANK-OF + intra-bank + cross-bank EXECUTE) under $(IZCPM_BANKING)"; \
@@ -1413,7 +1512,9 @@ test-repl-banking-isolated-19-5-1: $(TARGET)
 	@# Append BYE + timeout: the probe file has no BYE and relied on the old fn-10
 	@# EOF-crash; the Story 25.2 yielding reader waits at EOF, so feed a real BYE
 	@# (BYE is a fixed-memory word, findable from any bank) and keep a timeout net.
-	@OUTPUT=$$({ sed 's/$$/\r/' tests/banking_tests_19_5_1.fth; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ sed 's/$$/\r/' tests/banking_tests_19_5_1.fth; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-19-5-1 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	PROBE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-19.5.1-c-start---";re="---probe-19.5.1-c-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 	if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE '^---probe-19.5.1-c-end---$$'; then \
 		echo "PASS: probe-19.5.1-c (isolated) — bank-1 first-visit HERE = \$$8000 (F2 COLD-init, behavioural) under $(IZCPM_BANKING)"; \
@@ -1435,7 +1536,9 @@ test-repl-banking-isolated-19-5-1: $(TARGET)
 # and execute-by-name across BANK!. Verdict per probe: result=-1 (TRUE) PASS.
 test-repl-banking-isolated-20-1: $(TARGET)
 	@echo "Running Story 20.1 isolated bank-aware-FIND probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-20-1 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	for pid in a b c d e f; do \
 		PROBE=$$(echo "$$OUTPUT" | awk -v p=$$pid 'BEGIN{rs="---probe-20.1-"p"-start---";re="---probe-20.1-"p"-end---"} $$0==rs{q=1; next} $$0==re{q=0} q') && \
 		if echo "$$PROBE" | grep -qE 'result=-1( |$$)' && ! echo "$$PROBE" | grep -qE 'result=0( |$$)' && echo "$$OUTPUT" | grep -qE "^---probe-20.1-$$pid-end---$$"; then \
@@ -1445,7 +1548,9 @@ test-repl-banking-isolated-20-1: $(TARGET)
 			echo "  PROBE: $$PROBE"; exit 1; \
 		fi; \
 	done
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_1.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-20-1 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	if echo "$$OUTPUT" | grep -qE '^---probe-20.1-suite-end---$$'; then \
 		echo "PASS: probe-20.1-suite (isolated) — suite end-sentinel present (no mid-suite kernel halt)"; \
 	else \
@@ -1468,7 +1573,9 @@ test-repl-banking-isolated-20-1: $(TARGET)
 #       no bank suffix, and QUIT recovers from the -13 so the suite finishes.
 test-repl-banking-isolated-20-2: $(TARGET)
 	@echo "Running Story 20.2 isolated bank-aware-WORDS probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_2.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-20-2 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.2-a-start---";re="---probe-20.2-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -q '_w52a' && echo "$$A" | grep -q '_w52b'; then \
 		echo "PASS: probe-20.2-a (isolated) — bank-5 names _w52a/_w52b listed by WORDS from bank 0"; \
@@ -1509,7 +1616,9 @@ test-repl-banking-isolated-22-1: $(TARGET)
 	@# Append BYE + timeout: the probe file has no BYE and relied on the old fn-10
 	@# EOF-crash; the Story 25.2 yielding reader waits at EOF, so feed a real BYE
 	@# (the leading CRLF separates it from the file's 0x1A) and keep a timeout net.
-	@OUTPUT=$$({ sed 's/$$/\r/' tests/banking_tests_22_1.fth; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$({ sed 's/$$/\r/' tests/banking_tests_22_1.fth; printf '\r\nBYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-22-1 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	BEFORE=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.1-before---";re="---probe-22.1-mid---"} $$0==rs{q=1;next} $$0==re{q=0} q' | grep -E '^[ ]+5[ ]+' | awk '{print $$(NF-1)}') && \
 	AFT=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.1-mid---";re="---probe-22.1-after---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	AFTER=$$(echo "$$AFT" | grep -E '^[ ]+5[ ]+' | awk '{print $$(NF-1)}') && \
@@ -1533,7 +1642,9 @@ test-repl-banking-isolated-22-1: $(TARGET)
 # each probe switches into a non-zero bank (feedback_phase4_probe_bank_switch_limitation).
 test-repl-banking-isolated-22-2: $(TARGET)
 	@echo "Running Story 22.2 isolated prompt bank-indicator probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_2.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-22-2 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.2-a-start---";re="---probe-22.2-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -qF 'P=[5]='; then \
 		echo "PASS: probe-22.2-a (isolated) — flag ON + bank 5: (BANK-PROMPT) emits [5]"; \
@@ -1574,7 +1685,9 @@ test-repl-banking-isolated-22-2: $(TARGET)
 # single emulator run carries every sentinel — no per-probe re-run needed).
 test-repl-banking-isolated-dot-banks: $(TARGET)
 	@echo "Running Story 23.8 isolated bank-switching probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_dot_banks.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_dot_banks.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-dot-banks — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	if echo "$$OUTPUT" | grep -vE '^[[:space:]]*\."' | grep -q 'PASS: bank-store-round-trip-1'; then \
 		echo "PASS: probe-7 (isolated) — 1 BANK! BANK@ round-trip after +BANK seed"; \
 	else \
@@ -1582,14 +1695,14 @@ test-repl-banking-isolated-dot-banks: $(TARGET)
 		echo "  OUTPUT: $$OUTPUT"; exit 1; \
 	fi && \
 	PROBE_X=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-x-start---$$/{p=1; next} /---dot-banks-probe-x-end---$$/{p=0} p') && \
-	X_BANKED=$$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
+	X_BANKED=$$(echo "$$PROBE_X" | grep -cE '^[ ]+[0-9]+[ ]+3[5-9A-F][ ]+\*?[ ]+0[ ]+16216$$') && \
 	X_ROW0=$$(echo "$$PROBE_X" | grep -E '^[ ]+0[ ]+22[ ]') && \
 	X_R0U=$$(echo "$$X_ROW0" | awk '{print $$(NF-1)}') && \
 	X_R0F=$$(echo "$$X_ROW0" | awk '{print $$NF}') && \
 	X_TOT=$$(echo "$$PROBE_X" | grep -E '^TOTAL') && \
 	X_TU=$$(echo "$$X_TOT" | awk '{print $$(NF-1)}') && \
 	X_TF=$$(echo "$$X_TOT" | awk '{print $$NF}') && \
-	X_EXP=$$((X_R0F + 180224)) && \
+	X_EXP=$$((X_R0F + 178376)) && \
 	if echo "$$PROBE_X" | grep -qE '^BANK PAGE' && [ "$$X_BANKED" -eq 11 ] && [ -n "$$X_R0U" ] && [ "$$X_TU" = "$$X_R0U" ] && [ "$$X_TF" = "$$X_EXP" ]; then \
 		echo "PASS: dot-banks-probe-x (isolated) — header + 11 banked rows + bank-0-inclusive totals invariant (TU=$$X_TU TF=$$X_TF)"; \
 	else \
@@ -1602,7 +1715,7 @@ test-repl-banking-isolated-dot-banks: $(TARGET)
 	Y1_STAR_LINES=$$(echo "$$PROBE_Y1" | grep -cE '\*') && \
 	Y2_STAR_LINES=$$(echo "$$PROBE_Y2" | grep -cE '\*') && \
 	Y3_STAR_LINES=$$(echo "$$PROBE_Y3" | grep -cE '\*') && \
-	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+22 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
+	if echo "$$PROBE_Y1" | grep -qE '^[ ]+0[ ]+22 \*' && echo "$$PROBE_Y2" | grep -qE '^[ ]+1[ ]+35 \*' && echo "$$PROBE_Y3" | grep -qE '^[ ]+0[ ]+22 \*' && \
 	   [ "$$Y1_STAR_LINES" = "1" ] && [ "$$Y2_STAR_LINES" = "1" ] && [ "$$Y3_STAR_LINES" = "1" ]; then \
 		echo "PASS: dot-banks-probe-y (isolated) — marker on row 0 → 1 → 0 tracks BANK! (exactly 1 * per phase)"; \
 	else \
@@ -1610,9 +1723,9 @@ test-repl-banking-isolated-dot-banks: $(TARGET)
 		echo "  PROBE_Y1: $$PROBE_Y1"; echo "  PROBE_Y2: $$PROBE_Y2"; echo "  PROBE_Y3: $$PROBE_Y3"; exit 1; \
 	fi && \
 	PROBE_Z=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-z-start---$$/{p=1; next} /---dot-banks-probe-z-end---$$/{p=0} p') && \
-	Z_BANKED=$$(echo "$$PROBE_Z" | grep -cE '^[ ]+[0-9]+[ ]+22[ ]+\*?[ ]+0[ ]+16384$$') && \
+	Z_BANKED=$$(echo "$$PROBE_Z" | grep -cE '^[ ]+[0-9]+[ ]+3[5-9A-F][ ]+\*?[ ]+0[ ]+16216$$') && \
 	if [ "$$Z_BANKED" -eq 11 ]; then \
-		echo "PASS: dot-banks-probe-z (isolated) — exactly 11 empty banked rows read 0/16384; bank 0 exempt"; \
+		echo "PASS: dot-banks-probe-z (isolated) — exactly 11 empty banked rows read 0/16216; bank 0 exempt"; \
 	else \
 		echo "FAIL: dot-banks-probe-z (isolated) — expected 11 empty banked rows with bank-0 exempt, got $$Z_BANKED"; \
 		echo "  PROBE_Z: $$PROBE_Z"; exit 1; \
@@ -1624,7 +1737,7 @@ test-repl-banking-isolated-dot-banks: $(TARGET)
 	W_TOT=$$(echo "$$PROBE_W" | grep -E '^TOTAL') && \
 	W_TU=$$(echo "$$W_TOT" | awk '{print $$(NF-1)}') && \
 	W_TF=$$(echo "$$W_TOT" | awk '{print $$NF}') && \
-	W_EXP=$$((W_R0F + 180224)) && \
+	W_EXP=$$((W_R0F + 178376)) && \
 	W_SW=$$(echo "$$PROBE_W" | grep -E '^BANKED-WORDS' | awk '{print $$NF}') && \
 	W_SB=$$(echo "$$PROBE_W" | grep -E '^STUB-BYTES' | awk '{print $$NF}') && \
 	W_SBEXP=$$((W_SW * 4)) && \
@@ -1635,8 +1748,8 @@ test-repl-banking-isolated-dot-banks: $(TARGET)
 		echo "  PROBE_W: $$PROBE_W"; exit 1; \
 	fi && \
 	PROBE_M1=$$(echo "$$OUTPUT" | awk '/---dot-banks-probe-m1-start---$$/{p=1; next} /---dot-banks-probe-m1-end---$$/{p=0} p') && \
-	if echo "$$PROBE_M1" | grep -qE '16384' && ! echo "$$PROBE_M1" | grep -qE '[ ]4000$$'; then \
-		echo "PASS: dot-banks-probe-m1 (isolated) — byte columns forced decimal in HEX mode (free reads 16384, not 4000)"; \
+	if echo "$$PROBE_M1" | grep -qE '16216' && ! echo "$$PROBE_M1" | grep -qE '[ ]3F58$$'; then \
+		echo "PASS: dot-banks-probe-m1 (isolated) — byte columns forced decimal in HEX mode (free reads 16216, not 3F58)"; \
 	else \
 		echo "FAIL: dot-banks-probe-m1 (isolated) — byte columns not base-stable (Story-17.5 M1 regression)"; \
 		echo "  PROBE_M1: $$PROBE_M1"; exit 1; \
@@ -1656,7 +1769,9 @@ test-repl-banking-isolated-dot-banks: $(TARGET)
 # because every probe switches into a non-zero bank.
 test-repl-banking-isolated-22-3: $(TARGET)
 	@echo "Running Story 22.3 isolated CODE-into-fixed-memory redirect probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_22_3.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-22-3 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-22.3-a-start---";re="---probe-22.3-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -qF 'bankof=-1'; then \
 		echo "PASS: probe-22.3-a (isolated) - bank-5 CODE FOO lands in fixed memory (BANK-OF=-1)"; \
@@ -1691,7 +1806,9 @@ test-repl-banking-isolated-22-3: $(TARGET)
 # after the traversals (c), and the FR-P4-30-retired plain `<word> ?` (d).
 test-repl-banking-isolated-20-3: $(TARGET)
 	@echo "Running Story 20.3 Epic-20 close-out integration probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_20_3.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-20-3 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-20.3-a-start---";re="---probe-20.3-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -q '_w53a' && echo "$$A" | grep -q '_w53b' && echo "$$A" | grep -q '_w53c'; then \
 		echo "PASS: probe-20.3-a (isolated) — bank-5/6/7 names _w53a/_w53b/_w53c all listed by WORDS from bank 0"; \
@@ -1737,7 +1854,9 @@ test-repl-banking-isolated-20-3: $(TARGET)
 #       reclaims a bank-7 word's tail (grep for the plain `_wc7 ?` line).
 test-repl-banking-isolated-21-1: $(TARGET)
 	@echo "Running Story 21.1 isolated MARKER/FORGET reclamation probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_1.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_1.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-21-1 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.1-a-start---";re="---probe-21.1-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -qxF '_w5a ?' && echo "$$A" | grep -qxF '_w7a ?'; then \
 		echo "PASS: probe-21.1-a (isolated) — bank-5 (_w5a) + bank-7 (_w7a) words forgotten after FORGET across banks"; \
@@ -1775,7 +1894,9 @@ test-repl-banking-isolated-21-1: $(TARGET)
 
 test-repl-banking-isolated-21-2: $(TARGET)
 	@echo "Running Story 21.2 isolated saved-bank / QUIT re-assert probes under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_2.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_2.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-21-2 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.2-a-start---";re="---probe-21.2-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -qE '^bank=5 ?$$'; then \
 		echo "PASS: probe-21.2-a (isolated) — interactive 5 BANK! saved + re-asserted across ABORT (BANK@ -> 5)"; \
@@ -1813,7 +1934,9 @@ test-repl-banking-isolated-21-2: $(TARGET)
 
 test-repl-banking-isolated-21-3: $(TARGET)
 	@echo "Running Story 21.3 Epic-21 close-out integration probe under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_3.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/banking_tests_21_3.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-banking-isolated-21-3 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-21.3-a-start---";re="---probe-21.3-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -qE '^x5=42 ?$$'; then \
 		echo "PASS: probe-21.3-a (isolated) — cross-bank call W5 (bank 5) from bank 7 ran via stub (x5=42)"; \
@@ -1864,7 +1987,9 @@ test-repl-banking-isolated-21-3: $(TARGET)
 # pattern); BANKS=12 at boot here, so snap_count=12 spans banks 0..11.
 test-repl-cr-21-3: $(TARGET)
 	@echo "Running CR 21.3 fix regression (nested MARKER / bounded snapshot) under $(IZCPM_BANKING)..."
-	@OUTPUT=$$(sed 's/$$/\r/' tests/cr_21_3_fixes.fth | $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null | tr -d '\r' || true) && \
+	@OUTPUT=$$(sed 's/$$/\r/' tests/cr_21_3_fixes.fth | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
+	if [ $$rc -eq 124 ]; then echo "FAIL: test-repl-cr-21-3 — timed out after $(PROBE_TIMEOUT)s (bank-lookup hang?)"; exit 1; fi; \
+	OUTPUT=$$(printf '%s' "$$OUTPUT" | tr -d '\r') && \
 	A=$$(echo "$$OUTPUT" | awk 'BEGIN{rs="---probe-cr-a-start---";re="---probe-cr-a-end---"} $$0==rs{q=1;next} $$0==re{q=0} q') && \
 	if echo "$$A" | grep -qE 'revert=-1( |$$)' && ! echo "$$A" | grep -qE 'revert=0( |$$)'; then \
 		echo "PASS: probe-cr-a — nested MARKER reverted HERE to pre-outer-marker (revert=-1)"; \
@@ -1993,7 +2118,7 @@ test: $(SRCS) | $(BUILDDIR_STAMP)
 # Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
 # prerequisites so a bare `make test-repl` exercises them — they are otherwise
 # green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow $(TARGET)
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow test-repl-bank-lookup $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \

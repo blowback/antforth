@@ -72,7 +72,7 @@ w_MARKER_cf:
         ; Raise the build_header window-top reserve to MARKER's full footprint
         ; (code field + 192-byte saved body + bank-table prefix + stub tail) so
         ; the single pre-commit guard inside build_header is all-or-nothing: if
-        ; the body would cross $C000 it throws -8 BEFORE the header/LATEST/bucket
+        ; the body would cross BANKED_CEILING it throws -8 BEFORE the header/LATEST/bucket
         ; are committed (the body LDIR below runs only after build_header has
         ; already committed them, so it cannot self-guard). build_header resets the
         ; cell on EVERY exit — the window-top guard on the found-name path and
@@ -364,7 +364,7 @@ w_ABORT_QUOTE_cf:
         POP     HL
         CP      '"'
         JR      Z, .aq_done     ; closing quote found
-        ; Banked window-top guard: refuse a char at/past $C000 (no-op on
+        ; Banked window-top guard: refuse a char at/past BANKED_CEILING (no-op on
         ; bank 0). A holds the char; the guard clobbers AF, so bracket with
         ; PUSH/POP AF. Overflow JPs to dict_overflow_throw; the orphaned
         ; PUSH AF is discarded by THROW/ABORT's SP reset.
@@ -565,9 +565,9 @@ env_table:
         ; /HOLD -> PIC_BUF_SIZE = 40 (pictured-output buffer size)
         db  5, "/HOLD", 0
         dw  PIC_BUF_SIZE
-        ; /PAD -> PAD_OFFSET = 84 (PAD offset above HERE)
+        ; /PAD -> PAD_SIZE = 84 (PAD length)
         db  4, "/PAD", 0
-        dw  PAD_OFFSET
+        dw  PAD_SIZE
         ; ADDRESS-UNIT-BITS -> 8 (Z80 byte-addressable)
         db  17, "ADDRESS-UNIT-BITS", 0
         dw  8

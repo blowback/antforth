@@ -25,7 +25,7 @@ Forth's threaded execution model assumes 16-bit addresses are meaningful without
 - **Page 3** (`$C000-$D3FF`): Return stack, user area, system data (5KB - BIOS takes `$D400+`)
 
 **Swappable User Space (176KB):**
-- **Page 2** (`$8000-$BFFF`): User bank slot (16KB visible, 11 banks total: 0x35-0x3F)
+- **Page 2** (`$8000-$BFFF`): User bank slot (16KB visible, 11 banks total: 0x35-0x3F). A bank's dictionary stops at `$BF58`: the top 168 bytes stay free for the WORD buffer and `PAD` above `HERE`, which would otherwise spill into fixed RAM at `$C000+`
 
 ### Key Design Decisions
 

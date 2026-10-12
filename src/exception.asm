@@ -392,7 +392,7 @@ w_THROW_cf:
         ; "SP may be in any state" note above), so a BC=0 entry would
         ; pop a stale frame byte and corrupt the user stack. Today every
         ; code raised from this entry is non-zero (-1, -2, -4, -10, -13,
-        ; -14, -16, -17, -22, -58, -258..-272, -273); flagging for any
+        ; -14, -16, -17, -18, -22, -58, -258..-272, -273); flagging for any
         ; future migration that wishes to raise THROW 0 from the kernel.
         ; -----------------------------------------------
 .kernel_entry:
@@ -942,6 +942,9 @@ throw_desc_table:
         DW      -17
         DB      39
         DB      "pictured numeric output string overflow"
+        DW      THROW_PARSED_OVERFLOW   ; -18
+        DB      22
+        DB      "parsed string overflow"
         DW      -22
         DB      26
         DB      "control structure mismatch"

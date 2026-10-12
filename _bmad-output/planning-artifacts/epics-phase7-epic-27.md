@@ -109,7 +109,14 @@ All return a well-formed flag: TRUE = -1 (all bits set), FALSE = 0.
   2026-10-08 OPEN entry): `_by` in bank 2 hides `BANK!` from bank 3, `_qk` in
   bank 1 hides `CR` from banks 2 and 3, and a bank-0 `B0` straddling `$C000`
   plus bank 6 at the brink hangs the next `CR` lookup (also on hardware).
-  Added to Phase 7 by the project lead 2026-10-11.
+  Added to Phase 7 by the project lead 2026-10-11. The 27.7 draft trace
+  (2026-10-12) found all three repros are physical-page aliasing
+  (`$22 +BANK` repeated maps every bank onto bank 0's page), not a FIND
+  defect, plus a real spill: a bank-N `HERE` near `$C000` lets the parse
+  buffer and `PAD` write into fixed RAM over bank 0's dictionary. The
+  project lead set the fix (2026-10-12): `+BANK` refuses duplicate pages,
+  and the banked ceiling drops to `$C000` − 168 (`$BF58`). Code review
+  added a 128-char `WORD` cap (`-18`) so `EVALUATE` can't pass the reserve.
 
 ### NonFunctional Requirements
 
@@ -202,7 +209,7 @@ definitions. Ship as v3.3.0 with zero regressions.
 and may land in any order. 27.7 runs after 27.6. 27.5 needs all six.
 
 **Byte budget:** estimate ≈ 425 B (27.1 ≈ 85, measured 76 · 27.2 ≈ 180 ·
-27.3 ≈ 30 · 27.4 ≈ 70 · 27.6 ≈ 60 · 27.7 = re-derive from the trace · 27.5 ≈ 0); envelope ≤ 500 B. 27.2's
+27.3 ≈ 30 · 27.4 ≈ 70 · 27.6 ≈ 60 · 27.7 ≈ 12 (itemised at drafting) · 27.5 ≈ 0); envelope ≤ 500 B. 27.2's
 original ≈ 150 B was re-itemised at story drafting (179 B, incl. underflow
 checks on `0<>`/`0>`). 27.6 was re-itemised at story drafting (2026-10-11)
 to ≈ 263 B: the audit found ≈ 55 unchecked sites, not ≈ 20, plus the
@@ -459,6 +466,12 @@ So that `CR`, `BANK!` and the rest are always found, whatever I name my words
 and wherever their headers land.
 
 **Acceptance Criteria:**
+
+**Scope set 2026-10-12** (draft trace; see the story file): the cause is
+page aliasing plus a transient-buffer spill past `$C000`. The fix is `+BANK`
+refusing duplicate pages (probes and `disk/a/` fixtures move to distinct
+pages) and a banked ceiling of `$BF58`. The story file's ACs are the
+authority; the ACs below are kept as drafted.
 
 **Given** the three repros in the `docs/dev_journal.md` 2026-10-08 OPEN entry
 (`_by`/`BANK!`, `_qk`/`CR`, `B0`/`CR` hang)

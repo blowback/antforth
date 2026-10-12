@@ -61,7 +61,7 @@ S" 34" >NUMBER 2DROP D.` printed `78643234` (want `1234`). Fixed by swapping
 the two stores in `w_TO_NUMBER_cf` (0 B); the output pushes were already
 right. Probe: `ur=`/`us=` in `tests/underflow_tests.fth`.
 
-## 2026-10-08 (OPEN, Story 27.7) — a word defined in one bank can hide `BANK!` from another
+## 2026-10-08 (RESOLVED 2026-10-12, Story 27.7) — a word defined in one bank can hide `BANK!` from another
 
 Found while writing the Story 27.3 probe. On the 31,009 B binary (before
 27.3), under iz-cpm-banking:
@@ -136,6 +136,40 @@ Same hang on real MicroBeast hardware (2026-10-11, 31,077 B binary): the
 repro printed `3` and `CR` never returned. That run followed the 27.4 UAT
 session rather than a fresh boot, with `BANKS-CLEAR` resetting the banks
 first.
+
+Resolved by Story 27.7. FIND was not at fault. Every repro used
+`$22 +BANK $22 +BANK …`, and `$22` is bank 0's own slot-2 page, so every
+logical bank was the same physical RAM: bank N's `$8000` was bank M's
+`$8000`. `WORD` stages each token at `HERE`, so the first token parsed in
+one bank overwrote the fat link of a header another bank had just built at
+the same address. The bucket walk then followed a garbage link. The name
+mattered because only a word in the victim's bucket sits on its chain:
+`_by` and `BANK!` share bucket 1, `_qk`, `B0` and `CR` share bucket 41,
+while `_zz`, `ZZ`, `Q7` and `F0` hash elsewhere. The address mattered
+because only a header under the other bank's parse buffer is overwritten
+(`_by` at `$8000` failed; at `$8014` or `$BF9C` it survived). Whether the
+walk ended (`-13`) or looped (the hang) depended on the garbage. The same
+three repros on distinct pages (`$22 $35 $36 … +BANK`) pass on the
+unmodified 31,348 B binary. The hardware runs used the same setup.
+
+The trace also found a separate defect that page aliasing doesn't explain.
+A bank N > 0 could grow `HERE` to `$C000`, but `WORD` writes up to `HERE+128`
+(a token is at most a TIB line) and `PAD` is `HERE+84..HERE+167`. Near the
+top, both wrote into `$C000+`, which is fixed RAM, where bank 0's dictionary
+continues once it grows past `$C000`. On distinct pages, a bank-0 `B0`
+straddling `$C000` was lost after bank 6 at `$BFFE` parsed one long token.
+
+Fix: `+BANK` refuses a page already in the active list (`dup?`, `-2`,
+before the probe; the boot command-line parser shares the same scan,
+`page_in_active_list`). Banks N > 0 now stop at `BANKED_CEILING` = `$BF58`,
+which is `$C000` less `PAD_OFFSET` + `PAD_SIZE` (168). `.BANKS` shows an
+empty bank as FREE 16216. Bank 0 is unchanged. Probes that repeated `$22`
+now use distinct pages, the brinks moved to `$BF58`, the 27.3/27.4 probe
+names went back to `B0` and `_qk`, and every bank-driving Makefile recipe
+runs under `timeout`. New probe: `make test-repl-bank-lookup`. `WORD` now
+throws `-18` (parsed string overflow) on a token longer than 128 characters
+(`WORD_MAX_LEN`), so an `EVALUATE`d token can't run past the reserve either;
+before, its copy loop had no limit. Byte cost: +47 B (31,348 → 31,395).
 
 ## 2026-10-08 (RESOLVED 2026-10-11, Story 27.6) — one-operand words don't check for underflow
 

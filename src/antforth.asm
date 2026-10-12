@@ -550,19 +550,9 @@ cl_tail_parse:
 ; ------------------------------------------------------------
 cl_process_page:
         LD      C, A                    ; C = candidate (preserved through scan)
-        ; --- Dup check (linear scan of active_pages[]) ---
-        LD      A, (IY+UserArea.bank_count)
-        OR      A
-        JR      Z, .nodup
-        LD      B, A
-        LD      HL, ACTIVE_PAGES_BASE
-.dscan:
-        LD      A, (HL)
-        CP      C
-        JR      Z, .dup
-        INC     HL
-        DJNZ    .dscan
-.nodup:
+        ; --- Dup check (shared with +BANK) ---
+        CALL    page_in_active_list
+        JR      C, .dup
         ; --- Cap check (BANK_TABLE_CAP = 29) ---
         LD      A, (IY+UserArea.bank_count)
         CP      BANK_TABLE_CAP

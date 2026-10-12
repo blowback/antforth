@@ -149,13 +149,15 @@ mbb_get_slot2:
 ; === check_banked_headroom — banked dictionary window-top guard (Story 23.6) ===
 ;   ( HL = prospective one-past-end address -- )  [non-throwing predicate]
 ;
-;   The banked dictionary lives in the slot-2 window $8000..$BFFF; $C000 is
-;   the first ILLEGAL byte address (it resolves through slot 3 = wrong bank /
-;   fixed memory). HERE = next byte to write; a width-w write at HERE touches
-;   HERE..HERE+w-1, legal iff HERE+w <= $C000. Callers pass the prospective
-;   one-past-end p = HERE+w in HL; overflow is p > $C000 (so p == $C000, i.e.
-;   a last byte at exactly $BFFF, is LEGAL — the compare is strictly > $C000,
-;   not >=).
+;   The banked dictionary lives in the slot-2 window $8000..$BFFF, but its
+;   ceiling is BANKED_CEILING ($BF58), not $C000. WORD stages tokens at HERE
+;   and PAD sits at HERE+84..HERE+167; neither advances HERE. On a bank whose
+;   HERE is near $C000 those writes would run into $C000+, which is fixed RAM
+;   holding bank 0's dictionary once bank 0 grows past $C000. Keeping
+;   BANKED_TRANSIENT_RESERVE (168) bytes clear below $C000 stops that.
+;   HERE = next byte to write; a width-w write touches HERE..HERE+w-1. Callers
+;   pass the prospective one-past-end p = HERE+w in HL; overflow is
+;   p > BANKED_CEILING (p == BANKED_CEILING is legal).
 ;
 ;   Returns CY=1 on overflow, CY=0 otherwise. Does NOT throw — each caller
 ;   raises via dict_overflow_throw in whatever EXX state it owns (build_header
@@ -173,9 +175,9 @@ check_banked_headroom:
         PUSH    HL
         PUSH    DE
         EX      DE, HL                  ; DE = prospective one-past-end
-        LD      HL, SLOT2_WINDOW_BASE + 0x4000   ; $C000 = inclusive legal ceiling for one-past
+        LD      HL, BANKED_CEILING      ; inclusive legal ceiling for one-past
         OR      A                       ; clear CY
-        SBC     HL, DE                  ; CY set iff prospective > $C000
+        SBC     HL, DE                  ; CY set iff prospective > BANKED_CEILING
         POP     DE                      ; POP/PUSH do not disturb flags
         POP     HL
         RET                             ; CY = overflow verdict
@@ -439,7 +441,9 @@ w_BANKS_cf:
 ;   bank_count is incremented.
 ;
 ;   Cap check: if bank_count == BANK_TABLE_CAP (29), ABORT" cap?" fires
-;   BEFORE the probe. The active list is NOT modified on either ABORT path.
+;   BEFORE the probe. Dup check: if the page is already in active_pages[],
+;   ABORT" dup?" fires, also before the probe. The active list is NOT
+;   modified on any ABORT path.
 ;
 ;   Probe correctness — two-sentinel sweep, conservatively. $5A alone would
 ;   false-positive a ROM page whose byte at $8000 happens to equal $5A; $A5
@@ -450,9 +454,10 @@ w_BANKS_cf:
 ;   so reading the live mapping must go through the BIOS), then restored via
 ;   MBB_SET after the probe.
 ;
-;   No dedup at this surface: duplicate pages append; downstream -BANK
-;   removes the first match, leaving subsequent duplicates intact. The CL
-;   parser owns surface-level dedup.
+;   Duplicates are refused because two logical banks on one physical page
+;   share RAM: one bank's WORD parse at HERE overwrites the other's headers
+;   and corrupts the bucket chains. The CL parser uses the same scan
+;   (page_in_active_list), so the active list never holds a page twice.
 w_PLUS_BANK:
         DEFCODE "+BANK", 0
 w_PLUS_BANK_cf:
@@ -461,6 +466,9 @@ w_PLUS_BANK_cf:
         LD      A, (IY+UserArea.bank_count)
         CP      BANK_TABLE_CAP
         JP      Z, .abort_cap
+        ; --- Dup check (C = page; B is dead, POP BC reloads TOS) ---
+        CALL    page_in_active_list
+        JR      C, .abort_dup
         ; --- Probe + append via shared helper ---
         ; Helper preserves DE (IP) so no PUSH/POP DE wrap is needed; the
         ; old D/E scratch arrangement (D=caller_slot2_page, E=saved_orig)
@@ -471,19 +479,45 @@ w_PLUS_BANK_cf:
         POP     BC                                  ; new TOS
         NEXT
 
+.abort_dup:
+        LD      HL, str_dup_q
+        LD      B, str_dup_q_len
+        JR      .abort_msg
+
 .abort_probe:
         LD      HL, str_probe_q
         LD      B, str_probe_q_len
-        CALL    bdos_print_str
-        LD      BC, THROW_ABORT_QUOTE
-        JP      w_THROW_cf.kernel_entry
+        JR      .abort_msg
 
 .abort_cap:
         LD      HL, str_cap_q
         LD      B, str_cap_q_len
+.abort_msg:
         CALL    bdos_print_str
         LD      BC, THROW_ABORT_QUOTE
         JP      w_THROW_cf.kernel_entry
+
+; ============================================================
+; page_in_active_list — C = page -> CY set if C is in
+;   active_pages[0..bank_count-1].
+;   Used by +BANK (above) and cl_process_page (src/antforth.asm).
+;   Preserves C, DE, IX, IY. Clobbers A, B, HL.
+; ============================================================
+page_in_active_list:
+        LD      A, (IY+UserArea.bank_count)
+        OR      A                                   ; CY clear
+        RET     Z                                   ; empty list -> not present
+        LD      B, A
+        LD      HL, ACTIVE_PAGES_BASE
+.pial_scan:
+        LD      A, (HL)
+        CP      C
+        SCF                                         ; CY set; Z untouched
+        RET     Z                                   ; found
+        INC     HL
+        DJNZ    .pial_scan
+        OR      A                                   ; CY clear
+        RET
 
 ; ============================================================
 ; cl_probe_and_add — shared probe-and-append.
@@ -681,7 +715,7 @@ w_BANKS_CLEAR_cf:
 ;   6-digit value never butts against its neighbour:
 ;     "BANK PAGE    USED   FREE\r\n"  ; header — USED right-edge col 17,
 ;     "   0   22 *    269  25698\r\n" ; FREE right-edge col 24.
-;     "   1   35        0  16384\r\n"
+;     "   1   35        0  16216\r\n"
 ;     ...
 ;     "TOTAL     269 205922\r\n"      ; Σ used + Σ free (both real)
 ;     "BANKED-WORDS         3\r\n"    ; descriptor-stub count
@@ -693,8 +727,8 @@ w_BANKS_CLEAR_cf:
 ;                the banking annex (the COLD banner computes bank-0 free the
 ;                same way).
 ;     bank N≥1 — a slot-2 window: base = SLOT2_WINDOW_BASE ($8000),
-;                ceiling = $C000 (size $4000 = 16384). Empty → used 0,
-;                free 16384.
+;                ceiling = BANKED_CEILING ($BF58, 16216 bytes). Empty →
+;                used 0, free 16216.
 ;   HERE is read live from UserArea for the CURRENT bank (the triple is
 ;   flushed to bank-table[] only at BANK! time, so bank-table[current] is
 ;   stale); for every other row HERE is read from bank-table[N].
@@ -887,7 +921,8 @@ print_bank_col_4:
 ;   The current bank's HERE is live in UserArea (the triple is flushed to
 ;   bank-table[] only at BANK! time); every other bank's HERE is the saved
 ;   bank-table[N].here. Bank 0 is the kernel dictionary (base kernel_end,
-;   ceiling $D400); banks N≥1 are slot-2 windows (base $8000, ceiling $C000).
+;   ceiling $D400); banks N≥1 are slot-2 windows (base $8000, ceiling
+;   BANKED_CEILING = $BF58).
 ;   Clobbers A/BC/DE/HL.
 dot_banks_row_usedfree:
         ; --- this row's HERE → HL ---
@@ -914,7 +949,7 @@ dot_banks_row_usedfree:
         JR      .compute
 .banked:
         LD      DE, SLOT2_WINDOW_BASE               ; $8000
-        LD      BC, SLOT2_WINDOW_BASE + 0x4000      ; $C000
+        LD      BC, BANKED_CEILING                  ; $BF58
 .compute:
         PUSH    BC                                  ; save ceiling
         PUSH    HL                                  ; save HERE

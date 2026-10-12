@@ -32,7 +32,7 @@
 |---|------|---------|--------|---------|-------|
 | §3.3.3.1 | Address alignment — every cell access on a-addr is the system's natural alignment | Accepted-with-rationale-N-A | N-A | v2.0 baseline | Z80 has byte alignment (no alignment penalty / fault on unaligned word access); `ALIGN` and `ALIGNED` are no-ops per §6.1.0705 / §6.1.0706. Satisfied behaviourally — every memory access in `src/*.asm` uses byte-or-cell ops with no alignment assumption. |
 | §3.3.3.4 | Dictionary transient region — `,`, `C,`, `ALLOT` advance HERE; data-space layout is implementation-defined | Implemented | src/memory.asm | v2.0 baseline | `HERE` is a single-cell USER variable; `,` advances by 2; `C,` by 1; `ALLOT` by n. No alignment padding (Z80 byte-addressable). |
-| §3.3.3.6 | Transient region (PAD) survives parsing of one space-delimited name | Implemented | src/memory.asm (`PAD` returns HERE+84) | Story 13.5.4 | TD-6 closure 2026-05-06; F-9 hardware reproducer fixed (cross-line transient survival); satisfies §3.3.3.6 because WORD writes counted-string at HERE+0..HERE+u, leaving HERE+33..HERE+84+ untouched per F_LENMASK ≤31 chars. |
+| §3.3.3.6 | Transient region (PAD) survives parsing of one space-delimited name | Implemented | src/memory.asm (`PAD` returns HERE+84) | Story 13.5.4 | TD-6 closure 2026-05-06; F-9 hardware reproducer fixed (cross-line transient survival); WORD writes its counted string at HERE+0..HERE+u, so PAD at HERE+84 is untouched by tokens up to 83 chars. WORD caps u at 128 (`WORD_MAX_LEN`, `-18` past that, Story 27.7), so an 84–128 char token overwrites the start of PAD. |
 
 ## §3.4.1.3 — Conversion of digit strings (parser-level rule)
 
@@ -872,15 +872,15 @@ antforth also defines words that are useful but outside the Core word sets:
 | Z80 assembler (107 words) | `assembler.asm` | Non-standard (antforth extension) |
 | `BANK-MAPPING-ON` | `banking.asm:51` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
 | `BANK-MAPPING-OFF` | `banking.asm:86` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.1) |
-| `BANK@` | `banking.asm:99` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
-| `BANK!` | `banking.asm:148` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
-| `BANKS` | `banking.asm:252` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4; DEFCODE proxy for the `VALUE` specified in FR-P4-3 — `VALUE` / `TO` themselves landed in Story 23.2 per §6.2.2295 + §6.2.2405) |
-| `+BANK` | `banking.asm:289` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; probe-on-add per FR-P4-7; ABORTs `probe?` on ROM/unmapped, `cap?` on 29-entry cap) |
-| `-BANK` | `banking.asm:380` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-8 — no-op on miss) |
-| `BANKS-CLEAR` | `banking.asm:432` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-9 — resets `bank_count` to 0; subsequent `BANK!` aborts `bank?`) |
-| `.BANKS` | `banking.asm:552` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-6 — minimal form; per-bank `used`/`free` are placeholders, Epic 19's bank-aware `:` makes them real, Epic 22 polishes formatting; totals row prints `bank_count * 16384` via D.R, follows current BASE) |
-| `BANK-OF` | `banking.asm:857` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-5 — one-byte read of descriptor-stub byte 0, sign-extended; `-1` for fixed-memory words, `0..28` for banked words) |
-| `IN-BANK` | `banking.asm:952` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-4 — save current bank, switch, EXECUTE xt, restore caller's bank; CATCH-safe via DEFWORD-with-internal-CATCH discipline so saved bank is restored on the THROW unwind path; kernel-blessed, NOT user library) |
+| `BANK@` | `banking.asm:200` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
+| `BANK!` | `banking.asm:257` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4) |
+| `BANKS` | `banking.asm:426` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §5.4; DEFCODE proxy for the `VALUE` specified in FR-P4-3 — `VALUE` / `TO` themselves landed in Story 23.2 per §6.2.2295 + §6.2.2405) |
+| `+BANK` | `banking.asm:461` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; probe-on-add per FR-P4-7; ABORTs `probe?` on ROM/unmapped, `cap?` on 29-entry cap, `dup?` on a page already in the active list) |
+| `-BANK` | `banking.asm:602` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-8 — no-op on miss) |
+| `BANKS-CLEAR` | `banking.asm:681` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-9 — resets `bank_count` to 0; subsequent `BANK!` aborts `bank?`) |
+| `.BANKS` | `banking.asm:742` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-6 — per-bank USED/FREE (bank 0 against `$D400`, banks N > 0 against the `$BF58` banked ceiling, so an empty bank shows FREE 16216), TOTAL row, BANKED-WORDS/STUB-BYTES; byte columns always decimal) |
+| `BANK-OF` | `banking.asm:1211` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-5 — one-byte read of descriptor-stub byte 0, sign-extended; `-1` for fixed-memory words, `0..28` for banked words) |
+| `IN-BANK` | `banking.asm:1302` | Non-standard (antforth extension — see `docs/antforth-banking-redesign.md` §1; FR-P4-4 — save current bank, switch, EXECUTE xt, restore caller's bank; CATCH-safe via DEFWORD-with-internal-CATCH discipline so saved bank is restored on the THROW unwind path; kernel-blessed, NOT user library) |
 | `IN` | `io.asm:199` | Non-standard (antforth extension — Story 23.3; `( port -- byte )` raw Z80 port read via `IN A,(C)` with `BC = port` (B = A8..A15); result zero-extended to a cell (high byte provably 0). Distinct from the assembler's `IN,`. Underflow → -4) |
 | `OUT` | `io.asm:213` | Non-standard (antforth extension — Story 23.3; `( x port -- )` raw Z80 port write via `OUT (C),A` with `BC = port`; datum below address like `!`, both cells consumed. Distinct from the assembler's `OUT,`. Underflow → -4) |
 | `UD.` | `formatting.asm:249` | Non-standard (Double-Number common-practice extension — Story 23.4; `( ud -- )` print an unsigned double in current BASE with a trailing space, no sign. The `D.` thread minus `DABS`/`SIGN`. NOT a DPANS94 word — the epic's §8.6.1.1230 citation is `DNEGATE`'s number, not `UD.`) |

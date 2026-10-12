@@ -42,8 +42,9 @@ END-CODE
 \ a header above $8000 (feedback_banking_probe_straddle_halt — surfaced when the
 \ Phase-6 multitasker grew the kernel ~470 B in Story 25.1). The orchestration +
 \ verdict still run interpret-level at the probe site (Story 23.2).
+\ 29 distinct pages: $22, then $24..$3F (+BANK refuses a page already listed).
 : _do-29-+bank ( -- )
-  29 0 DO $22 +BANK LOOP
+  $22 +BANK  29 1 DO I $23 + +BANK LOOP
 ;
 : _do-one-more-+bank ( -- ) $22 +BANK ;
 
@@ -1050,7 +1051,7 @@ _p18b-end
 \ Rationale: A direct interpret-mode probe `1 BANK! ... <xt> EXECUTE
 \ ... 0 BANK!` requires the outer interpreter to FIND tokens (DUP,
 \ EXECUTE, BANK!, integer literals) WHILE bank=1 is active. BANK!'s
-\ triple swap (banking.asm:170..193) saves/loads HERE, LATEST, and
+\ triple swap (banking.asm `bank_triple_save`/`bank_triple_load`) saves/loads HERE, LATEST, and
 \ the FORTH-WORDLIST WORDLIST_NEXT cell — but the FORTH-WORDLIST's
 \ hash-bucket array is NOT swapped (it is the kernel-resident
 \ canonical wordlist; src/wordlists.asm:328..343). Bucket cells
@@ -1368,7 +1369,7 @@ _p18-5-1b-end
 \ in UserArea). AC1/AC3/AC4 are documentation-only ACs (no functional
 \ kernel code change): the existing UserArea.here / UserArea.latest
 \ read/write paths in src/memory.asm are per-bank-correct by construction
-\ via BANK!'s LDIR triple-swap at src/banking.asm:170..193 (PD-P4-3,
+\ via BANK!'s LDIR triple-swap in src/banking.asm `bank_triple_save`/`bank_triple_load` (PD-P4-3,
 \ architecture.md:229..241). The "extension" specified by the AC wording
 \ is a documentation closure rather than a kernel code edit; the source-
 \ citation comments per AC6 record the per-bank semantic at each touchpoint

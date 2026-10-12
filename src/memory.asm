@@ -205,7 +205,7 @@ w_ALLOT_cf:
         ADD     HL, BC                     ; HL = HERE + n  (prospective one-past-end)
         JR      C, .allot_carry            ; 16-bit wrap (huge +n) OR normal -n release
 .allot_store:
-        CALL    check_banked_headroom      ; Story 23.6: -8 if HERE+n straddles $C000 on a bank
+        CALL    check_banked_headroom      ; Story 23.6: -8 if HERE+n straddles BANKED_CEILING on a bank
         JP      C, dict_overflow_throw     ; (no-op on bank 0; HL preserved across the call)
         LD      (IY+UserArea.here), L
         LD      (IY+UserArea.here+1), H
@@ -242,7 +242,7 @@ w_COMMA_cf:
         CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)   ; HL = HERE
-        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if the cell straddles $C000 on a bank
+        GUARD_BANKED_WRITE 2               ; Story 23.6: -8 if the cell straddles BANKED_CEILING on a bank
         LD      (HL), C
         INC     HL
         LD      (HL), B         ; Store cell (little-endian)
@@ -269,7 +269,7 @@ w_C_COMMA_cf:
         CALL    check_underflow
         LD      L, (IY+UserArea.here)
         LD      H, (IY+UserArea.here+1)
-        GUARD_BANKED_WRITE 1               ; Story 23.6: -8 if the byte straddles $C000 on a bank
+        GUARD_BANKED_WRITE 1               ; Story 23.6: -8 if the byte straddles BANKED_CEILING on a bank
         LD      (HL), C         ; Store byte
         INC     HL              ; HERE + 1
         LD      (IY+UserArea.here), L

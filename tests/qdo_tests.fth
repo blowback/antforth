@@ -67,20 +67,18 @@ _dep
 \ --- Error: -14 once ---
 ?DO
 
-\ --- Banked: a ?DO word in bank 1 runs from bank 1 and from bank 0.
-\ The names avoid the open bank-lookup bug in docs/dev_journal.md: `_qk` in
-\ bank 1 hides CR from banks 2 and 3; `_bq` and `_qe` don't. ---
-BANKS-CLEAR $22 +BANK $22 +BANK $22 +BANK $22 +BANK
-1 BANK!  : _bq ( n -- c ) 0 SWAP 0 ?DO I 3 = IF LEAVE THEN 1+ LOOP ;
-." qdK=" 0 _bq . 10 _bq . 2 _bq . CR
-0 BANK!  ." qdL=" 0 _bq . 10 _bq . 2 _bq . CR
+\ --- Banked: a ?DO word in bank 1 runs from bank 1 and from bank 0. ---
+BANKS-CLEAR $22 +BANK $35 +BANK $36 +BANK $37 +BANK
+1 BANK!  : _qk ( n -- c ) 0 SWAP 0 ?DO I 3 = IF LEAVE THEN 1+ LOOP ;
+." qdK=" 0 _qk . 10 _qk . 2 _qk . CR
+0 BANK!  ." qdL=" 0 _qk . 10 _qk . 2 _qk . CR
 
-\ --- Banked window top: X and Y cross $C000 (-8); Z ends at $BFFF.
+\ --- Banked ceiling ($BF58): X and Y cross it (-8); Z ends at $BF57.
 \ The witness after ?DO in X and Y prints only if ?DO did not throw; without
 \ it, the -8 from `;` writing EXIT would satisfy the count on its own. ---
-1 BANK!  : _wx [ $C000 HERE - 1 - ALLOT ] ?DO [ ." FAIL: qd-wx" ] ;
-2 BANK!  : _wy [ $C000 HERE - 3 - ALLOT ] ?DO [ ." FAIL: qd-wy" ] ;
-3 BANK!  : _wz [ $C000 HERE - 4 - ALLOT ] ?DO [ HERE U. ] ;
+1 BANK!  : _wx [ $BF58 HERE - 1 - ALLOT ] ?DO [ ." FAIL: qd-wx" ] ;
+2 BANK!  : _wy [ $BF58 HERE - 3 - ALLOT ] ?DO [ ." FAIL: qd-wy" ] ;
+3 BANK!  : _wz [ $BF58 HERE - 4 - ALLOT ] ?DO [ HERE U. ] ;
 0 BANK!
 
 \ --- Computed witness: only real execution prints 42 and 4 ---
