@@ -371,7 +371,7 @@ BANKS-CLEAR
 \ two LDIRs (4 bytes each) ~168 T; wordlist_head save+load ~50 T; POP BC
 \ + NEXT ~25 T): ~425 T-states. The 60 T-state envelope binds cross-bank-
 \ call dispatch overhead, not the REPL-level BANK! word — informational only.
-." INFO: bank-store-t-states — paper-arithmetic estimate ~425 T-states (precondition ~24 + port-write ~22 + offset+LDIR cascades ~322 + tail ~57); NFR-P4-2 envelope (60 T) binds cross-bank dispatch (Epic 18), not BANK! itself" CR
+." INFO: bank-store-t-states ~425 T (paper estimate above); the 60 T envelope is cross-bank dispatch" CR
 
 \ The .BANKS display probes (X/Y/Z/M1/W) moved to
 \ tests/banking_tests_dot_banks.fth (make test-repl-banking-isolated-dot-banks).

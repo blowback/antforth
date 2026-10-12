@@ -227,3 +227,5 @@ Claude Opus 5.5 (claude-opus-5-5)
 ### Change Log
 
 - 2026-10-08: Story 27.1 implemented — NIP, TUCK, -ROT, ? (+76 B); ROT depth-2 underflow fixed (0 B); probe + Makefile target (15 assertions); compliance doc recount (§6.2 17/46); status → review.
+- 2026-10-08: S9 hardware pass (`beastty-20261008-121509.txt`); stray-`5` anomaly left open. Committed as `2868649`. Status → done. No code-review record was kept for this story.
+- 2026-10-12: Stray-`5` anomaly closed by the Story 27.5 fresh-session hardware replay (`<1> 5`, same as the emulator).

@@ -372,3 +372,4 @@ At the MicroBeast prompt (fresh boot, `DECIMAL`):
 
 - 2026-10-08: Added `<>`, `0<>`, `0>`, `U>` (Core Ext) and `<=`, `>=` (extension) as CODE words; probe + Makefile target; batnball uses kernel words; compliance doc, dev journal, README updated. +179 B.
 - 2026-10-08: S9 hardware pass for the six words. batnball: tick source switched to `TICKS` (firmware counter moved) and bat-edge tracking fixed.
+- 2026-10-08: Committed as `35c096d`. Status → done. No code-review record was kept for this story.

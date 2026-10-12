@@ -174,23 +174,23 @@ back to the per-file inventory in §d.
 
 | Code | Name (verbatim) | Used this epic? | Migrating from |
 |---:|---|---|---|
-| -1  | ABORT | done — Story 11.7 | `system.asm:286` (`w_ABORT_cf` entry; **done — 11.7**) |
-| -2  | ABORT" | done — Story 11.7 | `system.asm:139` (`(ABORT")` `.paq_do_abort`; **done — 11.7**) |
+| -1  | ABORT | done — Story 11.7 | `system.asm` (`w_ABORT_cf` entry; **done — 11.7**) |
+| -2  | ABORT" | done — Story 11.7 | `system.asm` (`(ABORT")` `.paq_do_abort`; **done — 11.7**) |
 | -3  | stack overflow | done — Story 11.5.2 | `system.asm` (`do_overflow_error`; defensive guard at LIT/DOCON/DOVAR/DODOES/push_user_var/NUMBER?-family) |
-| -4  | stack underflow | done — Story 11.4 | `system.asm:591` (`do_underflow_error`; migrated) |
+| -4  | stack underflow | done — Story 11.4 | `system.asm` (`do_underflow_error`; migrated) |
 | -5  | return stack overflow | no | — |
 | -6  | return stack underflow | no | — |
 | -7  | do-loops nested too deeply during execution | no | — |
 | -8  | dictionary overflow | done — Story 23.6/23.7/23.9 | `banking.asm` (`check_banked_headroom` + `dict_overflow_throw`; banked ceiling guard (`BANKED_CEILING` = `$BF58`, `$C000` less the 168-byte WORD/`PAD` reserve above `HERE`; bank 0 exempt) wired at `build_header` and `,`/`C,`/`ALLOT`/`COMPILE,`; Story 23.7 folds `MARKER`'s full body footprint into the `build_header` pre-commit guard via `bh_code_reserve`/`MARKER_CODE_RESERVE` — `system.asm` `w_MARKER_cf`; Story 23.9 extends coverage to the remaining HERE-growth paths `;`/`LITERAL`/`DOES>` — `compiler.asm` — and the inline-string compilers `S"`/`."`/`ABORT"` — `strings.asm` `compile_string`, `system.asm` `w_ABORT_QUOTE_cf`) |
 | -9  | invalid memory address | no | — |
-| -10 | division by zero | done — Story 11.4 | `arithmetic.asm:126` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm:569` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
+| -10 | division by zero | done — Story 11.4 | `arithmetic.asm` (`udivmod` guard — covers `/`, `MOD`, `/MOD`); `double.asm` (`UM/MOD` guard — covers `SM/REM`, `FM/MOD`, `*/`, `*/MOD`, bare `UM/MOD`) |
 | -11 | result out of range | no | — |
 | -12 | argument type mismatch | no | — |
-| -13 | undefined word | done — Story 11.5 | `compiler.asm:48` (`'`), `compiler.asm:451` (`COMP-ERROR`), `outer_interpreter.asm:226` (`INTERPRET`) |
-| -14 | interpreting a compile-only word | done — Story 11.5 | `compiler.asm:469` (`;`), `compiler.asm:641` (`DOES>`), `control_flow.asm:18` (`?COMP`) |
+| -13 | undefined word | done — Story 11.5 | `compiler.asm` (`'`), `compiler.asm` (`COMP-ERROR`), `outer_interpreter.asm` (`INTERPRET`) |
+| -14 | interpreting a compile-only word | done — Story 11.5 | `compiler.asm` (`;`), `compiler.asm` (`DOES>`), `control_flow.asm` (`?COMP`) |
 | -15 | invalid FORGET | no | — |
-| -16 | attempt to use zero-length string as a name | done — Story 11.5 | `system.asm:80` (`MARKER`), `compiler.asm:398` (`:`), `compiler.asm:577` (`CREATE`), `compiler.asm:624` (`CONSTANT`) |
-| -17 | pictured numeric output string overflow | done — Story 11.6 | `pictured.asm:251` (`do_pic_overflow_error`; migrated) |
+| -16 | attempt to use zero-length string as a name | done — Story 11.5 | `system.asm` (`MARKER`), `compiler.asm` (`:`), `compiler.asm` (`CREATE`), `compiler.asm` (`CONSTANT`) |
+| -17 | pictured numeric output string overflow | done — Story 11.6 | `pictured.asm` (`do_pic_overflow_error`; migrated) |
 | -18 | parsed string overflow | done — Story 27.7 | `strings.asm` (`WORD` `.word_too_long`; token longer than `WORD_MAX_LEN` = 128 characters) |
 | -19 | definition name too long | no | — |
 | -20 | write to a read-only location | no | — |
@@ -231,7 +231,7 @@ back to the per-file inventory in §d.
 | -55 | floating-point unidentified fault | no | — |
 | -56 | QUIT | no | — |
 | -57 | exception in sending or receiving a character | no | — |
-| -58 | unexpected end of input (e.g., during `(` parsing) | done — Story 11.6 | `strings.asm:953` (`(` `.paren_missing`; migrated) |
+| -58 | unexpected end of input (e.g., during `(` parsing) | done — Story 11.6 | `strings.asm` (`(` `.paren_missing`; migrated) |
 
 **Codes referenced by Epic 11 migrations:** 9 standard codes
 (`-1`, `-2`, `-4`, `-10`, `-13`, `-14`, `-16`, `-17`, `-58`).
@@ -283,8 +283,8 @@ reserved block:
 
 | Code | Forth 2014 semantic | antforth usage | EQU | First-use story |
 |---:|---|---|---|---|
-| -69 | File-Access wordset (FCB pool exhaustion in Forth 2014's intent — kernel-resident pool) | FCB pool exhausted (`pool_acquire` failure when all 8 slots in-use) | `THROW_FCB_EXHAUSTED EQU -69` (`constants.asm:92`) | Story 13.1 (raise sites in `pool_acquire`) |
-| -70 | FREE (memory deallocator) | **Re-purposed**: invalid file-access fileid (closed FID / out-of-range pool ptr / use-after-free) — antforth has no separate FREE wordset, so the slot is re-allocated to a closer-in-spirit "use-after-free" diagnostic | `THROW_FILE_INVALID_FID EQU -70` (`constants.asm:101`) | Story 13.2 (raise site in `fid_validate`) |
+| -69 | File-Access wordset (FCB pool exhaustion in Forth 2014's intent — kernel-resident pool) | FCB pool exhausted (`pool_acquire` failure when all 8 slots in-use) | `THROW_FCB_EXHAUSTED EQU -69` (`constants.asm`) | Story 13.1 (raise sites in `pool_acquire`) |
+| -70 | FREE (memory deallocator) | **Re-purposed**: invalid file-access fileid (closed FID / out-of-range pool ptr / use-after-free) — antforth has no separate FREE wordset, so the slot is re-allocated to a closer-in-spirit "use-after-free" diagnostic | `THROW_FILE_INVALID_FID EQU -70` (`constants.asm`) | Story 13.2 (raise site in `fid_validate`) |
 
 **Rationale for the `-70` re-purpose** (Story 13.2 AC #8): the standard
 allocates `-70` to FREE (memory-deallocator deallocate-failed), but
@@ -351,29 +351,29 @@ discipline.
 | Code | Name | Trigger | ABORT site | Migration story |
 |---:|---|---|---|---|
 | -257 | THROW_ASM_LOAD_FAIL         | (reserved by `architecture.md:478,606`; first used Epic 13 lazy-load assembler) | (reserved — not a current ABORT site) | (Epic 13) |
-| -258 | THROW_ASM_BAD_OPERAND       | bad operand to asm op                                 | `assembler.asm:281` (`asm_die` ← `asm_bad_operand`)         | **done — 11.5** |
-| -259 | THROW_ASM_NESTED            | nested `CODE` block                                   | `assembler.asm:281` (`asm_die` ← `asm_err_nested`)          | **done — 11.5** |
-| -260 | THROW_ASM_NONAME            | `CODE` parsed empty name                              | `assembler.asm:281` (`asm_die` ← `asm_err_noname`)          | **done — 11.5** |
-| -261 | THROW_ASM_ORPHAN_LABEL      | orphan label (declared, never resolved this CODE)     | `assembler.asm:281` (`asm_die` ← `asm_err_orphan`)          | **done — 11.5** |
-| -262 | THROW_ASM_LABEL_AFTER_END   | label declared after `END-CODE`                       | `assembler.asm:281` (`asm_die` ← `asm_err_label_after`)     | **done — 11.5** |
-| -263 | THROW_ASM_JR_RANGE          | `JR` displacement out of range                        | `assembler.asm:281` (`asm_die` ← `asm_err_jr_range`)        | **done — 11.5** |
-| -264 | THROW_ASM_TOO_LABELS        | local-label table exhausted                           | `assembler.asm:281` (`asm_die` ← `asm_err_too_labels`)      | **done — 11.5** |
-| -265 | THROW_ASM_TOO_FIXUPS        | fixup table exhausted                                 | `assembler.asm:281` (`asm_die` ← `asm_err_too_fixups`)      | **done — 11.5** |
-| -266 | THROW_ASM_EQU_IN_CODE       | `EQU` used outside `CODE` block (or vice versa)       | `assembler.asm:281` (`asm_die` ← `asm_err_equ_in_code`)     | **done — 11.5** |
-| -267 | THROW_ASM_BARE_INT          | tagged operand expected, bare integer received        | `assembler.asm:337` (`asm_err_bare_int` own JP)             | **done — 11.5** |
-| -268 | THROW_ASM_UNRESOLVED        | unresolved label NAME at `END-CODE`                   | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_unresolved`) | **done — 11.5** |
-| -269 | THROW_ASM_ALREADY_FIXED     | already-fixed label NAME (double `FIX`)               | `assembler.asm:381` (`asm_print_error_with_name` ← `asm_err_already`)    | **done — 11.5** |
-| -270 | THROW_ASM_NOT_IN_CODE       | inline-assembler word used outside `CODE` block       | `assembler.asm:472` (`check_asm_mode` direct raise)                      | **done — 11.6** |
-| -271 | THROW_ASM_DISP_RANGE        | `+D` 8-bit displacement out of range                  | `assembler.asm:1204` (`asm_disp_range_err` direct raise)                 | **done — 11.5.6** |
-| -272 | THROW_ASM_BIT_RANGE         | `BIT,`/`RES,`/`SET,` bit number not in 0..7           | `assembler.asm:1210` (`asm_bit_range_err` direct raise)                  | **done — 11.5.6** |
+| -258 | THROW_ASM_BAD_OPERAND       | bad operand to asm op                                 | `assembler.asm` (`asm_bad_operand` direct raise)         | **done — 11.5** |
+| -259 | THROW_ASM_NESTED            | nested `CODE` block                                   | `assembler.asm` (`asm_err_nested` direct raise)          | **done — 11.5** |
+| -260 | THROW_ASM_NONAME            | `CODE` parsed empty name                              | `assembler.asm` (`asm_err_noname` direct raise)          | **done — 11.5** |
+| -261 | THROW_ASM_ORPHAN_LABEL      | orphan label (declared, never resolved this CODE)     | `assembler.asm` (`asm_err_orphan` direct raise)          | **done — 11.5** |
+| -262 | THROW_ASM_LABEL_AFTER_END   | label declared after `END-CODE`                       | `assembler.asm` (`asm_err_label_after` direct raise)     | **done — 11.5** |
+| -263 | THROW_ASM_JR_RANGE          | `JR` displacement out of range                        | `assembler.asm` (`asm_err_jr_range` direct raise)        | **done — 11.5** |
+| -264 | THROW_ASM_TOO_LABELS        | local-label table exhausted                           | `assembler.asm` (`asm_err_too_labels` direct raise)      | **done — 11.5** |
+| -265 | THROW_ASM_TOO_FIXUPS        | fixup table exhausted                                 | `assembler.asm` (`asm_err_too_fixups` direct raise)      | **done — 11.5** |
+| -266 | THROW_ASM_EQU_IN_CODE       | `EQU` used outside `CODE` block (or vice versa)       | `assembler.asm` (`asm_err_equ_in_code` direct raise)     | **done — 11.5** |
+| -267 | THROW_ASM_BARE_INT          | tagged operand expected, bare integer received        | `assembler.asm` (`asm_err_bare_int` own JP)             | **done — 11.5** |
+| -268 | THROW_ASM_UNRESOLVED        | unresolved label NAME at `END-CODE`                   | `assembler.asm` (`asm_print_error_with_name` ← `asm_err_unresolved`) | **done — 11.5** |
+| -269 | THROW_ASM_ALREADY_FIXED     | already-fixed label NAME (double `FIX`)               | `assembler.asm` (`asm_print_error_with_name` ← `asm_err_already`)    | **done — 11.5** |
+| -270 | THROW_ASM_NOT_IN_CODE       | inline-assembler word used outside `CODE` block       | `assembler.asm` (`check_asm_mode` direct raise)                      | **done — 11.6** |
+| -271 | THROW_ASM_DISP_RANGE        | `+D` 8-bit displacement out of range                  | `assembler.asm` (`asm_disp_range_err` direct raise)                 | **done — 11.5.6** |
+| -272 | THROW_ASM_BIT_RANGE         | `BIT,`/`RES,`/`SET,` bit number not in 0..7           | `assembler.asm` (`asm_bit_range_err` direct raise)                  | **done — 11.5.6** |
 | -273 | THROW_BANK_FROM_BANKED      | bank switch from banked code — foreign-bank `BANK!` with caller IP in `$8000..$BFFF` (portal-window aliasing guard; fires BEFORE any MMU/state mutation) | `banking.asm` (`w_BANK_STORE_cf` direct raise)              | **done — 19.5.1** |
 | -274 | THROW_RSTACK_IMBALANCE      | return stack imbalance — the line the text interpreter just ran left the IX return stack at a different depth than it found it (a bare `>R` or `R>`, typed at the prompt or left stranded in an `INCLUDE`d line) | `outer_interpreter.asm` (`w_PAREN_RCHECK_cf` direct raise)  | **done** |
 
 **Note on -271 / -272 split (Story 11.5.6 closure).** The original
 Story 11.6 allocation collapsed two structurally-different conditions
 onto a single `-271 THROW_ASM_RANGE`: `+D`'s 8-bit-signed displacement
-check (`assembler.asm:1143/:1146/:1151`) and the `BIT,/RES,/SET,`
-bit-number 0..7 check (`assembler.asm:3095/:3132/:3164`). The user
+check (`assembler.asm` `+D` handlers) and the `BIT,/RES,/SET,`
+bit-number 0..7 check (`assembler.asm` `BIT,`/`RES,`/`SET,` handlers). The user
 diagnostic `error -271: range` was generic and carried no locality hint.
 Story 11.5.6 split this — see Story 11.5.6 file at
 `_bmad-output/implementation-artifacts/11.5-6-throw-271-semantic-split.md`.
@@ -398,6 +398,10 @@ standard-code migrations for `(` missing-`)` / pictured overflow; Story
 ---
 
 ## (d) Per-File ABORT-Site Inventory
+
+Sections (d) and (e) record the Epic 11 survey and migration plan as they
+stood then; their `file.asm:N` line numbers are not kept current. The
+tables in (b), (b.1) and (c) cite file and symbol instead.
 
 Survey method: `grep -nE 'JP\s+w_ABORT_cf|DW\s+w_ABORT_cf' src/*.asm` plus
 the entry point of `w_ABORT_cf` itself (line 286 of `system.asm` post-

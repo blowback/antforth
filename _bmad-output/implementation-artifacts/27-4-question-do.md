@@ -364,3 +364,4 @@ Claude Opus 5.5 (claude-opus-5-5)
 ## Change Log
 
 - 2026-10-08 — Story 27.4 implemented: `?DO` + `(?DO)` (+60 B), `test-repl-qdo` probe, docs synced; 23-6 probe word renamed after the bank-lookup bug hung it. Status → review.
+- 2026-10-11: S9 hardware pass on the 31,077 B binary; the `B0`/`CR` bank-lookup hang also reproduces on hardware. Committed as `09b3c00`. Status → done. No code-review record was kept for this story.
