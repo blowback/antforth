@@ -1,6 +1,6 @@
 # Story 27.5: Epic 27 close-out and v3.3.0
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -205,9 +205,9 @@ reading v3.3.0, and the docs matching what Epic 27 shipped.
 - [x] **Task 5 — Full sweep (AC3) and byte log (AC5)**
   - [x] 5.1 `make clean && make && wc -c build/antforth.com`; `make test`; `make test-repl`; every remaining `test-*` target from the `.PHONY` line plus `test-repl-cr-21-3`; `lint-banking-probes`. Record the counts.
   - [x] 5.2 Fill in the byte-ledger table with re-measured figures.
-- [ ] **Task 6 — Hardware smoke (AC4)**
+- [x] **Task 6 — Hardware smoke (AC4)**
   - [x] 6.1 Write the combined recipe into Dev Notes, using the draft below as a starting point.
-  - [ ] 6.2 Copy `build/antforth.com` and `disk/a/TRAFFIC.FTH` to the board (0x1A-terminated per `feedback_cpm_0x1a_eof_marker`), run the recipe, and record the transcript filename and the result.
+  - [x] 6.2 Copy `build/antforth.com` and `disk/a/TRAFFIC.FTH` to the board (0x1A-terminated per `feedback_cpm_0x1a_eof_marker`), run the recipe, and record the transcript filename and the result.
 - [x] **Task 7 — Memory and handoff (AC8, AC9)**
   - [x] 7.1 Write the Phase-7 memory and the `MEMORY.md` line; fix the stale line in `project_phase6_concurrency_direction.md`.
   - [x] 7.2 Commit on `main` (no co-author trailer). Post the tag and push commands, the release-workflow note and the hardware recipe in the closing message.
@@ -351,7 +351,15 @@ claude-opus-5-5 (Claude Code, dev-story workflow), 2026-10-12
 - **AC1 — bank probe fixed, 0 kernel bytes.** `tests/multitasker_bank_tests.fth` carves `TASK CONSTANT BT1` first, then `TAPE`/`APP`/`BG`; `BT2` is gone; the same-bank control re-`ACTIVATE`s `BT1` with `BG2` after `BG` has exited. The six original verdicts are unchanged. A seventh, `bank-bg-fixed`, checks `HERE` after `BG` is ≤ 32768 and prints the value (32,266 on v3.3.0, so `BG` ends 502 B below `$8000`). The Makefile asserts it too. `make test-repl-multitasker-bank`: 7/7.
 - **AC2 — the 12 targets are `test-repl` prerequisites.** `test-repl` now reports 1225 PASS / 0 FAIL (1147 + 78 lines from the 12 targets). Runtime 5.4 s → 5.9 s. The "Single-feature target; NOT folded into plain `test-repl`" comments on those 12 targets now say "Runs as a `test-repl` prerequisite"; the comment above `test-repl:` names them.
 - **AC3 — full sweep on the final binary** (`make clean && make`, 31,395 B). Every target rc=0, 0 `^FAIL`: `test` (PASS: Output matches expected), `test-repl` 1225/0 (2 SKIP, the disk-full/dir-full hardware-only rows, as before), `-asm` 5, `-value-to` 7, `-in-out` 4, `-timer` 9, `-multitasker` 5, `-key` 5, `-delay` 6, `-tasks` 8, `-throw` 8, `-break` 8, `-bank` 7, `-demo` 4, `-semaphore` 6, `-mutex` 6, `-mailbox` 6, `-ud-env` 14, `-rstack-guard` 7, `-stack-words` 15, `-comparisons` 19, `-again` 12, `-qdo` 16, `-underflow` 55, `-bank-lookup` 18, `-banking` 57, `-banking-isolated` 6, `-19-3` 15, `-19-4` 2, `-19-5-1` 2, `-20-1` 7, `-20-2` 5, `-20-3` 5, `-21-1` 5, `-21-2` 5, `-21-3` 6, `-22-1` 1, `-22-2` 4, `-22-3` 4, `-dot-banks` 7, `lint-banking-probes` 1, `-banking-23-6` 8, `-23-7` 4, `-23-9` 9, `test-straddle-regression` 3, `test-file-sanity` 1, `test-repl-cr-21-3` 4. `check-doc-sync`: 15 advisories / **0 drift**. (Counts are `^PASS` lines in each target's output.) `env-core-x` in `test-repl-ud-env` still passes, so `ENVIRONMENT? CORE-EXT` still answers false.
-- **AC4 — hardware smoke: NOT RUN (Task 6.2 open).** Needs the board. Recipe below; every expected value in steps 2–8 was checked in the emulator on the final binary.
+- **AC4 — hardware smoke: PASS, 2026-10-12, `beastty-20261012-093931.txt`** (v3.3.0 sessions start at log line 250; lines 1–249 are earlier v3.2.1 sessions). Run by the project lead; log checked line by line:
+  - Banner `AntForth v3.3.0`, 22,621 bytes free, 12 banks (same as the emulator).
+  - Steps 2–6: every value matches (`<1> 2`, `<3> 2 1 2`, `<3> 3 1 2`, `42`, `2A`, `-1 0 -1 -1 -1 0`, `5`, `0 5`). Lines 256–261 are typing errors (`DROP.`), not faults.
+  - Step 7: `DROP`, `DUP`, `0=`, `1+` on an empty stack each give `error -4`; `DEPTH .` → `0`.
+  - Step 8: `32768 HERE - .` → 1041, the same as the emulator after the same lines.
+  - Step 9: `TRAFFIC.FTH` runs as a background task, `1 2 + .` → `3`, `.TASKS` shows tasks 0 and 1 AWAKE, `Ctrl-\` → `task 1: error -28`, `TIMER-OFF`.
+  - Step 10 (27.1 replay): `variable v 5 42 v ! v ?` → `42`, `.s` → `<1> 5`, the same as the emulator. The `5` is correct (nothing consumes it), so the 27.1 "open anomaly" (hardware `<0>`) does not reproduce and is closed. One earlier line in that session was mistyped as `variable v 5 42 ! v ?`, which stored 5 at address 42 in page zero; nothing visibly went wrong.
+  - Step 11, 27.7 steps 1–6: FREE 16216 per bank; `dup?` + `error -2`, `BANKS .` → `1`; step 3: `-8`, `48984`, `-13`, `3` with no hang, `B0 .` → `42`; step 4 `BANK@ .` → `0`; step 5 `CR`, no error; step 6 `P193IRON.FTH` prints both sentinels.
+  - Step 11, 27.7 step 7 (`WORD` cap): first tried right after `P193IRON.FTH`, which ends with `BANKS-CLEAR`, so every `BANK!` gave `bank?` / `-2`, as expected with zero banks. Rerun after a fresh boot and the page list: `-18`. That rerun didn't have step 3's setup (bank 6 at `$BF58`, `B0` straddling `$C000`), so the "`B0` survives" half of step 7 wasn't covered on hardware; `B0` was redefined by hand and printed `42`, which proves nothing. The `-18` throw itself is confirmed. The emulator covers `B0` surviving (case H in `test-repl-bank-lookup`).
 - **AC5 — bytes.** Final 31,395 B (`make clean && make && wc -c`). v3.2.1 artifact 30,754 B. Delta **+641 B**. This story: **0 B** (banner swap is same-length; everything else is tests/docs/Makefile). Every Epic-27 commit rebuilt in a worktree:
 
   | Story | Commit | Before → after (B) | Delta |
@@ -413,4 +421,5 @@ Pass = every expected value above, no hang, no unexpected error. Save the termin
 
 ### Change Log
 
-- 2026-10-12 — Dev pass: bank probe fixed (0 kernel bytes), multitasker family made `test-repl` prerequisites, version surface bumped to v3.3.0, docs and memory updated, full sweep green on 31,395 B (+641 B over v3.2.1). Hardware smoke (Task 6.2) pending; story stays in-progress until it runs.
+- 2026-10-12 — Dev pass: bank probe fixed (0 kernel bytes), multitasker family made `test-repl` prerequisites, version surface bumped to v3.3.0, docs and memory updated, full sweep green on 31,395 B (+641 B over v3.2.1). Hardware smoke (Task 6.2) pending.
+- 2026-10-12 — Hardware smoke PASS (`beastty-20261012-093931.txt`); 27.1 stray-`5` anomaly closed (hardware matches the emulator). Status → review.

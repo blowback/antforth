@@ -323,5 +323,5 @@ development_status:
   27-4-question-do: done
   27-6-one-operand-underflow-checks: done
   27-7-cross-bank-lookup-hides-or-hangs-on-kernel-words: done
-  27-5-epic-27-close-out-and-v3-3-0: in-progress
+  27-5-epic-27-close-out-and-v3-3-0: review
   epic-27-retrospective: optional
