@@ -21,15 +21,20 @@ DECIMAL
 ' PAUSE DROP  ' BANK! DROP  ' BANK@ DROP  ' ACTIVATE DROP  ." PASS: bank-words-resolve" CR
 
 \ FIXED-RAM BUDGET: a TCB, and the code a bank-1 task runs (BG, APP, TAPE), must
-\ sit below $8000, where kernel growth leaves only about two TCBs' worth of room.
-\ So BG's words come first, then both TCBs, then everything else (which may
-\ compile into the bank-0 window). TASK splices each new TCB in right after the
-\ operator, so carve order decides the ring order.
+\ sit below $8000. Kernel growth leaves room for only about two TCBs, so this probe
+\ carves ONE task first, then BG's words, and reuses that task for the same-bank
+\ control (re-ACTIVATE of an exited task). Everything after BG may compile into
+\ the bank-0 window.
+TASK CONSTANT BT1
 VARIABLE TAPE
 : APP ( d -- ) TAPE @ 10 * + TAPE ! ;
 : BG ( -- ) 2 APP PAUSE 2 APP ;             \ 2 turns, then EXIT -> task_exit (ASLEEP+PAUSE)
-TASK CONSTANT BT1
-TASK CONSTANT BT2
+
+\ --- BG's body ends below $8000, or a bank-1 task can't see it. Witness, so the
+\ next squeeze fails here with a reason and not as a wrong TAPE value later.
+HERE U. ." = HERE after BG" CR
+: _bgfixed ( a -- ) 32769 U< IF ." PASS: bank-bg-fixed" ELSE ." FAIL: bank-bg-fixed" THEN CR ;
+HERE _bgfixed
 
 \ --- >1 bank active (the default CL tail populates 12) so bank 1 exists ---
 : _multi ( -- ) BANKS 1 > IF ." PASS: bank-multi-active" ELSE ." FAIL: bank-multi-active" THEN CR ;
@@ -59,12 +64,14 @@ _opbank
 
 \ --- Same-bank control: a bank-0 task must round-robin with the re-page ELIDED
 \ (CP B -> JR Z taken), proving the added compare doesn't break the common case.
+\ BT1 is reused: BG has exited, and re-ACTIVATE while the operator is in bank 0
+\ makes the task own bank 0, so every switch is same-bank.
 VARIABLE TAPE2
 : APP2 ( d -- ) TAPE2 @ 10 * + TAPE2 ! ;
 : BG2 ( -- ) 2 APP2 PAUSE 2 APP2 ;
 : DRV2 ( -- ) 1 APP2 PAUSE 1 APP2 PAUSE 1 APP2 ;
 0 TAPE2 !
-' BG2 BT2 ACTIVATE   \ activated while operator is in bank 0 -> every switch same-bank
+' BG2 BT1 ACTIVATE   \ operator is in bank 0 -> every switch same-bank
 DRV2
 : _same ( -- ) TAPE2 @ 12121 = IF ." PASS: bank-same-control" ELSE ." FAIL: bank-same-control" THEN CR ;
 _same

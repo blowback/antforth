@@ -51,6 +51,18 @@ Still open: the room shrinks with every kernel story. Options if it matters:
 a smaller per-task data/return stack, TCBs carved from a pool outside the
 dictionary, or accepting "two tasks, carved first" as the documented limit.
 
+v3.3.0 (Story 27.5): it broke as predicted. 27.7 took the kernel to 31,395 B,
+boot `HERE` to 31,651, and the room to 1,117 B; the bank probe's second `TASK`
+raised `-8` (16 PASS / 10 FAIL). Two named TCBs (546 B each) still fit with
+25 B to spare; a third raises `-8`. The bank probe now carves one TCB first,
+defines `TAPE`/`APP`/`BG` after it (`BG` ends at 32,266), and re-`ACTIVATE`s
+that TCB for the same-bank control instead of carving a second. It prints
+`bank-bg-fixed` so the next squeeze fails with a reason. No kernel change. The
+limit is documented in `docs/phase6-multitasker.md` ("How many tasks fit"),
+and the multitasker, semaphore, mutex and mailbox targets are now `test-repl`
+prerequisites, so the next squeeze shows up in the normal test run. The
+underlying limit is not fixed; the options above are still open.
+
 ## 2026-10-11 (RESOLVED 2026-10-11, Story 27.6) — `>NUMBER` read ud1 with its cells swapped
 
 `>NUMBER` stored the cell under c-addr1 as ud1-low and the one under that as

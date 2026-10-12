@@ -23,21 +23,20 @@ There's still plenty to do if you're the Human in the Loop tho:
 
 ![forth books](images/books.jpg)
 
-## Version 3.2.1
+## Version 3.3.0
 
 AntForth is a full ANS Forth for the MicroBeast: all 133 Core words, an
 81-word Z80 assembler, CP/M file access, custom wordlists, the MicroBeast's
 full 512 KB of banked RAM addressed by name, and a cooperative multitasker
 that keeps the `ok` prompt live while background tasks drive real hardware.
 
-**3.2.1 is a fix release.** Typing a word at the prompt that left the return
-stack unbalanced — a bare `1 >R` or `R>` — used to end the session. The text
-interpreter runs each token inside its own return frame, so the stray cell was
-popped as a return address and the machine fell into CP/M's warm boot with no
-message. It now raises a catchable `-274 return stack imbalance` and hands the
-prompt straight back; a stray `>R` in an `INCLUDE`d or `EVALUATE`d line lands
-there too. Balanced same-line use (`1 >R R> .`) stays legal, because the check
-is per line rather than per word.
+**3.3.0 closes Epic 27: small words and fixes.** Twelve new words, most from
+Core Extensions: `NIP`, `TUCK`, `-ROT`, `?`, `<>`, `0<>`, `0>`, `U>`, `<=`, `>=`,
+`AGAIN` and `?DO`. Every one-operand word (`DUP`, `0=`, `1+` and the rest) now
+raises `-4 stack underflow` on an empty stack instead of reading garbage.
+`+BANK` refuses a page that is already listed, which was why cross-bank lookups
+could hide or hang on kernel words. Banks above 0 stop at `$BF58`, so parsing and
+`PAD` can't write into fixed RAM, and `WORD` throws `-18` past 128 characters.
 
 Full [release history](#release-history) is at the bottom.
 
@@ -64,6 +63,8 @@ Full [release history](#release-history) is at the bottom.
 | Word | Source | Origin / role |
 |------|--------|---------------|
 | `SP@` `SP!` `RP@` `RP!` | `stack_ops.asm` | fig-Forth-era stack-pointer access; common extension |
+| `-ROT` | `stack_ops.asm` | antforth ext — inverse of `ROT` (`a b c -- c a b`) |
+| `<=` `>=` | `logic.asm` | antforth ext — signed comparisons, the complements of `>` and `<` |
 | `DPL` | `outer_interpreter.asm` | fig-Forth-era double-precision parse state |
 | `NUMBER?` | `outer_interpreter.asm` | parsing helper |
 | `CATCH-TOP` | `exception.asm` | antforth ext — exception-frame chain head (CCD-2) |
@@ -113,6 +114,11 @@ in bank 0).
 - non-Beastly targets
 
 ## Release history
+
+**3.3.0** — Closes Epic 27. Twelve words (`NIP` `TUCK` `-ROT` `?` `<>` `0<>`
+`0>` `U>` `<=` `>=` `AGAIN` `?DO`), `-4` underflow checks on every one-operand
+word, `+BANK` duplicate-page refusal (the cause of cross-bank lookup hangs), a
+`$BF58` ceiling on banks above 0, and a 128-character cap on `WORD`.
 
 **3.2.1** — Fix release. A word typed at the prompt that left the return stack
 unbalanced (`1 >R`, `R>`) raises a catchable `-274 return stack imbalance`

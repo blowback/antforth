@@ -279,8 +279,7 @@ test-repl-timer: $(TARGET)
 # hardware-smoke. The probe drives no foreign BANK!, so it is straddle-safe; the
 # emulator pipe is wrapped in the Story 24.3 fail-loud timeout (a PAUSE ring wedge
 # is then a loud FAIL, not a CI hang) and verdicts go through the Story 24.4
-# helper (column-0 ^PASS: anchoring). Single-feature target; NOT folded into plain
-# `test-repl`.
+# helper (column-0 ^PASS: anchoring). Runs as a `test-repl` prerequisite.
 MULTITASKER_PROBE = tests/multitasker_tests.fth
 test-repl-multitasker: $(TARGET)
 	@echo "Running Story 25.1 PAUSE / TASK / ACTIVATE multitasker probe under $(IZCPM)..."
@@ -301,8 +300,7 @@ test-repl-multitasker: $(TARGET)
 # the operator never WAITS in KEY (see the probe header). Emulator pipe wrapped
 # in the Story 24.3 fail-loud timeout (KEY busy-waits forever if BYE is never
 # reached, by design — a wedge is then a loud FAIL, not a CI hang); verdicts go
-# through the Story 24.4 column-0 helper. Single-feature target; NOT folded into
-# plain `test-repl`.
+# through the Story 24.4 column-0 helper. Runs as a `test-repl` prerequisite.
 MULTITASKER_KEY_PROBE = tests/multitasker_key_tests.fth
 test-repl-multitasker-key: $(TARGET)
 	@echo "Running Story 25.2 KEY-hooked REPL input-yield probe under $(IZCPM)..."
@@ -324,8 +322,7 @@ test-repl-multitasker-key: $(TARGET)
 # HARDWARE S9 (the emulator cannot advance TICKS — see the probe header). Emulator
 # pipe wrapped in the Story 24.3 fail-loud timeout (a non-yielding/monopolizing
 # DELAY never reaches BYE -> loud FAIL, not a CI hang); verdicts go through the
-# Story 24.4 column-0 helper. Single-feature target; NOT folded into plain
-# `test-repl`.
+# Story 24.4 column-0 helper. Runs as a `test-repl` prerequisite.
 MULTITASKER_DELAY_PROBE = tests/multitasker_delay_tests.fth
 test-repl-multitasker-delay: $(TARGET)
 	@echo "Running Story 25.3 yielding DELAY / MS probe under $(IZCPM)..."
@@ -348,8 +345,8 @@ test-repl-multitasker-delay: $(TARGET)
 # (the words there are SLEEP/WAKE, not the parked-state name), so they prove
 # .TASKS executed (the 23.2 false-green defence). Emulator pipe wrapped in the
 # Story 24.3 fail-loud timeout (a SLEEP-induced ring wedge -> loud FAIL, not a CI
-# hang); verdicts go through the Story 24.4 column-0 helper. Single-feature
-# target; NOT folded into plain `test-repl`.
+# hang); verdicts go through the Story 24.4 column-0 helper. Runs as a `test-repl`
+# prerequisite.
 MULTITASKER_TASKS_PROBE = tests/multitasker_tasks_tests.fth
 test-repl-multitasker-tasks: $(TARGET)
 	@echo "Running Story 25.4 SLEEP / WAKE / .TASKS probe under $(IZCPM)..."
@@ -369,7 +366,7 @@ test-repl-multitasker-tasks: $(TARGET)
 # SUSPENDED (^   1   SUSPENDED row witness — the state string is absent from the
 # probe source, so its presence proves .TASKS executed), and the normal CATCH
 # path is unregressed. Fail-loud timeout (a desync would wedge before BYE).
-# Single-feature target like the other 25.x probes.
+# Runs as a `test-repl` prerequisite.
 MULTITASKER_THROW_PROBE = tests/multitasker_throw_tests.fth
 test-repl-multitasker-throw: $(TARGET)
 	@echo "Running Epic 25 task-uncaught-THROW recovery probe under $(IZCPM)..."
@@ -393,7 +390,7 @@ test-repl-multitasker-throw: $(TARGET)
 # the honest never-yielding reset-required stall). SUSPENDED/`error -28` are
 # absent from the probe source, so their presence proves genuine execution.
 # Fail-loud timeout (a wedged ring / bad consume -> loud FAIL, not a CI hang).
-# Single-feature target like the other 25.x probes.
+# Runs as a `test-repl` prerequisite.
 MULTITASKER_BREAK_PROBE = tests/multitasker_break_tests.fth
 test-repl-multitasker-break: $(TARGET)
 	@echo "Running Story 25.7 keyboard-break + documented-stall probe under $(IZCPM)..."
@@ -418,16 +415,16 @@ test-repl-multitasker-break: $(TARGET)
 # interpreter is alive (runtime 42 token). True cross-bank window CONTENTS +
 # wall-clock ride S9. MUST run under $(IZCPM_BANKING) (banking-modelling iz-cpm).
 # Fail-loud timeout (a wedged ring / bad re-page -> loud FAIL, not a CI hang);
-# verdicts via the Story 24.4 column-0 helper. Single-feature target; NOT folded
-# into plain `test-repl`.
+# verdicts via the Story 24.4 column-0 helper. Runs as a `test-repl` prerequisite.
 MULTITASKER_BANK_PROBE = tests/multitasker_bank_tests.fth
 test-repl-multitasker-bank: $(TARGET)
 	@echo "Running Story 25.5 cross-bank task-switch probe under $(IZCPM_BANKING)..."
 	@OUTPUT=$$({ sed 's/$$/\r/' $(MULTITASKER_BANK_PROBE); printf 'BYE\r\n'; } | timeout $(PROBE_TIMEOUT) $(IZCPM_BANKING) $(IZCPM_DISKS) $(TARGET) 2>/dev/null); rc=$$?; \
-	if [ $$rc -eq 124 ]; then echo "FAIL: REPL multitasker-bank probe — timed out after $(PROBE_TIMEOUT)s (cross-bank re-page wedged the ring / never reached BYE)"; exit 1; fi; \
+	if [ $$rc -eq 124 ]; then printf '%s' "$$OUTPUT" | tr -d '\r' | grep -a '^FAIL:'; echo "FAIL: REPL multitasker-bank probe — timed out after $(PROBE_TIMEOUT)s (cross-bank re-page wedged the ring / never reached BYE)"; exit 1; fi; \
 	printf '%s' "$$OUTPUT" | sh tests/assert_verdicts.sh --label "REPL multitasker-bank probe" --fail-line '^FAIL:' \
 		'PASS: bank-words-resolve' 'PASS: bank-multi-active' 'PASS: bank-task-advances' \
-		'PASS: operator-bank-restored' 'PASS: bank-same-control' 'PASS: bank-alive'
+		'PASS: operator-bank-restored' 'PASS: bank-same-control' 'PASS: bank-alive' \
+		'PASS: bank-bg-fixed'
 
 # Story 25.8 — headline demo: background traffic light + live REPL. No new kernel
 # word; this drives the shipped demo asset (disk/a/TRAFFIC.FTH, mounted
@@ -443,8 +440,8 @@ test-repl-multitasker-bank: $(TARGET)
 # gate NFR-P6-6): the emulator never fires 0xFDC7 so a nonzero DELAY never
 # completes here (it yields each pass, which is exactly what no-monopoly tests).
 # Fail-loud timeout (a monopolizing / non-yielding DELAY -> loud FAIL, not a CI
-# hang); verdicts via the Story 24.4 column-0 helper. Single-feature target; NOT
-# folded into plain `test-repl`.
+# hang); verdicts via the Story 24.4 column-0 helper. Runs as a `test-repl`
+# prerequisite.
 MULTITASKER_DEMO_PROBE = tests/multitasker_demo_tests.fth
 test-repl-multitasker-demo: $(TARGET)
 	@echo "Running Story 25.8 headline traffic-light demo probe under $(IZCPM)..."
@@ -465,7 +462,8 @@ test-repl-multitasker-demo: $(TARGET)
 # blocked in WAIT), defeating the 23.2 echoed-source false-green. Fail-loud timeout
 # (a genuine deadlock -> loud FAIL, never a CI hang); the --fail-line tripwire also
 # catches the never-expected sem-prod-waiter-unblocked FAIL. Verdicts via the Story
-# 24.4 column-0 helper. Single-feature target; NOT folded into plain `test-repl`.
+# 24.4 column-0 helper. Runs as a `test-repl`
+# prerequisite.
 SEMAPHORE_PROBE = tests/semaphore_tests.fth
 test-repl-semaphore: $(TARGET)
 	@echo "Running Story 26.1 counting-semaphore probe under $(IZCPM)..."
@@ -486,7 +484,8 @@ test-repl-semaphore: $(TARGET)
 # WRITER stamps a shared buffer under the same lock), defeating the 23.2 echoed-source
 # false-green. Fail-loud timeout (a wedged mutex -> loud FAIL, never a CI hang); the
 # --fail-line tripwire also catches any FAIL verdict. Verdicts via the Story 24.4
-# column-0 helper. Single-feature target; NOT folded into plain `test-repl`.
+# column-0 helper. Runs as a `test-repl`
+# prerequisite.
 MUTEX_PROBE = tests/mutex_tests.fth
 test-repl-mutex: $(TARGET)
 	@echo "Running Story 26.2 mutex (binary-semaphore) probe under $(IZCPM)..."
@@ -508,7 +507,8 @@ test-repl-mutex: $(TARGET)
 # lockstep), defeating the 23.2 echoed-source false-green. Fail-loud timeout (a wedged
 # hand-off -> loud FAIL, never a CI hang); the --fail-line tripwire also catches the
 # never-expected mailbox-producer-unblocked FAIL. Verdicts via the Story 24.4 column-0
-# helper. Single-feature target; NOT folded into plain `test-repl`.
+# helper. Runs as a `test-repl`
+# prerequisite.
 MAILBOX_PROBE = tests/mailbox_tests.fth
 test-repl-mailbox: $(TARGET)
 	@echo "Running Story 26.3 one-slot mailbox probe under $(IZCPM)..."
@@ -2115,10 +2115,11 @@ test: $(SRCS) | $(BUILDDIR_STAMP)
 	fi
 
 # See tests/README.md for probe-authoring conventions (PAD-as-canonical-transient-buffer; S12 hardware-typed-probe lints)
-# Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) run as
-# prerequisites so a bare `make test-repl` exercises them — they are otherwise
-# green-by-omission, caught only when invoked by hand.
-test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow test-repl-bank-lookup $(TARGET)
+# Word-level REPL probes (asm IN,/OUT,; VALUE/TO; runtime IN/OUT) and the
+# timer/multitasker/semaphore/mutex/mailbox probes run as prerequisites so a bare
+# `make test-repl` exercises them — they are otherwise green-by-omission, caught
+# only when invoked by hand.
+test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env test-repl-rstack-guard test-repl-stack-words test-repl-comparisons test-repl-again test-repl-qdo test-repl-underflow test-repl-bank-lookup test-repl-timer test-repl-multitasker test-repl-multitasker-key test-repl-multitasker-delay test-repl-multitasker-tasks test-repl-multitasker-throw test-repl-multitasker-break test-repl-multitasker-bank test-repl-multitasker-demo test-repl-semaphore test-repl-mutex test-repl-mailbox $(TARGET)
 	@echo "Running REPL tests..."
 	@OUTPUT=$$(printf '65 EMIT\r\nBYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
 	if echo "$$OUTPUT" | grep -q 'A'; then \
@@ -2761,10 +2762,10 @@ test-repl: test-repl-asm test-repl-value-to test-repl-in-out test-repl-ud-env te
 		exit 1; \
 	fi
 	@OUTPUT=$$(printf 'BYE\r\n' | $(IZCPM) $(IZCPM_DISKS) $(TARGET) 2>/dev/null || true) && \
-	if echo "$$OUTPUT" | grep -q 'AntForth v3.2.1'; then \
-		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.2.1'"; \
+	if echo "$$OUTPUT" | grep -q 'AntForth v3.3.0'; then \
+		echo "PASS: REPL test 80 — Banner version string: output contains 'AntForth v3.3.0'"; \
 	else \
-		echo "FAIL: REPL test 80 — expected 'AntForth v3.2.1' in output"; \
+		echo "FAIL: REPL test 80 — expected 'AntForth v3.3.0' in output"; \
 		echo "  Got: $$(echo -n "$$OUTPUT" | xxd)"; \
 		exit 1; \
 	fi && \

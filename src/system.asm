@@ -574,7 +574,7 @@ env_table:
         ; CORE -> true (133/133 §6.1 Core words implemented)
         db  4, "CORE", 2
         dw  $FFFF
-        ; CORE-EXT -> false (§6.2 partial: 13/46 DPANS94 §6.2 + 1 Forth-2014 bonus HOLDS; DPANS94 §15.3.5.2 needs full set)
+        ; CORE-EXT -> false (§6.2 partial: 23/46 DPANS94 §6.2 + 1 Forth-2014 bonus HOLDS; DPANS94 §15.3.5.2 needs full set)
         db  8, "CORE-EXT", 2
         dw  0
         ; FLOORED -> false (antforth's `/` is symmetric per sdivmod, not floored)

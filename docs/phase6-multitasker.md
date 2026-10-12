@@ -81,6 +81,33 @@ On-tempo cycling, "the prompt returns immediately", and "`4 DELAY` doesn't freez
 the prompt" are the real-hardware experience — the MVP acceptance gate, verified
 on silicon over the serial TTY.
 
+## How many tasks fit
+
+Every TCB must sit below `$8000`, in fixed RAM that every bank can see. `TASK`
+raises `-8 dictionary overflow` if the new TCB would end past `$8000`. The room
+is whatever the kernel leaves between the boot `HERE` and `$8000`, so it shrinks
+as the kernel grows.
+
+A TCB is 535 B: a 23 B header plus a 256 B data stack and a 256 B return stack.
+Naming it with `TASK CONSTANT name` makes it 546 B. On the v3.3.0 binary
+(31,395 B) the boot `HERE` is 31,651, which leaves 1,117 B: **two named tasks,
+with 25 B to spare.** A third `TASK` raises `-8`. Check your own build with
+`DECIMAL 32768 HERE - .` at a fresh prompt.
+
+So carve tasks first, before any other definitions:
+
+```
+TASK CONSTANT LIGHTS             \ first thing in the file, as TRAFFIC.FTH does
+TASK CONSTANT WORKER
+: RUN-LIGHTS ... ;               \ everything else afterwards
+```
+
+Code a task runs while it owns a bank above 0 must also sit below `$8000`.
+After one named TCB there are 571 B left, so more than 25 B of such code leaves
+no room for a second task.
+A task whose word has exited can be re-`ACTIVATE`d with a new word, so one TCB
+can serve several jobs in turn.
+
 ## Coordination — the counting semaphore (`SEMAPHORE` / `SIGNAL` / `WAIT`)
 
 Once two tasks share a buffer, they need a way to hand data across without one

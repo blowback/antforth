@@ -15,33 +15,6 @@ see docs/antforth-banking-redesign.md (locked Phase-4 design) — the older docs
 File that, if present, is run at startup before interactive REPL.
 Allows loading custom wordlists etc.
 
-# Multitasker
-
-A polyForth/fig-Forth style cooperative multitasking system based
-around tasks yielding with `PAUSE`.
-
-Task Control Blocks are allocated with `TASK` and given a word to
-run with `ACTIVATE`.
-
-Make anything that blocks on I/O (including `KEY`) call `PAUSE`, and
-suddenly our interactive REPL multitasks too!
-
-Could add an event handler for the Beast's system timer interrupt
-that also calls `PAUSE`. Maybe have it increment a counter, then
-an event handler task is just any task that wakes up and does
-something when it detects an increment of the timer.
-
-# Semaphores
-
-Add simple counting semaphores with `SIGNAL` ( sem -- ) and
-`WAIT` ( sem -- ) to allow cooperating threads to share resources.
-
-Can also use a mutex to protect a **shared variable**, which can
-then be used as a primitive mailbox between threads.
-
-Since the whole interpreter is single-threaded, our semaphores
-don't need to be *atomic* (except maybe from ISR).
-
 # Turnkey compilation to .com binary
 
 Maybe this is a separate tool, but it's basically the Forth
@@ -54,12 +27,6 @@ If compiled forth doesn't create new words, then everything is
 already linked as CFA addresses...I guess we still need the
 dictionary as a *storage medium* but we don't need any of the
 apparatus for searching it.
-
-# Z80 IO primitives
-
-IN and OUT. Easy enough to provide as custom code words, but
-it would be nice to have them built in. — DELIVERED in 3.1.0
-(Story 23.3): `IN`/`OUT` are now built-in runtime port words.
 
 # ANS Forth locals
 
@@ -105,6 +72,14 @@ Would be could to have previous line at least, and be able to edit it.
 See docs/dev_journal.md
 
 ---
+
+## Shipped in v3.x (formerly wishlist items)
+
+- **Z80 IO primitives** — v3.1.0, Story 23.3 (`IN`, `OUT` as built-in runtime port words)
+- **`VALUE` / `TO`** — v3.1.0, Story 23.2 (the `VALUE` half of the locals item; `{: :}` locals are still a wish)
+- **Multitasker** — v3.2.0, Epics 24–25 (64 Hz tick with `TICKS`, yielding `DELAY`/`MS`, `PAUSE`, `TASK`, `ACTIVATE`, `SLEEP`/`WAKE`, `.TASKS`, `KEY`/`ACCEPT` that call `PAUSE`, `Ctrl-\` keyboard break)
+- **Semaphores** — v3.2.0, Epic 26 (`SEMAPHORE`/`SIGNAL`/`WAIT`, `MUTEX`/`LOCK`/`UNLOCK`, one-slot `MAILBOX`/`POST`/`FETCH`)
+- **Small tasks from `docs/dev_journal.md`** — v3.3.0, Epic 27 (`NIP`, `TUCK`, `-ROT`, `?`, `<>`, `0<>`, `0>`, `U>`, `<=`, `>=`, `AGAIN`, `?DO`)
 
 ## Shipped in v2.0 (formerly wishlist items)
 
